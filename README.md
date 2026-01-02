@@ -1,206 +1,86 @@
-# telegram-search-bot
+# Telegram Search Bot — Artem Fork (based on Taosky)
 
-[中文文档](docs/zh/readme.md)
+Self-hosted Telegram bot that records messages from enabled chats and provides inline search.  
+This repository is a fork of `Taosky/telegram-search-bot` with an upgraded inline search handler and a deployment setup optimized for SQLite performance on Docker Desktop (Windows/WSL2).
 
-A Telegram Bot for searching group chat records by keywords and usernames
+## Why this fork (vs upstream)
 
-Telegram's built-in search supports only whole sentences for languages like CJK, and does not support word segmentation. This project solves the search problem by storing chat records and performing database queries.
+This fork modifies the message search handler and provides a deployment pattern that is more practical for large, busy chats.
 
-### Index
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Update Records](#changes)
-- [Contributors](#contributors)
-- [License](#license)
+- Reactions-based ranking: results are sorted by `reactions_total` (DESC, NULL treated as 0) and then by message date (DESC).  
+  Upstream sorts only by date.
+- Reactions filter in query: supports `r:<N>`, `likes:<N>`, or `reactions>=<N>` to show only messages with at least N reactions.
+- Username-first queries: supports `@username keywords` where `@username` is the first token.  
+  User resolution is performed via `User.username` (case-insensitive `ilike`) rather than full name.
+- Cleaner result cards: inline result description includes reactions + metadata; the posted content includes message text and a clickable link.
+- Compatibility fallback: if your DB schema does not contain `reactions_total`, the bot automatically falls back to date-only sorting.
+- Performance (SQLite on Windows): the recommended Compose setup stores `/app/config` (including `bot.db`) inside Docker’s Linux filesystem via a named volume, instead of a bind mount to an NTFS path.  
+  For SQLite workloads this is typically **dramatically faster** on Docker Desktop/WSL2 compared to running the database on an NTFS-mounted host directory.
 
-### Features
-- Searching group chat messages by multiple keywords (with pagination)
-- Locating message positions
-- Command control with restrictions
-- Supporting queries across multiple groups (determining whether the user is a group member)
-- Supporting username search
-- Synchronizing database updates after message edits
+### Important behavioral difference (access control)
 
-![preview1](docs/en/preview.png)
-![preview2](docs/en/full.gif)
+Upstream checks whether the inline querying user is a member of each enabled chat (via `get_chat_member`) and filters results accordingly.
+This fork currently searches across all chats where `Chat.enable == 1` and does not run membership checks in bot mode.
 
-### Installation
+If you need upstream-style access filtering, restore the membership check or enforce restrictions via `.config.json` / admin rules.
 
-Refer to [quick-start.md](docs/en/quick-start.md) for general installation instructions.
+## Features
 
-For advanced usage, see [advanced-use.md](docs/en/advanced-use.md)
+- Record messages from enabled Telegram groups/supergroups
+- Inline search from any chat (Inline Mode)
+- Multi-keyword AND search (all keywords must match)
+- Optional filters:
+  - `@username` (first token)
+  - `r:<N>` / `likes:<N>` / `reactions>=<N>`
+  - trailing page number
+- Docker-based deployment
+- History import from Telegram Desktop JSON export
 
-### Usage
+## Search syntax
 
-- `@YourBot @Username keyword1 keyword2... page` Here are some examples:
+Use the bot in inline mode:
 
-  `@YourBot` Display all records, defaulting to page 1.
+`@YourBot <query>`
 
-  `@YourBot * 2` Display all message records on page 2.
+Supported query format:
 
-  `@YourBot weather 3`  Search for message records containing the keyword `weather` and flips to page 3.
+- `@username` as the first token (optional): `@YourBot @john hello`
+- reactions filter (optional): `r:<N>` / `likes:<N>` / `reactions>=<N>`
+- page number as the last token (optional): `@YourBot hello 2`
 
-  `@mybot @Taosky weather 4` Search for message records containing the keyword "weather" and the group member "Taosky" (full name) and flips to page 4.
+Examples:
 
-- `/help`: Get search help.
+- `@YourBot berlin`
+- `@YourBot @john berlin`
+- `@YourBot berlin r:5`
+- `@YourBot @john berlin r:3 2`
 
-- `/chat_id`:  Get the numerical ID of the current chat.
+Sorting:
+- `reactions_total` DESC (if present), then `date` DESC.
 
-### Changes
+## Requirements
 
-#### 2024-06-27
-- Fix message leak to non group members([#65 by JasonKhew96](https://github.com/Taosky/telegram-search-bot/pull/65))
+- Docker + Docker Compose
+- Telegram Bot token from @BotFather
+- Inline Mode enabled in bot settings
 
-#### 2024-03-28
+## Quick start / Advanced usage
 
-- i18n support (en_US,zh_CN)
+- Quick start: `docs/en/quick-start.md`
+- Advanced usage: `docs/en/advanced-use.md`
 
-#### 2024-03-26
+## Data persistence
 
-- Give tips when /start failed ([#57](https://github.com/Taosky/telegram-search-bot/issues/57))
+Runtime data lives in `/app/config` inside the container:
 
+- `bot.db` (SQLite database)
+- `.config.json` (optional access control/admin config)
+- `Caddyfile` (optional, if you use webhook reverse proxy)
 
-#### 2023-09-07
+Persist `/app/config` using a Docker named volume (recommended on Windows/WSL2 for SQLite performance) or a host directory.
 
-- Fixed error when importing historical records
-- Fixed issue with updating edited messages
+## Security notes
 
-#### 2023-09-05
-
-- Fixed issue with reading chat IDs when importing historical records
-- Fixed potential incorrect message links in userbot mode ([#41](https://github.com/Taosky/telegram-search-bot/issues/41))
-- Python dependency compatibility
-
-#### 2023-07-08
-
-- Improved logging
-- Added condition to execute corresponding threads only in userbot mode
-
-#### 2023-07-01
-
-- Organized directory files
-- Modified documentation
-
-#### 2023-06-24
-
-- **Happy Dragon Boat Festival!**
-- Added userbot mode
-- Refined documentation
-
-#### 2023-05-17
-
-- Updated package versions
-- Added functionality to search by user
-- Attempted to make documentation clearer
-
-
-<details>
-<summary>more</summary>
-
-#### 2022-11-26
-
-- Optimized historical records import method
-- Resolved memory explosion issue with Python JSON reading
-
-#### 2022-11-23 ([#24](https://github.com/Taosky/telegram-search-bot/pull/24))
-
-- Some optimizations and refinements
-
-#### 2022-11-12
-
-- Built image to ghcr.io ([#22](https://github.com/Taosky/telegram-search-bot/pull/22))
-- Some minor changes, improved configuration and explanations
-
-#### 2022-11-06
-
-- Fixed issue with message links not redirecting correctly
-
-#### 2022-10-31 ([#21](https://github.com/Taosky/telegram-search-bot/pull/21))
-
-- Support for database synchronization after message editing
-- Fixed some bugs
-
-
-#### 2022-10-24 ([#19](https://github.com/Taosky/telegram-search-bot/pull/19))
-
-- Optimized logic for sending /help in inline mode
-- Better permission control
-- Changed usage of quotes when referencing messages
-
-#### 2022-06-15
-
-- Fixed issue with mismatched Chat IDs when importing historical records
-- Fixed issue with duplicate Message IDs
-- Fixed error when importing historical records
-
-#### 2022-02-17
-
-- Records and searches now support multiple groups (database has changed, historical records need to be reimported)
-- User names are now displayed with "@group" to distinguish message sources when searching
-- Search results are now filtered based on whether the user is a member of the group
-
-#### 2022-02-13
-
-- WebHook mode and docker-compose
-- Fixed authentication issue in inline mode
-- Fixed error when text is empty
-
-#### 2022-02-08
-
-- Web interface for importing historical messages (port 5006)
-
-#### 2022-01-06
-
-- Dockerized
-
-#### 2021-09-20
-
-- Updated python-telegram-bot library
-- Refactored code, simplified operations
-
-#### 2021-07-03
-
-- Added support for searching multiple keywords
-
-#### 2021-02-04
-
-- Fixed issue with some keyword results not displaying in inline mode (caused by parsing errors with specific characters)
-
-#### 2020-01-11 (V1.0)
-
-- Added ability to import historical message records. (Only available for initializing the database, and cannot be located)
-- Added original message link mode, available for supergroups, allows clicking on links to locate messages
-
-#### 2019-04-27
-
-- Added proxy option (Shadowsocks' socks5 seems to be not working, http works)
-
-#### 2019-04-02
-
-- Fixed repeated reporting time issue.
-- Improved README.
-
-#### 2019-03-03
-
-- Fixed pagination issue in searches.
-
-#### 2019-03-02
-
-- Rewrote a large amount of code, replaced MYSQL database with SQLITE, used ORM, simplified subsequent development and user configuration.
-- Added configuration for excluding IDs
-- Added repetition of images, videos, voice messages, and audio
-- Added command to obtain database of group members
-- Filter robot information during storage
-- Bot username no longer needs to be set manually
-- Fixed issue where users with no permission under administrator mode could not repeat messages.
-
-</details>
-
-## Contributors
-
-<a href="https://github.com/Taosky/telegram-search-bot/graphs/contributors"><img src="https://opencollective.com/telegram-search-bot/contributors.svg?width=890&button=false" /></a>
-
-## License
-
-[MIT](LICENSE) © Taosky
+- Never commit `BOT_TOKEN` or `USER_BOT_API_HASH` to Git.
+- Use `.env` for secrets.
+- If a token ever leaked, rotate it (BotFather / my.telegram.org).

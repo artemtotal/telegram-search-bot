@@ -6,12 +6,12 @@
 
 2. Use Telegram Desktop, Click on the top right corner of the group `Export chat history`, choose JSON (text).
 
-3. `python3 import_history.py`, enter JSON file path ([import_history.py](https://github.com/Taosky/telegram-search-bot/raw/master/extra/import_history.py)).
+3. `python3 import_history.py`, enter JSON file path ([import_history.py](https://github.com/artemtotal/telegram-search-bot/blob/master/import_history.py)).
 
 
 ### Specific users start / stop robots and delete messages
 
-1. Download [.config.json](https://github.com/Taosky/telegram-search-bot/raw/master/extra/.config.json), put it in the previously created configuration folder (`tgbot/`).
+1. Download [.config.json](https://github.com/artemtotal/telegram-search-bot/blob/master/extra/.config.json), put it in the previously created configuration folder (`tgbot/`).
 
 2. Modify the second line of the file `.config.json`, change `false` to `true`.
 
@@ -43,7 +43,7 @@ In this mode, there is no need to pull Bots into the group, but it is necessary 
 ### WebHook
 There is not much difference in speed compared to polling mode.
 
-1. Download[Caddyfile](https://github.com/Taosky/telegram-search-bot/raw/master/extra/Caddyfile)、put it in the previously created configuration folder (`tgbot/`).
+1. Download[Caddyfile](https://github.com/artemtotal/telegram-search-bot/raw/master/extra/Caddyfile)、put it in the previously created configuration folder (`tgbot/`).
 
 2. Modify the domain name, path, and other information of the `Caddyfile`, Multiple `route` correspond to multiple bot containers (if needed).
 

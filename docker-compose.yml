@@ -16,7 +16,7 @@ services:
 
     environment:
       # Required
-      - BOT_TOKEN=xxxx:xxxxx        # Bot token from @BotFather
+      - BOT_TOKEN=xxxx:xxxx       # Bot token from @BotFather
       - LANG=en_US                  # Must match a folder in ./locale (e.g. en_US, zh_CN, uk_UA if you added it)
       # Optional (do not change if you don't understand)
       - USER_BOT=0
