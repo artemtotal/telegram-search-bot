@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  tgbot:
+    # Image published by GitHub Actions to GitHub Container Registry (GHCR)
+    image: ghcr.io/artemtotal/telegram-search-bot:latest
+    container_name: tgbot
+    restart: unless-stopped
+
+    # Optional: ensures proper signal handling (zombie reaping)
+    init: true
+
+    ports:
+      - "5006:5006"
+      - "9968:9968"
+
+    environment:
+      # Required
+      - BOT_TOKEN=xxxx:xxxxx        # Bot token from @BotFather
+      - LANG=en_US                  # Must match a folder in ./locale (e.g. en_US, zh_CN, uk_UA if you added it)
+      # Optional (do not change if you don't understand)
+      - USER_BOT=0
+      - USER_BOT_API_ID=1234567
+      - USER_BOT_API_HASH=xxxxxxxxx
+      - BOT_MODE=polling            # polling / webhook
+      - CACHE_TIME=300
+      - TZ=Europe/Berlin
+
+    volumes:
+      # Persist DB and config inside Docker volume (fast on Docker Desktop/WSL2)
+      - tgbot_appconfig:/app/config
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  tgbot_appconfig:
