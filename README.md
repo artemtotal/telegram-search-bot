@@ -66,8 +66,13 @@ Sorting:
 
 ## Quick start / Advanced usage
 
-- Quick start: `docs/en/quick-start.md`
-- Advanced usage: `docs/en/advanced-use.md`
+- Quick start:  
+  https://github.com/artemtotal/telegram-search-bot/blob/master/docs/en/quick-start.md
+
+- Advanced usage:  
+  https://github.com/artemtotal/telegram-search-bot/blob/master/docs/en/advanced-use.md
+
+
 
 ## Data persistence
 
