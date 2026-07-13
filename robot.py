@@ -23,10 +23,28 @@ dispatcher = updater.dispatcher
 job = updater.job_queue
 job.run_once(set_bot_commands, 30)
 
+
+def _next_sunday_3am_utc(now=None):
+    """Return the next Sunday at 03:00 UTC as an aware datetime."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.timezone.utc)
+    else:
+        now = now.astimezone(datetime.timezone.utc)
+
+    days_until_sunday = (6 - now.weekday()) % 7
+    first_run = (now + datetime.timedelta(days=days_until_sunday)).replace(
+        hour=3, minute=0, second=0, microsecond=0,
+    )
+    if first_run <= now:
+        first_run += datetime.timedelta(days=7)
+    return first_run
+
+
 # Weekly FAQ auto-learn job — every Sunday at 03:00 UTC
-# Using a fixed time avoids re-triggering on every bot restart (first=120 was problematic)
-_next_sunday_3am = datetime.time(3, 0, tzinfo=datetime.timezone.utc)
-job.run_repeating(run_faq_learn, interval=604800, first=_next_sunday_3am)
+# An explicit datetime is required because a time-only value means the next
+# 03:00 on any day, not specifically Sunday.
+job.run_repeating(run_faq_learn, interval=604800, first=_next_sunday_3am_utc())
 
 # Hourly embedding updater: indexes new messages into ChromaDB
 job.run_repeating(run_embed_update, interval=3600, first=300)

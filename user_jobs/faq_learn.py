@@ -12,23 +12,24 @@ import time
 from datetime import datetime, timedelta
 from typing import List, Dict
 
-import requests
 from sqlalchemy import func
 from telegram.ext import CallbackContext
 
 from database import Chat, DBSession, Message, User
+from user_handlers.msg_ai import _call_ai
 
 logger = logging.getLogger(__name__)
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-AI_MODEL           = os.getenv("AI_MODEL", "moonshotai/kimi-k2")
-ADMIN_ID           = int(os.getenv("ADMIN_ID", "312029534"))
+_ADMIN_ID_RAW      = os.getenv("ADMIN_ID", "").strip()
+try:
+    ADMIN_ID = int(_ADMIN_ID_RAW) if _ADMIN_ID_RAW else None
+except ValueError:
+    logger.warning("Invalid ADMIN_ID; FAQ admin notifications are disabled")
+    ADMIN_ID = None
 FAQ_PATH           = os.getenv("FAQ_PATH", "/app/config/faq.json")
 LEARN_DAYS         = int(os.getenv("FAQ_LEARN_DAYS", "30"))    # look back N days
 MSGS_PER_CAT       = int(os.getenv("FAQ_MSGS_PER_CAT", "100")) # messages fetched per category
 SLEEP_BETWEEN      = float(os.getenv("FAQ_SLEEP", "1.5"))       # seconds between AI calls
-
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # ── All topic categories (53 topics) ─────────────────────────────────────────
 CATEGORIES = [
@@ -194,28 +195,6 @@ def _save_json(path, data) -> bool:
         return False
 
 
-def _call_ai(prompt: str) -> str:
-    if not OPENROUTER_API_KEY:
-        return ""
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": AI_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 2048,
-        "temperature": 0.0,
-    }
-    try:
-        resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        logger.error(f"OpenRouter error: {e}")
-        return ""
-
-
 def _parse_response(raw: str, chunk_date: str) -> List[Dict]:
     if not raw or raw.strip().upper() == "NONE":
         return []
@@ -242,10 +221,24 @@ def _parse_response(raw: str, chunk_date: str) -> List[Dict]:
 
 
 def _is_duplicate(new_entry: Dict, existing: List[Dict]) -> bool:
-    new_kw = set(k.lower() for k in new_entry.get("keywords", []))
+    new_kw = {
+        str(keyword).strip().casefold()
+        for keyword in new_entry.get("keywords", [])
+        if str(keyword).strip()
+    }
+    if not new_kw:
+        return False
+
     for entry in existing:
-        ex_kw = set(k.lower() for k in entry.get("keywords", []))
-        if len(new_kw & ex_kw) >= 2:
+        ex_kw = {
+            str(keyword).strip().casefold()
+            for keyword in entry.get("keywords", [])
+            if str(keyword).strip()
+        }
+        if not ex_kw:
+            continue
+        overlap_ratio = len(new_kw & ex_kw) / min(len(new_kw), len(ex_kw))
+        if overlap_ratio >= 0.6:
             return True
     return False
 
@@ -336,7 +329,7 @@ def _faq_learn_worker(context: CallbackContext) -> None:
             chunk_date = chunk[0][1:11] if chunk else ""
             prompt = EXTRACT_PROMPT.format(category=name, messages="\n".join(chunk))
 
-            raw = _call_ai(prompt)
+            raw = _call_ai(prompt, max_tokens=2048, timeout=30)
             if not raw:
                 logger.info("  AI returned empty, skipping chunk")
                 time.sleep(SLEEP_BETWEEN)
@@ -357,17 +350,18 @@ def _faq_learn_worker(context: CallbackContext) -> None:
 
     if not new_entries:
         logger.info(f"No new FAQ entries found this week ({total_cats} categories checked)")
-        try:
-            context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=(
-                    f"🤖 FAQ авто-навчання: нічого нового за {LEARN_DAYS} днів\n"
-                    f"({total_cats} категорій перевірено, дублікатів не рахується)\n"
-                    f"Всього в FAQ: {len(existing_faq)}"
+        if ADMIN_ID is not None:
+            try:
+                context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=(
+                        f"🤖 FAQ авто-навчання: нічого нового за {LEARN_DAYS} днів\n"
+                        f"({total_cats} категорій перевірено, дублікатів не рахується)\n"
+                        f"Всього в FAQ: {len(existing_faq)}"
+                    )
                 )
-            )
-        except Exception:
-            pass
+            except Exception:
+                pass
         return
 
     # Save
@@ -394,6 +388,9 @@ def _faq_learn_worker(context: CallbackContext) -> None:
     body = "\n".join(summary_lines)
     full_text = header + body
     chunk_size_tg = 3800
+    if ADMIN_ID is None:
+        logger.warning("ADMIN_ID is not set; FAQ summary notification skipped")
+        return
     for i in range(0, len(full_text), chunk_size_tg):
         try:
             context.bot.send_message(chat_id=ADMIN_ID, text=full_text[i:i + chunk_size_tg])

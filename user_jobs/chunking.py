@@ -28,11 +28,17 @@ def _fmt_line(m: Dict) -> str:
     return f"[{m['date_str']}] @{m['user']}: {text}"
 
 
+def _fmt_reply_line(m: Dict) -> str:
+    text = (m["text"] or "").strip().replace("\n", " ")[:MSG_TRUNCATE]
+    return f"[reply to] @{m['user']}: {text}"
+
+
 def chunk_messages(msgs: List[Dict]) -> List[Dict]:
     """Group messages into conversation windows.
 
-    Input dicts must contain: _id, chat_id, text, user, date (datetime or
-    None), date_str, timestamp, link — sorted by (chat_id, _id).
+    Input dicts must contain: _id, message_id, reply_to_msg_id, chat_id,
+    text, user, date (datetime or None), date_str, timestamp, link — sorted
+    by (chat_id, _id).
     Returns chunk dicts: {"id", "doc", "metadata"}.
     Chunk ids are deterministic (chat + first message pk), so re-running
     the builder on the same data never produces duplicates.
@@ -40,13 +46,37 @@ def chunk_messages(msgs: List[Dict]) -> List[Dict]:
     chunks: List[Dict] = []
     cur: List[Dict] = []
     cur_chars = 0
+    message_lookup = {
+        (message["chat_id"], message.get("message_id")): message
+        for message in msgs
+        if message.get("message_id") is not None
+    }
 
     def _flush():
         nonlocal cur, cur_chars
         if not cur:
             return
         first, last = cur[0], cur[-1]
-        doc = "\n".join(_fmt_line(m) for m in cur)
+        cur_message_keys = {
+            (message["chat_id"], message.get("message_id"))
+            for message in cur
+            if message.get("message_id") is not None
+        }
+        included_reply_sources = set()
+        lines = []
+        for message in cur:
+            reply_to_msg_id = message.get("reply_to_msg_id")
+            reply_key = (message["chat_id"], reply_to_msg_id)
+            source = message_lookup.get(reply_key) if reply_to_msg_id is not None else None
+            if (
+                source is not None
+                and reply_key not in cur_message_keys
+                and reply_key not in included_reply_sources
+            ):
+                lines.append(_fmt_reply_line(source))
+                included_reply_sources.add(reply_key)
+            lines.append(_fmt_line(message))
+        doc = "\n".join(lines)
         chunks.append({
             "id": f"c{first['chat_id']}_{first['_id']}",
             "doc": doc,
@@ -97,6 +127,8 @@ def rows_to_msg_dicts(rows) -> List[Dict]:
         has_dt = hasattr(msg.date, "strftime")
         out.append({
             "_id": msg._id,
+            "message_id": msg.id,
+            "reply_to_msg_id": getattr(msg, "reply_to_msg_id", None),
             "chat_id": msg.from_chat,
             "text": text,
             "user": username,
