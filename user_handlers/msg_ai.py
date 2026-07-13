@@ -387,10 +387,16 @@ def _extract_query(text: str) -> Optional[str]:
     if not text:
         return None
     lower = text.lower().strip()
-    if not lower.startswith(TRIGGER_WORD):
+    idx = lower.find(TRIGGER_WORD)
+    if idx < 0:
         return None
-    query = text.strip()[len(TRIGGER_WORD):].strip()
-    return query if query else None
+    # Text after trigger (preferred)
+    after = text.strip()[idx + len(TRIGGER_WORD):].strip()
+    if after:
+        return after
+    # Trigger at end - use text before trigger
+    before = text.strip()[:idx].strip()
+    return before if before else None
 
 
 def _is_temporal_query(query: str) -> bool:
@@ -1166,6 +1172,6 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
 
 # Handler registration
 handler = MessageHandler(
-    Filters.regex(rf"(?i){re.escape(TRIGGER_WORD)}\b") & (~Filters.command),
+    Filters.regex(rf"(?i)\b{re.escape(TRIGGER_WORD)}\b") & (~Filters.command),
     handle_ai_query,
 )
