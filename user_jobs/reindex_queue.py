@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import uuid
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 
 
 log = logging.getLogger(__name__)
@@ -24,10 +24,10 @@ def _parse_lines(lines) -> List[Dict]:
             continue
         try:
             request = json.loads(line)
-            required = {
-                "request_id", "chunk_id", "chat_id", "msg_id", "last_msg_id",
-            }
-            if required.issubset(request):
+            has_base = {"request_id", "chat_id"}.issubset(request)
+            has_message = "message_pk" in request
+            has_chunk = {"chunk_id", "msg_id", "last_msg_id"}.issubset(request)
+            if has_base and (has_message or has_chunk):
                 requests.append(request)
             else:
                 log.warning("Skipping incomplete reindex request: %s", request)
@@ -36,16 +36,13 @@ def _parse_lines(lines) -> List[Dict]:
     return requests
 
 
-def enqueue_reindex_request(chunk_id: str, chat_id: int,
-                            msg_id: int, last_msg_id: int) -> bool:
-    """Append a chunk rebuild request without raising into message handlers."""
+def enqueue_message_reindex(chat_id: int, message_pk: int) -> Optional[str]:
+    """Persist an edit before any best-effort Chroma operation is attempted."""
     try:
         request = {
             "request_id": uuid.uuid4().hex,
-            "chunk_id": str(chunk_id),
             "chat_id": int(chat_id),
-            "msg_id": int(msg_id),
-            "last_msg_id": int(last_msg_id),
+            "message_pk": int(message_pk),
         }
         queue_dir = os.path.dirname(REINDEX_QUEUE_PATH) or "."
         os.makedirs(queue_dir, exist_ok=True)
@@ -55,10 +52,10 @@ def enqueue_reindex_request(chunk_id: str, chat_id: int,
             queue_file.flush()
             os.fsync(queue_file.fileno())
             fcntl.flock(queue_file.fileno(), fcntl.LOCK_UN)
-        return True
+        return request["request_id"]
     except Exception as exc:
-        log.error("Failed to enqueue Chroma chunk %s: %s", chunk_id, exc)
-        return False
+        log.error("Failed to enqueue edited message %s: %s", message_pk, exc)
+        return None
 
 
 def load_reindex_requests() -> List[Dict]:
@@ -75,20 +72,65 @@ def load_reindex_requests() -> List[Dict]:
         return []
 
 
-def find_queued_chunks(chat_id: int, message_pk: int) -> List[Dict]:
-    """Find already queued chunks that contain a subsequently edited message."""
-    matches = {}
-    for request in load_reindex_requests():
-        try:
-            if (
-                int(request["chat_id"]) == int(chat_id)
-                and int(request["msg_id"]) <= int(message_pk)
-                and int(request["last_msg_id"]) >= int(message_pk)
-            ):
-                matches[request["chunk_id"]] = request
-        except (KeyError, TypeError, ValueError) as exc:
-            log.warning("Skipping invalid reindex request: %s", exc)
-    return list(matches.values())
+def resolve_reindex_request(request_id: str, chunk_id: str, chat_id: int,
+                            msg_id: int, last_msg_id: int) -> bool:
+    """Atomically attach Chroma chunk boundaries to a durable edit request."""
+    try:
+        with open(REINDEX_QUEUE_PATH, "a+", encoding="utf-8") as queue_file:
+            fcntl.flock(queue_file.fileno(), fcntl.LOCK_EX)
+            queue_file.seek(0)
+            requests = _parse_lines(queue_file.readlines())
+            resolved = False
+            for request in requests:
+                if request["request_id"] != request_id:
+                    continue
+                request.update({
+                    "chunk_id": str(chunk_id),
+                    "chat_id": int(chat_id),
+                    "msg_id": int(msg_id),
+                    "last_msg_id": int(last_msg_id),
+                })
+                resolved = True
+                break
+            if not resolved:
+                return False
+
+            queue_file.seek(0)
+            queue_file.truncate()
+            for request in requests:
+                queue_file.write(json.dumps(request, ensure_ascii=False) + "\n")
+            queue_file.flush()
+            os.fsync(queue_file.fileno())
+            fcntl.flock(queue_file.fileno(), fcntl.LOCK_UN)
+            return True
+    except Exception as exc:
+        log.error("Failed to resolve reindex request %s: %s", request_id, exc)
+        return False
+
+
+def find_chroma_chunks(collection, chat_id: int, message_pk: int) -> List[Dict]:
+    """Return Chroma chunks whose metadata range contains one SQL message pk."""
+    result = collection.get(
+        where={
+            "$and": [
+                {"chat_id": {"$eq": int(chat_id)}},
+                {"msg_id": {"$lte": int(message_pk)}},
+                {"last_msg_id": {"$gte": int(message_pk)}},
+            ]
+        },
+        include=["metadatas"],
+    )
+    return [
+        {
+            "chunk_id": chunk_id,
+            "chat_id": int(metadata["chat_id"]),
+            "msg_id": int(metadata["msg_id"]),
+            "last_msg_id": int(metadata["last_msg_id"]),
+        }
+        for chunk_id, metadata in zip(
+            result.get("ids", []), result.get("metadatas", []),
+        )
+    ]
 
 
 def remove_reindex_requests(request_ids: Set[str]) -> None:

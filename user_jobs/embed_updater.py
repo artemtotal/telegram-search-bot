@@ -20,8 +20,10 @@ import requests
 sys.path.insert(0, "/app")
 
 from user_jobs.reindex_queue import (
+    find_chroma_chunks,
     load_reindex_requests,
     remove_reindex_requests,
+    resolve_reindex_request,
 )
 
 log = logging.getLogger(__name__)
@@ -91,6 +93,69 @@ def run_embed_update(context=None):
     t.start()
 
 
+def _add_reindex_group(groups, request):
+    chunk_id = request["chunk_id"]
+    group = groups.setdefault(chunk_id, {"request": request, "request_ids": set()})
+    group["request_ids"].add(request["request_id"])
+    return group
+
+
+def _resolve_reindex_groups(col, requests_to_process):
+    """Resolve raw edit requests to durable Chroma chunk ranges."""
+    groups = {}
+    unresolved = []
+    chunk_fields = {"chunk_id", "msg_id", "last_msg_id"}
+
+    for request in requests_to_process:
+        if chunk_fields.issubset(request):
+            _add_reindex_group(groups, request)
+        else:
+            unresolved.append(request)
+
+    for request in unresolved:
+        try:
+            chat_id = int(request["chat_id"])
+            message_pk = int(request["message_pk"])
+        except (KeyError, TypeError, ValueError) as exc:
+            log.error("Invalid raw reindex request %s: %s", request, exc)
+            continue
+
+        covering_group = next((
+            group for group in groups.values()
+            if int(group["request"]["chat_id"]) == chat_id
+            and int(group["request"]["msg_id"]) <= message_pk
+            and int(group["request"]["last_msg_id"]) >= message_pk
+        ), None)
+        if covering_group is not None:
+            covering_group["request_ids"].add(request["request_id"])
+            continue
+
+        try:
+            candidates = find_chroma_chunks(col, chat_id, message_pk)
+        except Exception as exc:
+            log.warning("Could not resolve queued message %s in Chroma: %s", message_pk, exc)
+            continue
+        if not candidates:
+            log.warning("Queued message %s has no Chroma chunk yet", message_pk)
+            continue
+
+        candidate = candidates[0]
+        if not resolve_reindex_request(
+            request["request_id"],
+            candidate["chunk_id"],
+            candidate["chat_id"],
+            candidate["msg_id"],
+            candidate["last_msg_id"],
+        ):
+            continue
+
+        resolved_request = dict(request)
+        resolved_request.update(candidate)
+        _add_reindex_group(groups, resolved_request)
+
+    return groups
+
+
 def _process_reindex_queue(col) -> int:
     """Rebuild queued edited-message chunks without touching the high-water mark."""
     requests_to_process = load_reindex_requests()
@@ -100,12 +165,7 @@ def _process_reindex_queue(col) -> int:
     from database import DBSession, Message, User
     from user_jobs.chunking import chunk_messages, rows_to_msg_dicts
 
-    grouped = {}
-    for request in requests_to_process:
-        chunk_id = request["chunk_id"]
-        group = grouped.setdefault(chunk_id, {"request": request, "request_ids": set()})
-        group["request"] = request
-        group["request_ids"].add(request["request_id"])
+    grouped = _resolve_reindex_groups(col, requests_to_process)
 
     acknowledged = set()
     rebuilt = 0

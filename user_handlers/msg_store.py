@@ -4,8 +4,9 @@ import os
 from telegram.ext import MessageHandler, Filters
 from database import DBSession, Message, User, Chat
 from user_jobs.reindex_queue import (
-    enqueue_reindex_request,
-    find_queued_chunks,
+    enqueue_message_reindex,
+    find_chroma_chunks,
+    resolve_reindex_request,
 )
 
 
@@ -66,16 +67,16 @@ def update_message(from_chat, msg_id, msg_text):
     finally:
         session.close()
 
-    try:
-        _queue_edited_chunk(from_chat, message_pk)
-    except Exception as exc:
-        logger.warning("Edited message %s could not be queued for reindex: %s", message_pk, exc)
+    request_id = enqueue_message_reindex(from_chat, message_pk)
+    if request_id is None:
+        logger.error("Edited message %s could not be queued for reindex", message_pk)
+        return
+
+    _resolve_and_invalidate_edited_chunk(request_id, from_chat, message_pk)
 
 
-def _queue_edited_chunk(chat_id, message_pk):
-    """Invalidate and enqueue the Chroma chunk containing an edited message."""
-    collection = None
-    candidates = []
+def _resolve_and_invalidate_edited_chunk(request_id, chat_id, message_pk):
+    """Best-effort immediate invalidation; unresolved requests remain durable."""
     try:
         import chromadb
 
@@ -83,50 +84,31 @@ def _queue_edited_chunk(chat_id, message_pk):
             path=os.getenv("CHROMA_PATH", "/app/chroma"),
         )
         collection = client.get_collection("chunks")
-        result = collection.get(
-            where={
-                "$and": [
-                    {"chat_id": {"$eq": int(chat_id)}},
-                    {"msg_id": {"$lte": int(message_pk)}},
-                    {"last_msg_id": {"$gte": int(message_pk)}},
-                ]
-            },
-            include=["metadatas"],
-        )
-        candidates = [
-            {
-                "chunk_id": chunk_id,
-                "chat_id": metadata["chat_id"],
-                "msg_id": metadata["msg_id"],
-                "last_msg_id": metadata["last_msg_id"],
-            }
-            for chunk_id, metadata in zip(
-                result.get("ids", []), result.get("metadatas", []),
-            )
-        ]
+        candidates = find_chroma_chunks(collection, chat_id, message_pk)
     except Exception as exc:
         logger.warning(
             "Could not find edited message %s in Chroma: %s", message_pk, exc,
         )
+        return
 
     if not candidates:
-        candidates = find_queued_chunks(chat_id, message_pk)
+        return
 
-    queued_ids = []
-    for candidate in candidates:
-        if enqueue_reindex_request(
-            candidate["chunk_id"],
-            candidate["chat_id"],
-            candidate["msg_id"],
-            candidate["last_msg_id"],
-        ):
-            queued_ids.append(candidate["chunk_id"])
+    candidate = candidates[0]
+    if not resolve_reindex_request(
+        request_id,
+        candidate["chunk_id"],
+        candidate["chat_id"],
+        candidate["msg_id"],
+        candidate["last_msg_id"],
+    ):
+        logger.warning("Could not persist Chroma boundaries for request %s", request_id)
+        return
 
-    if collection is not None and queued_ids:
-        try:
-            collection.delete(ids=queued_ids)
-        except Exception as exc:
-            logger.warning("Could not delete stale Chroma chunks %s: %s", queued_ids, exc)
+    try:
+        collection.delete(ids=[candidate["chunk_id"]])
+    except Exception as exc:
+        logger.warning("Could not delete stale Chroma chunk %s: %s", candidate["chunk_id"], exc)
 
 
 def store_message(update, context):
