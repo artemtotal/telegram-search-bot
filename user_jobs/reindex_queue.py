@@ -39,14 +39,14 @@ def _parse_lines(lines) -> List[Dict]:
 def enqueue_reindex_request(chunk_id: str, chat_id: int,
                             msg_id: int, last_msg_id: int) -> bool:
     """Append a chunk rebuild request without raising into message handlers."""
-    request = {
-        "request_id": uuid.uuid4().hex,
-        "chunk_id": str(chunk_id),
-        "chat_id": int(chat_id),
-        "msg_id": int(msg_id),
-        "last_msg_id": int(last_msg_id),
-    }
     try:
+        request = {
+            "request_id": uuid.uuid4().hex,
+            "chunk_id": str(chunk_id),
+            "chat_id": int(chat_id),
+            "msg_id": int(msg_id),
+            "last_msg_id": int(last_msg_id),
+        }
         queue_dir = os.path.dirname(REINDEX_QUEUE_PATH) or "."
         os.makedirs(queue_dir, exist_ok=True)
         with open(REINDEX_QUEUE_PATH, "a", encoding="utf-8") as queue_file:
@@ -79,12 +79,15 @@ def find_queued_chunks(chat_id: int, message_pk: int) -> List[Dict]:
     """Find already queued chunks that contain a subsequently edited message."""
     matches = {}
     for request in load_reindex_requests():
-        if (
-            int(request["chat_id"]) == int(chat_id)
-            and int(request["msg_id"]) <= int(message_pk)
-            and int(request["last_msg_id"]) >= int(message_pk)
-        ):
-            matches[request["chunk_id"]] = request
+        try:
+            if (
+                int(request["chat_id"]) == int(chat_id)
+                and int(request["msg_id"]) <= int(message_pk)
+                and int(request["last_msg_id"]) >= int(message_pk)
+            ):
+                matches[request["chunk_id"]] = request
+        except (KeyError, TypeError, ValueError) as exc:
+            log.warning("Skipping invalid reindex request: %s", exc)
     return list(matches.values())
 
 

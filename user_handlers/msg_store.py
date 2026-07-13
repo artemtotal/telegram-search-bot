@@ -66,7 +66,10 @@ def update_message(from_chat, msg_id, msg_text):
     finally:
         session.close()
 
-    _queue_edited_chunk(from_chat, message_pk)
+    try:
+        _queue_edited_chunk(from_chat, message_pk)
+    except Exception as exc:
+        logger.warning("Edited message %s could not be queued for reindex: %s", message_pk, exc)
 
 
 def _queue_edited_chunk(chat_id, message_pk):
