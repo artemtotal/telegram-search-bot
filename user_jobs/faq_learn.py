@@ -20,7 +20,12 @@ from user_handlers.msg_ai import _call_ai
 
 logger = logging.getLogger(__name__)
 
-ADMIN_ID           = int(os.getenv("ADMIN_ID", "312029534"))
+_ADMIN_ID_RAW      = os.getenv("ADMIN_ID", "").strip()
+try:
+    ADMIN_ID = int(_ADMIN_ID_RAW) if _ADMIN_ID_RAW else None
+except ValueError:
+    logger.warning("Invalid ADMIN_ID; FAQ admin notifications are disabled")
+    ADMIN_ID = None
 FAQ_PATH           = os.getenv("FAQ_PATH", "/app/config/faq.json")
 LEARN_DAYS         = int(os.getenv("FAQ_LEARN_DAYS", "30"))    # look back N days
 MSGS_PER_CAT       = int(os.getenv("FAQ_MSGS_PER_CAT", "100")) # messages fetched per category
@@ -345,17 +350,18 @@ def _faq_learn_worker(context: CallbackContext) -> None:
 
     if not new_entries:
         logger.info(f"No new FAQ entries found this week ({total_cats} categories checked)")
-        try:
-            context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=(
-                    f"🤖 FAQ авто-навчання: нічого нового за {LEARN_DAYS} днів\n"
-                    f"({total_cats} категорій перевірено, дублікатів не рахується)\n"
-                    f"Всього в FAQ: {len(existing_faq)}"
+        if ADMIN_ID is not None:
+            try:
+                context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=(
+                        f"🤖 FAQ авто-навчання: нічого нового за {LEARN_DAYS} днів\n"
+                        f"({total_cats} категорій перевірено, дублікатів не рахується)\n"
+                        f"Всього в FAQ: {len(existing_faq)}"
+                    )
                 )
-            )
-        except Exception:
-            pass
+            except Exception:
+                pass
         return
 
     # Save
@@ -382,6 +388,9 @@ def _faq_learn_worker(context: CallbackContext) -> None:
     body = "\n".join(summary_lines)
     full_text = header + body
     chunk_size_tg = 3800
+    if ADMIN_ID is None:
+        logger.warning("ADMIN_ID is not set; FAQ summary notification skipped")
+        return
     for i in range(0, len(full_text), chunk_size_tg):
         try:
             context.bot.send_message(chat_id=ADMIN_ID, text=full_text[i:i + chunk_size_tg])

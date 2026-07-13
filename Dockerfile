@@ -10,6 +10,6 @@ RUN /usr/local/bin/python -m pip install --upgrade pip && pip install -r require
 
 # Copy application code (only this layer rebuilds when code changes)
 ADD . /app
-RUN rm -rf extra doc preview README.md LICENSE .gitignore
+RUN rm -rf extra docs preview README.md LICENSE .gitignore
 
 ENTRYPOINT ["/app/entrypoint.sh"]
