@@ -25,6 +25,9 @@ class Message(Base):
     # SQLite's built-in lower()/LIKE only folds ASCII, so ILIKE on Cyrillic
     # is effectively case-SENSITIVE. All keyword search must go through this column.
     text_lower = Column(TEXT)
+    # Telegram message_id this message replies to (None if not a reply).
+    # Needed to reconstruct question->answer pairs for search context.
+    reply_to_msg_id = Column(INTEGER)
     video = Column(TEXT)
     photo = Column(TEXT)
     audio = Column(TEXT)
@@ -66,6 +69,8 @@ def _migrate_text_lower():
         cols = [row[1] for row in cur.execute("PRAGMA table_info(message)").fetchall()]
         if "text_lower" not in cols:
             cur.execute("ALTER TABLE message ADD COLUMN text_lower TEXT")
+        if "reply_to_msg_id" not in cols:
+            cur.execute("ALTER TABLE message ADD COLUMN reply_to_msg_id INTEGER")
         dbapi_con.create_function(
             "py_lower", 1,
             lambda s: s.lower() if isinstance(s, str) else s,

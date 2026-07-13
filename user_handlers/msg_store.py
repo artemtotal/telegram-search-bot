@@ -26,10 +26,11 @@ def update_chat(chat_id, title):
 
 
 def insert_message(msg_id, msg_link, msg_text, msg_video, msg_photo, msg_audio, msg_voice, msg_type, from_id, from_chat,
-                   date):
+                   date, reply_to_msg_id=None):
     new_msg = Message(id=msg_id, link=msg_link, text=msg_text, text_lower=(msg_text or '').lower(),
                       video=msg_video, photo=msg_photo, audio=msg_audio,
-                      voice=msg_voice, type=msg_type, category='', from_id=from_id, from_chat=from_chat, date=date)
+                      voice=msg_voice, type=msg_type, category='', from_id=from_id, from_chat=from_chat, date=date,
+                      reply_to_msg_id=reply_to_msg_id)
     session = DBSession()
     session.add(new_msg)
     session.commit()
@@ -137,9 +138,11 @@ def store_message(update, context):
     else:
         msg_type = 'unknown'
 
+    reply_to = update.message.reply_to_message.message_id if update.message.reply_to_message else None
+
     # Insert and update
     insert_message(msg_id, msg_link, msg_text, msg_video, msg_photo, msg_audio, msg_voice, msg_type, from_id, chat_id,
-                   update.message.date)
+                   update.message.date, reply_to_msg_id=reply_to)
     insert_or_update_user(user_id, sender_fullname, sender_username)
     update_chat(chat_id, chat_title)
 

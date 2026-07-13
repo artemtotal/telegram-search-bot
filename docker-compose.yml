@@ -4,6 +4,8 @@ services:
     container_name: tgbot
     image: tgbot:ai
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "5006:5006"
       - "9968:9968"
@@ -18,13 +20,17 @@ services:
       - USER_BOT_API_HASH=xxxxxxxxx
       - BOT_MODE=polling
       - CACHE_TIME=300
-      - OPENROUTER_API_KEY=
+      - OPENROUTER_API_KEY=                # ключ для Hermes-прокси
+      # Hermes-прокси на хосте: Claude Sonnet -> GPT fallback.
+      # Если убрать эту строку — дефолт https://openrouter.ai напрямую.
+      - OPENROUTER_URL=http://host.docker.internal:20128/v1/chat/completions
       - AI_MODEL=auto/best-fast
       - GEMINI_API_KEY=                        # замените на ваш Gemini API ключ
       - AI_TRIGGER_WORD=потсдамбот
       - ADMIN_ID=                            # ваш Telegram ID
       - CHAT_USERNAME=UkrainischesBrandenburg
       - CHROMA_PATH=/app/chroma
+      - VEC_MIN_SCORE=0.35                  # порог релевантности векторного поиска
       - ANONYMIZED_TELEMETRY=False
 volumes:
   tgbot_tgbot_data:

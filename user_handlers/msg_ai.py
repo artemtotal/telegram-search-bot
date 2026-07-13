@@ -36,9 +36,14 @@ def _get_chroma():
             path=os.getenv("CHROMA_PATH", "/app/chroma"),
             settings=Settings(anonymized_telemetry=False),
         )
-        try:
-            col = client.get_collection("messages")
-        except Exception:
+        col = None
+        for name in ("chunks", "messages"):  # prefer chunked index
+            try:
+                col = client.get_collection(name)
+                break
+            except Exception:
+                continue
+        if col is None:
             cols = client.list_collections()
             col = cols[0] if cols else None
         if col is not None:
@@ -75,6 +80,9 @@ CONTEXT_MESSAGES_RECENT = 20
 CHAIN_WINDOW = 2
 RECENCY_CUTOFF_DAYS = 365
 RECENCY_PENALTY_DAYS = 730
+# Vector results below this cosine-similarity score are noise and are
+# dropped instead of polluting the LLM context (prevents "answers by vibes").
+VEC_MIN_SCORE = float(os.getenv("VEC_MIN_SCORE", "0.35"))
 PER_KW_ANCHOR = 12   # messages per anchor word (direct from user query)
 PER_KW_BROAD  = 6    # messages per expanded keyword
 MAX_CONTEXT   = 15000
@@ -191,12 +199,12 @@ def _vector_search(query: str, n_results: int = 50,
             "score":      round(1 - dist, 3),
         })
 
+    kept = [m for m in msgs if m["score"] >= VEC_MIN_SCORE]
     logger.info(
-        f"Vector search: {len(msgs)} results "
-        f"(top score: {msgs[0]['score'] if msgs else '-'}, "
-        f"since_days={since_days})"
+        f"Vector search: {len(kept)}/{len(msgs)} above score {VEC_MIN_SCORE} "
+        f"(top: {msgs[0]['score'] if msgs else '-'}, since_days={since_days})"
     )
-    return msgs
+    return kept
 
 # ── Prompts ───────────────────────────────────────────────────────────────
 SYSTEM_PROMPT_FAQ = """
@@ -733,20 +741,26 @@ def _rows_to_dicts(rows) -> List[Dict]:
     return results
 
 
-def _recency_score(msg: Dict) -> int:
-    d = msg.get("date_obj")
-    if not d:
-        return 0
-    age_days = (datetime.utcnow() - d).days
-    if age_days <= RECENCY_CUTOFF_DAYS:
-        return 2
-    if age_days <= RECENCY_PENALTY_DAYS:
-        return 1
-    return 0
+def _rrf_merge(ranked_lists: List[List[Dict]], k: int = 60) -> List[Dict]:
+    """Reciprocal Rank Fusion: merge several ranked result lists into one.
+    Items appearing high in multiple lists float to the top."""
+    scores: Dict = {}
+    first_seen: Dict = {}
+    for lst in ranked_lists:
+        for rank, m in enumerate(lst):
+            mid = m["id"]
+            scores[mid] = scores.get(mid, 0.0) + 1.0 / (k + rank + 1)
+            first_seen.setdefault(mid, m)
+    ordered = sorted(scores, key=scores.get, reverse=True)
+    return [first_seen[mid] for mid in ordered]
 
 
 def _build_context(msgs: List[Dict]) -> str:
-    """Deduplicate, sort by recency+date, truncate to MAX_CONTEXT."""
+    """Deduplicate, truncate by relevance order, present newest-first.
+
+    Incoming order is relevance (RRF + rerank), so truncation keeps the
+    most relevant items; the final chronological sort is only for display.
+    """
     seen_ids: set = set()
     combined = []
     for m in msgs:
@@ -754,8 +768,7 @@ def _build_context(msgs: List[Dict]) -> str:
             continue
         seen_ids.add(m["id"])
         combined.append(m)
-    combined.sort(key=lambda m: (_recency_score(m), m["date"]), reverse=True)
-    lines = []
+    selected = []
     total_len = 0
     for m in combined:
         line = f"[{m['date']}] @{m['user']}: {m['text']}"
@@ -763,9 +776,10 @@ def _build_context(msgs: List[Dict]) -> str:
             line += f" →{m['link']}"
         if total_len + len(line) > MAX_CONTEXT:
             break
-        lines.append(line)
+        selected.append((m, line))
         total_len += len(line) + 1
-    return "\n".join(lines)
+    selected.sort(key=lambda t: t[0]["date"], reverse=True)
+    return "\n".join(line for _, line in selected)
 
 
 # ── OpenRouter / OmniRoute calls ──────────────────────────────────────────
@@ -1095,7 +1109,11 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         else:
             recent_msgs = _search_recent(session, chat_ids, limit=10)
 
-        all_candidates = vec_msgs + keyword_msgs + recent_msgs
+        if vec_msgs and keyword_msgs:
+            fused = _rrf_merge([vec_msgs, keyword_msgs])
+        else:
+            fused = vec_msgs or keyword_msgs
+        all_candidates = fused + recent_msgs
         if is_provider_query:
             before_filter = len(all_candidates)
             # Soft boost for provider-like messages, but don't drop seekers

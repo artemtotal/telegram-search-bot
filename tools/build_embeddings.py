@@ -1,24 +1,29 @@
 """
-Initial embedding builder: reads all messages from SQLite → embeds via
-Google text-embedding-004 → stores in ChromaDB.
+Chunk-based embedding builder: reads all messages from SQLite, groups them
+into conversation windows (see user_jobs/chunking.py), embeds via Gemini
+and stores them in the ChromaDB collection "chunks".
 
 Run once inside the container:
     docker exec tgbot python3 /app/tools/build_embeddings.py
 
-Progress is saved — safe to interrupt and resume (skips already-indexed IDs).
+Full rebuild (drops the "chunks" collection first):
+    docker exec tgbot python3 /app/tools/build_embeddings.py --rebuild
+
+Progress is saved — safe to interrupt and resume (chunk ids are
+deterministic, already-indexed ids are skipped).
 """
 
 import logging
 import os
 import sys
 import time
-from datetime import datetime
-from typing import List, Dict
+from typing import List
 
 import requests
 
 sys.path.insert(0, "/app")
 from database import DBSession, Message, User, Chat
+from user_jobs.chunking import chunk_messages, rows_to_msg_dicts
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,12 +34,11 @@ log = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-CHROMA_PATH    = os.getenv("CHROMA_PATH", "/app/config/chroma")
+CHROMA_PATH    = os.getenv("CHROMA_PATH", "/app/chroma")
 EMBED_MODEL    = "gemini-embedding-001"
-BATCH_SIZE     = 80    # texts per API call (max 100)
+BATCH_SIZE     = 40    # chunks per API call (chunks are larger than single messages)
 SLEEP_BETWEEN  = 0.15  # seconds between batches (rate-limit safety)
-MIN_TEXT_LEN   = 10    # skip very short messages
-BOT_PREFIXES   = ("потсдамбот", "потбот", "потсдам бот")  # never index questions to the bot
+COLLECTION     = "chunks"
 
 EMBED_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -49,7 +53,7 @@ def _batch_embed(texts: List[str]) -> List[List[float]]:
         "requests": [
             {
                 "model": f"models/{EMBED_MODEL}",
-                "content": {"parts": [{"text": t[:2000]}]},  # truncate very long texts
+                "content": {"parts": [{"text": t[:2000]}]},
                 "taskType": "RETRIEVAL_DOCUMENT",
                 "outputDimensionality": 768,
             }
@@ -58,14 +62,13 @@ def _batch_embed(texts: List[str]) -> List[List[float]]:
     }
     for attempt in range(3):
         try:
-            resp = requests.post(url, json=payload, timeout=30)
+            resp = requests.post(url, json=payload, timeout=60)
             if resp.status_code == 429:
                 log.warning("Rate limit hit, sleeping 60s...")
                 time.sleep(60)
                 continue
             resp.raise_for_status()
-            data = resp.json()
-            return [e["values"] for e in data.get("embeddings", [])]
+            return [e["values"] for e in resp.json().get("embeddings", [])]
         except Exception as e:
             log.warning(f"Embed attempt {attempt+1} failed: {e}")
             time.sleep(5)
@@ -79,59 +82,43 @@ def main():
 
     import chromadb
     client = chromadb.PersistentClient(path=CHROMA_PATH)
+
+    if "--rebuild" in sys.argv:
+        try:
+            client.delete_collection(COLLECTION)
+            log.info("Dropped existing '%s' collection (--rebuild)", COLLECTION)
+        except Exception:
+            pass
+
     col = client.get_or_create_collection(
-        name="messages",
+        name=COLLECTION,
         metadata={"hnsw:space": "cosine"},
     )
 
     already_indexed = set(col.get(include=[])["ids"])
-    log.info(f"Already in ChromaDB: {len(already_indexed)} vectors")
+    log.info(f"Already in ChromaDB ({COLLECTION}): {len(already_indexed)} chunks")
 
     session = DBSession()
     chat_ids = [c.id for c in session.query(Chat).filter(Chat.enable == 1).all()]
     log.info(f"Active chat IDs: {chat_ids}")
 
-    # Load all messages not yet indexed
     rows = (
         session.query(Message, User)
         .outerjoin(User, Message.from_id == User.id)
         .filter(Message.from_chat.in_(chat_ids))
         .filter(Message.text.isnot(None))
         .filter(Message.text != "")
-        .order_by(Message._id.asc())
+        .order_by(Message.from_chat.asc(), Message._id.asc())
         .all()
     )
-
-    to_index: List[Dict] = []
-    for msg, user in rows:
-        sid = str(msg._id)
-        if sid in already_indexed:
-            continue
-        text = (msg.text or "").strip()
-        if len(text) < MIN_TEXT_LEN:
-            continue
-        if text.lower().startswith(BOT_PREFIXES):
-            continue
-        username = (user.username or user.fullname or "") if user else ""
-        date_str = msg.date.strftime("%Y-%m-%d %H:%M") if hasattr(msg.date, "strftime") else ""
-        timestamp = int(msg.date.timestamp()) if hasattr(msg.date, "timestamp") else 0
-        link = (msg.link or "") if hasattr(msg, "link") else ""
-        to_index.append({
-            "id": sid,
-            "text": text,
-            "metadata": {
-                "msg_id": msg._id,
-                "date": date_str,
-                "timestamp": timestamp,
-                "user": username,
-                "link": link,
-                "chat_id": msg.from_chat,
-            },
-        })
-
     session.close()
-    total = len(to_index)
-    log.info(f"Need to index: {total} messages")
+
+    msgs = rows_to_msg_dicts(rows)
+    chunks = chunk_messages(msgs)
+    todo = [c for c in chunks if c["id"] not in already_indexed]
+
+    total = len(todo)
+    log.info(f"Messages: {len(msgs)} → chunks: {len(chunks)}, to index: {total}")
     if total == 0:
         log.info("Nothing to do!")
         return
@@ -141,10 +128,10 @@ def main():
     start = time.time()
 
     for batch_start in range(0, total, BATCH_SIZE):
-        batch = to_index[batch_start: batch_start + BATCH_SIZE]
-        texts = [b["text"] for b in batch]
+        batch = todo[batch_start: batch_start + BATCH_SIZE]
+        docs = [c["doc"] for c in batch]
 
-        embeddings = _batch_embed(texts)
+        embeddings = _batch_embed(docs)
         if not embeddings or len(embeddings) != len(batch):
             log.warning(f"Batch {batch_start}-{batch_start+len(batch)}: embedding failed, skipping")
             errors += len(batch)
@@ -152,10 +139,10 @@ def main():
             continue
 
         col.add(
-            ids=[b["id"] for b in batch],
+            ids=[c["id"] for c in batch],
             embeddings=embeddings,
-            documents=texts,
-            metadatas=[b["metadata"] for b in batch],
+            documents=docs,
+            metadatas=[c["metadata"] for c in batch],
         )
         indexed += len(batch)
 
@@ -164,12 +151,12 @@ def main():
         remaining = (total - indexed) / rate if rate > 0 else 0
         log.info(
             f"Progress: {indexed}/{total} ({100*indexed//total}%) "
-            f"| speed: {rate:.0f} msg/s "
+            f"| speed: {rate:.0f} chunks/s "
             f"| ETA: {remaining/60:.1f} min"
         )
         time.sleep(SLEEP_BETWEEN)
 
-    log.info(f"Done! Indexed: {indexed}, Errors: {errors}, Total in DB: {col.count()}")
+    log.info(f"Done! Indexed: {indexed}, Errors: {errors}")
 
 
 if __name__ == "__main__":
