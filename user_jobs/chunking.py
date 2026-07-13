@@ -45,6 +45,9 @@ def chunk_messages(msgs: List[Dict]) -> List[Dict]:
     """
     chunks: List[Dict] = []
     cur: List[Dict] = []
+    cur_lines: List[str] = []
+    cur_message_keys = set()
+    included_reply_sources = set()
     cur_chars = 0
     message_lookup = {
         (message["chat_id"], message.get("message_id")): message
@@ -52,31 +55,37 @@ def chunk_messages(msgs: List[Dict]) -> List[Dict]:
         if message.get("message_id") is not None
     }
 
+    def _lines_for_message(message: Dict):
+        message_line = _fmt_line(message)[:MAX_CHUNK_CHARS]
+        reply_to_msg_id = message.get("reply_to_msg_id")
+        reply_key = (message["chat_id"], reply_to_msg_id)
+        source = message_lookup.get(reply_key) if reply_to_msg_id is not None else None
+        if (
+            source is None
+            or reply_key in cur_message_keys
+            or reply_key in included_reply_sources
+        ):
+            return [message_line], None
+
+        # Preserve the answer first; trim only the quoted source if needed.
+        reply_budget = MAX_CHUNK_CHARS - len(message_line) - 1
+        if reply_budget <= 0:
+            return [message_line], None
+        reply_line = _fmt_reply_line(source)[:reply_budget]
+        return [reply_line, message_line], reply_key
+
+    def _addition_chars(lines: List[str]) -> int:
+        separators = len(lines) - 1
+        if cur_lines:
+            separators += 1
+        return sum(len(line) for line in lines) + separators
+
     def _flush():
         nonlocal cur, cur_chars
         if not cur:
             return
         first, last = cur[0], cur[-1]
-        cur_message_keys = {
-            (message["chat_id"], message.get("message_id"))
-            for message in cur
-            if message.get("message_id") is not None
-        }
-        included_reply_sources = set()
-        lines = []
-        for message in cur:
-            reply_to_msg_id = message.get("reply_to_msg_id")
-            reply_key = (message["chat_id"], reply_to_msg_id)
-            source = message_lookup.get(reply_key) if reply_to_msg_id is not None else None
-            if (
-                source is not None
-                and reply_key not in cur_message_keys
-                and reply_key not in included_reply_sources
-            ):
-                lines.append(_fmt_reply_line(source))
-                included_reply_sources.add(reply_key)
-            lines.append(_fmt_line(message))
-        doc = "\n".join(lines)
+        doc = "\n".join(cur_lines)
         chunks.append({
             "id": f"c{first['chat_id']}_{first['_id']}",
             "doc": doc,
@@ -91,7 +100,10 @@ def chunk_messages(msgs: List[Dict]) -> List[Dict]:
                 "n_msgs": len(cur),
             },
         })
-        cur = []
+        cur.clear()
+        cur_lines.clear()
+        cur_message_keys.clear()
+        included_reply_sources.clear()
         cur_chars = 0
 
     prev = None
@@ -103,11 +115,23 @@ def chunk_messages(msgs: List[Dict]) -> List[Dict]:
             and (m["date"] - prev["date"]) > timedelta(minutes=MAX_GAP_MINUTES)
         )
         if cur and (new_chat or big_gap
-                    or len(cur) >= MAX_CHUNK_MSGS
-                    or cur_chars >= MAX_CHUNK_CHARS):
+                    or len(cur) >= MAX_CHUNK_MSGS):
             _flush()
+
+        lines, reply_key = _lines_for_message(m)
+        added_chars = _addition_chars(lines)
+        if cur and cur_chars + added_chars > MAX_CHUNK_CHARS:
+            _flush()
+            lines, reply_key = _lines_for_message(m)
+            added_chars = _addition_chars(lines)
+
         cur.append(m)
-        cur_chars += len(m["text"] or "")
+        cur_lines.extend(lines)
+        if m.get("message_id") is not None:
+            cur_message_keys.add((m["chat_id"], m["message_id"]))
+        if reply_key is not None:
+            included_reply_sources.add(reply_key)
+        cur_chars += added_chars
         prev = m
     _flush()
     return chunks
