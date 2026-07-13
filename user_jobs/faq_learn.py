@@ -12,23 +12,19 @@ import time
 from datetime import datetime, timedelta
 from typing import List, Dict
 
-import requests
 from sqlalchemy import func
 from telegram.ext import CallbackContext
 
 from database import Chat, DBSession, Message, User
+from user_handlers.msg_ai import _call_ai
 
 logger = logging.getLogger(__name__)
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-AI_MODEL           = os.getenv("AI_MODEL", "moonshotai/kimi-k2")
 ADMIN_ID           = int(os.getenv("ADMIN_ID", "312029534"))
 FAQ_PATH           = os.getenv("FAQ_PATH", "/app/config/faq.json")
 LEARN_DAYS         = int(os.getenv("FAQ_LEARN_DAYS", "30"))    # look back N days
 MSGS_PER_CAT       = int(os.getenv("FAQ_MSGS_PER_CAT", "100")) # messages fetched per category
 SLEEP_BETWEEN      = float(os.getenv("FAQ_SLEEP", "1.5"))       # seconds between AI calls
-
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # ── All topic categories (53 topics) ─────────────────────────────────────────
 CATEGORIES = [
@@ -194,28 +190,6 @@ def _save_json(path, data) -> bool:
         return False
 
 
-def _call_ai(prompt: str) -> str:
-    if not OPENROUTER_API_KEY:
-        return ""
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": AI_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 2048,
-        "temperature": 0.0,
-    }
-    try:
-        resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        logger.error(f"OpenRouter error: {e}")
-        return ""
-
-
 def _parse_response(raw: str, chunk_date: str) -> List[Dict]:
     if not raw or raw.strip().upper() == "NONE":
         return []
@@ -336,7 +310,7 @@ def _faq_learn_worker(context: CallbackContext) -> None:
             chunk_date = chunk[0][1:11] if chunk else ""
             prompt = EXTRACT_PROMPT.format(category=name, messages="\n".join(chunk))
 
-            raw = _call_ai(prompt)
+            raw = _call_ai(prompt, max_tokens=2048, timeout=30)
             if not raw:
                 logger.info("  AI returned empty, skipping chunk")
                 time.sleep(SLEEP_BETWEEN)
