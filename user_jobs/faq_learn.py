@@ -216,10 +216,24 @@ def _parse_response(raw: str, chunk_date: str) -> List[Dict]:
 
 
 def _is_duplicate(new_entry: Dict, existing: List[Dict]) -> bool:
-    new_kw = set(k.lower() for k in new_entry.get("keywords", []))
+    new_kw = {
+        str(keyword).strip().casefold()
+        for keyword in new_entry.get("keywords", [])
+        if str(keyword).strip()
+    }
+    if not new_kw:
+        return False
+
     for entry in existing:
-        ex_kw = set(k.lower() for k in entry.get("keywords", []))
-        if len(new_kw & ex_kw) >= 2:
+        ex_kw = {
+            str(keyword).strip().casefold()
+            for keyword in entry.get("keywords", [])
+            if str(keyword).strip()
+        }
+        if not ex_kw:
+            continue
+        overlap_ratio = len(new_kw & ex_kw) / min(len(new_kw), len(ex_kw))
+        if overlap_ratio >= 0.6:
             return True
     return False
 
