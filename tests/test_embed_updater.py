@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 try:
     import requests  # noqa: F401
@@ -89,6 +90,31 @@ class ReindexResolutionTests(unittest.TestCase):
             groups["c-1001_40"]["request_ids"],
             {first_id, second_id},
         )
+
+
+class EmbedUpdaterLockTests(unittest.TestCase):
+    def test_overlapping_worker_is_skipped(self):
+        embed_updater._embed_update_lock.acquire()
+        try:
+            with mock.patch.object(embed_updater, "_embed_update_worker") as worker:
+                completed = embed_updater._run_embed_update_once()
+        finally:
+            embed_updater._embed_update_lock.release()
+
+        self.assertFalse(completed)
+        worker.assert_not_called()
+
+    def test_lock_is_released_after_worker_error(self):
+        with mock.patch.object(
+            embed_updater,
+            "_embed_update_worker",
+            side_effect=RuntimeError("worker failed"),
+        ):
+            with self.assertRaises(RuntimeError):
+                embed_updater._run_embed_update_once()
+
+        self.assertTrue(embed_updater._embed_update_lock.acquire(blocking=False))
+        embed_updater._embed_update_lock.release()
 
 
 if __name__ == "__main__":

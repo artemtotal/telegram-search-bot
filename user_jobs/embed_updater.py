@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 from typing import List
 
@@ -27,6 +28,7 @@ from user_jobs.reindex_queue import (
 )
 
 log = logging.getLogger(__name__)
+_embed_update_lock = threading.Lock()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 CHROMA_PATH    = os.getenv("CHROMA_PATH", "/app/chroma")
@@ -88,9 +90,25 @@ def _save_state(state: dict) -> None:
 
 def run_embed_update(context=None):
     """Scheduler entry point — immediately hands off to a daemon thread."""
-    import threading
-    t = threading.Thread(target=_embed_update_worker, args=(context,), daemon=True, name="embed-update")
+    t = threading.Thread(
+        target=_run_embed_update_once,
+        args=(context,),
+        daemon=True,
+        name="embed-update",
+    )
     t.start()
+
+
+def _run_embed_update_once(context=None) -> bool:
+    """Run one worker at a time; skip overlapping hourly invocations."""
+    if not _embed_update_lock.acquire(blocking=False):
+        log.warning("Embed updater is already running; skipping overlapping invocation")
+        return False
+    try:
+        _embed_update_worker(context)
+        return True
+    finally:
+        _embed_update_lock.release()
 
 
 def _add_reindex_group(groups, request):
