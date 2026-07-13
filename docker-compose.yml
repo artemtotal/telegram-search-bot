@@ -1,40 +1,32 @@
 version: "3.9"
-
 services:
   tgbot:
-    # Image published by GitHub Actions to GitHub Container Registry (GHCR)
-    image: ghcr.io/artemtotal/telegram-search-bot:latest
     container_name: tgbot
+    image: tgbot:ai
     restart: unless-stopped
-
-    # Optional: ensures proper signal handling (zombie reaping)
-    init: true
-
     ports:
       - "5006:5006"
       - "9968:9968"
-
+    volumes:
+      - tgbot_tgbot_data:/app/config
+      - tgbot_chroma_data:/app/chroma
     environment:
-      # Required
-      - BOT_TOKEN=xxxx:xxxx       # Bot token from @BotFather
-      - LANG=en_US                  # Must match a folder in ./locale (e.g. en_US, zh_CN, uk_UA if you added it)
-      # Optional (do not change if you don't understand)
+      - BOT_TOKEN=xxxx:xxxx                   # замените на токен от @BotFather
+      - LANG=uk_UA
       - USER_BOT=0
       - USER_BOT_API_ID=1234567
       - USER_BOT_API_HASH=xxxxxxxxx
-      - BOT_MODE=polling            # polling / webhook
+      - BOT_MODE=polling
       - CACHE_TIME=300
-      - TZ=Europe/Berlin
-
-    volumes:
-      # Persist DB and config inside Docker volume (fast on Docker Desktop/WSL2)
-      - tgbot_appconfig:/app/config
-
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
+      - OPENROUTER_API_KEY=
+      - AI_MODEL=auto/best-fast
+      - GEMINI_API_KEY=                        # замените на ваш Gemini API ключ
+      - AI_TRIGGER_WORD=потсдамбот
+      - ADMIN_ID=                            # ваш Telegram ID
+      - CHAT_USERNAME=UkrainischesBrandenburg
+      - CHROMA_PATH=/app/chroma
+      - ANONYMIZED_TELEMETRY=False
 volumes:
-  tgbot_appconfig:
+  tgbot_tgbot_data:
+    external: true
+  tgbot_chroma_data: {}

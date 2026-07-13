@@ -1,14 +1,15 @@
-FROM python:3.9-slim
-
+﻿FROM python:3.9-slim
 WORKDIR /app
 
-ADD . /app
+# Install system dependencies (cached unless this changes)
+RUN apt update && apt install gcc -y && apt clean
 
+# Install Python dependencies (cached unless requirements.txt changes)
+COPY requirements.txt .
+RUN /usr/local/bin/python -m pip install --upgrade pip && pip install -r requirements.txt
+
+# Copy application code (only this layer rebuilds when code changes)
+ADD . /app
 RUN rm -rf extra doc preview README.md LICENSE .gitignore
 
-RUN apt update && apt install gcc -y && apt clean
-RUN /usr/local/bin/python -m pip install --upgrade pip
-RUN pip install -r requirements.txt
-
-ENTRYPOINT ["/app/entrypoint.sh"] 
-
+ENTRYPOINT ["/app/entrypoint.sh"]

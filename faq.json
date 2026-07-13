@@ -1,0 +1,18 @@
+[
+  {
+    "keywords": ["вики", "wiki", "вікі"],
+    "answer": "Загально-німецький сайт https://uahelp.wiki\nОфіційний державний сайт для біженців з України: https://germany4ukraine.de/hilfeportal-ua\nhttps://t.me/potsdamhelpsukrainians\nhttps://t.me/Ukraine2022Potsdam\nПитання щодо в'їзду з України: https://www.bamf.de/DE/Themen/AsylFluechtlingsschutz/ResettlementRelocation/InformationenEinreiseUkraine/InformationenEinreiseUkraineRU/_documents/ukraine-faq-ru.html"
+  },
+  {
+    "keywords": ["внж", "параграф", "прописка", "цувайзунг", "zuweisung", "fiktion", "фиктион", "aufenthaltstitel", "статус", "беженцы", "біженці"],
+    "answer": "Информация по ВНЖ и статусу беженца в Потсдаме: https://uahelp.wiki/potsdam/residence-permit"
+  },
+  {
+    "keywords": ["еда", "їжа", "бесплатно", "безкоштовно", "гуманитарка", "гумдопомога", "тафель", "tafel", "drk"],
+    "answer": "TAFEL Potsdam — бесплатные продукты для людей с низким доходом (Jobcenter/Sozialamt Bescheid).\nАдреса выдачи:\n- Potsdam 14478 Drewitzer Str. 22а — Вт 10-12, 1-я Сб 14-15\n- Werder 14542 Adolf-Damaschke-Str. 105 — Вт, Пт 15-17\nПодробнее: potsdamer-tafel.de\nЕщё: https://uahelp.wiki/potsdam/food"
+  },
+  {
+    "keywords": ["tiertafel", "зоотафель", "животные", "тварини", "корм"],
+    "answer": "Berliner Tiertafel eV\nWustrower Str. 18, 13051 Berlin\nВопросы: berlin@tiertafel.org"
+  }
+]
