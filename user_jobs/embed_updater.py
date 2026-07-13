@@ -19,6 +19,11 @@ import requests
 
 sys.path.insert(0, "/app")
 
+from user_jobs.reindex_queue import (
+    load_reindex_requests,
+    remove_reindex_requests,
+)
+
 log = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -86,6 +91,82 @@ def run_embed_update(context=None):
     t.start()
 
 
+def _process_reindex_queue(col) -> int:
+    """Rebuild queued edited-message chunks without touching the high-water mark."""
+    requests_to_process = load_reindex_requests()
+    if not requests_to_process:
+        return 0
+
+    from database import DBSession, Message, User
+    from user_jobs.chunking import chunk_messages, rows_to_msg_dicts
+
+    grouped = {}
+    for request in requests_to_process:
+        chunk_id = request["chunk_id"]
+        group = grouped.setdefault(chunk_id, {"request": request, "request_ids": set()})
+        group["request"] = request
+        group["request_ids"].add(request["request_id"])
+
+    acknowledged = set()
+    rebuilt = 0
+    for chunk_id, group in grouped.items():
+        request = group["request"]
+        session = DBSession()
+        try:
+            rows = (
+                session.query(Message, User)
+                .outerjoin(User, Message.from_id == User.id)
+                .filter(Message.from_chat == int(request["chat_id"]))
+                .filter(Message._id >= int(request["msg_id"]))
+                .filter(Message._id <= int(request["last_msg_id"]))
+                .filter(Message.text.isnot(None))
+                .filter(Message.text != "")
+                .order_by(Message._id.asc())
+                .all()
+            )
+        except Exception as exc:
+            log.error("Failed to load queued Chroma chunk %s: %s", chunk_id, exc)
+            continue
+        finally:
+            session.close()
+
+        try:
+            msgs = rows_to_msg_dicts(rows)
+            msgs.sort(key=lambda message: (message["chat_id"], message["_id"]))
+            chunks = chunk_messages(msgs)
+
+            if not chunks:
+                col.delete(ids=[chunk_id])
+                acknowledged.update(group["request_ids"])
+                continue
+
+            embeddings = _batch_embed([chunk["doc"] for chunk in chunks])
+            if not embeddings or len(embeddings) != len(chunks):
+                log.warning("Embedding failed for queued Chroma chunk %s", chunk_id)
+                continue
+
+            col.delete(ids=[chunk_id])
+            col.upsert(
+                ids=[chunk["id"] for chunk in chunks],
+                embeddings=embeddings,
+                documents=[chunk["doc"] for chunk in chunks],
+                metadatas=[chunk["metadata"] for chunk in chunks],
+            )
+            acknowledged.update(group["request_ids"])
+            rebuilt += len(chunks)
+            time.sleep(0.15)
+        except Exception as exc:
+            log.error("Failed to rebuild queued Chroma chunk %s: %s", chunk_id, exc)
+
+    remove_reindex_requests(acknowledged)
+    log.info(
+        "Embed updater: rebuilt %s edited chunks, %s requests remain queued",
+        rebuilt,
+        len(requests_to_process) - len(acknowledged),
+    )
+    return rebuilt
+
+
 def _embed_update_worker(context=None):
     """Called by APScheduler every hour."""
     if not GEMINI_API_KEY:
@@ -101,6 +182,8 @@ def _embed_update_worker(context=None):
             name=COLLECTION,
             metadata={"hnsw:space": "cosine"},
         )
+
+        _process_reindex_queue(col)
 
         state = _load_state()
         last_id = int(state.get("last_id", 0))
