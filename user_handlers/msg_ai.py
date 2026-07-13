@@ -1166,6 +1166,6 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
 
 # Handler registration
 handler = MessageHandler(
-    Filters.regex(rf"(?i)^{re.escape(TRIGGER_WORD)}\b") & (~Filters.command),
+    Filters.regex(rf"(?i){re.escape(TRIGGER_WORD)}\b") & (~Filters.command),
     handle_ai_query,
 )
