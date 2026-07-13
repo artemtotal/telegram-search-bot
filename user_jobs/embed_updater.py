@@ -21,6 +21,9 @@ CHROMA_PATH    = os.getenv("CHROMA_PATH", "/app/config/chroma")
 EMBED_MODEL    = "gemini-embedding-001"
 BATCH_SIZE     = 80
 MIN_TEXT_LEN   = 10
+# Messages addressed to the bot are questions, not community knowledge —
+# they must never enter the vector index (they pollute search results).
+BOT_PREFIXES   = ("потсдамбот", "потбот", "потсдам бот")
 
 EMBED_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -99,6 +102,8 @@ def _embed_update_worker(context=None):
                 continue
             text = (msg.text or "").strip()
             if len(text) < MIN_TEXT_LEN:
+                continue
+            if text.lower().startswith(BOT_PREFIXES):
                 continue
             username = (user.username or user.fullname or "") if user else ""
             date_str = msg.date.strftime("%Y-%m-%d %H:%M") if hasattr(msg.date, "strftime") else ""

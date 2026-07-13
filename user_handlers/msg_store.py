@@ -27,7 +27,8 @@ def update_chat(chat_id, title):
 
 def insert_message(msg_id, msg_link, msg_text, msg_video, msg_photo, msg_audio, msg_voice, msg_type, from_id, from_chat,
                    date):
-    new_msg = Message(id=msg_id, link=msg_link, text=msg_text, video=msg_video, photo=msg_photo, audio=msg_audio,
+    new_msg = Message(id=msg_id, link=msg_link, text=msg_text, text_lower=(msg_text or '').lower(),
+                      video=msg_video, photo=msg_photo, audio=msg_audio,
                       voice=msg_voice, type=msg_type, category='', from_id=from_id, from_chat=from_chat, date=date)
     session = DBSession()
     session.add(new_msg)
@@ -40,7 +41,7 @@ def update_message(from_chat, msg_id, msg_text):
     session.query(Message) \
         .filter(Message.from_chat.is_(from_chat)) \
         .filter(Message.id.is_(msg_id)) \
-        .update({"text": msg_text})
+        .update({"text": msg_text, "text_lower": (msg_text or '').lower()})
     session.commit()
     session.close()
 

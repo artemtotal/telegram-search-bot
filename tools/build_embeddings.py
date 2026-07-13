@@ -34,6 +34,7 @@ EMBED_MODEL    = "gemini-embedding-001"
 BATCH_SIZE     = 80    # texts per API call (max 100)
 SLEEP_BETWEEN  = 0.15  # seconds between batches (rate-limit safety)
 MIN_TEXT_LEN   = 10    # skip very short messages
+BOT_PREFIXES   = ("потсдамбот", "потбот", "потсдам бот")  # never index questions to the bot
 
 EMBED_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -108,6 +109,8 @@ def main():
             continue
         text = (msg.text or "").strip()
         if len(text) < MIN_TEXT_LEN:
+            continue
+        if text.lower().startswith(BOT_PREFIXES):
             continue
         username = (user.username or user.fullname or "") if user else ""
         date_str = msg.date.strftime("%Y-%m-%d %H:%M") if hasattr(msg.date, "strftime") else ""

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict
 
 import requests
+from sqlalchemy import func
 from telegram.ext import CallbackContext
 
 from database import Chat, DBSession, Message, User
@@ -262,9 +263,9 @@ def _fetch_category_messages(session, chat_ids, keywords, days, limit) -> List[s
             .filter(Message.text.isnot(None))
             .filter(Message.text != "")
             .filter(Message.date >= cutoff)
-            .filter(Message.text.ilike(f"%{kw}%"))
-            .filter(~Message.text.ilike("потсдамбот%"))
-            .filter(~Message.text.ilike("потбот%"))
+            .filter(func.coalesce(Message.text_lower, "").like(f"%{kw.lower()}%"))
+            .filter(~func.coalesce(Message.text_lower, "").like("потсдамбот%"))
+            .filter(~func.coalesce(Message.text_lower, "").like("потбот%"))
             .order_by(Message.date.desc())
             .limit(limit)
             .all()

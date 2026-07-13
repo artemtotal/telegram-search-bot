@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
 import requests
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from telegram import Update
 from telegram.ext import CallbackContext, MessageHandler, Filters
 
@@ -36,9 +36,12 @@ def _get_chroma():
             path=os.getenv("CHROMA_PATH", "/app/chroma"),
             settings=Settings(anonymized_telemetry=False),
         )
-        cols = client.list_collections()
-        if cols:
-            col = cols[0]
+        try:
+            col = client.get_collection("messages")
+        except Exception:
+            cols = client.list_collections()
+            col = cols[0] if cols else None
+        if col is not None:
             # count with timeout guard (WSL2 safety)
             result = [0]
             def _do_count():
@@ -51,7 +54,7 @@ def _get_chroma():
             t.join(timeout=10)
             _chroma_count = result[0]
             _chroma_col = col  # store the Collection, not the client
-        logger.info(f"ChromaDB ready: {_chroma_count} messages, {len(cols)} collection(s)")
+        logger.info(f"ChromaDB ready: {_chroma_count} messages")
         return _chroma_col
     except Exception as e:
         logger.warning(f"ChromaDB init failed: {e}")
@@ -76,7 +79,9 @@ PER_KW_ANCHOR = 12   # messages per anchor word (direct from user query)
 PER_KW_BROAD  = 6    # messages per expanded keyword
 MAX_CONTEXT   = 15000
 
-OPENROUTER_URL = "http://host.docker.internal:20128/v1/chat/completions"
+OPENROUTER_URL = os.getenv(
+    "OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions"
+)
 GEMINI_DIRECT_MODEL = os.getenv("GEMINI_DIRECT_MODEL", "gemini-2.5-flash")
 GEMINI_DIRECT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -536,8 +541,13 @@ def _get_upcoming_date_patterns(days_ahead: int = 14) -> List[str]:
 _BOT_ADDRESS_PREFIXES = (f"{TRIGGER_WORD}%", "потбот%", "потсдам бот%")
 
 
+# Cyrillic-safe lowercase text expression (SQLite lower() is ASCII-only,
+# so Message.text.ilike() silently misses capitalized Cyrillic words).
+_TL = func.coalesce(Message.text_lower, "")
+
+
 def _exclude_bot_address(q):
-    return q.filter(~or_(*[Message.text.ilike(p) for p in _BOT_ADDRESS_PREFIXES]))
+    return q.filter(~or_(*[_TL.like(p) for p in _BOT_ADDRESS_PREFIXES]))
 
 
 def _get_message_ids_by_keywords(session, chat_ids: List[int],
@@ -562,7 +572,7 @@ def _get_message_ids_by_keywords(session, chat_ids: List[int],
             if not w:
                 continue
             rows = (
-                base_q.filter(Message.text.ilike(f"%{w}%"))
+                base_q.filter(_TL.like(f"%{w.lower()}%"))
                 .order_by(Message.date.desc())
                 .limit(per_kw)
                 .all()
@@ -665,7 +675,7 @@ def _search_keywords_with_fallback(session, chat_ids: List[int],
                 if not w:
                     continue
                 rows = (
-                    base_q.filter(Message.text.ilike(f"%{w}%"))
+                    base_q.filter(_TL.like(f"%{w.lower()}%"))
                     .order_by(Message.date.desc())
                     .limit(per_kw)
                     .all()
@@ -848,27 +858,12 @@ def _normalize_query(query: str) -> str:
         f"- Без вступу і пояснень. Мова — як у питанні.\n\n"
         f"Повідомлення: {query}"
     )
-    headers = {
-        "Content-Type": "application/json",
-    }
-    if OPENROUTER_API_KEY:
-        headers["Authorization"] = f"Bearer {OPENROUTER_API_KEY}"
-    payload = {
-        "model": AI_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 100,
-        "temperature": 0.0,
-        "stream": False,
-    }
-    try:
-        resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=10)
-        resp.raise_for_status()
-        normalized = resp.json()["choices"][0]["message"]["content"].strip()
-        if normalized:
-            logger.info(f"Normalized query: {normalized!r}")
-            return normalized
-    except Exception as e:
-        logger.warning(f"Query normalization failed: {e}")
+    normalized = _call_ai(prompt, max_tokens=100, timeout=15)
+    if normalized and normalized != "RATE_LIMIT":
+        normalized = normalized.strip().strip('"')
+        logger.info(f"Normalized query: {normalized!r}")
+        return normalized
+    logger.warning("Query normalization failed, using original query")
     return query
 
 
@@ -958,22 +953,10 @@ def _rerank(query: str, messages: List[Dict], top_k: int = 25) -> List[Dict]:
         f"Повернути ТІЛЬКИ JSON масив індексів, наприклад: [0, 3, 7, 12]\n\n"
         f"{numbered}"
     )
-    headers = {
-        "Content-Type": "application/json",
-    }
-    if OPENROUTER_API_KEY:
-        headers["Authorization"] = f"Bearer {OPENROUTER_API_KEY}"
-    payload = {
-        "model": AI_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 1500,
-        "temperature": 0.0,
-        "stream": False,
-    }
     try:
-        resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=20)
-        resp.raise_for_status()
-        raw = resp.json()["choices"][0]["message"]["content"].strip()
+        raw = _call_ai(prompt, max_tokens=1500, timeout=30)
+        if not raw or raw == "RATE_LIMIT":
+            raise RuntimeError("rerank AI call returned empty")
         match = re.search(r'\[[\d,\s]+\]', raw)
         if match:
             indices = json.loads(match.group())
