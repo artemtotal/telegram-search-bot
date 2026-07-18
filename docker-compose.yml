@@ -29,6 +29,14 @@ services:
       - AI_TRIGGER_WORD=потсдамбот
       - ADMIN_ID=                            # ваш Telegram ID
       - CHAT_USERNAME=UkrainischesBrandenburg
+      # 0 = use the first enabled chat from bot.db. Set an explicit ID if more than one chat is indexed.
+      - ANON_TARGET_CHAT_ID=0
+      # Optional read-only path to telegram-ad-forwarder-bot SQLite with its bound topics.
+      - ANON_TOPIC_SOURCE_DB=
+      - ANON_COOLDOWN_DAYS=7
+      - ANON_DELETE_MINUTES=60
+      - ANON_MIN_LENGTH=15
+      - ANON_MAX_LENGTH=1500
       - CHROMA_PATH=/app/chroma
       - VEC_MIN_SCORE=0.35                  # порог релевантности векторного поиска
       - ANONYMIZED_TELEMETRY=False

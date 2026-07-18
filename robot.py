@@ -5,7 +5,17 @@ import datetime
 import logging
 import os
 
-from user_handlers import bot_help, chat_start, chat_stop, chat_delete, chatid_get, msg_ai, msg_store, faq_admin
+from user_handlers import (
+    anonymous_posts,
+    bot_help,
+    chat_start,
+    chat_stop,
+    chat_delete,
+    chatid_get,
+    msg_ai,
+    msg_store,
+    faq_admin,
+)
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
 from user_jobs.embed_updater import run_embed_update
@@ -59,6 +69,15 @@ dispatcher.add_handler(chatid_get.handler)
 
 if not is_userbot_mode():
     dispatcher.add_handler(msg_store.handler)
+
+# Anonymous posting runs in separate groups so message indexing remains active.
+dispatcher.add_handler(anonymous_posts.private_start_handler, group=1)
+dispatcher.add_handler(anonymous_posts.bind_topic_handler, group=1)
+dispatcher.add_handler(anonymous_posts.list_topics_handler, group=1)
+dispatcher.add_handler(anonymous_posts.reset_user_handler, group=1)
+dispatcher.add_handler(anonymous_posts.callback_handler, group=1)
+dispatcher.add_handler(anonymous_posts.private_text_handler, group=1)
+dispatcher.add_handler(anonymous_posts.forum_observer_handler, group=2)
 
 def run_telethon_thread():
     loop = asyncio.new_event_loop()

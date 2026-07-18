@@ -29,6 +29,11 @@ def insert_chat_or_enable(chat_id, title):
 def start(update, context):
     from_user_id = update.message.from_user.id
 
+    if update.effective_chat.type == 'private':
+        from user_handlers.anonymous_posts import show_home
+        show_home(update, context)
+        return
+
     # Command with userbot mode
     if is_userbot_mode():
         admin_id = read_userbot_admin_id()

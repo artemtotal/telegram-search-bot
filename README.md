@@ -28,6 +28,9 @@ If you need upstream-style access filtering, restore the membership check or enf
 
 - Record messages from enabled Telegram groups/supergroups
 - Inline search from any chat (Inline Mode)
+- Anonymous questions sent from private chat to a selected forum topic
+- Captcha, weekly per-user cooldown, duplicate/contact filtering, admin block controls
+- One-hour self-service deletion and private notifications about replies
 - Multi-keyword AND search (all keywords must match)
 - Optional filters:
   - `@username` (first token)
@@ -35,6 +38,72 @@ If you need upstream-style access filtering, restore the membership check or enf
   - trailing page number
 - Docker-based deployment
 - History import from Telegram Desktop JSON export
+
+## Anonymous questions
+
+Users open a private chat with the bot and send `/start` or `/anonymous`. The flow is:
+
+1. solve a simple button captcha;
+2. choose a forum topic;
+3. send one text question;
+4. preview and confirm it.
+
+The group sees a post from the bot without the author's name. The bot keeps the Telegram user ID for abuse handling and tells the user about this before submission. Replies to the group post are mirrored to the author's private chat.
+
+Default anti-spam rules:
+
+- one submission per Telegram user every 7 days, including a post deleted by its author;
+- text only, 15–1500 characters;
+- links, `@username` values, e-mail addresses and phone numbers are rejected;
+- exact duplicate text from the previous 30 days is rejected;
+- three failed captcha attempts cause a 15-minute lock;
+- an administrator can delete and block an author from the private moderation notification.
+
+The author can delete a published question through the bot during the first hour. This does not reset the weekly cooldown.
+
+### Topic discovery and administration
+
+The bot automatically discovers forum topics when it receives new messages in them. A newly discovered topic may temporarily be shown as `Тема #<thread_id>` until Telegram sends a topic creation event or an administrator names it manually.
+
+If the advertising bot's SQLite database is available in this container as a read-only file, the search bot can import the exact topics previously bound with the advertising bot's `/bind` command:
+
+```env
+ANON_TOPIC_SOURCE_DB=/adbot/sqlite.db
+```
+
+Mount the advertising bot's whole data directory at `/adbot` with `:ro` so SQLite can also read its WAL file, then point the variable to `/adbot/sqlite.db`. The import reads only the `topics` table and does not modify the advertising bot database.
+
+```yaml
+volumes:
+  - /host/path/telegram-ad-bot-data:/adbot:ro
+```
+
+Run this command inside a forum topic to add or rename it:
+
+```text
+/anon_topic Название темы
+```
+
+Admin commands:
+
+```text
+/anon_topics          list discovered topics and thread IDs
+/anon_reset USER_ID   unblock a user and reset their cooldown/captcha lock
+```
+
+Configure the feature through environment variables:
+
+```env
+ADMIN_ID=123456789
+ANON_TARGET_CHAT_ID=-1001234567890
+ANON_TOPIC_SOURCE_DB=/adbot/sqlite.db
+ANON_COOLDOWN_DAYS=7
+ANON_DELETE_MINUTES=60
+ANON_MIN_LENGTH=15
+ANON_MAX_LENGTH=1500
+```
+
+If `ANON_TARGET_CHAT_ID=0`, the first enabled chat in `bot.db` is used. Set it explicitly when the bot indexes more than one chat. The bot needs permission to send messages in topics and delete its own messages.
 
 ## Search syntax
 

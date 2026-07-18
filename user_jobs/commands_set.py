@@ -5,6 +5,7 @@ _ = get_text_func()
 
 def set_bot_commands(context: telegram.ext.CallbackContext):
     commands = [
+        ('anonymous', 'задать анонимный вопрос'),
         ('help', _('get search help')),
         ('chat_id', _('get current chat id (group or user)')),
         ('start', _('start bot in current group ( userbot mode need `start <group_id>`)')),
