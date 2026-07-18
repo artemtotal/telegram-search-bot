@@ -2,7 +2,7 @@ version: "3.9"
 services:
   tgbot:
     container_name: tgbot
-    image: tgbot:ai
+    build: .
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -12,33 +12,34 @@ services:
     volumes:
       - tgbot_tgbot_data:/app/config
       - tgbot_chroma_data:/app/chroma
+      - C:\Media\Downloads\Docker\adbot-data:/adbot:ro
     environment:
-      - BOT_TOKEN=xxxx:xxxx                   # замените на токен от @BotFather
+      # Secrets are loaded from the local .env file (excluded by .gitignore).
+      - BOT_TOKEN=${BOT_TOKEN:?Set BOT_TOKEN in .env}
       - LANG=uk_UA
       - USER_BOT=0
       - USER_BOT_API_ID=1234567
       - USER_BOT_API_HASH=xxxxxxxxx
       - BOT_MODE=polling
       - CACHE_TIME=300
-      - OPENROUTER_API_KEY=                # ключ для Hermes-прокси
+      - OPENROUTER_API_KEY=
       # Hermes-прокси на хосте: Claude Sonnet -> GPT fallback.
-      # Если убрать эту строку — дефолт https://openrouter.ai напрямую.
       - OPENROUTER_URL=http://host.docker.internal:20128/v1/chat/completions
       - AI_MODEL=auto/best-fast
-      - GEMINI_API_KEY=                        # замените на ваш Gemini API ключ
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - AI_TRIGGER_WORD=потсдамбот
-      - ADMIN_ID=                            # ваш Telegram ID
+      - ADMIN_ID=312029534
       - CHAT_USERNAME=UkrainischesBrandenburg
-      # 0 = use the first enabled chat from bot.db. Set an explicit ID if more than one chat is indexed.
-      - ANON_TARGET_CHAT_ID=0
-      # Optional read-only path to telegram-ad-forwarder-bot SQLite with its bound topics.
-      - ANON_TOPIC_SOURCE_DB=
+      # Target chat for anonymous posts (Потсдам супергруппа)
+      - ANON_TARGET_CHAT_ID=-1001724565311
+      # Read-only path to telegram-ad-forwarder-bot SQLite with its bound topics.
+      - ANON_TOPIC_SOURCE_DB=/adbot/sqlite.db
       - ANON_COOLDOWN_DAYS=7
       - ANON_DELETE_MINUTES=60
       - ANON_MIN_LENGTH=15
       - ANON_MAX_LENGTH=1500
       - CHROMA_PATH=/app/chroma
-      - VEC_MIN_SCORE=0.35                  # порог релевантности векторного поиска
+      - VEC_MIN_SCORE=0.35
       - ANONYMIZED_TELEMETRY=False
 volumes:
   tgbot_tgbot_data:

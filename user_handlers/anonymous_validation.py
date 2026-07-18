@@ -24,21 +24,21 @@ def validate_submission(text: str, min_length: int = 15, max_length: int = 1500)
     """Return a user-facing validation error, or None when text is allowed."""
     cleaned = (text or "").strip()
     if len(cleaned) < min_length:
-        return f"Вопрос слишком короткий. Нужно минимум {min_length} символов."
+        return f"Запитання занадто коротке. Потрібно мінімум {min_length} символів."
     if len(cleaned) > max_length:
-        return f"Вопрос слишком длинный. Максимум {max_length} символов."
+        return f"Запитання занадто довге. Максимум {max_length} символів."
     if len(cleaned.splitlines()) > 25:
-        return "Слишком много строк. Сократите и отправьте вопрос ещё раз."
+        return "Забагато рядків. Скоротіть та надішліть запитання ще раз."
     phone_found = any(
         sum(character.isdigit() for character in candidate) >= 9
         for candidate in _PHONE_CANDIDATE_RE.findall(cleaned)
     )
     if _URL_RE.search(cleaned) or _EMAIL_RE.search(cleaned) or phone_found:
-        return "Ссылки, @имена, e-mail и номера телефонов в анонимных постах запрещены."
+        return "Посилання, @імена, e-mail та номери телефонів в анонімних постах заборонені."
     if _REPEATED_RE.search(cleaned):
-        return "В тексте слишком много повторяющихся символов."
+        return "У тексті забагато повторюваних символів."
     if len(set(normalize_text(cleaned))) < 5:
-        return "Текст похож на спам. Сформулируйте вопрос обычными словами."
+        return "Текст схожий на спам. Сформулюйте запитання звичайними словами."
     return None
 
 
@@ -54,8 +54,8 @@ def cooldown_text(last_submission_at, cooldown_days: int, now: datetime = None) 
     days, minute_remainder = divmod(total_minutes, 24 * 60)
     hours, minutes = divmod(minute_remainder, 60)
     if days:
-        return f"Новый анонимный пост можно создать через {days} дн. {hours} ч."
-    return f"Новый анонимный пост можно создать через {hours} ч. {minutes} мин."
+        return f"Новий анонімний пост можна створити через {days} дн. {hours} год."
+    return f"Новий анонімний пост можна створити через {hours} год. {minutes} хв."
 
 
 def message_link(message) -> str:
