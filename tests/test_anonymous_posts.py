@@ -1,13 +1,14 @@
 import unittest
+from datetime import datetime
 from types import SimpleNamespace
 
-from user_handlers import anonymous_posts
+from user_handlers import anonymous_validation
 
 
 class AnonymousPostValidationTests(unittest.TestCase):
     def test_accepts_normal_question(self):
         self.assertIsNone(
-            anonymous_posts.validate_submission(
+            anonymous_validation.validate_submission(
                 "Подскажите, пожалуйста, хорошего семейного врача в Потсдаме."
             )
         )
@@ -21,24 +22,27 @@ class AnonymousPostValidationTests(unittest.TestCase):
         ]
         for sample in samples:
             with self.subTest(sample=sample):
-                self.assertIsNotNone(anonymous_posts.validate_submission(sample))
+                self.assertIsNotNone(anonymous_validation.validate_submission(sample))
 
     def test_fingerprint_ignores_case_and_whitespace(self):
-        first = anonymous_posts.text_fingerprint("  Где найти врача?\nВ Потсдаме ")
-        second = anonymous_posts.text_fingerprint("где НАЙТИ врача? в потсдаме")
+        first = anonymous_validation.text_fingerprint("  Где найти врача?\nВ Потсдаме ")
+        second = anonymous_validation.text_fingerprint("где НАЙТИ врача? в потсдаме")
         self.assertEqual(first, second)
 
     def test_date_is_not_mistaken_for_phone_number(self):
         self.assertIsNone(
-            anonymous_posts.validate_submission(
+            anonymous_validation.validate_submission(
                 "Куда можно сходить с ребёнком 18.07.2026 в Потсдаме?"
             )
         )
 
     def test_deleted_submission_still_has_cooldown(self):
-        now = anonymous_posts.utc_now()
+        now = datetime.utcnow()
         user = SimpleNamespace(last_submission_at=now)
-        self.assertIn("Новый анонимный пост", anonymous_posts._cooldown_text(user))
+        self.assertIn(
+            "Новый анонимный пост",
+            anonymous_validation.cooldown_text(user.last_submission_at, 7, now),
+        )
 
     def test_forum_message_link_contains_thread(self):
         private_message = SimpleNamespace(
@@ -54,11 +58,11 @@ class AnonymousPostValidationTests(unittest.TestCase):
             message_id=99,
         )
         self.assertEqual(
-            anonymous_posts._message_link(private_message),
+            anonymous_validation.message_link(private_message),
             "https://t.me/c/123456/77/99",
         )
         self.assertEqual(
-            anonymous_posts._message_link(public_message),
+            anonymous_validation.message_link(public_message),
             "https://t.me/PotsdamChat/77/99",
         )
 
