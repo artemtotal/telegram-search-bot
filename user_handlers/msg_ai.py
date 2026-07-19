@@ -666,25 +666,30 @@ def _search_provider_authors(session, chat_ids: List[int],
     """Find all-history messages by matching provider fullname or username."""
     if not chat_ids or not terms:
         return []
-    user_name = func.lower(func.coalesce(User.fullname, ""))
-    username = func.lower(func.coalesce(User.username, ""))
-    name_filters = []
-    for term in terms:
-        clean = term.lower().lstrip("@").strip()
-        if clean:
-            name_filters.extend((
-                user_name.like(f"%{clean}%"),
-                username.like(f"%{clean}%"),
-            ))
-    if not name_filters:
+    normalized_terms = [
+        term.lower().lstrip("@").strip()
+        for term in terms
+        if term.lower().lstrip("@").strip()
+    ]
+    if not normalized_terms:
         return []
+
+    matching_user_ids = []
+    for user in session.query(User).all():
+        fullname = (user.fullname or "").lower()
+        username = (user.username or "").lower()
+        if any(term in fullname or term in username for term in normalized_terms):
+            matching_user_ids.append(user.id)
+    if not matching_user_ids:
+        return []
+
     return (
         session.query(Message, User)
         .outerjoin(User, Message.from_id == User.id)
         .filter(Message.from_chat.in_(chat_ids))
         .filter(Message.text.isnot(None))
         .filter(Message.text != "")
-        .filter(or_(*name_filters))
+        .filter(Message.from_id.in_(matching_user_ids))
         .order_by(Message.date.desc())
         .limit(limit)
         .all()

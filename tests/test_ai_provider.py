@@ -86,12 +86,17 @@ class AiProviderTests(unittest.TestCase):
 
     def test_author_search_matches_fullname_username_and_alias(self):
         session = Mock()
-        query = session.query.return_value
-        query.outerjoin.return_value = query
-        query.filter.return_value = query
-        query.order_by.return_value = query
-        query.limit.return_value = query
-        query.all.return_value = [
+        user_query = Mock()
+        message_query = Mock()
+        session.query.side_effect = [user_query, message_query]
+        user_query.all.return_value = [
+            Mock(id=7, fullname="Dmytro", username="Dmytriii"),
+        ]
+        message_query.outerjoin.return_value = message_query
+        message_query.filter.return_value = message_query
+        message_query.order_by.return_value = message_query
+        message_query.limit.return_value = message_query
+        message_query.all.return_value = [
             (Mock(_id=42), Mock(fullname="Dmytro", username="Dmytriii")),
         ]
 
@@ -100,6 +105,37 @@ class AiProviderTests(unittest.TestCase):
         )
 
         self.assertEqual(rows[0][0]._id, 42)
+
+    def test_author_search_matches_cyrillic_fullname_case_insensitively(self):
+        from database import Base, Chat, Message, User
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        session = sessionmaker(bind=engine)()
+        try:
+            session.add(Chat(id=-1001, title="test", enable=True))
+            session.add(User(id=7, fullname="Дмитрий", username=""))
+            session.add(Message(
+                _id=42, id=420, from_id=7, from_chat=-1001,
+                text="Ремонтирую мебель", text_lower="ремонтирую мебель",
+            ))
+            session.commit()
+
+            rows = msg_ai._search_provider_authors(
+                session, [-1001], ["дмитр"], limit=10,
+            )
+
+            self.assertEqual([row[0]._id for row in rows], [42])
+        finally:
+            session.close()
+            engine.dispose()
 
     def test_provider_history_keeps_multiple_messages_per_author(self):
         messages = [
