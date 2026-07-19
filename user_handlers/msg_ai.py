@@ -1064,6 +1064,27 @@ def _send_answer(message, text: str) -> None:
         message.reply_text(chunk.strip(), parse_mode=None)
 
 
+def _create_wait_indicator(update: Update):
+    """Acknowledge a long-running request with a removable status message."""
+    try:
+        return update.message.reply_text(
+            "⏳ Запит отримано. Шукаю відповідь, будь ласка, зачекайте…",
+            parse_mode=None,
+        )
+    except Exception as exc:
+        logger.warning("Failed to create wait indicator: %s", exc)
+        return None
+
+
+def _delete_wait_indicator(indicator) -> None:
+    if indicator is None:
+        return
+    try:
+        indicator.delete()
+    except Exception as exc:
+        logger.warning("Failed to delete wait indicator: %s", exc)
+
+
 # ── Main handler ──────────────────────────────────────────────────────────
 
 def handle_ai_query(update: Update, context: CallbackContext) -> None:
@@ -1073,6 +1094,8 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
     query = _extract_query(update.message.text)
     if query is None:
         return
+
+    wait_indicator = _create_wait_indicator(update)
 
     try:
         context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
@@ -1275,6 +1298,7 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
             pass
     finally:
         session.close()
+        _delete_wait_indicator(wait_indicator)
 
 
 # Handler registration

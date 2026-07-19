@@ -108,6 +108,21 @@ class AiProviderTests(unittest.TestCase):
 
         self.assertEqual([item["id"] for item in result], [3, 1])
 
+    def test_wait_indicator_uses_ukrainian_text_and_is_deleted(self):
+        message = Mock(text="Потсдамбот знайди сантехніка")
+        indicator = Mock()
+        message.reply_text.return_value = indicator
+        update = Mock(message=message)
+
+        created = msg_ai._create_wait_indicator(update)
+        msg_ai._delete_wait_indicator(created)
+
+        message.reply_text.assert_called_once_with(
+            "⏳ Запит отримано. Шукаю відповідь, будь ласка, зачекайте…",
+            parse_mode=None,
+        )
+        indicator.delete.assert_called_once_with()
+
     def test_extract_query_accepts_alias_and_trigger_anywhere(self):
         cases = {
             "посдамбот муж на час": "муж на час",
