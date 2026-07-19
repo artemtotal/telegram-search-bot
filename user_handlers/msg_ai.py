@@ -69,6 +69,9 @@ def _get_chroma():
 logger = logging.getLogger(__name__)
 
 TRIGGER_WORD       = os.getenv("AI_TRIGGER_WORD", "потсдамбот").lower()
+TRIGGER_ALIASES    = tuple(dict.fromkeys((
+    TRIGGER_WORD, "посдамбот", "потбот", "потсдам бот",
+)))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 AI_MODEL           = os.getenv("AI_MODEL", "auto/best-fast")
 GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")   # kept for embed_updater only
@@ -386,10 +389,22 @@ def _search_faq(query: str, faq: List[Dict]) -> Optional[str]:
 def _extract_query(text: str) -> Optional[str]:
     if not text:
         return None
-    lower = text.lower().strip()
-    if not lower.startswith(TRIGGER_WORD):
+    trigger_re = re.compile(
+        r"(?<!\w)(?:" + "|".join(
+            re.escape(alias) for alias in sorted(TRIGGER_ALIASES, key=len, reverse=True)
+        ) + r")(?!\w)",
+        re.IGNORECASE,
+    )
+    match = trigger_re.search(text)
+    if match is None:
         return None
-    query = text.strip()[len(TRIGGER_WORD):].strip()
+    prefix = text[:match.start()].rstrip()
+    suffix = text[match.end():].lstrip()
+    if prefix and suffix and prefix[-1:] in ",.:;!?—-" and suffix[:1] in ",.:;!?—-":
+        suffix = suffix[1:].lstrip()
+    query = f"{prefix} {suffix}".strip()
+    query = re.sub(r"^[\s,.:;!—-]+|[\s,.:;!—-]+$", "", query)
+    query = re.sub(r"\s+([,.:;!?])", r"\1", query)
     return query if query else None
 
 
@@ -403,7 +418,16 @@ _SERVICE_QUERY_HINTS = [
     "предлагал", "предлагали", "предлагает", "пропонував", "пропонували", "пропонує",
     "реклам", "контакт", "специалист", "спеціаліст", "парикмах", "перукар",
     "стриж", "зачіс", "причес", "уклад", "колорист", "барбер", "friseur", "friseurin",
+    "муж на час", "чоловік на годину", "бытов", "побутов", "мелкий ремонт", "дрібний ремонт",
+    "сборк", "збірк", "мебел", "мебл", "установк", "встановлен", "кухн",
+    "подключ", "підключ", "электроприбор", "електроприлад", "техник", "технік",
 ]
+
+_PROVIDER_NAME_ALIASES = {
+    "дмитрий": ("дмитр", "dmitry", "dmitrii", "dmytro", "dmytr"),
+    "дмитро": ("дмитр", "dmitry", "dmitrii", "dmytro", "dmytr"),
+    "дима": ("дима", "dima", "dmytro", "dmytr"),
+}
 
 _SEEKER_PATTERNS = [
     r"\bищу\b", r"\bшукаю\b", r"\bищем\b", r"\bшукаємо\b",
@@ -416,6 +440,7 @@ _SEEKER_PATTERNS = [
 
 _PROVIDER_PATTERNS = [
     r"\bроблю\b", r"\bделаю\b", r"\bнадаю\b", r"\bпредлагаю\b", r"\bпропоную\b",
+    r"\bдопоможу\b", r"\bпомогу\b", r"\bвиконую\b", r"\bвыполняю\b",
     r"\bпрацюю\b", r"\bработаю\b", r"\bзапрошую\b", r"\bприглашаю\b",
     r"\bстригу\b", r"\bподстригу\b", r"\bпостригу\b", r"\bстригти\b",
     r"хто\w*\s+шука\w+\s+(барбер|перукар|парикмах|майстр)",
@@ -471,6 +496,21 @@ def _is_service_provider_query(query: str) -> bool:
     return any(h in q for h in _SERVICE_QUERY_HINTS)
 
 
+def _provider_author_terms(query: str) -> List[str]:
+    """Return possible name and username fragments from a provider query."""
+    terms = []
+    for word in re.findall(r"@?[\w.-]{3,}", query.lower(), flags=re.UNICODE):
+        clean = word.lstrip("@").strip(".-")
+        if not clean or clean in _STOP_WORDS:
+            continue
+        aliases = _PROVIDER_NAME_ALIASES.get(clean)
+        if aliases:
+            terms.extend(aliases)
+        elif word.startswith("@"):
+            terms.append(clean)
+    return list(dict.fromkeys(terms))
+
+
 def _provider_signal_score(msg: Dict) -> int:
     """Deterministic score: offers/recommendations/contacts beat seeker questions."""
     text = (msg.get("text") or "").lower()
@@ -500,7 +540,7 @@ def _filter_provider_candidates(messages: List[Dict], query: str = "") -> List[D
     provider_like = []
     for m in dedup.values():
         text = (m.get("text") or "").lower().strip()
-        if text.startswith((TRIGGER_WORD, "потбот", "потсдам бот")):
+        if text.startswith(TRIGGER_ALIASES):
             continue
         if "barberini" in text or "museum-barberini" in text:
             continue
@@ -510,6 +550,20 @@ def _filter_provider_candidates(messages: List[Dict], query: str = "") -> List[D
             provider_like.append(m)
     provider_like.sort(key=lambda m: (_provider_signal_score(m), m.get("date", "")), reverse=True)
     return provider_like
+
+
+def _group_provider_history(messages: List[Dict]) -> List[Dict]:
+    """Keep several confirmations per provider instead of isolated posts."""
+    groups: Dict[str, List[Dict]] = {}
+    order: List[str] = []
+    for message in messages:
+        key = (message.get("user") or f"message:{message.get('id')}").lower()
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        if len(groups[key]) < 4:
+            groups[key].append(message)
+    return [message for key in order for message in groups[key]]
 
 
 def _get_anchor_words(query: str) -> List[str]:
@@ -558,29 +612,34 @@ def _exclude_bot_address(q):
     return q.filter(~or_(*[_TL.like(p) for p in _BOT_ADDRESS_PREFIXES]))
 
 
-def _get_message_ids_by_keywords(session, chat_ids: List[int],
-                                  keywords: List[str],
-                                  anchor_words: Optional[List[str]] = None) -> List[int]:
-    """Per-keyword search with separate quotas for anchor vs expanded words."""
+def _search_keyword_ids(session, chat_ids: List[int],
+                        keywords: List[str],
+                        anchor_words: Optional[List[str]] = None,
+                        since: Optional[datetime] = None,
+                        before: Optional[datetime] = None) -> List[int]:
+    """Search message text with separate per-keyword quotas and date bounds."""
     if not chat_ids:
         return []
 
     seen: set = set()
     result: List[int] = []
-
     base_q = _exclude_bot_address(
         session.query(Message._id)
         .filter(Message.from_chat.in_(chat_ids))
         .filter(Message.text.isnot(None))
         .filter(Message.text != "")
     )
+    if since is not None:
+        base_q = base_q.filter(Message.date >= since)
+    if before is not None:
+        base_q = base_q.filter(Message.date < before)
 
     def _collect(words: List[str], per_kw: int) -> None:
-        for w in words:
-            if not w:
+        for word in words:
+            if not word:
                 continue
             rows = (
-                base_q.filter(_TL.like(f"%{w.lower()}%"))
+                base_q.filter(_TL.like(f"%{word.lower()}%"))
                 .order_by(Message.date.desc())
                 .limit(per_kw)
                 .all()
@@ -593,6 +652,43 @@ def _get_message_ids_by_keywords(session, chat_ids: List[int],
     _collect(anchor_words or [], PER_KW_ANCHOR)
     _collect(keywords or [], PER_KW_BROAD)
     return result
+
+
+def _get_message_ids_by_keywords(session, chat_ids: List[int],
+                                  keywords: List[str],
+                                  anchor_words: Optional[List[str]] = None) -> List[int]:
+    """Backward-compatible all-history keyword search."""
+    return _search_keyword_ids(session, chat_ids, keywords, anchor_words)
+
+
+def _search_provider_authors(session, chat_ids: List[int],
+                             terms: List[str], limit: int = 40):
+    """Find all-history messages by matching provider fullname or username."""
+    if not chat_ids or not terms:
+        return []
+    user_name = func.lower(func.coalesce(User.fullname, ""))
+    username = func.lower(func.coalesce(User.username, ""))
+    name_filters = []
+    for term in terms:
+        clean = term.lower().lstrip("@").strip()
+        if clean:
+            name_filters.extend((
+                user_name.like(f"%{clean}%"),
+                username.like(f"%{clean}%"),
+            ))
+    if not name_filters:
+        return []
+    return (
+        session.query(Message, User)
+        .outerjoin(User, Message.from_id == User.id)
+        .filter(Message.from_chat.in_(chat_ids))
+        .filter(Message.text.isnot(None))
+        .filter(Message.text != "")
+        .filter(or_(*name_filters))
+        .order_by(Message.date.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 def _fetch_chain(session, center_ids: List[int], window: int = CHAIN_WINDOW) -> List[Dict]:
@@ -661,52 +757,28 @@ def _search_recent(session, chat_ids: List[int],
 
 def _search_keywords_with_fallback(session, chat_ids: List[int],
                                     keywords: List[str],
-                                    anchor_words: Optional[List[str]] = None) -> List[Dict]:
-    """Search keywords in last 365 days; if < 5 results — extend to all time.
-    Returns messages sorted by date DESCENDING (newest first)."""
-    RECENT_DAYS = 365
+                                    anchor_words: Optional[List[str]] = None,
+                                    provider_query: bool = False) -> List[Dict]:
+    """Search recent text, preserving an independent all-history provider quota."""
+    recent_days = int(os.getenv("SEARCH_RECENT_DAYS", "730"))
+    cutoff = datetime.utcnow() - timedelta(days=recent_days)
+    recent_ids = _search_keyword_ids(
+        session, chat_ids, keywords, anchor_words, since=cutoff,
+    )
+    logger.info(f"Keyword search (last {recent_days}d): {len(recent_ids)} ids")
 
-    def _do_search(cutoff_date: Optional[datetime]) -> List[int]:
-        seen: set = set()
-        result: List[int] = []
-        base_q = _exclude_bot_address(
-            session.query(Message._id)
-            .filter(Message.from_chat.in_(chat_ids))
-            .filter(Message.text.isnot(None))
-            .filter(Message.text != "")
+    if provider_query:
+        historical_ids = _search_keyword_ids(
+            session, chat_ids, keywords, anchor_words, before=cutoff,
         )
-        if cutoff_date:
-            base_q = base_q.filter(Message.date >= cutoff_date)
-
-        def _collect(words: List[str], per_kw: int) -> None:
-            for w in words:
-                if not w:
-                    continue
-                rows = (
-                    base_q.filter(_TL.like(f"%{w.lower()}%"))
-                    .order_by(Message.date.desc())
-                    .limit(per_kw)
-                    .all()
-                )
-                for (pk,) in rows:
-                    if pk not in seen:
-                        seen.add(pk)
-                        result.append(pk)
-
-        _collect(anchor_words or [], PER_KW_ANCHOR)
-        _collect(keywords or [], PER_KW_BROAD)
-        return result
-
-    # First try: last year
-    cutoff = datetime.utcnow() - timedelta(days=RECENT_DAYS)
-    ids = _do_search(cutoff)
-    logger.info(f"Keyword search (last {RECENT_DAYS}d): {len(ids)} ids")
-
-    # Fallback: all time if too few results
-    if len(ids) < 5:
-        logger.info("Too few results, falling back to full history search")
-        ids = _do_search(None)
+        logger.info(f"Provider keyword quota (older history): {len(historical_ids)} ids")
+        ids = list(dict.fromkeys(recent_ids + historical_ids))
+    elif len(recent_ids) < 5:
+        logger.info("Too few recent results, falling back to full history search")
+        ids = _search_keyword_ids(session, chat_ids, keywords, anchor_words)
         logger.info(f"Keyword search (all time): {len(ids)} ids")
+    else:
+        ids = recent_ids
 
     return _fetch_chain(session, ids)
 
@@ -897,7 +969,13 @@ def _expand_keywords(query: str) -> List[str]:
                        "барбер", "barber", "стрижка", "стрижки", "стригу", "стригут"],
         "стрижка": ["стрижка", "стрижки", "стригу", "прическа", "укладка", "зачіска", "friseur"],
         # Services / repairs
-        "ремонт": ["ремонт", "ремонту", "отремонтировать", "ремонтирование", "reparieren", "reparatur"],
+        "ремонт": ["ремонт", "ремонту", "отремонтировать", "ремонтирование", "reparieren", "reparatur",
+                   "муж на час", "чоловік на годину", "бытовой мастер", "побутовий майстер"],
+        "муж": ["муж на час", "чоловік на годину", "мастер", "майстер", "ремонт", "сборка мебели",
+                "збірка меблів", "установка кухни", "встановлення кухні", "подключение техники"],
+        "мебел": ["мебель", "мебели", "меблів", "сборка мебели", "збірка меблів", "кухня", "кухні"],
+        "кухн": ["кухня", "кухни", "кухні", "установка кухни", "встановлення кухні", "мебель", "меблів"],
+        "подключ": ["подключение", "подключить", "підключення", "підключити", "электроприбор", "електроприлад"],
         "перевозк": ["перевозк", "перевезен", "транспорт", "transport", "umzug"],
         "уборк": ["уборк", "убираю", "клининг", "reinigung", "putzen"],
         # Education / language
@@ -1085,15 +1163,31 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
             if is_temporal:
                 keywords += _get_upcoming_date_patterns(14)
             keyword_msgs = _search_keywords_with_fallback(
-                session, chat_ids, keywords, anchor_words=anchor_words
+                session, chat_ids, keywords, anchor_words=anchor_words,
+                provider_query=is_provider_query,
             )
         else:
             # ChromaDB available — use keywords only for anchor words (high precision)
             keyword_msgs = []
             if anchor_words:
                 keyword_msgs = _search_keywords_with_fallback(
-                    session, chat_ids, [], anchor_words=anchor_words
+                    session, chat_ids, [], anchor_words=anchor_words,
+                    provider_query=is_provider_query,
                 )
+
+        # Provider names and @usernames live in the user table, not in the
+        # message body. Always add their complete posting history as an
+        # independent retrieval channel.
+        author_msgs = []
+        if is_provider_query:
+            author_terms = _provider_author_terms(query)
+            author_rows = _search_provider_authors(
+                session, chat_ids, author_terms, limit=40,
+            )
+            author_msgs = _rows_to_dicts(author_rows)
+            logger.info(
+                f"Provider author search: {len(author_msgs)} messages for {author_terms}"
+            )
 
         # ── Step C: Recent posts for temporal queries ────────────────────
         if is_temporal:
@@ -1105,10 +1199,11 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         else:
             recent_msgs = _search_recent(session, chat_ids, limit=10)
 
-        if vec_msgs and keyword_msgs:
-            fused = _rrf_merge([vec_msgs, keyword_msgs])
+        ranked_sources = [items for items in (vec_msgs, keyword_msgs, author_msgs) if items]
+        if len(ranked_sources) > 1:
+            fused = _rrf_merge(ranked_sources)
         else:
-            fused = vec_msgs or keyword_msgs
+            fused = ranked_sources[0] if ranked_sources else []
         all_candidates = fused + recent_msgs
         if is_provider_query:
             before_filter = len(all_candidates)
@@ -1116,13 +1211,16 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
             scored = sorted(all_candidates,
                 key=lambda m: (_provider_signal_score(m), m.get("date", "")),
                 reverse=True)
-            all_candidates = scored
+            all_candidates = _group_provider_history(scored)
             logger.info(f"Provider boost: {before_filter} candidates sorted by signal score")
         if not all_candidates:
             update.message.reply_text("В базі немає повідомлень для відповіді.")
             return
 
-        logger.info(f"Candidates: {len(vec_msgs)} vector + {len(keyword_msgs)} keyword + {len(recent_msgs)} recent = {len(all_candidates)}")
+        logger.info(
+            f"Candidates: {len(vec_msgs)} vector + {len(keyword_msgs)} keyword + "
+            f"{len(author_msgs)} author + {len(recent_msgs)} recent = {len(all_candidates)}"
+        )
 
         # ── Step D: Re-rank top-25 ───────────────────────────────────────
         top_msgs = _rerank(query, all_candidates, top_k=25)
@@ -1162,6 +1260,10 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
 
 # Handler registration
 handler = MessageHandler(
-    Filters.regex(rf"(?i)^{re.escape(TRIGGER_WORD)}\b") & (~Filters.command),
+    Filters.regex(
+        r"(?i)(?<!\w)(?:" + "|".join(
+            re.escape(alias) for alias in sorted(TRIGGER_ALIASES, key=len, reverse=True)
+        ) + r")(?!\w)"
+    ) & (~Filters.command),
     handle_ai_query,
 )

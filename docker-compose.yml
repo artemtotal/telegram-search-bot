@@ -28,6 +28,9 @@ services:
       - AI_MODEL=opus-first
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - AI_TRIGGER_WORD=потсдамбот
+      # Empty index: bootstrap the last two years; existing index: repair full history.
+      - EMBED_BOOTSTRAP_DAYS=730
+      - SEARCH_RECENT_DAYS=730
       - ADMIN_ID=312029534
       - CHAT_USERNAME=UkrainischesBrandenburg
       # Target chat for anonymous posts (Потсдам супергруппа)

@@ -92,6 +92,39 @@ class ReindexResolutionTests(unittest.TestCase):
         )
 
 
+class EmbedUpdaterBootstrapTests(unittest.TestCase):
+    def test_missing_state_bootstraps_recent_history(self):
+        plan = embed_updater._plan_index_window(
+            state_exists=False, collection_count=0, last_id=0,
+        )
+
+        self.assertEqual(plan["mode"], "bootstrap_recent")
+        self.assertEqual(plan["after_id"], 0)
+        self.assertIsNotNone(plan["since"])
+
+    def test_existing_index_without_state_repairs_full_history(self):
+        plan = embed_updater._plan_index_window(
+            state_exists=False, collection_count=1200, last_id=0,
+        )
+
+        self.assertEqual(plan["mode"], "repair_full")
+        self.assertEqual(plan["after_id"], 0)
+        self.assertIsNone(plan["since"])
+
+    def test_saved_state_continues_incrementally(self):
+        plan = embed_updater._plan_index_window(
+            state_exists=True, collection_count=1200, last_id=900,
+        )
+
+        self.assertEqual(plan["mode"], "incremental")
+        self.assertEqual(plan["after_id"], 900)
+        self.assertIsNone(plan["since"])
+
+    def test_failed_embedding_must_not_advance_state(self):
+        self.assertFalse(embed_updater._can_advance_state(todo_count=3, indexed_count=2))
+        self.assertTrue(embed_updater._can_advance_state(todo_count=3, indexed_count=3))
+
+
 class EmbedUpdaterLockTests(unittest.TestCase):
     def test_overlapping_worker_is_skipped(self):
         embed_updater._embed_update_lock.acquire()

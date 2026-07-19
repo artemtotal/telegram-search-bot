@@ -14,6 +14,7 @@ import os
 import sys
 import threading
 import time
+from datetime import datetime, timedelta
 from typing import List
 
 import requests
@@ -37,6 +38,7 @@ BATCH_SIZE     = 40
 MAX_PER_RUN    = 3000   # messages per hourly run (self-bootstraps gradually)
 COLLECTION     = "chunks"
 STATE_PATH     = os.path.join(CHROMA_PATH, "embed_state.json")
+BOOTSTRAP_DAYS = int(os.getenv("EMBED_BOOTSTRAP_DAYS", "730"))
 
 EMBED_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -77,6 +79,26 @@ def _load_state() -> dict:
             return json.load(f)
     except Exception:
         return {"last_id": 0}
+
+
+def _plan_index_window(state_exists: bool, collection_count: int, last_id: int) -> dict:
+    """Choose safe startup mode for a missing, existing, or tracked index."""
+    if state_exists:
+        return {"mode": "incremental", "after_id": last_id, "since": None}
+    if collection_count > 0:
+        # Deterministic chunk ids make this full repair idempotent: existing
+        # chunks are skipped, while gaps anywhere in history are filled.
+        return {"mode": "repair_full", "after_id": 0, "since": None}
+    return {
+        "mode": "bootstrap_recent",
+        "after_id": 0,
+        "since": datetime.utcnow() - timedelta(days=BOOTSTRAP_DAYS),
+    }
+
+
+def _can_advance_state(todo_count: int, indexed_count: int) -> bool:
+    """Advance the high-water mark only after every missing chunk succeeds."""
+    return todo_count == indexed_count
 
 
 def _save_state(state: dict) -> None:
@@ -263,26 +285,35 @@ def _embed_update_worker(context=None):
 
         _process_reindex_queue(col)
 
+        state_exists = os.path.isfile(STATE_PATH)
         state = _load_state()
         last_id = int(state.get("last_id", 0))
+        existing_ids = set(col.get(include=[])["ids"])
+        plan = _plan_index_window(state_exists, len(existing_ids), last_id)
+        log.info(
+            "Embed updater mode=%s after_id=%s since=%s existing_chunks=%s",
+            plan["mode"], plan["after_id"], plan["since"], len(existing_ids),
+        )
 
         session = DBSession()
         chat_ids = [c.id for c in session.query(Chat).filter(Chat.enable == 1).all()]
-        rows = (
+        query = (
             session.query(Message, User)
             .outerjoin(User, Message.from_id == User.id)
             .filter(Message.from_chat.in_(chat_ids))
             .filter(Message.text.isnot(None))
             .filter(Message.text != "")
-            .filter(Message._id > last_id)
-            .order_by(Message._id.asc())
-            .limit(MAX_PER_RUN)
-            .all()
+            .filter(Message._id > plan["after_id"])
         )
+        if plan["since"] is not None:
+            query = query.filter(Message.date >= plan["since"])
+        rows = query.order_by(Message._id.asc()).limit(MAX_PER_RUN).all()
         session.close()
 
         if not rows:
             log.debug("Embed updater: nothing new to index")
+            if plan["mode"] != "incremental":
+                _save_state({"last_id": last_id})
             return
 
         max_id = max(msg._id for msg, _ in rows)
@@ -292,8 +323,7 @@ def _embed_update_worker(context=None):
         msgs.sort(key=lambda m: (m["chat_id"], m["_id"]))
         chunks = chunk_messages(msgs)
 
-        existing = set(col.get(include=[])["ids"])
-        todo = [c for c in chunks if c["id"] not in existing]
+        todo = [c for c in chunks if c["id"] not in existing_ids]
 
         log.info(f"Embed updater: {len(rows)} new messages → {len(todo)} chunks to index")
 
@@ -311,9 +341,13 @@ def _embed_update_worker(context=None):
                 indexed += len(batch)
             time.sleep(0.15)
 
-        # Advance high-water mark even if some batches failed:
-        # failed chunks will be caught by the manual build script if needed,
-        # and a stuck mark would block all future updates.
+        if not _can_advance_state(len(todo), indexed):
+            log.error(
+                "Embed updater: indexed only %s/%s chunks; keeping last_id=%s for retry",
+                indexed, len(todo), last_id,
+            )
+            return
+
         _save_state({"last_id": max_id})
         log.info(f"Embed updater: done, indexed {indexed} chunks, last_id={max_id}")
 

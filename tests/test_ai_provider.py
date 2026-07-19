@@ -38,6 +38,76 @@ class AiProviderTests(unittest.TestCase):
 
         self.assertEqual(result, "")
 
+    def test_provider_intent_recognizes_handyman_queries(self):
+        queries = (
+            "муж на час Дмитрий",
+            "нужен бытовой мастер",
+            "кто делает мелкий ремонт",
+            "нужна сборка мебели и установка кухни",
+            "подключение бытовой техники",
+        )
+
+        for query in queries:
+            with self.subTest(query=query):
+                self.assertTrue(msg_ai._is_service_provider_query(query))
+
+    def test_extract_query_accepts_alias_and_trigger_anywhere(self):
+        cases = {
+            "посдамбот муж на час": "муж на час",
+            "Подскажите, потсдамбот, кто ремонтирует мебель?": "Подскажите, кто ремонтирует мебель?",
+            "Потбот найди электрика": "найди электрика",
+        }
+
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(msg_ai._extract_query(text), expected)
+
+    def test_extract_query_rejects_trigger_inside_another_word(self):
+        self.assertIsNone(msg_ai._extract_query("это непотсдамботик"))
+
+    def test_provider_query_always_supplements_recent_results_with_full_history(self):
+        recent = list(range(1, 8))
+        historical = [50, 51]
+        expected = [{"id": value} for value in recent + historical]
+
+        with patch.object(
+            msg_ai, "_search_keyword_ids", side_effect=[recent, historical]
+        ) as search, patch.object(msg_ai, "_fetch_chain", return_value=expected):
+            result = msg_ai._search_keywords_with_fallback(
+                Mock(), [-1001], ["ремонт"], provider_query=True,
+            )
+
+        self.assertEqual(search.call_count, 2)
+        self.assertEqual(result, expected)
+        self.assertIsNotNone(search.call_args_list[1].kwargs["before"])
+
+    def test_author_search_matches_fullname_username_and_alias(self):
+        session = Mock()
+        query = session.query.return_value
+        query.outerjoin.return_value = query
+        query.filter.return_value = query
+        query.order_by.return_value = query
+        query.limit.return_value = query
+        query.all.return_value = [
+            (Mock(_id=42), Mock(fullname="Dmytro", username="Dmytriii")),
+        ]
+
+        rows = msg_ai._search_provider_authors(
+            session, [-1001], ["дмитрий", "dmytriii"], limit=10,
+        )
+
+        self.assertEqual(rows[0][0]._id, 42)
+
+    def test_provider_history_keeps_multiple_messages_per_author(self):
+        messages = [
+            {"id": value, "user": "Dmytriii", "date": f"2026-04-{value:02d}"}
+            for value in range(1, 7)
+        ] + [{"id": 99, "user": "Other", "date": "2026-05-01"}]
+
+        grouped = msg_ai._group_provider_history(messages)
+
+        self.assertEqual([item["id"] for item in grouped], [1, 2, 3, 4, 99])
+
 
 if __name__ == "__main__":
     unittest.main()
