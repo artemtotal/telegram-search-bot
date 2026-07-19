@@ -95,7 +95,7 @@ class ReindexResolutionTests(unittest.TestCase):
 class EmbedUpdaterBootstrapTests(unittest.TestCase):
     def test_missing_state_bootstraps_recent_history(self):
         plan = embed_updater._plan_index_window(
-            state_exists=False, collection_count=0, last_id=0,
+            state={}, collection_count=0,
         )
 
         self.assertEqual(plan["mode"], "bootstrap_recent")
@@ -104,7 +104,7 @@ class EmbedUpdaterBootstrapTests(unittest.TestCase):
 
     def test_existing_index_without_state_repairs_full_history(self):
         plan = embed_updater._plan_index_window(
-            state_exists=False, collection_count=1200, last_id=0,
+            state={}, collection_count=1200,
         )
 
         self.assertEqual(plan["mode"], "repair_full")
@@ -113,12 +113,34 @@ class EmbedUpdaterBootstrapTests(unittest.TestCase):
 
     def test_saved_state_continues_incrementally(self):
         plan = embed_updater._plan_index_window(
-            state_exists=True, collection_count=1200, last_id=900,
+            state={"last_id": 900, "history_mode": "full"},
+            collection_count=1200,
         )
 
         self.assertEqual(plan["mode"], "incremental")
         self.assertEqual(plan["after_id"], 900)
         self.assertIsNone(plan["since"])
+
+    def test_legacy_state_triggers_full_history_repair(self):
+        plan = embed_updater._plan_index_window(
+            state={"last_id": 162246}, collection_count=34397,
+        )
+
+        self.assertEqual(plan["mode"], "repair_full")
+        self.assertEqual(plan["after_id"], 0)
+
+    def test_full_history_repair_resumes_from_its_cursor(self):
+        plan = embed_updater._plan_index_window(
+            state={
+                "last_id": 162248,
+                "history_mode": "repairing",
+                "repair_cursor": 3000,
+            },
+            collection_count=34397,
+        )
+
+        self.assertEqual(plan["mode"], "repair_full")
+        self.assertEqual(plan["after_id"], 3000)
 
     def test_failed_embedding_must_not_advance_state(self):
         self.assertFalse(embed_updater._can_advance_state(todo_count=3, indexed_count=2))

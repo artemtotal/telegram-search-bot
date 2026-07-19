@@ -81,17 +81,27 @@ def _load_state() -> dict:
         return {"last_id": 0}
 
 
-def _plan_index_window(state_exists: bool, collection_count: int, last_id: int) -> dict:
-    """Choose safe startup mode for a missing, existing, or tracked index."""
-    if state_exists:
+def _plan_index_window(state: dict, collection_count: int) -> dict:
+    """Choose recent bootstrap, resumable full repair, or incremental mode."""
+    history_mode = state.get("history_mode")
+    last_id = int(state.get("last_id", 0))
+    if history_mode == "full":
         return {"mode": "incremental", "after_id": last_id, "since": None}
-    if collection_count > 0:
-        # Deterministic chunk ids make this full repair idempotent: existing
-        # chunks are skipped, while gaps anywhere in history are filled.
-        return {"mode": "repair_full", "after_id": 0, "since": None}
+    if history_mode == "recent":
+        return {
+            "mode": "bootstrap_recent",
+            "after_id": last_id,
+            "since": datetime.utcnow() - timedelta(days=BOOTSTRAP_DAYS),
+        }
+    if history_mode == "repairing" or collection_count > 0:
+        return {
+            "mode": "repair_full",
+            "after_id": int(state.get("repair_cursor", 0)),
+            "since": None,
+        }
     return {
         "mode": "bootstrap_recent",
-        "after_id": 0,
+        "after_id": last_id,
         "since": datetime.utcnow() - timedelta(days=BOOTSTRAP_DAYS),
     }
 
@@ -285,11 +295,10 @@ def _embed_update_worker(context=None):
 
         _process_reindex_queue(col)
 
-        state_exists = os.path.isfile(STATE_PATH)
         state = _load_state()
         last_id = int(state.get("last_id", 0))
         existing_ids = set(col.get(include=[])["ids"])
-        plan = _plan_index_window(state_exists, len(existing_ids), last_id)
+        plan = _plan_index_window(state, len(existing_ids))
         log.info(
             "Embed updater mode=%s after_id=%s since=%s existing_chunks=%s",
             plan["mode"], plan["after_id"], plan["since"], len(existing_ids),
@@ -312,8 +321,10 @@ def _embed_update_worker(context=None):
 
         if not rows:
             log.debug("Embed updater: nothing new to index")
-            if plan["mode"] != "incremental":
-                _save_state({"last_id": last_id})
+            if plan["mode"] == "repair_full":
+                _save_state({"last_id": last_id, "history_mode": "full"})
+            elif plan["mode"] == "bootstrap_recent":
+                _save_state({"last_id": last_id, "history_mode": "recent"})
             return
 
         max_id = max(msg._id for msg, _ in rows)
@@ -348,7 +359,16 @@ def _embed_update_worker(context=None):
             )
             return
 
-        _save_state({"last_id": max_id})
+        if plan["mode"] == "repair_full":
+            _save_state({
+                "last_id": last_id,
+                "history_mode": "repairing",
+                "repair_cursor": max_id,
+            })
+        else:
+            # Both bootstrap and incremental runs become normally incremental
+            # after their current source window has been indexed successfully.
+            _save_state({"last_id": max_id, "history_mode": "full"})
         log.info(f"Embed updater: done, indexed {indexed} chunks, last_id={max_id}")
 
     except Exception as e:
