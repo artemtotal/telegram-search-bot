@@ -67,17 +67,26 @@ class ChunkMessagesTests(unittest.TestCase):
         self.assertNotIn("[reply to]", chunk["doc"])
         self.assertIn("answer", chunk["doc"])
 
-    def test_potbot_message_is_not_treated_as_this_bot_query(self):
+    def _row(self, text):
         msg = type("Message", (), {
             "_id": 1, "id": 101, "reply_to_msg_id": None,
-            "from_chat": -1001, "text": "Потбот найди электрика",
+            "from_chat": -1001, "text": text,
             "date": self.base, "link": "",
         })()
         user = type("User", (), {"username": "user", "fullname": "User"})()
+        return msg, user
 
-        rows = rows_to_msg_dicts([(msg, user)])
+    def test_potbot_message_is_not_treated_as_this_bot_query(self):
+        rows = rows_to_msg_dicts([self._row("Потбот найди электрика")])
 
         self.assertEqual(len(rows), 1)
+
+    def test_bot_address_in_the_middle_is_excluded_from_index(self):
+        rows = rows_to_msg_dicts([
+            self._row("Подскажите, потсдамбот, кто ремонтирует мебель?")
+        ])
+
+        self.assertEqual(rows, [])
 
 
 if __name__ == "__main__":
