@@ -30,13 +30,34 @@ class AiProviderTests(unittest.TestCase):
         self.assertFalse(payload["stream"])
         self.assertEqual(payload["model"], msg_ai.AI_MODEL)
 
-    def test_returns_empty_when_omniroute_fails_and_gemini_is_unavailable(self):
-        with patch.object(msg_ai, "GEMINI_API_KEY", ""), patch.object(
+    def test_returns_empty_when_omniroute_fails(self):
+        with patch.object(
             msg_ai.requests, "post", side_effect=msg_ai.requests.RequestException("offline")
         ):
             result = msg_ai._call_ai("Як справи?", max_tokens=50, timeout=10)
 
         self.assertEqual(result, "")
+
+    def test_provider_author_terms_keep_only_trailing_name(self):
+        self.assertEqual(
+            msg_ai._provider_author_terms("ремонт стиральных машин Александр"),
+            ["александр"],
+        )
+        self.assertEqual(
+            msg_ai._provider_author_terms("нужен хороший электрик Сергей"),
+            ["сергей"],
+        )
+
+    def test_vacancy_intent_rejects_service_work_and_housing(self):
+        non_vacancies = (
+            "стоимость работы электрика",
+            "ремонт робота-пылесоса",
+            "требуется квартира",
+            "wir suchen eine Wohnung",
+        )
+        for query in non_vacancies:
+            with self.subTest(query=query):
+                self.assertFalse(msg_ai._is_vacancy_query(query))
 
     def test_provider_intent_recognizes_handyman_queries(self):
         queries = (

@@ -12,6 +12,7 @@ services:
     volumes:
       - tgbot_tgbot_data:/app/config
       - tgbot_chroma_data:/app/chroma
+      - tgbot_model_data:/app/models
       - C:\Media\Downloads\Docker\adbot-data:/adbot:ro
     environment:
       # Secrets are loaded from the local .env file (excluded by .gitignore).
@@ -26,9 +27,12 @@ services:
       # OmniRoute proxy on the host: browser-managed opus-first combo.
       - OPENROUTER_URL=http://host.docker.internal:20128/v1/chat/completions
       - AI_MODEL=opus-first
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - AI_TRIGGER_WORD=потсдамбот
-      # Empty index: bootstrap the last two years; existing index: repair full history.
+      - LOCAL_EMBED_CACHE=/app/models
+      - LOCAL_EMBED_THREADS=4
+      - LOCAL_EMBED_OFFLINE=1
+      - LOCAL_EMBED_COLLECTION=chunks_local_v1
+
       - EMBED_BOOTSTRAP_DAYS=730
       - SEARCH_RECENT_DAYS=730
       - ADMIN_ID=312029534
@@ -48,3 +52,4 @@ volumes:
   tgbot_tgbot_data:
     external: true
   tgbot_chroma_data: {}
+  tgbot_model_data: {}

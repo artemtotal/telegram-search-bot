@@ -17,6 +17,7 @@ from telegram import Update
 from telegram.ext import CallbackContext, MessageHandler, Filters
 
 from database import Chat, DBSession, Message, User
+from user_jobs.local_embeddings import LOCAL_COLLECTION, embed_query
 
 # ── ChromaDB (lazy init) ──────────────────────────────────────────────────
 _chroma_col = None
@@ -37,15 +38,12 @@ def _get_chroma():
             settings=Settings(anonymized_telemetry=False),
         )
         col = None
-        for name in ("chunks", "messages"):  # prefer chunked index
+        for name in (LOCAL_COLLECTION,):
             try:
                 col = client.get_collection(name)
                 break
             except Exception:
                 continue
-        if col is None:
-            cols = client.list_collections()
-            col = cols[0] if cols else None
         if col is not None:
             # count with timeout guard (WSL2 safety)
             result = [0]
@@ -74,7 +72,6 @@ TRIGGER_ALIASES    = tuple(dict.fromkeys((
 )))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 AI_MODEL           = os.getenv("AI_MODEL", "auto/best-fast")
-GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")   # kept for embed_updater only
 FAQ_PATH           = os.getenv("FAQ_PATH", "/app/config/faq.json")
 CHAT_USERNAME      = os.getenv("CHAT_USERNAME", "")
 
@@ -94,36 +91,12 @@ MAX_CONTEXT   = 15000
 OPENROUTER_URL = os.getenv(
     "OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions"
 )
-GEMINI_DIRECT_MODEL = os.getenv("GEMINI_DIRECT_MODEL", "gemini-2.5-flash")
-GEMINI_DIRECT_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    "{model}:generateContent?key={api_key}"
-)
-
-EMBED_MODEL = "gemini-embedding-001"
-EMBED_URL   = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{EMBED_MODEL}:embedContent?key={{api_key}}"
-)
-
-
 def _embed_query(text: str) -> Optional[List[float]]:
-    """Embed a single query string using Google text-embedding-004."""
-    if not GEMINI_API_KEY:
-        return None
-    url = EMBED_URL.format(api_key=GEMINI_API_KEY)
-    payload = {
-        "model": f"models/{EMBED_MODEL}",
-        "content": {"parts": [{"text": text[:2000]}]},
-        "taskType": "RETRIEVAL_QUERY",
-        "outputDimensionality": 768,
-    }
+    """Embed a query locally with the multilingual ONNX model."""
     try:
-        resp = requests.post(url, json=payload, timeout=10)
-        resp.raise_for_status()
-        return resp.json()["embedding"]["values"]
+        return embed_query(text[:2000])
     except Exception as e:
-        logger.warning(f"Embed query failed: {e}")
+        logger.warning(f"Local query embedding failed: {e}")
         return None
 
 
@@ -203,7 +176,11 @@ def _vector_search(query: str, n_results: int = 50,
             "score":      round(1 - dist, 3),
         })
 
-    kept = [m for m in msgs if m["score"] >= VEC_MIN_SCORE]
+    kept = [
+        m for m in msgs
+        if m["score"] >= VEC_MIN_SCORE
+        and not _BOT_ADDRESS_RE.search(m.get("text") or "")
+    ]
     logger.info(
         f"Vector search: {len(kept)}/{len(msgs)} above score {VEC_MIN_SCORE} "
         f"(top: {msgs[0]['score'] if msgs else '-'}, since_days={since_days})"
@@ -277,8 +254,8 @@ TEMPORAL_WORDS = [
 ]
 
 _VACANCY_QUERY_RE = re.compile(
-    r"(ваканс|работ\w*|робот\w*|працевлашт|трудоустр|job\b|jobs\b|"
-    r"stellenangebot|stellenanzeige|arbeitsstelle)",
+    r"(ваканс|ищу\s+работ|шукаю\s+робот|працевлашт|трудоустр|"
+    r"\bjob\b|\bjobs\b|stellenangebot|stellenanzeige|arbeitsstelle)",
     re.IGNORECASE,
 )
 _VACANCY_MESSAGE_RE = re.compile(
@@ -286,6 +263,10 @@ _VACANCY_MESSAGE_RE = re.compile(
     r"уборщ|продав)|потрібн\w*\s+(?:праців|воді|кухар|прибира)|"
     r"шукаємо\s+(?:праців|воді|кухар|прибира)|stellenangebot|stellenanzeige|"
     r"wir\s+suchen|mitarbeiter\w*\s+gesucht)",
+    re.IGNORECASE,
+)
+_NON_VACANCY_QUERY_RE = re.compile(
+    r"(стоимост\w*\s+работ|вартир|wohnung|робот(?:а|-пылесос)|robot(?:er)?\b)",
     re.IGNORECASE,
 )
 
@@ -432,7 +413,11 @@ def _is_temporal_query(query: str) -> bool:
 
 def _is_vacancy_query(query: str) -> bool:
     """Return True for job/vacancy intent in Russian, Ukrainian, or German."""
-    return bool(_VACANCY_QUERY_RE.search(query or ""))
+    text = query or ""
+    return bool(
+        _VACANCY_QUERY_RE.search(text)
+        and not _NON_VACANCY_QUERY_RE.search(text)
+    )
 
 
 def _prioritize_vacancy_candidates(messages: List[Dict],
@@ -548,20 +533,19 @@ def _is_service_provider_query(query: str) -> bool:
 
 
 def _provider_author_terms(query: str) -> List[str]:
-    """Return possible name and username fragments from a provider query."""
-    terms = []
-    for word in re.findall(r"@?[\w.-]{3,}", query.lower(), flags=re.UNICODE):
-        clean = word.lstrip("@").strip(".-")
-        if not clean or clean in _STOP_WORDS:
+    """Return the explicit username or trailing person name from a service query."""
+    words = re.findall(r"@?[\w.-]{3,}", query.lower(), flags=re.UNICODE)
+    usernames = [word.lstrip("@").strip(".-") for word in words if word.startswith("@")]
+    if usernames:
+        return list(dict.fromkeys(usernames))
+
+    for word in reversed(words):
+        clean = word.strip(".-")
+        if not clean or clean in _STOP_WORDS or clean in _PROVIDER_TERM_NOISE:
             continue
         aliases = _PROVIDER_NAME_ALIASES.get(clean)
-        if aliases:
-            terms.extend(aliases)
-        elif word.startswith("@"):
-            terms.append(clean)
-        elif clean not in _PROVIDER_TERM_NOISE:
-            terms.append(clean)
-    return list(dict.fromkeys(terms))
+        return list(dict.fromkeys(aliases or [clean]))
+    return []
 
 
 def _provider_signal_score(msg: Dict) -> int:
@@ -765,11 +749,13 @@ def _fetch_chain(session, center_ids: List[int], window: int = CHAIN_WINDOW) -> 
         for offset in range(-window, window + 1):
             all_pks.add(pk + offset)
     rows = (
-        session.query(Message, User)
-        .outerjoin(User, Message.from_id == User.id)
-        .filter(Message._id.in_(all_pks))
-        .filter(Message.text.isnot(None))
-        .filter(Message.text != "")
+        _exclude_bot_address(
+            session.query(Message, User)
+            .outerjoin(User, Message.from_id == User.id)
+            .filter(Message._id.in_(all_pks))
+            .filter(Message.text.isnot(None))
+            .filter(Message.text != "")
+        )
         .order_by(Message.date.desc())
         .all()
     )
@@ -921,43 +907,8 @@ def _build_context(msgs: List[Dict]) -> str:
 
 # ── OpenRouter / OmniRoute calls ──────────────────────────────────────────
 
-def _call_gemini_direct(prompt: str, max_tokens: int = 4096, timeout: int = 90) -> str:
-    """Fallback: call Google Gemini API directly using GEMINI_API_KEY."""
-    if not GEMINI_API_KEY:
-        return ""
-
-    url = GEMINI_DIRECT_URL.format(model=GEMINI_DIRECT_MODEL, api_key=GEMINI_API_KEY)
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "maxOutputTokens": min(max_tokens, 8192),
-            "temperature": 0.2,
-        },
-    }
-    try:
-        resp = requests.post(url, json=payload, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        candidates = data.get("candidates", [])
-        if not candidates:
-            return ""
-        parts = candidates[0].get("content", {}).get("parts", [])
-        return "".join(p.get("text", "") for p in parts).strip()
-    except requests.exceptions.Timeout:
-        logger.error("Gemini direct API timeout")
-        return ""
-    except requests.exceptions.HTTPError as e:
-        status = e.response.status_code if e.response is not None else "?"
-        body = e.response.text[:200] if e.response is not None else ""
-        logger.error(f"Gemini direct HTTP error: {status} {body}")
-        return "RATE_LIMIT" if status == 429 else ""
-    except Exception as e:
-        logger.error(f"Gemini direct error: {e}")
-        return ""
-
-
 def _call_ai(prompt: str, max_tokens: int = 8192, timeout: int = 90) -> str:
-    """Call the configured OpenAI-compatible endpoint, then optionally fallback to Gemini."""
+    """Call the configured OpenAI-compatible endpoint."""
     headers = {
         "Content-Type": "application/json",
     }
@@ -975,22 +926,18 @@ def _call_ai(prompt: str, max_tokens: int = 8192, timeout: int = 90) -> str:
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"].strip()
     except requests.exceptions.Timeout:
-        logger.error("OpenRouter API timeout, using direct Gemini fallback")
-        return _call_gemini_direct(prompt, max_tokens=max_tokens, timeout=timeout)
+        logger.error("OpenRouter API timeout")
+        return ""
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else "?"
         body = e.response.text[:200] if e.response is not None else ""
         logger.error(f"OpenRouter HTTP error: {status} {body}")
-        if status in (402, 403, 404, 429, 500, 502, 503, 504):
-            logger.warning("Using direct Gemini fallback after OpenRouter failure")
-            fallback = _call_gemini_direct(prompt, max_tokens=max_tokens, timeout=timeout)
-            if fallback:
-                return fallback
-            return "RATE_LIMIT" if status == 429 else ""
+        if status == 429:
+            return "RATE_LIMIT"
         return ""
     except Exception as e:
-        logger.error(f"OpenRouter error: {e}, using direct Gemini fallback")
-        return _call_gemini_direct(prompt, max_tokens=max_tokens, timeout=timeout)
+        logger.error(f"OpenRouter error: {e}")
+        return ""
 
 
 def _normalize_query(query: str) -> str:

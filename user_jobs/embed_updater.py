@@ -17,8 +17,6 @@ import time
 from datetime import datetime, timedelta
 from typing import List
 
-import requests
-
 sys.path.insert(0, "/app")
 
 from user_jobs.reindex_queue import (
@@ -27,50 +25,25 @@ from user_jobs.reindex_queue import (
     remove_reindex_requests,
     resolve_reindex_request,
 )
+from user_jobs.local_embeddings import LOCAL_COLLECTION, embed_documents
 
 log = logging.getLogger(__name__)
 _embed_update_lock = threading.Lock()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 CHROMA_PATH    = os.getenv("CHROMA_PATH", "/app/chroma")
-EMBED_MODEL    = "gemini-embedding-001"
 BATCH_SIZE     = 40
 MAX_PER_RUN    = 3000   # messages per hourly run (self-bootstraps gradually)
-COLLECTION     = "chunks"
-STATE_PATH     = os.path.join(CHROMA_PATH, "embed_state.json")
+COLLECTION     = LOCAL_COLLECTION
+STATE_PATH     = os.path.join(CHROMA_PATH, "embed_state_local_v1.json")
 BOOTSTRAP_DAYS = int(os.getenv("EMBED_BOOTSTRAP_DAYS", "730"))
-
-EMBED_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{EMBED_MODEL}:batchEmbedContents?key={{api_key}}"
-)
 
 
 def _batch_embed(texts: List[str]) -> List[List[float]]:
-    url = EMBED_URL.format(api_key=GEMINI_API_KEY)
-    payload = {
-        "requests": [
-            {
-                "model": f"models/{EMBED_MODEL}",
-                "content": {"parts": [{"text": t[:2000]}]},
-                "taskType": "RETRIEVAL_DOCUMENT",
-                "outputDimensionality": 768,
-            }
-            for t in texts
-        ]
-    }
-    for attempt in range(3):
-        try:
-            resp = requests.post(url, json=payload, timeout=60)
-            if resp.status_code == 429:
-                time.sleep(60)
-                continue
-            resp.raise_for_status()
-            return [e["values"] for e in resp.json().get("embeddings", [])]
-        except Exception as e:
-            log.warning(f"Embed attempt {attempt+1} failed: {e}")
-            time.sleep(5)
-    return []
+    try:
+        return embed_documents([text[:2000] for text in texts])
+    except Exception as e:
+        log.warning(f"Local embedding failed: {e}")
+        return []
 
 
 def _load_state() -> dict:
@@ -301,9 +274,6 @@ def _process_reindex_queue(col) -> int:
 
 def _embed_update_worker(context=None):
     """Called by APScheduler every hour."""
-    if not GEMINI_API_KEY:
-        return
-
     try:
         import chromadb
         from database import DBSession, Message, User, Chat
