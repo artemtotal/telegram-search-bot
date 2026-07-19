@@ -25,7 +25,7 @@ from user_jobs.reindex_queue import (
     remove_reindex_requests,
     resolve_reindex_request,
 )
-from user_jobs.local_embeddings import LOCAL_COLLECTION, embed_documents
+from user_jobs.local_embeddings import LOCAL_COLLECTION, embed_in_subprocess
 
 log = logging.getLogger(__name__)
 _embed_update_lock = threading.Lock()
@@ -40,9 +40,9 @@ BOOTSTRAP_DAYS = int(os.getenv("EMBED_BOOTSTRAP_DAYS", "730"))
 
 def _batch_embed(texts: List[str]) -> List[List[float]]:
     try:
-        return embed_documents([text[:2000] for text in texts])
+        return embed_in_subprocess([text[:2000] for text in texts], timeout=180)
     except Exception as e:
-        log.warning(f"Local embedding failed: {e}")
+        log.warning(f"Local embedding subprocess failed: {e}")
         return []
 
 

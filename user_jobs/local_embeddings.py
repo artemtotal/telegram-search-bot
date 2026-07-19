@@ -1,6 +1,9 @@
 """Local multilingual text embeddings backed by ONNX Runtime."""
 
 import os
+import json
+import subprocess
+import sys
 import threading
 from typing import List, Optional
 
@@ -61,6 +64,32 @@ def embed_documents(texts: List[str]) -> List[List[float]]:
 def embed_query(text: str) -> Optional[List[float]]:
     vectors = _embed([text])
     return vectors[0] if vectors else None
+
+
+def embed_in_subprocess(texts: List[str], timeout: int = 120) -> List[List[float]]:
+    """Run native ONNX inference outside the long-lived bot process."""
+    if not texts:
+        return []
+    command = [
+        sys.executable,
+        "-m",
+        "user_jobs.local_embedding_worker",
+    ]
+    result = subprocess.run(
+        command,
+        input=json.dumps(texts, ensure_ascii=False),
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        env=os.environ.copy(),
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "embedding subprocess failed").strip()
+        raise RuntimeError(detail[-1000:])
+    vectors = json.loads(result.stdout)
+    if len(vectors) != len(texts):
+        raise RuntimeError("embedding subprocess returned an unexpected vector count")
+    return vectors
 
 
 def _reset_model_for_tests() -> None:

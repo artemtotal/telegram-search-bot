@@ -17,7 +17,7 @@ from telegram import Update
 from telegram.ext import CallbackContext, MessageHandler, Filters
 
 from database import Chat, DBSession, Message, User
-from user_jobs.local_embeddings import LOCAL_COLLECTION, embed_query
+from user_jobs.local_embeddings import LOCAL_COLLECTION, embed_in_subprocess
 
 # ── ChromaDB (lazy init) ──────────────────────────────────────────────────
 _chroma_col = None
@@ -92,9 +92,10 @@ OPENROUTER_URL = os.getenv(
     "OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions"
 )
 def _embed_query(text: str) -> Optional[List[float]]:
-    """Embed a query locally with the multilingual ONNX model."""
+    """Embed a query in a short-lived process isolated from the bot."""
     try:
-        return embed_query(text[:2000])
+        vectors = embed_in_subprocess([text[:2000]], timeout=45)
+        return vectors[0] if vectors else None
     except Exception as e:
         logger.warning(f"Local query embedding failed: {e}")
         return None

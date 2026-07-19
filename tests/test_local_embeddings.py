@@ -48,6 +48,24 @@ class LocalEmbeddingTests(unittest.TestCase):
         self.assertEqual(model.kwargs["threads"], local_embeddings.LOCAL_EMBED_THREADS)
         self.assertTrue(model.kwargs["local_files_only"])
 
+    def test_embedding_subprocess_returns_vectors(self):
+        fake_result = type("Result", (), {"returncode": 0, "stdout": "[[1.0, 2.0]]\n", "stderr": ""})()
+
+        with patch.object(local_embeddings.subprocess, "run", return_value=fake_result) as run:
+            vectors = local_embeddings.embed_in_subprocess(["query"], timeout=7)
+
+        self.assertEqual(vectors, [[1.0, 2.0]])
+        self.assertEqual(run.call_args.kwargs["timeout"], 7)
+        self.assertNotIn("query", run.call_args.args[0])
+        self.assertEqual(run.call_args.kwargs["input"], '["query"]')
+
+    def test_embedding_subprocess_failure_raises(self):
+        fake_result = type("Result", (), {"returncode": 139, "stdout": "", "stderr": "segfault"})()
+
+        with patch.object(local_embeddings.subprocess, "run", return_value=fake_result):
+            with self.assertRaisesRegex(RuntimeError, "segfault"):
+                local_embeddings.embed_in_subprocess(["query"])
+
     def test_concurrent_embedding_calls_are_serialized(self):
         active = 0
         max_active = 0
