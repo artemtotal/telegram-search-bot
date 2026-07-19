@@ -142,5 +142,82 @@ class QdrantUpdaterStateTests(unittest.TestCase):
             self.assertEqual(qdrant_updater.query_after_id({"last_id": 0}), 0)
 
 
+class QdrantUpdaterCheckpointTests(unittest.TestCase):
+    """A batch-embedding timeout must not discard already-indexed progress."""
+
+    @staticmethod
+    def _chunks(*spans):
+        return [
+            {"id": f"c-1001_{first}", "doc": "x",
+             "metadata": {"msg_id": first, "last_msg_id": last, "chat_id": -1001}}
+            for first, last in spans
+        ]
+
+    def test_checkpoint_last_id_covers_only_completed_chunks(self):
+        chunks = self._chunks((100, 105), (106, 110), (111, 120), (121, 130))
+        # First two batches (chunks 0..1) indexed; last completed chunk ends at 110,
+        # first pending chunk starts at 111. Safe checkpoint is 110 (< 111).
+        checkpoint = qdrant_updater.checkpoint_last_id(chunks, indexed_count=2)
+        self.assertEqual(checkpoint, 110)
+
+    def test_checkpoint_last_id_zero_when_nothing_indexed(self):
+        chunks = self._chunks((100, 105), (106, 110))
+        self.assertEqual(qdrant_updater.checkpoint_last_id(chunks, indexed_count=0), 0)
+
+    def test_checkpoint_last_id_full_batch_uses_last_chunk_end(self):
+        chunks = self._chunks((100, 105), (106, 110), (111, 120))
+        self.assertEqual(
+            qdrant_updater.checkpoint_last_id(chunks, indexed_count=3), 120
+        )
+
+    def test_checkpoint_never_regresses_past_pending_chunk_start(self):
+        # A completed chunk may span past the next pending chunk's start; the
+        # checkpoint must never exceed the first pending chunk's msg_id-1.
+        chunks = self._chunks((100, 130), (105, 108), (140, 150))
+        checkpoint = qdrant_updater.checkpoint_last_id(chunks, indexed_count=1)
+        self.assertEqual(checkpoint, 104)  # min(pending msg_id)=105 -> 104
+
+
+class QdrantBatchEmbedRetryTests(unittest.TestCase):
+    """A transient embedding timeout should be retried with smaller sub-batches."""
+
+    def test_empty_input_returns_empty(self):
+        self.assertEqual(qdrant_updater._batch_embed([]), [])
+
+    def test_successful_first_attempt_returns_vectors(self):
+        with mock.patch.object(
+            qdrant_updater, "embed_in_subprocess",
+            return_value=[[0.0] * 3, [0.1] * 3],
+        ) as embed:
+            result = qdrant_updater._batch_embed(["a", "b"])
+        self.assertEqual(len(result), 2)
+        self.assertEqual(embed.call_count, 1)
+
+    def test_timeout_splits_batch_and_recovers(self):
+        # First whole-batch call fails; the two halves each succeed on retry.
+        calls = []
+
+        def fake_embed(texts, timeout=240):
+            calls.append(list(texts))
+            if len(texts) == 4:
+                raise RuntimeError("timed out after 240 seconds")
+            return [[0.0] * 3 for _ in texts]
+
+        with mock.patch.object(qdrant_updater, "embed_in_subprocess", side_effect=fake_embed):
+            result = qdrant_updater._batch_embed(["a", "b", "c", "d"])
+
+        self.assertEqual(len(result), 4)
+        # whole batch (4) tried, then two halves of 2
+        self.assertEqual([len(c) for c in calls], [4, 2, 2])
+
+    def test_single_item_failure_returns_empty(self):
+        with mock.patch.object(
+            qdrant_updater, "embed_in_subprocess",
+            side_effect=RuntimeError("timed out after 240 seconds"),
+        ):
+            result = qdrant_updater._batch_embed(["x"])
+        self.assertEqual(result, [])
+
+
 if __name__ == "__main__":
     unittest.main()

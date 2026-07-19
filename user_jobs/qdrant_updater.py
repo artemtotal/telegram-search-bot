@@ -70,12 +70,53 @@ def query_after_id(state: Dict) -> int:
     return max(0, last_id - OVERLAP_MESSAGES)
 
 
+def checkpoint_last_id(chunks: List[Dict], indexed_count: int) -> int:
+    """Highest source msg id safely covered by the first ``indexed_count`` chunks.
+
+    Chunks are produced in ascending source-id order. After a partial run we must
+    only advance ``last_id`` far enough to cover fully indexed chunks without
+    claiming any pending chunk. The safe bound is one below the earliest pending
+    chunk's ``msg_id``; when every chunk is indexed we use the last chunk's
+    ``last_msg_id``. The run's overlap window re-processes boundary chunks on the
+    next pass, so a slightly conservative checkpoint never loses coverage.
+    """
+    if indexed_count <= 0:
+        return 0
+    pending = chunks[indexed_count:]
+    if not pending:
+        return int(chunks[indexed_count - 1]["metadata"]["last_msg_id"])
+    earliest_pending = min(int(chunk["metadata"]["msg_id"]) for chunk in pending)
+    return max(0, earliest_pending - 1)
+
+
 def _batch_embed(texts: List[str]) -> List[List[float]]:
+    """Embed a batch, splitting on timeout so one slow slice cannot abort a run.
+
+    Native ONNX inference occasionally exceeds the subprocess timeout under CPU
+    contention. Rather than dropping the whole batch (which stalls the shadow
+    build), retry with progressively smaller sub-batches. A single item that
+    still fails returns empty so the caller can checkpoint and resume.
+    """
+    if not texts:
+        return []
     try:
         return embed_in_subprocess([text[:2000] for text in texts], timeout=240)
     except Exception as exc:
-        log.error("Qdrant embedding subprocess failed: %s", exc)
-        return []
+        if len(texts) <= 1:
+            log.error("Qdrant embedding subprocess failed: %s", exc)
+            return []
+        log.warning(
+            "Qdrant embedding failed for %s texts; splitting and retrying: %s",
+            len(texts), exc,
+        )
+        mid = len(texts) // 2
+        left = _batch_embed(texts[:mid])
+        if len(left) != mid:
+            return []
+        right = _batch_embed(texts[mid:])
+        if len(right) != len(texts) - mid:
+            return []
+        return left + right
 
 
 def _resolve_reindex_groups(requests):
@@ -201,8 +242,22 @@ def run_once() -> Dict:
         batch = chunks[start:start + BATCH_SIZE]
         vectors = _batch_embed([chunk["doc"] for chunk in batch])
         if len(vectors) != len(batch):
+            # An embedding timeout/failure must not discard the batches already
+            # indexed in this run. Persist a conservative checkpoint covering the
+            # completed chunks so the next run resumes from there instead of
+            # replaying (and re-failing on) the whole window.
+            safe_id = checkpoint_last_id(chunks, indexed)
+            if safe_id > int(state.get("last_id", 0)):
+                partial = next_state(state, safe_id, exhausted=False)
+                save_state(partial)
+                log.warning(
+                    "Qdrant embedding failed at %s/%s chunks; checkpoint saved "
+                    "last_id=%s (resumable)",
+                    indexed, len(chunks), partial["last_id"],
+                )
             raise RuntimeError(
-                f"Qdrant indexed only {indexed}/{len(chunks)} chunks; state unchanged"
+                f"Qdrant indexed only {indexed}/{len(chunks)} chunks; "
+                f"checkpoint last_id={checkpoint_last_id(chunks, indexed)}"
             )
         upsert_chunks(batch, vectors)
         indexed += len(batch)
