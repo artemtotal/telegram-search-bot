@@ -111,6 +111,21 @@ def _can_advance_state(todo_count: int, indexed_count: int) -> bool:
     return todo_count == indexed_count
 
 
+def _next_index_state(plan: dict, previous_last_id: int, max_id: int,
+                      source_window_exhausted: bool) -> dict:
+    """Persist progress without leaving unprocessed rows behind a high-water mark."""
+    mode = plan["mode"]
+    if mode == "repair_full":
+        return {
+            "last_id": previous_last_id,
+            "history_mode": "repairing",
+            "repair_cursor": max_id,
+        }
+    if mode == "bootstrap_recent" and not source_window_exhausted:
+        return {"last_id": max_id, "history_mode": "recent"}
+    return {"last_id": max_id, "history_mode": "full"}
+
+
 def _save_state(state: dict) -> None:
     try:
         os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
@@ -316,7 +331,9 @@ def _embed_update_worker(context=None):
         )
         if plan["since"] is not None:
             query = query.filter(Message.date >= plan["since"])
-        rows = query.order_by(Message._id.asc()).limit(MAX_PER_RUN).all()
+        rows = query.order_by(Message._id.asc()).limit(MAX_PER_RUN + 1).all()
+        source_window_exhausted = len(rows) <= MAX_PER_RUN
+        rows = rows[:MAX_PER_RUN]
         session.close()
 
         if not rows:
@@ -359,16 +376,12 @@ def _embed_update_worker(context=None):
             )
             return
 
-        if plan["mode"] == "repair_full":
-            _save_state({
-                "last_id": last_id,
-                "history_mode": "repairing",
-                "repair_cursor": max_id,
-            })
-        else:
-            # Both bootstrap and incremental runs become normally incremental
-            # after their current source window has been indexed successfully.
-            _save_state({"last_id": max_id, "history_mode": "full"})
+        _save_state(_next_index_state(
+            plan=plan,
+            previous_last_id=last_id,
+            max_id=max_id,
+            source_window_exhausted=source_window_exhausted,
+        ))
         log.info(f"Embed updater: done, indexed {indexed} chunks, last_id={max_id}")
 
     except Exception as e:

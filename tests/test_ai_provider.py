@@ -55,7 +55,7 @@ class AiProviderTests(unittest.TestCase):
         cases = {
             "посдамбот муж на час": "муж на час",
             "Подскажите, потсдамбот, кто ремонтирует мебель?": "Подскажите, кто ремонтирует мебель?",
-            "Потбот найди электрика": "найди электрика",
+            "Потсдам бот найди электрика": "найди электрика",
         }
 
         for text, expected in cases.items():
@@ -64,6 +64,9 @@ class AiProviderTests(unittest.TestCase):
 
     def test_extract_query_rejects_trigger_inside_another_word(self):
         self.assertIsNone(msg_ai._extract_query("это непотсдамботик"))
+
+    def test_extract_query_does_not_claim_other_potbot(self):
+        self.assertIsNone(msg_ai._extract_query("Потбот найди электрика"))
 
     def test_provider_query_always_supplements_recent_results_with_full_history(self):
         recent = list(range(1, 8))

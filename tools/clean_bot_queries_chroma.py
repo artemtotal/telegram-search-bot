@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 CHROMA_PATH  = os.getenv("CHROMA_PATH", "/app/chroma")
-BOT_PREFIXES = ("потсдамбот", "потбот", "потсдам бот")
+BOT_PREFIXES = ("потсдамбот", "посдамбот", "потсдам бот")
 PAGE_SIZE    = 1000
 
 

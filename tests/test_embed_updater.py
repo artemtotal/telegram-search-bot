@@ -121,6 +121,40 @@ class EmbedUpdaterBootstrapTests(unittest.TestCase):
         self.assertEqual(plan["after_id"], 900)
         self.assertIsNone(plan["since"])
 
+    def test_successful_recent_bootstrap_stays_recent_until_window_is_exhausted(self):
+        next_state = embed_updater._next_index_state(
+            plan={"mode": "bootstrap_recent"},
+            previous_last_id=0,
+            max_id=3000,
+            source_window_exhausted=False,
+        )
+
+        self.assertEqual(next_state, {"last_id": 3000, "history_mode": "recent"})
+
+    def test_exhausted_recent_bootstrap_switches_to_full_incremental_mode(self):
+        next_state = embed_updater._next_index_state(
+            plan={"mode": "bootstrap_recent"},
+            previous_last_id=3000,
+            max_id=5000,
+            source_window_exhausted=True,
+        )
+
+        self.assertEqual(next_state, {"last_id": 5000, "history_mode": "full"})
+
+    def test_full_repair_keeps_original_incremental_high_water_mark(self):
+        next_state = embed_updater._next_index_state(
+            plan={"mode": "repair_full"},
+            previous_last_id=162248,
+            max_id=3000,
+            source_window_exhausted=False,
+        )
+
+        self.assertEqual(next_state, {
+            "last_id": 162248,
+            "history_mode": "repairing",
+            "repair_cursor": 3000,
+        })
+
     def test_legacy_state_triggers_full_history_repair(self):
         plan = embed_updater._plan_index_window(
             state={"last_id": 162246}, collection_count=34397,

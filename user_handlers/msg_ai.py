@@ -70,7 +70,7 @@ logger = logging.getLogger(__name__)
 
 TRIGGER_WORD       = os.getenv("AI_TRIGGER_WORD", "потсдамбот").lower()
 TRIGGER_ALIASES    = tuple(dict.fromkeys((
-    TRIGGER_WORD, "посдамбот", "потбот", "потсдам бот",
+    TRIGGER_WORD, "посдамбот", "потсдам бот",
 )))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 AI_MODEL           = os.getenv("AI_MODEL", "auto/best-fast")
@@ -600,7 +600,7 @@ def _get_upcoming_date_patterns(days_ahead: int = 14) -> List[str]:
 
 # Messages addressed to the bot itself (questions, not community answers) must
 # never end up in the answer context — they pollute it with unanswered queries.
-_BOT_ADDRESS_PREFIXES = (f"{TRIGGER_WORD}%", "потбот%", "потсдам бот%")
+_BOT_ADDRESS_PREFIXES = (f"{TRIGGER_WORD}%", "посдамбот%", "потсдам бот%")
 
 
 # Cyrillic-safe lowercase text expression (SQLite lower() is ASCII-only,

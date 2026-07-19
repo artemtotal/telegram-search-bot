@@ -20,7 +20,7 @@ MSG_TRUNCATE    = 400    # per-message text cap inside a chunk
 
 # Messages addressed to the bot are questions, not community knowledge —
 # they must never enter the vector index.
-BOT_PREFIXES = ("потсдамбот", "потбот", "потсдам бот")
+BOT_PREFIXES = ("потсдамбот", "посдамбот", "потсдам бот")
 
 
 def _fmt_line(m: Dict) -> str:

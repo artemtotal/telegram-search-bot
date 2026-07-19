@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timedelta
 
-from user_jobs.chunking import MAX_CHUNK_CHARS, chunk_messages
+from user_jobs.chunking import MAX_CHUNK_CHARS, chunk_messages, rows_to_msg_dicts
 
 
 class ChunkMessagesTests(unittest.TestCase):
@@ -66,6 +66,18 @@ class ChunkMessagesTests(unittest.TestCase):
 
         self.assertNotIn("[reply to]", chunk["doc"])
         self.assertIn("answer", chunk["doc"])
+
+    def test_potbot_message_is_not_treated_as_this_bot_query(self):
+        msg = type("Message", (), {
+            "_id": 1, "id": 101, "reply_to_msg_id": None,
+            "from_chat": -1001, "text": "Потбот найди электрика",
+            "date": self.base, "link": "",
+        })()
+        user = type("User", (), {"username": "user", "fullname": "User"})()
+
+        rows = rows_to_msg_dicts([(msg, user)])
+
+        self.assertEqual(len(rows), 1)
 
 
 if __name__ == "__main__":
