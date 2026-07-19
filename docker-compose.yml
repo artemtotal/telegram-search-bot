@@ -1,5 +1,16 @@
-version: "3.9"
 services:
+  qdrant:
+    image: qdrant/qdrant:v1.15.5
+    container_name: potsdambot-qdrant
+    restart: unless-stopped
+    volumes:
+      - tgbot_qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   tgbot:
     container_name: tgbot
     build: .
@@ -11,7 +22,9 @@ services:
       - "9968:9968"
     volumes:
       - tgbot_tgbot_data:/app/config
+      # Kept intact for rollback; production vector reads/writes use Qdrant.
       - tgbot_chroma_data:/app/chroma
+      - tgbot_qdrant_state:/app/qdrant-state
       - C:\Media\Downloads\Docker\adbot-data:/adbot:ro
     environment:
       # Secrets are loaded from the local .env file (excluded by .gitignore).
@@ -31,6 +44,13 @@ services:
       - LOCAL_EMBED_THREADS=4
       - LOCAL_EMBED_OFFLINE=1
       - LOCAL_EMBED_COLLECTION=chunks_local_v1
+      # Shadow mode keeps production on deterministic SQLite retrieval until
+      # the full Qdrant index passes migration verification.
+      - VECTOR_BACKEND=shadow
+      - QDRANT_UPDATER_ENABLED=0
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_COLLECTION=chunks_minilm_v1
+      - QDRANT_STATE_PATH=/app/qdrant-state/embed_state.json
 
       - EMBED_BOOTSTRAP_DAYS=730
       - SEARCH_RECENT_DAYS=730
@@ -51,3 +71,5 @@ volumes:
   tgbot_tgbot_data:
     external: true
   tgbot_chroma_data: {}
+  tgbot_qdrant_data: {}
+  tgbot_qdrant_state: {}

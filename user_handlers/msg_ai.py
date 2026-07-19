@@ -59,7 +59,9 @@ OPENROUTER_URL = os.getenv(
 )
 def _vector_search(query: str, n_results: int = 50,
                    since_days: Optional[int] = None) -> List[Dict]:
-    """Run both ONNX and Chroma native code outside the Telegram process."""
+    """Run ONNX outside the Telegram process and search Qdrant."""
+    if os.getenv("VECTOR_BACKEND", "qdrant").lower() != "qdrant":
+        return []
     try:
         payload = {
             "query": query[:2000],
@@ -67,7 +69,7 @@ def _vector_search(query: str, n_results: int = 50,
             "since_days": since_days,
         }
         result = subprocess.run(
-            [sys.executable, "-m", "user_jobs.local_vector_search_worker"],
+            [sys.executable, "-m", "user_jobs.qdrant_vector_search_worker"],
             input=json.dumps(payload, ensure_ascii=False),
             text=True,
             capture_output=True,

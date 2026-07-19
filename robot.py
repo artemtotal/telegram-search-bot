@@ -4,6 +4,8 @@ import asyncio
 import datetime
 import logging
 import os
+import subprocess
+import sys
 
 from user_handlers import (
     anonymous_posts,
@@ -18,7 +20,7 @@ from user_handlers import (
 )
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
-from user_jobs.embed_updater import run_embed_update
+
 from userbot import run_telethon
 from utils import is_userbot_mode, get_text_func
 
@@ -56,8 +58,28 @@ def _next_sunday_3am_utc(now=None):
 # 03:00 on any day, not specifically Sunday.
 job.run_repeating(run_faq_learn, interval=604800, first=_next_sunday_3am_utc())
 
-# Hourly embedding updater: indexes new messages into ChromaDB
-job.run_repeating(run_embed_update, interval=3600, first=300)
+_qdrant_update_process = None
+
+
+def run_qdrant_update(context=None):
+    """Keep native embedding work outside the Telegram polling process."""
+    global _qdrant_update_process
+    if (
+        _qdrant_update_process is not None
+        and _qdrant_update_process.poll() is None
+    ):
+        logging.warning("Qdrant updater is already running; skipping invocation")
+        return False
+    _qdrant_update_process = subprocess.Popen(
+        [sys.executable, "-m", "user_jobs.qdrant_updater", "--once"],
+        env=os.environ.copy(),
+    )
+    return True
+
+
+# Hourly updates are enabled only after the shadow index is verified.
+if os.getenv("QDRANT_UPDATER_ENABLED", "0") == "1":
+    job.run_repeating(run_qdrant_update, interval=3600, first=300)
 
 dispatcher.add_handler(msg_ai.handler)
 dispatcher.add_handler(faq_admin.handler)
