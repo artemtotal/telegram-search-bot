@@ -141,18 +141,60 @@ class EmbedUpdaterBootstrapTests(unittest.TestCase):
 
         self.assertEqual(next_state, {"last_id": 5000, "history_mode": "full"})
 
-    def test_full_repair_keeps_original_incremental_high_water_mark(self):
+    def test_full_repair_tracks_database_high_water_mark_during_repair(self):
         next_state = embed_updater._next_index_state(
             plan={"mode": "repair_full"},
             previous_last_id=162248,
             max_id=3000,
             source_window_exhausted=False,
+            source_high_water_id=162400,
+        )
+
+        self.assertEqual(next_state, {
+            "last_id": 162400,
+            "history_mode": "repairing",
+            "repair_cursor": 3000,
+        })
+
+    def test_full_repair_preserves_previous_database_high_water_mark(self):
+        next_state = embed_updater._next_index_state(
+            plan={"mode": "repair_full"},
+            previous_last_id=162248,
+            max_id=3000,
+            source_window_exhausted=False,
+            source_high_water_id=162100,
         )
 
         self.assertEqual(next_state, {
             "last_id": 162248,
             "history_mode": "repairing",
             "repair_cursor": 3000,
+        })
+
+    def test_exhausted_full_repair_advances_incremental_high_water_mark(self):
+        next_state = embed_updater._next_index_state(
+            plan={"mode": "repair_full", "after_id": 160000},
+            previous_last_id=0,
+            max_id=162300,
+            source_window_exhausted=True,
+        )
+
+        self.assertEqual(next_state, {
+            "last_id": 162300,
+            "history_mode": "full",
+        })
+
+    def test_empty_full_repair_uses_repair_cursor_as_high_water_mark(self):
+        next_state = embed_updater._next_index_state(
+            plan={"mode": "repair_full", "after_id": 162300},
+            previous_last_id=0,
+            max_id=162300,
+            source_window_exhausted=True,
+        )
+
+        self.assertEqual(next_state, {
+            "last_id": 162300,
+            "history_mode": "full",
         })
 
     def test_legacy_state_triggers_full_history_repair(self):

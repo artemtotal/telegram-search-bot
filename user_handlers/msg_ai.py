@@ -83,6 +83,7 @@ CONTEXT_MESSAGES_RECENT = 20
 CHAIN_WINDOW = 2
 RECENCY_CUTOFF_DAYS = 365
 RECENCY_PENALTY_DAYS = 730
+VACANCY_RECENT_DAYS = int(os.getenv("VACANCY_RECENT_DAYS", "90"))
 # Vector results below this cosine-similarity score are noise and are
 # dropped instead of polluting the LLM context (prevents "answers by vibes").
 VEC_MIN_SCORE = float(os.getenv("VEC_MIN_SCORE", "0.35"))
@@ -241,6 +242,9 @@ SYSTEM_PROMPT_CHAT = """
     • Зведення/аналіз → структурований текст з підзаголовками.
 - В самому кінці — одна коротка строка з найрелевантнішим джерелом: "Джерело: @username, ДАТА".
 - Для подій: дата, час, місце, як зареєструватися.
+- Для вакансій: використовуй тільки оголошення не старші 90 днів, спочатку
+  показуй найсвіжіші; дата публікації обов'язкова. Не називай вакансію
+  актуальною, якщо в повідомленні немає явної пропозиції роботи.
 
 КРИТИЧНО ВАЖЛИВО щодо пошуку майстрів/послуг/контактів:
 - Коли шукають "хто робить X", "майстри", "послуги" — ШУКАЙ В КОНТЕКСТІ:
@@ -272,7 +276,20 @@ TEMPORAL_WORDS = [
     "последние дни", "останні дні", "last week", "за тиждень",
 ]
 
-# ── Chat-history intent detection (bypass FAQ, go directly to deep search) ──
+_VACANCY_QUERY_RE = re.compile(
+    r"(ваканс|работ\w*|робот\w*|працевлашт|трудоустр|job\b|jobs\b|"
+    r"stellenangebot|stellenanzeige|arbeitsstelle)",
+    re.IGNORECASE,
+)
+_VACANCY_MESSAGE_RE = re.compile(
+    r"(ваканс|требуетс|требуются|ищем\s+(?:сотруд|работник|водител|повар|"
+    r"уборщ|продав)|потрібн\w*\s+(?:праців|воді|кухар|прибира)|"
+    r"шукаємо\s+(?:праців|воді|кухар|прибира)|stellenangebot|stellenanzeige|"
+    r"wir\s+suchen|mitarbeiter\w*\s+gesucht)",
+    re.IGNORECASE,
+)
+
+# ── Chat-history intent detection
 # These phrases signal the user wants to search/analyse the actual chat, not get a canned FAQ answer.
 _CHAT_HISTORY_PHRASES = [
     # "what did people say/write in the chat about X"
@@ -413,6 +430,32 @@ def _is_temporal_query(query: str) -> bool:
     return any(w in q for w in TEMPORAL_WORDS)
 
 
+def _is_vacancy_query(query: str) -> bool:
+    """Return True for job/vacancy intent in Russian, Ukrainian, or German."""
+    return bool(_VACANCY_QUERY_RE.search(query or ""))
+
+
+def _prioritize_vacancy_candidates(messages: List[Dict],
+                                    now: Optional[datetime] = None) -> List[Dict]:
+    """Keep only fresh vacancy posts and order them newest-first."""
+    cutoff = (now or datetime.utcnow()) - timedelta(days=VACANCY_RECENT_DAYS)
+    dedup: Dict[int, Dict] = {}
+    for message in messages:
+        message_id = message.get("id")
+        date_obj = message.get("date_obj")
+        text = message.get("text") or ""
+        if message_id in dedup or date_obj is None or date_obj < cutoff:
+            continue
+        if not _VACANCY_MESSAGE_RE.search(text):
+            continue
+        dedup[message_id] = message
+    return sorted(
+        dedup.values(),
+        key=lambda message: message.get("date_obj") or datetime.min,
+        reverse=True,
+    )
+
+
 _SERVICE_QUERY_HINTS = [
     "мастер", "мастера", "майстер", "майстри", "услуг", "послуг",
     "предлагал", "предлагали", "предлагает", "пропонував", "пропонували", "пропонує",
@@ -427,6 +470,14 @@ _PROVIDER_NAME_ALIASES = {
     "дмитрий": ("дмитр", "dmitry", "dmitrii", "dmytro", "dmytr"),
     "дмитро": ("дмитр", "dmitry", "dmitrii", "dmytro", "dmytr"),
     "дима": ("дима", "dima", "dmytro", "dmytr"),
+}
+
+_PROVIDER_TERM_NOISE = {
+    "муж", "час", "нужен", "нужна", "нужны", "ищу", "ищем", "найди",
+    "подскажите", "посоветуйте", "кто", "хто", "шукаю", "потрібен",
+    "потрібна", "майстер", "мастер", "специалист", "спеціаліст",
+    "электрик", "електрик", "сантехник", "сантехнік", "ремонт", "мебели",
+    "мебель", "меблів", "услуги", "послуги", "бытовой", "побутовий",
 }
 
 _SEEKER_PATTERNS = [
@@ -508,6 +559,8 @@ def _provider_author_terms(query: str) -> List[str]:
             terms.extend(aliases)
         elif word.startswith("@"):
             terms.append(clean)
+        elif clean not in _PROVIDER_TERM_NOISE:
+            terms.append(clean)
     return list(dict.fromkeys(terms))
 
 
@@ -540,7 +593,7 @@ def _filter_provider_candidates(messages: List[Dict], query: str = "") -> List[D
     provider_like = []
     for m in dedup.values():
         text = (m.get("text") or "").lower().strip()
-        if text.startswith(TRIGGER_ALIASES):
+        if _BOT_ADDRESS_RE.search(text):
             continue
         if "barberini" in text or "museum-barberini" in text:
             continue
@@ -600,7 +653,12 @@ def _get_upcoming_date_patterns(days_ahead: int = 14) -> List[str]:
 
 # Messages addressed to the bot itself (questions, not community answers) must
 # never end up in the answer context — they pollute it with unanswered queries.
-_BOT_ADDRESS_PREFIXES = (f"{TRIGGER_WORD}%", "посдамбот%", "потсдам бот%")
+_BOT_ADDRESS_PATTERN = (
+    r"(?<!\w)(?:" + "|".join(
+        re.escape(alias) for alias in sorted(TRIGGER_ALIASES, key=len, reverse=True)
+    ) + r")(?!\w)"
+)
+_BOT_ADDRESS_RE = re.compile(_BOT_ADDRESS_PATTERN, re.IGNORECASE)
 
 
 # Cyrillic-safe lowercase text expression (SQLite lower() is ASCII-only,
@@ -609,7 +667,7 @@ _TL = func.coalesce(Message.text_lower, "")
 
 
 def _exclude_bot_address(q):
-    return q.filter(~or_(*[_TL.like(p) for p in _BOT_ADDRESS_PREFIXES]))
+    return q.filter(~_TL.op("REGEXP")(_BOT_ADDRESS_PATTERN))
 
 
 def _search_keyword_ids(session, chat_ids: List[int],
@@ -684,12 +742,14 @@ def _search_provider_authors(session, chat_ids: List[int],
         return []
 
     return (
-        session.query(Message, User)
-        .outerjoin(User, Message.from_id == User.id)
-        .filter(Message.from_chat.in_(chat_ids))
-        .filter(Message.text.isnot(None))
-        .filter(Message.text != "")
-        .filter(Message.from_id.in_(matching_user_ids))
+        _exclude_bot_address(
+            session.query(Message, User)
+            .outerjoin(User, Message.from_id == User.id)
+            .filter(Message.from_chat.in_(chat_ids))
+            .filter(Message.text.isnot(None))
+            .filter(Message.text != "")
+            .filter(Message.from_id.in_(matching_user_ids))
+        )
         .order_by(Message.date.desc())
         .limit(limit)
         .all()
@@ -1134,16 +1194,24 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
 
         is_temporal = _is_temporal_query(query)
         is_provider_query = _is_service_provider_query(query)
+        is_vacancy_query = _is_vacancy_query(query)
         anchor_words = _get_anchor_words(query)
 
-        logger.info(f"Query: {query!r} | temporal: {is_temporal} | provider: {is_provider_query} | anchor: {anchor_words}")
+        logger.info(
+            f"Query: {query!r} | temporal: {is_temporal} | provider: "
+            f"{is_provider_query} | vacancy: {is_vacancy_query} | anchor: {anchor_words}"
+        )
 
         # ── Step A: Vector search (primary) ───────────────────────────────
         col = _get_chroma()
         vector_ready = col is not None and _chroma_count > 0  # use cached count, never call col.count() again
 
         if vector_ready:
-            if is_temporal:
+            if is_vacancy_query:
+                vec_msgs = _vector_search(
+                    query, n_results=60, since_days=VACANCY_RECENT_DAYS,
+                )
+            elif is_temporal:
                 # Temporal: first try last 14 days, fallback to 90 days
                 vec_msgs = _vector_search(query, n_results=50, since_days=14)
                 if len(vec_msgs) < 5:
@@ -1194,8 +1262,16 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
                 f"Provider author search: {len(author_msgs)} messages for {author_terms}"
             )
 
-        # ── Step C: Recent posts for temporal queries ────────────────────
-        if is_temporal:
+        # ── Step C: Recent posts for time-sensitive queries ──────────────
+        if is_vacancy_query:
+            recent_msgs = _search_recently_posted(
+                session, chat_ids, days=VACANCY_RECENT_DAYS, limit=100,
+            )
+            logger.info(
+                f"Recent vacancy window ({VACANCY_RECENT_DAYS}d): "
+                f"{len(recent_msgs)} messages"
+            )
+        elif is_temporal:
             recent_msgs = _search_recently_posted(session, chat_ids, days=14, limit=60)
             logger.info(f"Recent 14d posts: {len(recent_msgs)}")
         elif is_provider_query:
@@ -1210,7 +1286,13 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         else:
             fused = ranked_sources[0] if ranked_sources else []
         all_candidates = fused + recent_msgs
-        if is_provider_query:
+        if is_vacancy_query:
+            all_candidates = _prioritize_vacancy_candidates(all_candidates)
+            logger.info(
+                f"Vacancy freshness filter: {len(all_candidates)} candidates "
+                f"within {VACANCY_RECENT_DAYS}d"
+            )
+        elif is_provider_query:
             before_filter = len(all_candidates)
             # Soft boost for provider-like messages, but don't drop seekers
             scored = sorted(all_candidates,

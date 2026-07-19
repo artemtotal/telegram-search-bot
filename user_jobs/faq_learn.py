@@ -8,7 +8,9 @@ Admin gets a summary. No manual intervention needed.
 import json
 import logging
 import os
+import re
 import time
+
 from datetime import datetime, timedelta
 from typing import List, Dict
 
@@ -31,7 +33,11 @@ LEARN_DAYS         = int(os.getenv("FAQ_LEARN_DAYS", "30"))    # look back N day
 MSGS_PER_CAT       = int(os.getenv("FAQ_MSGS_PER_CAT", "100")) # messages fetched per category
 SLEEP_BETWEEN      = float(os.getenv("FAQ_SLEEP", "1.5"))       # seconds between AI calls
 
-# ── All topic categories (53 topics) ─────────────────────────────────────────
+_BOT_ADDRESS_PATTERN = (
+    r"(?<!\w)(?:потсдамбот|посдамбот|потсдам\ бот)(?!\w)"
+)
+
+# ── All topic categories
 CATEGORIES = [
     # ── Medical ──────────────────────────────────────────────────────────────
     {"name": "Терапевт / Hausarzt",
@@ -257,9 +263,11 @@ def _fetch_category_messages(session, chat_ids, keywords, days, limit) -> List[s
             .filter(Message.text != "")
             .filter(Message.date >= cutoff)
             .filter(func.coalesce(Message.text_lower, "").like(f"%{kw.lower()}%"))
-            .filter(~func.coalesce(Message.text_lower, "").like("потсдамбот%"))
-            .filter(~func.coalesce(Message.text_lower, "").like("посдамбот%"))
-            .filter(~func.coalesce(Message.text_lower, "").like("потсдам бот%"))
+            .filter(
+                ~func.coalesce(Message.text_lower, "").op("REGEXP")(
+                    _BOT_ADDRESS_PATTERN
+                )
+            )
             .order_by(Message.date.desc())
             .limit(limit)
             .all()

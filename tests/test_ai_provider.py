@@ -51,6 +51,41 @@ class AiProviderTests(unittest.TestCase):
             with self.subTest(query=query):
                 self.assertTrue(msg_ai._is_service_provider_query(query))
 
+    def test_vacancy_intent_is_detected_separately(self):
+        queries = (
+            "свежие вакансии в Потсдаме",
+            "ищу работу водителем",
+            "шукаю роботу",
+            "aktuelle Stellenangebote",
+        )
+
+        for query in queries:
+            with self.subTest(query=query):
+                self.assertTrue(msg_ai._is_vacancy_query(query))
+
+        self.assertFalse(msg_ai._is_vacancy_query("кто ремонтирует мебель"))
+
+    def test_vacancy_candidates_are_limited_to_90_days_and_newest_first(self):
+        from datetime import datetime, timedelta
+
+        now = datetime.utcnow()
+        candidates = [
+            {"id": 1, "date_obj": now - timedelta(days=20), "date": "recent",
+             "text": "Ищем водителя", "score": 0.7},
+            {"id": 2, "date_obj": now - timedelta(days=95), "date": "stale",
+             "text": "Вакансия водителя", "score": 0.9},
+            {"id": 3, "date_obj": now - timedelta(days=2), "date": "newest",
+             "text": "Требуется водитель", "score": 0.6},
+            {"id": 3, "date_obj": now - timedelta(days=2), "date": "duplicate",
+             "text": "Требуется водитель", "score": 0.6},
+            {"id": 4, "date_obj": now - timedelta(days=1), "date": "noise",
+             "text": "Обсуждали ремонт машины", "score": 0.95},
+        ]
+
+        result = msg_ai._prioritize_vacancy_candidates(candidates, now=now)
+
+        self.assertEqual([item["id"] for item in result], [3, 1])
+
     def test_extract_query_accepts_alias_and_trigger_anywhere(self):
         cases = {
             "посдамбот муж на час": "муж на час",
@@ -133,6 +168,66 @@ class AiProviderTests(unittest.TestCase):
             )
 
             self.assertEqual([row[0]._id for row in rows], [42])
+        finally:
+            session.close()
+            engine.dispose()
+
+    def test_provider_author_terms_extract_arbitrary_name_after_service(self):
+        terms = msg_ai._provider_author_terms("муж на час Сергей")
+
+        self.assertIn("сергей", terms)
+        self.assertNotIn("муж", terms)
+        self.assertNotIn("час", terms)
+
+    def test_provider_author_terms_ignore_service_words(self):
+        terms = msg_ai._provider_author_terms("нужен электрик Сергей")
+
+        self.assertEqual(terms, ["сергей"])
+
+    def test_provider_candidate_filter_excludes_bot_queries_anywhere(self):
+        messages = [
+            {"id": 1, "text": "Ремонтирую мебель, пишите в ЛС", "date": "2026-07-19"},
+            {"id": 2, "text": "Подскажите, потсдамбот, кто ремонтирует мебель?", "date": "2026-07-19"},
+        ]
+
+        result = msg_ai._filter_provider_candidates(messages, "ремонт мебели")
+
+        self.assertEqual([item["id"] for item in result], [1])
+
+    def test_provider_author_search_excludes_bot_queries_anywhere(self):
+        from database import Base, Chat, Message, User
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        session = sessionmaker(bind=engine)()
+        try:
+            session.add(Chat(id=-1001, title="test", enable=True))
+            session.add(User(id=7, fullname="Сергей", username="sergey"))
+            session.add_all([
+                Message(
+                    _id=41, id=410, from_id=7, from_chat=-1001,
+                    text="Ремонтирую мебель", text_lower="ремонтирую мебель",
+                ),
+                Message(
+                    _id=42, id=420, from_id=7, from_chat=-1001,
+                    text="Подскажите, потсдамбот, кто чинит мебель?",
+                    text_lower="подскажите, потсдамбот, кто чинит мебель?",
+                ),
+            ])
+            session.commit()
+
+            rows = msg_ai._search_provider_authors(
+                session, [-1001], ["сергей"], limit=10,
+            )
+
+            self.assertEqual([row[0]._id for row in rows], [41])
         finally:
             session.close()
             engine.dispose()

@@ -112,12 +112,19 @@ def _can_advance_state(todo_count: int, indexed_count: int) -> bool:
 
 
 def _next_index_state(plan: dict, previous_last_id: int, max_id: int,
-                      source_window_exhausted: bool) -> dict:
+                      source_window_exhausted: bool,
+                      source_high_water_id: int = 0) -> dict:
     """Persist progress without leaving unprocessed rows behind a high-water mark."""
     mode = plan["mode"]
     if mode == "repair_full":
+        incremental_high_water = max(previous_last_id, source_high_water_id)
+        if source_window_exhausted:
+            return {
+                "last_id": max(incremental_high_water, max_id),
+                "history_mode": "full",
+            }
         return {
-            "last_id": previous_last_id,
+            "last_id": incremental_high_water,
             "history_mode": "repairing",
             "repair_cursor": max_id,
         }
@@ -321,6 +328,16 @@ def _embed_update_worker(context=None):
 
         session = DBSession()
         chat_ids = [c.id for c in session.query(Chat).filter(Chat.enable == 1).all()]
+        source_high_water_id = (
+            session.query(Message._id)
+            .filter(Message.from_chat.in_(chat_ids))
+            .filter(Message.text.isnot(None))
+            .filter(Message.text != "")
+            .order_by(Message._id.desc())
+            .limit(1)
+            .scalar()
+            or last_id
+        )
         query = (
             session.query(Message, User)
             .outerjoin(User, Message.from_id == User.id)
@@ -338,10 +355,14 @@ def _embed_update_worker(context=None):
 
         if not rows:
             log.debug("Embed updater: nothing new to index")
-            if plan["mode"] == "repair_full":
-                _save_state({"last_id": last_id, "history_mode": "full"})
-            elif plan["mode"] == "bootstrap_recent":
-                _save_state({"last_id": last_id, "history_mode": "recent"})
+            terminal_id = max(last_id, int(plan.get("after_id", 0)))
+            _save_state(_next_index_state(
+                plan=plan,
+                previous_last_id=last_id,
+                max_id=terminal_id,
+                source_window_exhausted=True,
+                source_high_water_id=source_high_water_id,
+            ))
             return
 
         max_id = max(msg._id for msg, _ in rows)
@@ -381,6 +402,7 @@ def _embed_update_worker(context=None):
             previous_last_id=last_id,
             max_id=max_id,
             source_window_exhausted=source_window_exhausted,
+            source_high_water_id=source_high_water_id,
         ))
         log.info(f"Embed updater: done, indexed {indexed} chunks, last_id={max_id}")
 
