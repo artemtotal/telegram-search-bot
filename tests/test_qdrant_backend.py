@@ -136,6 +136,11 @@ class QdrantUpdaterStateTests(unittest.TestCase):
         )
         self.assertEqual(state, {"last_id": 9000, "history_mode": "full"})
 
+    def test_index_batches_overlap_to_preserve_boundary_chunks(self):
+        with mock.patch.object(qdrant_updater, "OVERLAP_MESSAGES", 16):
+            self.assertEqual(qdrant_updater.query_after_id({"last_id": 9000}), 8984)
+            self.assertEqual(qdrant_updater.query_after_id({"last_id": 0}), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

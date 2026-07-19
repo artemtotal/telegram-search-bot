@@ -30,6 +30,7 @@ log = logging.getLogger(__name__)
 STATE_PATH = os.getenv("QDRANT_STATE_PATH", "/app/qdrant-state/embed_state.json")
 BATCH_SIZE = int(os.getenv("QDRANT_EMBED_BATCH_SIZE", "40"))
 MAX_PER_RUN = int(os.getenv("QDRANT_MAX_PER_RUN", "12000"))
+OVERLAP_MESSAGES = int(os.getenv("QDRANT_OVERLAP_MESSAGES", "16"))
 
 
 def load_state() -> Dict:
@@ -59,6 +60,14 @@ def next_state(previous: Dict, max_id: int, exhausted: bool) -> Dict:
         "last_id": max(int(previous.get("last_id", 0)), int(max_id)),
         "history_mode": "full" if exhausted else "building",
     }
+
+
+def query_after_id(state: Dict) -> int:
+    """Overlap source rows so batch-boundary chunks are rebuilt safely."""
+    last_id = int(state.get("last_id", 0))
+    if last_id <= 0:
+        return 0
+    return max(0, last_id - OVERLAP_MESSAGES)
 
 
 def _batch_embed(texts: List[str]) -> List[List[float]]:
@@ -149,7 +158,8 @@ def run_once() -> Dict:
     wait_until_ready()
     ensure_collection()
     state = load_state()
-    after_id = int(state.get("last_id", 0))
+    last_id = int(state.get("last_id", 0))
+    after_id = query_after_id(state)
 
     session = DBSession()
     try:
@@ -172,7 +182,7 @@ def run_once() -> Dict:
     exhausted = len(rows) <= MAX_PER_RUN
     rows = rows[:MAX_PER_RUN]
     if not rows:
-        completed = next_state(state, after_id, exhausted=True)
+        completed = next_state(state, last_id, exhausted=True)
         save_state(completed)
         process_reindex_queue()
         return completed
