@@ -205,6 +205,118 @@ class AiProviderTests(unittest.TestCase):
 
         self.assertEqual(terms, ["сергей"])
 
+    def test_provider_author_terms_do_not_treat_connectors_as_names(self):
+        self.assertEqual(
+            msg_ai._provider_author_terms(
+                "муж на час или мастер по ремонту бытовой техники или сантехник есть в чате"
+            ),
+            [],
+        )
+        self.assertEqual(
+            msg_ai._provider_author_terms(
+                "знайди в групі контакти майстрів типу чоловік на годину"
+            ),
+            [],
+        )
+
+    def test_provider_rerank_keeps_direct_offer_omitted_by_ai(self):
+        messages = [
+            {
+                "id": 10,
+                "user": "Dmytriii",
+                "date": "2026-04-26",
+                "text": (
+                    "Допоможу з ремонтом оселі, зібрати меблі, підключити "
+                    "електроприлади. Телефон +49 160 94878456"
+                ),
+            },
+            {
+                "id": 11,
+                "user": "requester",
+                "date": "2026-07-01",
+                "text": "Порадьте майстра для ремонту пральної машини?",
+            },
+        ] + [
+            {
+                "id": value,
+                "user": f"user{value}",
+                "date": "2026-06-01",
+                "text": "Загальна розмова без контакту",
+            }
+            for value in range(12, 40)
+        ]
+
+        with patch.object(msg_ai, "_call_ai", return_value="[1, 2, 3]"):
+            result = msg_ai._rerank(
+                "муж на час или мастер по ремонту бытовой техники",
+                messages,
+                top_k=3,
+                preserve_provider_offers=True,
+            )
+
+        self.assertIn(10, [item["id"] for item in result])
+
+    def test_provider_offer_search_finds_older_handyman_despite_newer_questions(self):
+        from datetime import datetime, timedelta
+        from database import Base, Chat, Message, User
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        session = sessionmaker(bind=engine)()
+        try:
+            session.add(Chat(id=-1001, title="test", enable=True))
+            session.add_all([
+                User(id=7, fullname="Dmytro", username="Dmytriii"),
+                User(id=8, fullname="Requester", username="requester"),
+            ])
+            session.add_all([
+                Message(
+                    _id=42, id=420, from_id=7, from_chat=-1001,
+                    date=datetime(2025, 1, 5),
+                    text=(
+                        "Допоможу з ремонтом оселі, зібрати меблі, підключити "
+                        "побутову техніку. Телефон +49 160 94878456"
+                    ),
+                    text_lower=(
+                        "допоможу з ремонтом оселі, зібрати меблі, підключити "
+                        "побутову техніку. телефон +49 160 94878456"
+                    ),
+                ),
+                Message(
+                    _id=43, id=430, from_id=7, from_chat=-1001,
+                    date=datetime(2025, 2, 5),
+                    text="Пропоную ремонт оселі та збирання меблів. Телефон +49 160 94878456",
+                    text_lower="пропоную ремонт оселі та збирання меблів. телефон +49 160 94878456",
+                ),
+            ])
+            for offset in range(30):
+                text = "Порадьте майстра, потрібен чоловік на годину для ремонту"
+                session.add(Message(
+                    _id=100 + offset, id=1000 + offset, from_id=8, from_chat=-1001,
+                    date=datetime(2026, 7, 1) + timedelta(minutes=offset),
+                    text=text, text_lower=text.lower(),
+                ))
+            session.commit()
+
+            offers = msg_ai._search_provider_offers(
+                session,
+                [-1001],
+                "знайди контакти майстрів типу чоловік на годину",
+            )
+
+            self.assertEqual([item["user"] for item in offers], ["Dmytriii"])
+            self.assertEqual(offers[0]["id"], 43)
+        finally:
+            session.close()
+            engine.dispose()
+
     def test_provider_candidate_filter_excludes_bot_queries_anywhere(self):
         messages = [
             {"id": 1, "text": "Ремонтирую мебель, пишите в ЛС", "date": "2026-07-19"},

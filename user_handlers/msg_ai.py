@@ -504,6 +504,18 @@ _HAIR_TOPIC_RE = re.compile(
     re.IGNORECASE,
 )
 
+_HANDYMAN_TOPIC_RE = re.compile(
+    r"(муж\s+на\s+час|чоловік\s+на\s+годину|майстр|мастер|ремонт|сантех|"
+    r"електрик|электрик|мебл|кухн|побутов|бытов|технік|техник)",
+    re.IGNORECASE,
+)
+
+_PROVIDER_OFFER_PATTERN = (
+    r"(?i)(?:\b(?:допоможу|помогу|пропоную|предлагаю|надаю|роблю|делаю|"
+    r"виконую|выполняю|ремонтирую|збираю|собираю|підключаю|подключаю)\b|"
+    r"\b(?:пишіть|пишите)\b.*\b(?:лс|особист|личн|direct)\b)"
+)
+
 
 def _is_hair_query(query: str) -> bool:
     return bool(_HAIR_TOPIC_RE.search(query))
@@ -520,9 +532,11 @@ _HAIR_SERVICE_KEYWORDS = [
 
 
 def _matches_query_topic(query: str, msg: Dict) -> bool:
-    """Avoid generic 'services' ads (moving, repair, etc.) when the user asked for hair/beauty."""
+    """Keep provider offers inside the service family requested by the user."""
     if _is_hair_query(query):
         return bool(_HAIR_TOPIC_RE.search(msg.get("text") or ""))
+    if _HANDYMAN_TOPIC_RE.search(query or ""):
+        return bool(_HANDYMAN_TOPIC_RE.search(msg.get("text") or ""))
     return True
 
 
@@ -533,18 +547,31 @@ def _is_service_provider_query(query: str) -> bool:
 
 
 def _provider_author_terms(query: str) -> List[str]:
-    """Return the explicit username or trailing person name from a service query."""
-    words = re.findall(r"@?[\w.-]{3,}", query.lower(), flags=re.UNICODE)
-    usernames = [word.lstrip("@").strip(".-") for word in words if word.startswith("@")]
+    """Return an explicit username or person name, never an arbitrary query word."""
+    words = re.findall(r"@?[\w.-]{3,}", query or "", flags=re.UNICODE)
+    usernames = [word.lstrip("@").strip(".-").lower() for word in words if word.startswith("@")]
     if usernames:
         return list(dict.fromkeys(usernames))
 
+    # Known aliases are safe even when the user types the name in lowercase.
+    for word in reversed(words):
+        clean = word.strip(".-").lower()
+        aliases = _PROVIDER_NAME_ALIASES.get(clean)
+        if aliases:
+            return list(dict.fromkeys(aliases))
+
+    # Arbitrary names are accepted only when explicitly capitalized. This avoids
+    # treating conjunctions and grammatical words such as "или" or "годину" as
+    # provider names while still supporting "электрик Сергей".
     for word in reversed(words):
         clean = word.strip(".-")
-        if not clean or clean in _STOP_WORDS or clean in _PROVIDER_TERM_NOISE:
-            continue
-        aliases = _PROVIDER_NAME_ALIASES.get(clean)
-        return list(dict.fromkeys(aliases or [clean]))
+        lowered = clean.lower()
+        if (
+            clean[:1].isupper()
+            and lowered not in _STOP_WORDS
+            and lowered not in _PROVIDER_TERM_NOISE
+        ):
+            return [lowered]
     return []
 
 
@@ -601,6 +628,33 @@ def _group_provider_history(messages: List[Dict]) -> List[Dict]:
         if len(groups[key]) < 4:
             groups[key].append(message)
     return [message for key in order for message in groups[key]]
+
+
+def _search_provider_offers(session, chat_ids: List[int], query: str,
+                            scan_limit: int = 5000,
+                            result_limit: int = 40) -> List[Dict]:
+    """Find direct all-history service offers and keep the newest per author."""
+    if not chat_ids:
+        return []
+    rows = (
+        _exclude_bot_address(
+            session.query(Message, User)
+            .outerjoin(User, Message.from_id == User.id)
+            .filter(Message.from_chat.in_(chat_ids))
+            .filter(Message.text.isnot(None))
+            .filter(Message.text != "")
+            .filter(_TL.op("REGEXP")(_PROVIDER_OFFER_PATTERN))
+        )
+        .order_by(Message.date.desc())
+        .limit(scan_limit)
+        .all()
+    )
+    candidates = _filter_provider_candidates(_rows_to_dicts(rows), query)
+    newest_by_author: Dict[str, Dict] = {}
+    for message in candidates:
+        key = (message.get("user") or f"message:{message.get('id')}").lower()
+        newest_by_author.setdefault(key, message)
+    return list(newest_by_author.values())[:result_limit]
 
 
 def _get_anchor_words(query: str) -> List[str]:
@@ -760,7 +814,6 @@ def _fetch_chain(session, center_ids: List[int], window: int = CHAIN_WINDOW) -> 
         .all()
     )
     return _rows_to_dicts(rows)
-
 
 def _search_recently_posted(session, chat_ids: List[int],
                              days: int = 7, limit: int = 60) -> List[Dict]:
@@ -1025,10 +1078,36 @@ def _expand_keywords(query: str) -> List[str]:
     return final if final else query.split()
 
 
-def _rerank(query: str, messages: List[Dict], top_k: int = 25) -> List[Dict]:
-    """Select the most relevant messages from the candidates pool."""
+def _rerank(query: str, messages: List[Dict], top_k: int = 25,
+            preserve_provider_offers: bool = False) -> List[Dict]:
+    """Select relevant messages while preserving strong direct service offers."""
     if len(messages) <= top_k:
         return messages
+
+    protected = []
+    if preserve_provider_offers:
+        seen_users = set()
+        for message in messages:
+            if _provider_signal_score(message) < 5:
+                continue
+            user_key = (message.get("user") or f"message:{message.get('id')}").lower()
+            if user_key in seen_users:
+                continue
+            seen_users.add(user_key)
+            protected.append(message)
+            if len(protected) >= max(1, top_k // 2):
+                break
+
+    def _merge_protected(selected: List[Dict]) -> List[Dict]:
+        merged = protected + selected
+        dedup = []
+        seen_ids = set()
+        for message in merged:
+            if message.get("id") in seen_ids:
+                continue
+            seen_ids.add(message.get("id"))
+            dedup.append(message)
+        return dedup[:top_k]
 
     # Limit input to avoid oversized prompts (>150 msgs × 200 chars ≈ ~10k tokens)
     candidates = messages[:150]
@@ -1063,10 +1142,10 @@ def _rerank(query: str, messages: List[Dict], top_k: int = 25) -> List[Dict]:
             selected = [candidates[i] for i in indices if 0 <= i < len(candidates)]
             if selected:
                 logger.info(f"Re-ranked: {len(messages)} → {len(selected)} messages")
-                return selected
+                return _merge_protected(selected)
     except Exception as e:
         logger.warning(f"Re-ranking failed: {e}")
-    return candidates[:top_k]
+    return _merge_protected(candidates[:top_k])
 
 
 # ── Output ────────────────────────────────────────────────────────────────
@@ -1199,6 +1278,7 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         # message body. Always add their complete posting history as an
         # independent retrieval channel.
         author_msgs = []
+        offer_msgs = []
         if is_provider_query:
             author_terms = _provider_author_terms(query)
             author_rows = _search_provider_authors(
@@ -1208,6 +1288,8 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
             logger.info(
                 f"Provider author search: {len(author_msgs)} messages for {author_terms}"
             )
+            offer_msgs = _search_provider_offers(session, chat_ids, query)
+            logger.info(f"Provider direct offers: {len(offer_msgs)} authors")
 
         # ── Step C: Recent posts for time-sensitive queries ──────────────
         if is_vacancy_query:
@@ -1227,7 +1309,9 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         else:
             recent_msgs = _search_recent(session, chat_ids, limit=10)
 
-        ranked_sources = [items for items in (vec_msgs, keyword_msgs, author_msgs) if items]
+        ranked_sources = [
+            items for items in (offer_msgs, vec_msgs, keyword_msgs, author_msgs) if items
+        ]
         if len(ranked_sources) > 1:
             fused = _rrf_merge(ranked_sources)
         else:
@@ -1252,12 +1336,18 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
             return
 
         logger.info(
-            f"Candidates: {len(vec_msgs)} vector + {len(keyword_msgs)} keyword + "
-            f"{len(author_msgs)} author + {len(recent_msgs)} recent = {len(all_candidates)}"
+            f"Candidates: {len(offer_msgs)} offers + {len(vec_msgs)} vector + "
+            f"{len(keyword_msgs)} keyword + {len(author_msgs)} author + "
+            f"{len(recent_msgs)} recent = {len(all_candidates)}"
         )
 
         # ── Step D: Re-rank top-25 ───────────────────────────────────────
-        top_msgs = _rerank(query, all_candidates, top_k=25)
+        top_msgs = _rerank(
+            query,
+            all_candidates,
+            top_k=25,
+            preserve_provider_offers=is_provider_query,
+        )
 
         # Step F: build context string
         ctx = _build_context(top_msgs)
