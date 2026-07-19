@@ -1,5 +1,7 @@
 import os
 import sys
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -45,6 +47,46 @@ class LocalEmbeddingTests(unittest.TestCase):
         )
         self.assertEqual(model.kwargs["threads"], local_embeddings.LOCAL_EMBED_THREADS)
         self.assertTrue(model.kwargs["local_files_only"])
+
+    def test_concurrent_embedding_calls_are_serialized(self):
+        active = 0
+        max_active = 0
+        state_lock = threading.Lock()
+
+        class UnsafeEmbeddingModel:
+            def embed(self, texts, batch_size):
+                nonlocal active, max_active
+                with state_lock:
+                    active += 1
+                    max_active = max(max_active, active)
+                time.sleep(0.03)
+                with state_lock:
+                    active -= 1
+                return [[1.0] * 384 for _ in texts]
+
+        model = UnsafeEmbeddingModel()
+        barrier = threading.Barrier(3)
+        errors = []
+
+        def worker(text):
+            try:
+                barrier.wait()
+                local_embeddings._embed_with_model(model, [text])
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=worker, args=("query",)),
+            threading.Thread(target=worker, args=("index",)),
+        ]
+        for thread in threads:
+            thread.start()
+        barrier.wait()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(max_active, 1)
 
 
 if __name__ == "__main__":

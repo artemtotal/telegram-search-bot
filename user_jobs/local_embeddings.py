@@ -18,6 +18,7 @@ LOCAL_COLLECTION = os.getenv("LOCAL_EMBED_COLLECTION", "chunks_local_v1")
 
 _model: Optional[TextEmbedding] = None
 _model_lock = threading.Lock()
+_embed_lock = threading.Lock()
 
 
 def _get_model() -> TextEmbedding:
@@ -34,14 +35,23 @@ def _get_model() -> TextEmbedding:
     return _model
 
 
-def _embed(texts: List[str]) -> List[List[float]]:
-    if not texts:
-        return []
-    vectors = _get_model().embed(texts, batch_size=LOCAL_EMBED_BATCH_SIZE)
-    result = [vector.tolist() if hasattr(vector, "tolist") else list(vector) for vector in vectors]
+def _embed_with_model(model: TextEmbedding, texts: List[str]) -> List[List[float]]:
+    """Serialize ONNX inference; the shared FastEmbed session is not thread-safe."""
+    with _embed_lock:
+        vectors = model.embed(texts, batch_size=LOCAL_EMBED_BATCH_SIZE)
+        result = [
+            vector.tolist() if hasattr(vector, "tolist") else list(vector)
+            for vector in vectors
+        ]
     if any(len(vector) != LOCAL_EMBED_DIM for vector in result):
         raise ValueError(f"Unexpected local embedding dimension; expected {LOCAL_EMBED_DIM}")
     return result
+
+
+def _embed(texts: List[str]) -> List[List[float]]:
+    if not texts:
+        return []
+    return _embed_with_model(_get_model(), texts)
 
 
 def embed_documents(texts: List[str]) -> List[List[float]]:
