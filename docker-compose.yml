@@ -12,7 +12,6 @@ services:
     volumes:
       - tgbot_tgbot_data:/app/config
       - tgbot_chroma_data:/app/chroma
-      - tgbot_model_data:/app/models
       - C:\Media\Downloads\Docker\adbot-data:/adbot:ro
     environment:
       # Secrets are loaded from the local .env file (excluded by .gitignore).
@@ -52,4 +51,3 @@ volumes:
   tgbot_tgbot_data:
     external: true
   tgbot_chroma_data: {}
-  tgbot_model_data: {}
