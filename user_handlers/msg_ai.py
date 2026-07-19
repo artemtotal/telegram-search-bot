@@ -820,11 +820,7 @@ def _call_gemini_direct(prompt: str, max_tokens: int = 4096, timeout: int = 90) 
 
 
 def _call_ai(prompt: str, max_tokens: int = 8192, timeout: int = 90) -> str:
-    """Call OpenRouter API; if it fails due credits/provider issue, fallback to direct Gemini."""
-    if not OPENROUTER_API_KEY:
-        logger.warning("OPENROUTER_API_KEY missing, using direct Gemini fallback")
-        return _call_gemini_direct(prompt, max_tokens=max_tokens, timeout=timeout)
-
+    """Call the configured OpenAI-compatible endpoint, then optionally fallback to Gemini."""
     headers = {
         "Content-Type": "application/json",
     }
