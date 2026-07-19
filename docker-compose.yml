@@ -23,9 +23,9 @@ services:
       - BOT_MODE=polling
       - CACHE_TIME=300
       - OPENROUTER_API_KEY=
-      # Hermes-прокси на хосте: Claude Sonnet -> GPT fallback.
+      # OmniRoute proxy on the host: browser-managed opus-first combo.
       - OPENROUTER_URL=http://host.docker.internal:20128/v1/chat/completions
-      - AI_MODEL=auto/best-fast
+      - AI_MODEL=opus-first
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - AI_TRIGGER_WORD=потсдамбот
       - ADMIN_ID=312029534
