@@ -7,6 +7,8 @@ import json
 import logging
 import os
 import re
+import subprocess
+import sys
 import threading
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
@@ -17,7 +19,7 @@ from telegram import Update
 from telegram.ext import CallbackContext, MessageHandler, Filters
 
 from database import Chat, DBSession, Message, User
-from user_jobs.local_embeddings import LOCAL_COLLECTION, embed_in_subprocess
+from user_jobs.local_embeddings import LOCAL_COLLECTION
 
 # ── ChromaDB (lazy init) ──────────────────────────────────────────────────
 _chroma_col = None
@@ -25,44 +27,8 @@ _chroma_count = 0        # cached once at init; avoids repeated col.count() call
 _chroma_failed = False   # set to True after first col.query() timeout; skips ChromaDB thereafter
 
 def _get_chroma():
-    global _chroma_col, _chroma_count, _chroma_failed
-    if _chroma_col is not None:
-        return _chroma_col if not _chroma_failed else None
-    if _chroma_failed:
-        return None
-    try:
-        import chromadb
-        from chromadb.config import Settings
-        client = chromadb.PersistentClient(
-            path=os.getenv("CHROMA_PATH", "/app/chroma"),
-            settings=Settings(anonymized_telemetry=False),
-        )
-        col = None
-        for name in (LOCAL_COLLECTION,):
-            try:
-                col = client.get_collection(name)
-                break
-            except Exception:
-                continue
-        if col is not None:
-            # count with timeout guard (WSL2 safety)
-            result = [0]
-            def _do_count():
-                try:
-                    result[0] = col.count()
-                except Exception:
-                    pass
-            t = threading.Thread(target=_do_count, daemon=True)
-            t.start()
-            t.join(timeout=10)
-            _chroma_count = result[0]
-            _chroma_col = col  # store the Collection, not the client
-        logger.info(f"ChromaDB ready: {_chroma_count} messages")
-        return _chroma_col
-    except Exception as e:
-        logger.warning(f"ChromaDB init failed: {e}")
-        _chroma_col = None
-        return None
+    """Legacy test hook; live Chroma access is isolated in a subprocess."""
+    return None
 
 logger = logging.getLogger(__name__)
 
@@ -91,102 +57,30 @@ MAX_CONTEXT   = 15000
 OPENROUTER_URL = os.getenv(
     "OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions"
 )
-def _embed_query(text: str) -> Optional[List[float]]:
-    """Embed a query in a short-lived process isolated from the bot."""
-    try:
-        vectors = embed_in_subprocess([text[:2000]], timeout=45)
-        return vectors[0] if vectors else None
-    except Exception as e:
-        logger.warning(f"Local query embedding failed: {e}")
-        return None
-
-
 def _vector_search(query: str, n_results: int = 50,
                    since_days: Optional[int] = None) -> List[Dict]:
-    """Semantic search via ChromaDB. Returns message dicts sorted by relevance."""
-    col = _get_chroma()
-    if col is None or _chroma_count == 0:
-        return []
-
-    embedding = _embed_query(query)
-    if not embedding:
-        return []
-
-    where = None
-    if since_days is not None:
-        cutoff_ts = int((datetime.utcnow() - timedelta(days=since_days)).timestamp())
-        where = {"timestamp": {"$gte": cutoff_ts}}
-
+    """Run both ONNX and Chroma native code outside the Telegram process."""
     try:
-        n = min(n_results, _chroma_count)
-        _result: List = [None]
-        _err: List = [None]
-
-        def _run():
-            try:
-                _result[0] = col.query(
-                    query_embeddings=[embedding],
-                    n_results=n,
-                    where=where,
-                    include=["documents", "metadatas", "distances"],
-                )
-            except Exception as _e:
-                _err[0] = _e
-
-        t = threading.Thread(target=_run, daemon=True)
-        t.start()
-        t.join(timeout=15)
-
-        if t.is_alive():
-            # col.query() is stuck (WSL2/mmap issue) — abandon the thread
-            # and disable ChromaDB for all subsequent queries in this session.
-            global _chroma_failed
-            _chroma_failed = True
-            logger.warning(
-                "ChromaDB col.query() hung (>15s) — disabling vector search for this session"
-            )
-            return []
-
-        if _err[0] is not None:
-            raise _err[0]
-
-        results = _result[0]
+        payload = {
+            "query": query[:2000],
+            "n_results": n_results,
+            "since_days": since_days,
+        }
+        result = subprocess.run(
+            [sys.executable, "-m", "user_jobs.local_vector_search_worker"],
+            input=json.dumps(payload, ensure_ascii=False),
+            text=True,
+            capture_output=True,
+            timeout=60,
+            env=os.environ.copy(),
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "vector subprocess failed").strip()
+            raise RuntimeError(detail[-1000:])
+        return json.loads(result.stdout)
     except Exception as e:
-        logger.warning(f"Vector search failed: {e}")
+        logger.warning(f"Isolated vector search failed: {e}")
         return []
-
-    msgs = []
-    metas    = results.get("metadatas", [[]])[0]
-    docs     = results.get("documents", [[]])[0]
-    dists    = results.get("distances",  [[]])[0]
-
-    for meta, doc, dist in zip(metas, docs, dists):
-        try:
-            date_obj = datetime.strptime(meta.get("date", ""), "%Y-%m-%d %H:%M")
-        except Exception:
-            date_obj = None
-        full_link = meta.get("link", "")
-        msgs.append({
-            "text":       doc,
-            "user":       meta.get("user", ""),
-            "date":       meta.get("date", ""),
-            "date_obj":   date_obj,
-            "id":         int(meta.get("msg_id", 0)),
-            "link":       full_link,
-            "short_link": _shorten_link(full_link),
-            "score":      round(1 - dist, 3),
-        })
-
-    kept = [
-        m for m in msgs
-        if m["score"] >= VEC_MIN_SCORE
-        and not _BOT_ADDRESS_RE.search(m.get("text") or "")
-    ]
-    logger.info(
-        f"Vector search: {len(kept)}/{len(msgs)} above score {VEC_MIN_SCORE} "
-        f"(top: {msgs[0]['score'] if msgs else '-'}, since_days={since_days})"
-    )
-    return kept
 
 # ── Prompts ───────────────────────────────────────────────────────────────
 SYSTEM_PROMPT_FAQ = """

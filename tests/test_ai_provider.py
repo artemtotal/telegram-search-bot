@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import unittest
@@ -204,6 +205,32 @@ class AiProviderTests(unittest.TestCase):
         terms = msg_ai._provider_author_terms("нужен электрик Сергей")
 
         self.assertEqual(terms, ["сергей"])
+
+    def test_vector_search_subprocess_returns_message_dicts(self):
+        fake = type("Result", (), {
+            "returncode": 0,
+            "stdout": '[{"id": 42, "text": "ремонт", "user": "Dmytriii"}]\n',
+            "stderr": "",
+        })()
+
+        with patch.object(msg_ai.subprocess, "run", return_value=fake) as run:
+            result = msg_ai._vector_search("муж на час", n_results=12, since_days=365)
+
+        self.assertEqual(result[0]["id"], 42)
+        payload = json.loads(run.call_args.kwargs["input"])
+        self.assertEqual(payload["query"], "муж на час")
+        self.assertEqual(payload["n_results"], 12)
+        self.assertEqual(payload["since_days"], 365)
+
+    def test_vector_search_subprocess_crash_falls_back_without_killing_bot(self):
+        fake = type("Result", (), {
+            "returncode": 134,
+            "stdout": "",
+            "stderr": "Fatal glibc error",
+        })()
+
+        with patch.object(msg_ai.subprocess, "run", return_value=fake):
+            self.assertEqual(msg_ai._vector_search("муж на час"), [])
 
     def test_provider_author_terms_do_not_treat_connectors_as_names(self):
         self.assertEqual(
