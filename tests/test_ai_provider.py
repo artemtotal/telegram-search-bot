@@ -73,6 +73,96 @@ class AiProviderTests(unittest.TestCase):
             with self.subTest(query=query):
                 self.assertTrue(msg_ai._is_service_provider_query(query))
 
+    def test_provider_intent_recognizes_carrier_queries(self):
+        queries = (
+            "перевозчик в Украину",
+            "порадьте перевізника до України",
+            "кто перевозит людей и посылки",
+            "виїхати з Німеччини до України",
+        )
+
+        for query in queries:
+            with self.subTest(query=query):
+                self.assertTrue(msg_ai._is_service_provider_query(query))
+                self.assertTrue(msg_ai._is_carrier_query(query))
+
+    def test_carrier_keywords_include_ads_and_route_terms(self):
+        for query in (
+            "перевізник до України",
+            "виїхати з Німеччини до України",
+        ):
+            with self.subTest(query=query):
+                keywords = msg_ai._expand_keywords(query)
+                self.assertIn("перевезення", keywords)
+                self.assertIn("перевозчик", keywords)
+                self.assertIn("посилки", keywords)
+
+    def test_carrier_candidates_put_contact_answers_before_seeker_questions(self):
+        messages = [
+            {
+                "id": 1,
+                "user": "requester",
+                "date": "2026-07-19",
+                "text": "Порадьте будь ласка перевізника до України",
+            },
+            {
+                "id": 2,
+                "user": "Kateryna_Sur",
+                "date": "2026-07-19",
+                "text": "+380966622986 Dima Hryhorovych +380676746710 Ivan",
+            },
+            {
+                "id": 3,
+                "user": "Потбот",
+                "date": "2025-12-14",
+                "text": (
+                    "Перевезення людей та посилок, відправка новою поштою. "
+                    "+380679450904 Павло +380979850174 Тетяна"
+                ),
+            },
+        ]
+
+        result = msg_ai._prioritize_provider_candidates(
+            messages, "перевізник до України"
+        )
+
+        self.assertEqual([item["id"] for item in result[:2]], [3, 2])
+        self.assertNotIn(1, [item["id"] for item in result])
+
+    def test_carrier_candidates_do_not_admit_unrelated_phone_chunks(self):
+        messages = [
+            {
+                "id": 1,
+                "user": "noise",
+                "date": "2026-07-19",
+                "text": "Обсуждали интернет PYUR, телефон +491234567890",
+            },
+            {
+                "id": 2,
+                "user": "carrier",
+                "date": "2026-07-18",
+                "text": "Перевезення людей до України +380966622986",
+            },
+        ]
+
+        result = msg_ai._prioritize_provider_candidates(messages, "перевозчик")
+
+        self.assertEqual([item["id"] for item in result], [2])
+
+    def test_carrier_topic_rejects_unrelated_provider_offer(self):
+        self.assertFalse(msg_ai._matches_query_topic(
+            "перевозчик в Украину",
+            {"text": "Предлагаю услуги парикмахера, пишите в ЛС"},
+        ))
+        self.assertTrue(msg_ai._matches_query_topic(
+            "перевозчик в Украину",
+            {"text": "Перевезення людей та посилок до України"},
+        ))
+
+    def test_qdrant_backend_is_vector_ready_without_chroma(self):
+        with patch.dict(os.environ, {"VECTOR_BACKEND": "qdrant"}):
+            self.assertTrue(msg_ai._is_vector_ready())
+
     def test_vacancy_intent_is_detected_separately(self):
         queries = (
             "свежие вакансии в Потсдаме",
@@ -228,7 +318,9 @@ class AiProviderTests(unittest.TestCase):
             "stderr": "",
         })()
 
-        with patch.object(msg_ai.subprocess, "run", return_value=fake) as run:
+        with patch.dict(os.environ, {"VECTOR_BACKEND": "qdrant"}), patch.object(
+            msg_ai.subprocess, "run", return_value=fake
+        ) as run:
             result = msg_ai._vector_search("муж на час", n_results=12, since_days=365)
 
         self.assertEqual(result[0]["id"], 42)
@@ -355,6 +447,46 @@ class AiProviderTests(unittest.TestCase):
 
             self.assertEqual([item["user"] for item in offers], ["Dmytriii"])
             self.assertEqual(offers[0]["id"], 43)
+        finally:
+            session.close()
+            engine.dispose()
+
+    def test_carrier_offer_search_finds_old_contact_catalog(self):
+        from datetime import datetime
+        from database import Base, Chat, Message, User
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        session = sessionmaker(bind=engine)()
+        try:
+            session.add(Chat(id=-1001, title="test", enable=True))
+            session.add(User(id=7, fullname="Потбот", username="potbot"))
+            session.add(Message(
+                _id=42, id=420, from_id=7, from_chat=-1001,
+                date=datetime(2024, 1, 5),
+                text=(
+                    "Потбот знає таке: перевізники в/з України. "
+                    "Діма +380966622986, Іван +380676746710"
+                ),
+                text_lower=(
+                    "потбот знає таке: перевізники в/з україни. "
+                    "діма +380966622986, іван +380676746710"
+                ),
+            ))
+            session.commit()
+
+            offers = msg_ai._search_provider_offers(
+                session, [-1001], "перевізник до України",
+            )
+
+            self.assertEqual([item["id"] for item in offers], [42])
         finally:
             session.close()
             engine.dispose()

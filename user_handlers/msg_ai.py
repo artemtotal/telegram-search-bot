@@ -346,7 +346,28 @@ _SERVICE_QUERY_HINTS = [
     "муж на час", "чоловік на годину", "бытов", "побутов", "мелкий ремонт", "дрібний ремонт",
     "сборк", "збірк", "мебел", "мебл", "установк", "встановлен", "кухн",
     "подключ", "підключ", "электроприбор", "електроприлад", "техник", "технік",
+    "перевоз", "перевез", "перевіз", "посыл", "посилк", "транспорт",
 ]
+
+_CARRIER_TOPIC_RE = re.compile(
+    r"(перевоз|перевез|перевіз|посыл|посилк|пасажир|пассажир|нова\s+пошт|"
+    r"новая\s+почт|транспорт|вантаж|грузоперев)",
+    re.IGNORECASE,
+)
+
+
+def _is_carrier_query(query: str) -> bool:
+    text = query or ""
+    return bool(
+        _CARRIER_TOPIC_RE.search(text)
+        or re.search(
+            r"(виїхати|виїзд|уехать|выехать|їхати|ехать).*"
+            r"(україн|украин|німеч|герман)",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
 
 _PROVIDER_NAME_ALIASES = {
     "дмитрий": ("дмитр", "dmitry", "dmitrii", "dmytro", "dmytr"),
@@ -430,6 +451,8 @@ _HAIR_SERVICE_KEYWORDS = [
 
 def _matches_query_topic(query: str, msg: Dict) -> bool:
     """Keep provider offers inside the service family requested by the user."""
+    if _is_carrier_query(query):
+        return bool(_CARRIER_TOPIC_RE.search(msg.get("text") or ""))
     if _is_hair_query(query):
         return bool(_HAIR_TOPIC_RE.search(msg.get("text") or ""))
     if _HANDYMAN_TOPIC_RE.search(query or ""):
@@ -440,7 +463,7 @@ def _matches_query_topic(query: str, msg: Dict) -> bool:
 def _is_service_provider_query(query: str) -> bool:
     """User asks for people who provide/advertised a service, not people who search for it."""
     q = query.lower()
-    return any(h in q for h in _SERVICE_QUERY_HINTS)
+    return _is_carrier_query(query) or any(h in q for h in _SERVICE_QUERY_HINTS)
 
 
 def _provider_author_terms(query: str) -> List[str]:
@@ -493,6 +516,59 @@ def _provider_signal_score(msg: Dict) -> int:
     return score
 
 
+def _phone_count(text: str) -> int:
+    """Count plausible international phone numbers, including compact replies."""
+    return len(re.findall(
+        r"(?:\+\d[\d\s()\-]{8,}\d|(?<![\d-])\d{10,13}(?!\d))",
+        text or "",
+    ))
+
+
+def _carrier_signal_score(msg: Dict) -> int:
+    text = msg.get("text") or ""
+    score = _provider_signal_score(msg)
+    if _CARRIER_TOPIC_RE.search(text):
+        score += 4
+    score += min(_phone_count(text), 3) * 3
+    if re.search(r"(україн|украин|німеч|герман|берлін|берлин|потсдам|чернів|львів)", text, re.IGNORECASE):
+        score += 1
+    return score
+
+
+def _prioritize_provider_candidates(messages: List[Dict], query: str) -> List[Dict]:
+    """Prefer concrete provider contacts; carrier questions without answers are noise."""
+    dedup: Dict[int, Dict] = {}
+    for message in messages:
+        dedup.setdefault(message.get("id"), message)
+
+    if _is_carrier_query(query):
+        ranked = []
+        for message in dedup.values():
+            text = message.get("text") or ""
+            if _BOT_ADDRESS_RE.search(text):
+                continue
+            score = _carrier_signal_score(message)
+            if not _CARRIER_TOPIC_RE.search(text) and _phone_count(text) < 2:
+                continue
+            if _phone_count(text) == 0 and _provider_signal_score(message) <= 1:
+                continue
+            ranked.append((score, message.get("date", ""), message))
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return _group_provider_history([item[2] for item in ranked])
+
+    scored = sorted(
+        dedup.values(),
+        key=lambda message: (_provider_signal_score(message), message.get("date", "")),
+        reverse=True,
+    )
+    return _group_provider_history(scored)
+
+
+def _is_vector_ready() -> bool:
+    """Qdrant readiness is independent from the retired Chroma test hook."""
+    return os.getenv("VECTOR_BACKEND", "shadow").lower() == "qdrant"
+
+
 def _filter_provider_candidates(messages: List[Dict], query: str = "") -> List[Dict]:
     """For service-provider queries, drop pure seeker messages and sort likely providers first."""
     dedup: Dict[int, Dict] = {}
@@ -533,6 +609,12 @@ def _search_provider_offers(session, chat_ids: List[int], query: str,
     """Find direct all-history service offers and keep the newest per author."""
     if not chat_ids:
         return []
+    offer_pattern = _PROVIDER_OFFER_PATTERN
+    if _is_carrier_query(query):
+        offer_pattern = (
+            r"(?i)(?:перевоз|перевез|перевіз|посыл|посилк|пасажир|пассажир|"
+            r"нова\s+пошт|новая\s+почт|транспорт|вантаж|грузоперев)"
+        )
     rows = (
         _exclude_bot_address(
             session.query(Message, User)
@@ -540,13 +622,17 @@ def _search_provider_offers(session, chat_ids: List[int], query: str,
             .filter(Message.from_chat.in_(chat_ids))
             .filter(Message.text.isnot(None))
             .filter(Message.text != "")
-            .filter(_TL.op("REGEXP")(_PROVIDER_OFFER_PATTERN))
+            .filter(_TL.op("REGEXP")(offer_pattern))
         )
         .order_by(Message.date.desc())
         .limit(scan_limit)
         .all()
     )
-    candidates = _filter_provider_candidates(_rows_to_dicts(rows), query)
+    row_dicts = _rows_to_dicts(rows)
+    if _is_carrier_query(query):
+        candidates = _prioritize_provider_candidates(row_dicts, query)
+    else:
+        candidates = _filter_provider_candidates(row_dicts, query)
     newest_by_author: Dict[str, Dict] = {}
     for message in candidates:
         key = (message.get("user") or f"message:{message.get('id')}").lower()
@@ -939,6 +1025,11 @@ def _expand_keywords(query: str) -> List[str]:
         "кухн": ["кухня", "кухни", "кухні", "установка кухни", "встановлення кухні", "мебель", "меблів"],
         "подключ": ["подключение", "подключить", "підключення", "підключити", "электроприбор", "електроприлад"],
         "перевозк": ["перевозк", "перевезен", "транспорт", "transport", "umzug"],
+        "перевозчик": ["перевозчик", "перевізник", "перевезення", "перевозка", "посилки", "посылки"],
+        "перевізник": ["перевізник", "перевозчик", "перевезення", "перевозка", "посилки", "посылки"],
+        "перевозит": ["перевозит", "перевозчик", "перевізник", "перевезення", "посилки", "посылки"],
+        "посылк": ["посылки", "посилки", "перевезення", "перевозка", "нова пошта", "новая почта"],
+        "посилк": ["посилки", "посылки", "перевезення", "перевозка", "нова пошта", "новая почта"],
         "уборк": ["уборк", "убираю", "клининг", "reinigung", "putzen"],
         # Education / language
         "мов": ["мов", "язык", "sprache", "language", "німецьк", "deutsch", "english"],
@@ -961,6 +1052,12 @@ def _expand_keywords(query: str) -> List[str]:
             if key in w or w in key:
                 for s in syns:
                     result.add(s)
+
+    if _is_carrier_query(query):
+        result.update({
+            "перевезення", "перевозчик", "перевізник", "перевозка",
+            "посилки", "посылки", "пасажирські перевезення",
+        })
 
     # Add keyword variants with city name (common search pattern)
     has_city = any(c in query_lower for c in ["потсдам", "potsdam", "берлин", "berlin"])
@@ -1149,8 +1246,7 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         )
 
         # ── Step A: Vector search (primary) ───────────────────────────────
-        col = _get_chroma()
-        vector_ready = col is not None and _chroma_count > 0  # use cached count, never call col.count() again
+        vector_ready = _is_vector_ready()
 
         if vector_ready:
             if is_vacancy_query:
@@ -1170,12 +1266,12 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
                     logger.info("Too few results in 365d, searching all time")
                     vec_msgs = _vector_search(query, n_results=50)
         else:
-            logger.warning("ChromaDB not ready, falling back to keyword search")
+            logger.warning("Vector backend not ready, falling back to keyword search")
             vec_msgs = []
 
         # ── Step B: Keyword fallback / supplement ────────────────────────
         if not vector_ready:
-            # ChromaDB not available — full keyword search
+            # Vector backend not available — full keyword search
             keywords = _expand_keywords(query)
             if _is_hair_query(query):
                 keywords += _HAIR_SERVICE_KEYWORDS
@@ -1186,11 +1282,13 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
                 provider_query=is_provider_query,
             )
         else:
-            # ChromaDB available — use keywords only for anchor words (high precision)
+            # Contact replies often embed poorly, so provider queries also keep
+            # the deterministic local synonym channel.
             keyword_msgs = []
-            if anchor_words:
+            if anchor_words or is_provider_query:
+                supplement_keywords = _expand_keywords(query) if is_provider_query else []
                 keyword_msgs = _search_keywords_with_fallback(
-                    session, chat_ids, [], anchor_words=anchor_words,
+                    session, chat_ids, supplement_keywords, anchor_words=anchor_words,
                     provider_query=is_provider_query,
                 )
 
@@ -1245,11 +1343,7 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
             )
         elif is_provider_query:
             before_filter = len(all_candidates)
-            # Soft boost for provider-like messages, but don't drop seekers
-            scored = sorted(all_candidates,
-                key=lambda m: (_provider_signal_score(m), m.get("date", "")),
-                reverse=True)
-            all_candidates = _group_provider_history(scored)
+            all_candidates = _prioritize_provider_candidates(all_candidates, query)
             logger.info(f"Provider boost: {before_filter} candidates sorted by signal score")
         if not all_candidates:
             update.message.reply_text("В базі немає повідомлень для відповіді.")

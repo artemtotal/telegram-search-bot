@@ -44,10 +44,10 @@ services:
       - LOCAL_EMBED_THREADS=4
       - LOCAL_EMBED_OFFLINE=1
       - LOCAL_EMBED_COLLECTION=chunks_local_v1
-      # Shadow mode keeps production on deterministic SQLite retrieval until
-      # the full Qdrant index passes migration verification.
-      - VECTOR_BACKEND=shadow
-      - QDRANT_UPDATER_ENABLED=0
+      # Qdrant provides semantic retrieval; SQLite remains the source of truth
+      # and deterministic keyword supplement for contacts and exact terms.
+      - VECTOR_BACKEND=qdrant
+      - QDRANT_UPDATER_ENABLED=1
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_COLLECTION=chunks_minilm_v1
       - QDRANT_STATE_PATH=/app/qdrant-state/embed_state.json
