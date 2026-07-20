@@ -14,9 +14,8 @@ import os
 import sys
 import threading
 import time
+from datetime import datetime, timedelta
 from typing import List
-
-import requests
 
 sys.path.insert(0, "/app")
 
@@ -26,49 +25,25 @@ from user_jobs.reindex_queue import (
     remove_reindex_requests,
     resolve_reindex_request,
 )
+from user_jobs.local_embeddings import LOCAL_COLLECTION, embed_in_subprocess
 
 log = logging.getLogger(__name__)
 _embed_update_lock = threading.Lock()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 CHROMA_PATH    = os.getenv("CHROMA_PATH", "/app/chroma")
-EMBED_MODEL    = "gemini-embedding-001"
 BATCH_SIZE     = 40
 MAX_PER_RUN    = 3000   # messages per hourly run (self-bootstraps gradually)
-COLLECTION     = "chunks"
-STATE_PATH     = os.path.join(CHROMA_PATH, "embed_state.json")
-
-EMBED_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{EMBED_MODEL}:batchEmbedContents?key={{api_key}}"
-)
+COLLECTION     = LOCAL_COLLECTION
+STATE_PATH     = os.path.join(CHROMA_PATH, "embed_state_local_v1.json")
+BOOTSTRAP_DAYS = int(os.getenv("EMBED_BOOTSTRAP_DAYS", "730"))
 
 
 def _batch_embed(texts: List[str]) -> List[List[float]]:
-    url = EMBED_URL.format(api_key=GEMINI_API_KEY)
-    payload = {
-        "requests": [
-            {
-                "model": f"models/{EMBED_MODEL}",
-                "content": {"parts": [{"text": t[:2000]}]},
-                "taskType": "RETRIEVAL_DOCUMENT",
-                "outputDimensionality": 768,
-            }
-            for t in texts
-        ]
-    }
-    for attempt in range(3):
-        try:
-            resp = requests.post(url, json=payload, timeout=60)
-            if resp.status_code == 429:
-                time.sleep(60)
-                continue
-            resp.raise_for_status()
-            return [e["values"] for e in resp.json().get("embeddings", [])]
-        except Exception as e:
-            log.warning(f"Embed attempt {attempt+1} failed: {e}")
-            time.sleep(5)
-    return []
+    try:
+        return embed_in_subprocess([text[:2000] for text in texts], timeout=180)
+    except Exception as e:
+        log.warning(f"Local embedding subprocess failed: {e}")
+        return []
 
 
 def _load_state() -> dict:
@@ -77,6 +52,58 @@ def _load_state() -> dict:
             return json.load(f)
     except Exception:
         return {"last_id": 0}
+
+
+def _plan_index_window(state: dict, collection_count: int) -> dict:
+    """Choose recent bootstrap, resumable full repair, or incremental mode."""
+    history_mode = state.get("history_mode")
+    last_id = int(state.get("last_id", 0))
+    if history_mode == "full":
+        return {"mode": "incremental", "after_id": last_id, "since": None}
+    if history_mode == "recent":
+        return {
+            "mode": "bootstrap_recent",
+            "after_id": last_id,
+            "since": datetime.utcnow() - timedelta(days=BOOTSTRAP_DAYS),
+        }
+    if history_mode == "repairing" or collection_count > 0:
+        return {
+            "mode": "repair_full",
+            "after_id": int(state.get("repair_cursor", 0)),
+            "since": None,
+        }
+    return {
+        "mode": "bootstrap_recent",
+        "after_id": last_id,
+        "since": datetime.utcnow() - timedelta(days=BOOTSTRAP_DAYS),
+    }
+
+
+def _can_advance_state(todo_count: int, indexed_count: int) -> bool:
+    """Advance the high-water mark only after every missing chunk succeeds."""
+    return todo_count == indexed_count
+
+
+def _next_index_state(plan: dict, previous_last_id: int, max_id: int,
+                      source_window_exhausted: bool,
+                      source_high_water_id: int = 0) -> dict:
+    """Persist progress without leaving unprocessed rows behind a high-water mark."""
+    mode = plan["mode"]
+    if mode == "repair_full":
+        incremental_high_water = max(previous_last_id, source_high_water_id)
+        if source_window_exhausted:
+            return {
+                "last_id": max(incremental_high_water, max_id),
+                "history_mode": "full",
+            }
+        return {
+            "last_id": incremental_high_water,
+            "history_mode": "repairing",
+            "repair_cursor": max_id,
+        }
+    if mode == "bootstrap_recent" and not source_window_exhausted:
+        return {"last_id": max_id, "history_mode": "recent"}
+    return {"last_id": max_id, "history_mode": "full"}
 
 
 def _save_state(state: dict) -> None:
@@ -247,9 +274,6 @@ def _process_reindex_queue(col) -> int:
 
 def _embed_update_worker(context=None):
     """Called by APScheduler every hour."""
-    if not GEMINI_API_KEY:
-        return
-
     try:
         import chromadb
         from database import DBSession, Message, User, Chat
@@ -265,24 +289,50 @@ def _embed_update_worker(context=None):
 
         state = _load_state()
         last_id = int(state.get("last_id", 0))
+        existing_ids = set(col.get(include=[])["ids"])
+        plan = _plan_index_window(state, len(existing_ids))
+        log.info(
+            "Embed updater mode=%s after_id=%s since=%s existing_chunks=%s",
+            plan["mode"], plan["after_id"], plan["since"], len(existing_ids),
+        )
 
         session = DBSession()
         chat_ids = [c.id for c in session.query(Chat).filter(Chat.enable == 1).all()]
-        rows = (
+        source_high_water_id = (
+            session.query(Message._id)
+            .filter(Message.from_chat.in_(chat_ids))
+            .filter(Message.text.isnot(None))
+            .filter(Message.text != "")
+            .order_by(Message._id.desc())
+            .limit(1)
+            .scalar()
+            or last_id
+        )
+        query = (
             session.query(Message, User)
             .outerjoin(User, Message.from_id == User.id)
             .filter(Message.from_chat.in_(chat_ids))
             .filter(Message.text.isnot(None))
             .filter(Message.text != "")
-            .filter(Message._id > last_id)
-            .order_by(Message._id.asc())
-            .limit(MAX_PER_RUN)
-            .all()
+            .filter(Message._id > plan["after_id"])
         )
+        if plan["since"] is not None:
+            query = query.filter(Message.date >= plan["since"])
+        rows = query.order_by(Message._id.asc()).limit(MAX_PER_RUN + 1).all()
+        source_window_exhausted = len(rows) <= MAX_PER_RUN
+        rows = rows[:MAX_PER_RUN]
         session.close()
 
         if not rows:
             log.debug("Embed updater: nothing new to index")
+            terminal_id = max(last_id, int(plan.get("after_id", 0)))
+            _save_state(_next_index_state(
+                plan=plan,
+                previous_last_id=last_id,
+                max_id=terminal_id,
+                source_window_exhausted=True,
+                source_high_water_id=source_high_water_id,
+            ))
             return
 
         max_id = max(msg._id for msg, _ in rows)
@@ -292,8 +342,7 @@ def _embed_update_worker(context=None):
         msgs.sort(key=lambda m: (m["chat_id"], m["_id"]))
         chunks = chunk_messages(msgs)
 
-        existing = set(col.get(include=[])["ids"])
-        todo = [c for c in chunks if c["id"] not in existing]
+        todo = [c for c in chunks if c["id"] not in existing_ids]
 
         log.info(f"Embed updater: {len(rows)} new messages → {len(todo)} chunks to index")
 
@@ -311,10 +360,20 @@ def _embed_update_worker(context=None):
                 indexed += len(batch)
             time.sleep(0.15)
 
-        # Advance high-water mark even if some batches failed:
-        # failed chunks will be caught by the manual build script if needed,
-        # and a stuck mark would block all future updates.
-        _save_state({"last_id": max_id})
+        if not _can_advance_state(len(todo), indexed):
+            log.error(
+                "Embed updater: indexed only %s/%s chunks; keeping last_id=%s for retry",
+                indexed, len(todo), last_id,
+            )
+            return
+
+        _save_state(_next_index_state(
+            plan=plan,
+            previous_last_id=last_id,
+            max_id=max_id,
+            source_window_exhausted=source_window_exhausted,
+            source_high_water_id=source_high_water_id,
+        ))
         log.info(f"Embed updater: done, indexed {indexed} chunks, last_id={max_id}")
 
     except Exception as e:

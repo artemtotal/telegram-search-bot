@@ -1,0 +1,111 @@
+import os
+import sys
+import threading
+import time
+import unittest
+from unittest.mock import patch
+
+os.environ.setdefault("BOT_TOKEN", "test-token")
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from user_jobs import local_embeddings
+
+
+class LocalEmbeddingTests(unittest.TestCase):
+    def tearDown(self):
+        local_embeddings._reset_model_for_tests()
+
+    def test_document_and_query_embeddings_are_local_and_384_dimensional(self):
+        class FakeEmbeddingModel:
+            def embed(self, texts, batch_size):
+                self.calls = (texts, batch_size)
+                return [[float(i)] * 384 for i, _ in enumerate(texts, 1)]
+
+        model = FakeEmbeddingModel()
+        with patch.object(local_embeddings, "_get_model", return_value=model):
+            vectors = local_embeddings.embed_documents(["электрик", "сантехник"])
+            query = local_embeddings.embed_query("мастер")
+
+        self.assertEqual(len(vectors), 2)
+        self.assertEqual(len(vectors[0]), 384)
+        self.assertEqual(len(query), 384)
+        self.assertEqual(model.calls, (["мастер"], local_embeddings.LOCAL_EMBED_BATCH_SIZE))
+
+    def test_local_model_is_loaded_without_api_credentials(self):
+        class FakeTextEmbedding:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        with patch.dict(os.environ, {"LOCAL_EMBED_OFFLINE": "1"}, clear=True), patch.object(
+            local_embeddings, "TextEmbedding", FakeTextEmbedding,
+        ):
+            model = local_embeddings._get_model()
+
+        self.assertEqual(
+            model.kwargs["model_name"],
+            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        )
+        self.assertEqual(model.kwargs["threads"], local_embeddings.LOCAL_EMBED_THREADS)
+        self.assertTrue(model.kwargs["local_files_only"])
+
+    def test_embedding_subprocess_returns_vectors(self):
+        fake_result = type("Result", (), {"returncode": 0, "stdout": "[[1.0, 2.0]]\n", "stderr": ""})()
+
+        with patch.object(local_embeddings.subprocess, "run", return_value=fake_result) as run:
+            vectors = local_embeddings.embed_in_subprocess(["query"], timeout=7)
+
+        self.assertEqual(vectors, [[1.0, 2.0]])
+        self.assertEqual(run.call_args.kwargs["timeout"], 7)
+        self.assertNotIn("query", run.call_args.args[0])
+        self.assertEqual(run.call_args.kwargs["input"], '["query"]')
+
+    def test_embedding_subprocess_failure_raises(self):
+        fake_result = type("Result", (), {"returncode": 139, "stdout": "", "stderr": "segfault"})()
+
+        with patch.object(local_embeddings.subprocess, "run", return_value=fake_result):
+            with self.assertRaisesRegex(RuntimeError, "segfault"):
+                local_embeddings.embed_in_subprocess(["query"])
+
+    def test_concurrent_embedding_calls_are_serialized(self):
+        active = 0
+        max_active = 0
+        state_lock = threading.Lock()
+
+        class UnsafeEmbeddingModel:
+            def embed(self, texts, batch_size):
+                nonlocal active, max_active
+                with state_lock:
+                    active += 1
+                    max_active = max(max_active, active)
+                time.sleep(0.03)
+                with state_lock:
+                    active -= 1
+                return [[1.0] * 384 for _ in texts]
+
+        model = UnsafeEmbeddingModel()
+        barrier = threading.Barrier(3)
+        errors = []
+
+        def worker(text):
+            try:
+                barrier.wait()
+                local_embeddings._embed_with_model(model, [text])
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=worker, args=("query",)),
+            threading.Thread(target=worker, args=("index",)),
+        ]
+        for thread in threads:
+            thread.start()
+        barrier.wait()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(max_active, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -11,6 +11,7 @@ user_jobs/embed_updater.py (hourly incremental updates).
 """
 
 from datetime import timedelta
+import re
 from typing import Dict, List
 
 MAX_CHUNK_MSGS  = 8      # messages per window
@@ -20,7 +21,15 @@ MSG_TRUNCATE    = 400    # per-message text cap inside a chunk
 
 # Messages addressed to the bot are questions, not community knowledge —
 # they must never enter the vector index.
-BOT_PREFIXES = ("потсдамбот", "потбот", "потсдам бот")
+BOT_PREFIXES = ("потсдамбот", "посдамбот", "потсдам бот")
+_BOT_ADDRESS_RE = re.compile(
+    r"(?<!\w)(?:" + "|".join(map(re.escape, BOT_PREFIXES)) + r")(?!\w)",
+    re.IGNORECASE,
+)
+
+
+def _is_bot_address(text: str) -> bool:
+    return bool(_BOT_ADDRESS_RE.search(text or ""))
 
 
 def _fmt_line(m: Dict) -> str:
@@ -145,7 +154,7 @@ def rows_to_msg_dicts(rows) -> List[Dict]:
         text = (msg.text or "").strip()
         if not text:
             continue
-        if text.lower().startswith(BOT_PREFIXES):
+        if _is_bot_address(text):
             continue
         username = (user.username or user.fullname or "") if user else ""
         has_dt = hasattr(msg.date, "strftime")

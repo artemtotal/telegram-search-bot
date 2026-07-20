@@ -7,6 +7,8 @@ import json
 import logging
 import os
 import re
+import subprocess
+import sys
 import threading
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
@@ -17,6 +19,7 @@ from telegram import Update
 from telegram.ext import CallbackContext, MessageHandler, Filters
 
 from database import Chat, DBSession, Message, User
+from user_jobs.local_embeddings import LOCAL_COLLECTION
 
 # ── ChromaDB (lazy init) ──────────────────────────────────────────────────
 _chroma_col = None
@@ -24,54 +27,17 @@ _chroma_count = 0        # cached once at init; avoids repeated col.count() call
 _chroma_failed = False   # set to True after first col.query() timeout; skips ChromaDB thereafter
 
 def _get_chroma():
-    global _chroma_col, _chroma_count, _chroma_failed
-    if _chroma_col is not None:
-        return _chroma_col if not _chroma_failed else None
-    if _chroma_failed:
-        return None
-    try:
-        import chromadb
-        from chromadb.config import Settings
-        client = chromadb.PersistentClient(
-            path=os.getenv("CHROMA_PATH", "/app/chroma"),
-            settings=Settings(anonymized_telemetry=False),
-        )
-        col = None
-        for name in ("chunks", "messages"):  # prefer chunked index
-            try:
-                col = client.get_collection(name)
-                break
-            except Exception:
-                continue
-        if col is None:
-            cols = client.list_collections()
-            col = cols[0] if cols else None
-        if col is not None:
-            # count with timeout guard (WSL2 safety)
-            result = [0]
-            def _do_count():
-                try:
-                    result[0] = col.count()
-                except Exception:
-                    pass
-            t = threading.Thread(target=_do_count, daemon=True)
-            t.start()
-            t.join(timeout=10)
-            _chroma_count = result[0]
-            _chroma_col = col  # store the Collection, not the client
-        logger.info(f"ChromaDB ready: {_chroma_count} messages")
-        return _chroma_col
-    except Exception as e:
-        logger.warning(f"ChromaDB init failed: {e}")
-        _chroma_col = None
-        return None
+    """Legacy test hook; live Chroma access is isolated in a subprocess."""
+    return None
 
 logger = logging.getLogger(__name__)
 
 TRIGGER_WORD       = os.getenv("AI_TRIGGER_WORD", "потсдамбот").lower()
+TRIGGER_ALIASES    = tuple(dict.fromkeys((
+    TRIGGER_WORD, "посдамбот", "потсдам бот",
+)))
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 AI_MODEL           = os.getenv("AI_MODEL", "auto/best-fast")
-GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")   # kept for embed_updater only
 FAQ_PATH           = os.getenv("FAQ_PATH", "/app/config/faq.json")
 CHAT_USERNAME      = os.getenv("CHAT_USERNAME", "")
 
@@ -80,6 +46,7 @@ CONTEXT_MESSAGES_RECENT = 20
 CHAIN_WINDOW = 2
 RECENCY_CUTOFF_DAYS = 365
 RECENCY_PENALTY_DAYS = 730
+VACANCY_RECENT_DAYS = int(os.getenv("VACANCY_RECENT_DAYS", "90"))
 # Vector results below this cosine-similarity score are noise and are
 # dropped instead of polluting the LLM context (prevents "answers by vibes").
 VEC_MIN_SCORE = float(os.getenv("VEC_MIN_SCORE", "0.35"))
@@ -90,121 +57,32 @@ MAX_CONTEXT   = 15000
 OPENROUTER_URL = os.getenv(
     "OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions"
 )
-GEMINI_DIRECT_MODEL = os.getenv("GEMINI_DIRECT_MODEL", "gemini-2.5-flash")
-GEMINI_DIRECT_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    "{model}:generateContent?key={api_key}"
-)
-
-EMBED_MODEL = "gemini-embedding-001"
-EMBED_URL   = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{EMBED_MODEL}:embedContent?key={{api_key}}"
-)
-
-
-def _embed_query(text: str) -> Optional[List[float]]:
-    """Embed a single query string using Google text-embedding-004."""
-    if not GEMINI_API_KEY:
-        return None
-    url = EMBED_URL.format(api_key=GEMINI_API_KEY)
-    payload = {
-        "model": f"models/{EMBED_MODEL}",
-        "content": {"parts": [{"text": text[:2000]}]},
-        "taskType": "RETRIEVAL_QUERY",
-        "outputDimensionality": 768,
-    }
-    try:
-        resp = requests.post(url, json=payload, timeout=10)
-        resp.raise_for_status()
-        return resp.json()["embedding"]["values"]
-    except Exception as e:
-        logger.warning(f"Embed query failed: {e}")
-        return None
-
-
 def _vector_search(query: str, n_results: int = 50,
                    since_days: Optional[int] = None) -> List[Dict]:
-    """Semantic search via ChromaDB. Returns message dicts sorted by relevance."""
-    col = _get_chroma()
-    if col is None or _chroma_count == 0:
+    """Run ONNX outside the Telegram process and search Qdrant."""
+    if os.getenv("VECTOR_BACKEND", "qdrant").lower() != "qdrant":
         return []
-
-    embedding = _embed_query(query)
-    if not embedding:
-        return []
-
-    where = None
-    if since_days is not None:
-        cutoff_ts = int((datetime.utcnow() - timedelta(days=since_days)).timestamp())
-        where = {"timestamp": {"$gte": cutoff_ts}}
-
     try:
-        n = min(n_results, _chroma_count)
-        _result: List = [None]
-        _err: List = [None]
-
-        def _run():
-            try:
-                _result[0] = col.query(
-                    query_embeddings=[embedding],
-                    n_results=n,
-                    where=where,
-                    include=["documents", "metadatas", "distances"],
-                )
-            except Exception as _e:
-                _err[0] = _e
-
-        t = threading.Thread(target=_run, daemon=True)
-        t.start()
-        t.join(timeout=15)
-
-        if t.is_alive():
-            # col.query() is stuck (WSL2/mmap issue) — abandon the thread
-            # and disable ChromaDB for all subsequent queries in this session.
-            global _chroma_failed
-            _chroma_failed = True
-            logger.warning(
-                "ChromaDB col.query() hung (>15s) — disabling vector search for this session"
-            )
-            return []
-
-        if _err[0] is not None:
-            raise _err[0]
-
-        results = _result[0]
+        payload = {
+            "query": query[:2000],
+            "n_results": n_results,
+            "since_days": since_days,
+        }
+        result = subprocess.run(
+            [sys.executable, "-m", "user_jobs.qdrant_vector_search_worker"],
+            input=json.dumps(payload, ensure_ascii=False),
+            text=True,
+            capture_output=True,
+            timeout=60,
+            env=os.environ.copy(),
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "vector subprocess failed").strip()
+            raise RuntimeError(detail[-1000:])
+        return json.loads(result.stdout)
     except Exception as e:
-        logger.warning(f"Vector search failed: {e}")
+        logger.warning(f"Isolated vector search failed: {e}")
         return []
-
-    msgs = []
-    metas    = results.get("metadatas", [[]])[0]
-    docs     = results.get("documents", [[]])[0]
-    dists    = results.get("distances",  [[]])[0]
-
-    for meta, doc, dist in zip(metas, docs, dists):
-        try:
-            date_obj = datetime.strptime(meta.get("date", ""), "%Y-%m-%d %H:%M")
-        except Exception:
-            date_obj = None
-        full_link = meta.get("link", "")
-        msgs.append({
-            "text":       doc,
-            "user":       meta.get("user", ""),
-            "date":       meta.get("date", ""),
-            "date_obj":   date_obj,
-            "id":         int(meta.get("msg_id", 0)),
-            "link":       full_link,
-            "short_link": _shorten_link(full_link),
-            "score":      round(1 - dist, 3),
-        })
-
-    kept = [m for m in msgs if m["score"] >= VEC_MIN_SCORE]
-    logger.info(
-        f"Vector search: {len(kept)}/{len(msgs)} above score {VEC_MIN_SCORE} "
-        f"(top: {msgs[0]['score'] if msgs else '-'}, since_days={since_days})"
-    )
-    return kept
 
 # ── Prompts ───────────────────────────────────────────────────────────────
 SYSTEM_PROMPT_FAQ = """
@@ -238,6 +116,9 @@ SYSTEM_PROMPT_CHAT = """
     • Зведення/аналіз → структурований текст з підзаголовками.
 - В самому кінці — одна коротка строка з найрелевантнішим джерелом: "Джерело: @username, ДАТА".
 - Для подій: дата, час, місце, як зареєструватися.
+- Для вакансій: використовуй тільки оголошення не старші 90 днів, спочатку
+  показуй найсвіжіші; дата публікації обов'язкова. Не називай вакансію
+  актуальною, якщо в повідомленні немає явної пропозиції роботи.
 
 КРИТИЧНО ВАЖЛИВО щодо пошуку майстрів/послуг/контактів:
 - Коли шукають "хто робить X", "майстри", "послуги" — ШУКАЙ В КОНТЕКСТІ:
@@ -269,7 +150,24 @@ TEMPORAL_WORDS = [
     "последние дни", "останні дні", "last week", "за тиждень",
 ]
 
-# ── Chat-history intent detection (bypass FAQ, go directly to deep search) ──
+_VACANCY_QUERY_RE = re.compile(
+    r"(ваканс|ищу\s+работ|шукаю\s+робот|працевлашт|трудоустр|"
+    r"\bjob\b|\bjobs\b|stellenangebot|stellenanzeige|arbeitsstelle)",
+    re.IGNORECASE,
+)
+_VACANCY_MESSAGE_RE = re.compile(
+    r"(ваканс|требуетс|требуются|ищем\s+(?:сотруд|работник|водител|повар|"
+    r"уборщ|продав)|потрібн\w*\s+(?:праців|воді|кухар|прибира)|"
+    r"шукаємо\s+(?:праців|воді|кухар|прибира)|stellenangebot|stellenanzeige|"
+    r"wir\s+suchen|mitarbeiter\w*\s+gesucht)",
+    re.IGNORECASE,
+)
+_NON_VACANCY_QUERY_RE = re.compile(
+    r"(стоимост\w*\s+работ|вартир|wohnung|робот(?:а|-пылесос)|robot(?:er)?\b)",
+    re.IGNORECASE,
+)
+
+# ── Chat-history intent detection
 # These phrases signal the user wants to search/analyse the actual chat, not get a canned FAQ answer.
 _CHAT_HISTORY_PHRASES = [
     # "what did people say/write in the chat about X"
@@ -386,10 +284,22 @@ def _search_faq(query: str, faq: List[Dict]) -> Optional[str]:
 def _extract_query(text: str) -> Optional[str]:
     if not text:
         return None
-    lower = text.lower().strip()
-    if not lower.startswith(TRIGGER_WORD):
+    trigger_re = re.compile(
+        r"(?<!\w)(?:" + "|".join(
+            re.escape(alias) for alias in sorted(TRIGGER_ALIASES, key=len, reverse=True)
+        ) + r")(?!\w)",
+        re.IGNORECASE,
+    )
+    match = trigger_re.search(text)
+    if match is None:
         return None
-    query = text.strip()[len(TRIGGER_WORD):].strip()
+    prefix = text[:match.start()].rstrip()
+    suffix = text[match.end():].lstrip()
+    if prefix and suffix and prefix[-1:] in ",.:;!?—-" and suffix[:1] in ",.:;!?—-":
+        suffix = suffix[1:].lstrip()
+    query = f"{prefix} {suffix}".strip()
+    query = re.sub(r"^[\s,.:;!—-]+|[\s,.:;!—-]+$", "", query)
+    query = re.sub(r"\s+([,.:;!?])", r"\1", query)
     return query if query else None
 
 
@@ -398,12 +308,114 @@ def _is_temporal_query(query: str) -> bool:
     return any(w in q for w in TEMPORAL_WORDS)
 
 
+def _is_vacancy_query(query: str) -> bool:
+    """Return True for job/vacancy intent in Russian, Ukrainian, or German."""
+    text = query or ""
+    return bool(
+        _VACANCY_QUERY_RE.search(text)
+        and not _NON_VACANCY_QUERY_RE.search(text)
+    )
+
+
+def _prioritize_vacancy_candidates(messages: List[Dict],
+                                    now: Optional[datetime] = None) -> List[Dict]:
+    """Keep only fresh vacancy posts and order them newest-first."""
+    cutoff = (now or datetime.utcnow()) - timedelta(days=VACANCY_RECENT_DAYS)
+    dedup: Dict[int, Dict] = {}
+    for message in messages:
+        message_id = message.get("id")
+        date_obj = message.get("date_obj")
+        text = message.get("text") or ""
+        if message_id in dedup or date_obj is None or date_obj < cutoff:
+            continue
+        if not _VACANCY_MESSAGE_RE.search(text):
+            continue
+        dedup[message_id] = message
+    return sorted(
+        dedup.values(),
+        key=lambda message: message.get("date_obj") or datetime.min,
+        reverse=True,
+    )
+
+
 _SERVICE_QUERY_HINTS = [
     "мастер", "мастера", "майстер", "майстри", "услуг", "послуг",
     "предлагал", "предлагали", "предлагает", "пропонував", "пропонували", "пропонує",
     "реклам", "контакт", "специалист", "спеціаліст", "парикмах", "перукар",
     "стриж", "зачіс", "причес", "уклад", "колорист", "барбер", "friseur", "friseurin",
+    "муж на час", "чоловік на годину", "бытов", "побутов", "мелкий ремонт", "дрібний ремонт",
+    "сборк", "збірк", "мебел", "мебл", "установк", "встановлен", "кухн",
+    "подключ", "підключ", "электроприбор", "електроприлад", "техник", "технік",
+    "перевоз", "перевез", "перевіз", "посыл", "посилк", "транспорт",
+    # ── медицина / здоровье ────────────────────────────────────────────
+    "лікар", "лікаря", "врач", "врача", "доктор", "стоматолог", "зубн",
+    "терапевт", "педіатр", "педиатр", "ортопед", "дерматолог", "гінеколог",
+    "гинеколог", "окуліст", "окулист", "хірург", "хирург", "невролог",
+    "кардіолог", "кардиолог", "психолог", "психотерап", "логопед", "лор ",
+    "узи", "узд", "масаж", "массаж", "физиотерап", "фізіотерап", "мануал",
+    "костоправ", "остеопат", "медсестр", "медбрат", "капельниц",
+    # ── красота / уход ─────────────────────────────────────────────────
+    "манікюр", "маникюр", "педикюр", "брів", "бров", "вій", "ресниц",
+    "косметолог", "візаж", "визаж", "макіяж", "макияж", "епіляц", "депіляц",
+    "шугаринг", "тату", "нігт", "ногт", "грумер", "грумінг", "груминг",
+    # ── еда / кондитер ─────────────────────────────────────────────────
+    "торт", "тортик", "випічк", "випечк", "кондитер", "десерт", "бенто",
+    "пряник", "капкейк", "кейтеринг", "домашн", "готую їж", "готовлю ед",
+    # ── цветы / флорист ────────────────────────────────────────────────
+    "флорист", "букет", "композиці", "квіткар",
+    # ── уборка ─────────────────────────────────────────────────────────
+    "прибирання", "уборк", "клінінг", "клининг", "reinigung", "putzen",
+    "мийк вікон", "мытьё окон", "мытье окон",
+    # ── няня / образование / репетитор ─────────────────────────────────
+    "няня", "нянь", "репетитор", "вчитель", "учитель", "викладач",
+    "навчання", "занятт", "тренер", "інструктор", "инструктор",
+    # ── юрист / документы / перевод ────────────────────────────────────
+    "юрист", "адвокат", "перекладач", "переводчик", "нотаріус", "нотариус",
+    "übersetz", "dolmetsch", "консультаці", "steuerберат", "податков консульт",
+    # ── авто ───────────────────────────────────────────────────────────
+    "автомайстер", "автосервіс", "автосервис", "шиномонтаж", "автоелектрик",
+    "автоэлектрик", "перегін авто", "перегон авто", "запчаст", "механік",
+    # ── фото / видео ───────────────────────────────────────────────────
+    "фотограф", "відеограф", "видеограф", "фотосес", "фотозйомк", "зйомк",
+    "съёмк", "съемк", "оператор відео",
+    # ── обобщённые формулировки поиска исполнителя ─────────────────────
+    "скиньте контакт", "киньте контакт", "поділіться контакт", "поделитесь контакт",
+    "хто робить", "кто делает", "хто надає", "хто може зробити",
 ]
+
+_CARRIER_TOPIC_RE = re.compile(
+    r"(перевоз|перевез|перевіз|посыл|посилк|пасажир|пассажир|нова\s+пошт|"
+    r"новая\s+почт|транспорт|вантаж|грузоперев)",
+    re.IGNORECASE,
+)
+
+
+def _is_carrier_query(query: str) -> bool:
+    text = query or ""
+    return bool(
+        _CARRIER_TOPIC_RE.search(text)
+        or re.search(
+            r"(виїхати|виїзд|уехать|выехать|їхати|ехать).*"
+            r"(україн|украин|німеч|герман)",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+_PROVIDER_NAME_ALIASES = {
+    "дмитрий": ("дмитр", "dmitry", "dmitrii", "dmytro", "dmytr"),
+    "дмитро": ("дмитр", "dmitry", "dmitrii", "dmytro", "dmytr"),
+    "дима": ("дима", "dima", "dmytro", "dmytr"),
+}
+
+_PROVIDER_TERM_NOISE = {
+    "муж", "час", "нужен", "нужна", "нужны", "ищу", "ищем", "найди",
+    "подскажите", "посоветуйте", "кто", "хто", "шукаю", "потрібен",
+    "потрібна", "майстер", "мастер", "специалист", "спеціаліст",
+    "электрик", "електрик", "сантехник", "сантехнік", "ремонт", "мебели",
+    "мебель", "меблів", "услуги", "послуги", "бытовой", "побутовий",
+}
 
 _SEEKER_PATTERNS = [
     r"\bищу\b", r"\bшукаю\b", r"\bищем\b", r"\bшукаємо\b",
@@ -416,6 +428,7 @@ _SEEKER_PATTERNS = [
 
 _PROVIDER_PATTERNS = [
     r"\bроблю\b", r"\bделаю\b", r"\bнадаю\b", r"\bпредлагаю\b", r"\bпропоную\b",
+    r"\bдопоможу\b", r"\bпомогу\b", r"\bвиконую\b", r"\bвыполняю\b",
     r"\bпрацюю\b", r"\bработаю\b", r"\bзапрошую\b", r"\bприглашаю\b",
     r"\bстригу\b", r"\bподстригу\b", r"\bпостригу\b", r"\bстригти\b",
     r"хто\w*\s+шука\w+\s+(барбер|перукар|парикмах|майстр)",
@@ -443,6 +456,126 @@ _HAIR_TOPIC_RE = re.compile(
     re.IGNORECASE,
 )
 
+_HANDYMAN_TOPIC_RE = re.compile(
+    r"(муж\s+на\s+час|чоловік\s+на\s+годину|майстр|мастер|ремонт|сантех|"
+    r"електрик|электрик|мебл|кухн|побутов|бытов|технік|техник)",
+    re.IGNORECASE,
+)
+
+# Additional service families. Each entry pairs a query detector with the
+# topic a candidate offer must also match, so e.g. a dentist search does not
+# surface a groomer or a carrier just because they carry a strong provider
+# signal. Order matters: the first family whose query pattern matches wins.
+_MEDICAL_TOPIC_RE = re.compile(
+    r"(лікар|лікув|врач|доктор|стоматолог|зубн|zahnarzt|терапевт|педіатр|"
+    r"педиатр|ортопед|дерматолог|гінеколог|гинеколог|окуліст|окулист|хірург|"
+    r"хирург|невролог|кардіолог|кардиолог|психолог|психотерап|логопед|"
+    r"масаж|массаж|физиотерап|фізіотерап|мануал|костоправ|остеопат|"
+    r"praxis|праксис|клінік|клиник|медсестр|медбрат|arzt|ärzt)",
+    re.IGNORECASE,
+)
+_BEAUTY_TOPIC_RE = re.compile(
+    r"(манікюр|маникюр|педикюр|брів|бров|вій|ресниц|косметолог|візаж|визаж|"
+    r"макіяж|макияж|епіляц|депіляц|шугаринг|тату|нігт|ногт|грумер|грумінг|груминг|"
+    r"перукар|парикмах|стриж|friseur|барбер|barber|колорист)",
+    re.IGNORECASE,
+)
+_FOOD_TOPIC_RE = re.compile(
+    r"(торт|тортик|випічк|випечк|кондитер|десерт|бенто|пряник|капкейк|"
+    r"кейтеринг|печу|пеку|випікаю|готую\s+їж|домашн\w*\s+(їж|еда|обід|обед))",
+    re.IGNORECASE,
+)
+_FLORIST_QUERY_RE = re.compile(
+    r"(флорист|букет|квіткар|квітков|цветочн|композиці\w*\s+(?:з\s+)?квіт|"
+    r"композици\w*\s+(?:из\s+)?цвет)",
+    re.IGNORECASE,
+)
+_FLORIST_OFFER_RE = re.compile(
+    r"(флорист|квіткар|квітков\w*\s+магазин|цветочн\w*\s+магазин|"
+    r"(?:збираю|складаю|роблю|делаю|собираю|оформляю)\w*\s+(?:весільн\w*\s+)?букет|"
+    r"(?:букет|композиці\w*\s+(?:з\s+)?квіт|композици\w*\s+(?:из\s+)?цвет)\w*\s+на\s+(?:замовлення|заказ))",
+    re.IGNORECASE,
+)
+_CLEANING_TOPIC_RE = re.compile(
+    r"(прибирання|прибираю|уборк|убираю|клінінг|клининг|reinigung|putzen|мийк|мыть)",
+    re.IGNORECASE,
+)
+_TUTOR_TOPIC_RE = re.compile(
+    r"(няня|нянь|репетитор|вчител|учител|викладач|навчання|занятт|тренер|інструктор|инструктор)",
+    re.IGNORECASE,
+)
+_LEGAL_TOPIC_RE = re.compile(
+    r"(юрист|адвокат|перекладач|переводчик|нотаріус|нотариус|übersetz|"
+    r"dolmetsch|консультаці|steuerber|податков)",
+    re.IGNORECASE,
+)
+_AUTO_TOPIC_RE = re.compile(
+    r"(автомайстер|автосервіс|автосервис|шиномонтаж|автоелектрик|автоэлектрик|"
+    r"перегін\s+авто|перегон\s+авто|запчаст|механік|ремонт\s+авто)",
+    re.IGNORECASE,
+)
+_PHOTO_TOPIC_RE = re.compile(
+    r"(фотограф|відеограф|видеограф|фотосес|фотозйомк|зйомк|съёмк|съемк)",
+    re.IGNORECASE,
+)
+
+# Specific subtopics must run before broad service families. Otherwise a
+# dentist query would admit any medical offer (massage, psychologist, etc.).
+def _topic_re(pattern: str):
+    return re.compile(pattern, re.IGNORECASE)
+
+_SPECIFIC_TOPIC_FAMILIES = [
+    # Medical specialties
+    (_topic_re(r"(стоматолог|зубн|zahnarzt|dentist)"),
+     _topic_re(r"(стоматолог|зубн|zahnarzt|dentist|zahnärzt|zahnmedizin)")),
+    (_topic_re(r"(мануал|костоправ|остеопат|масаж|массаж|физиотерап|фізіотерап)"),
+     _topic_re(r"(мануал|костоправ|остеопат|масаж|массаж|физиотерап|фізіотерап|physiotherap)")),
+    (_topic_re(r"(психолог|психотерап)"), _topic_re(r"(психолог|психотерап|psycholog|psychotherap)")),
+    (_topic_re(r"(логопед|дефектолог)"), _topic_re(r"(логопед|дефектолог|logopäd)")),
+    (_topic_re(r"(педіатр|педиатр|дитяч\w*\s+лікар|детск\w*\s+врач)"),
+     _topic_re(r"(педіатр|педиатр|kinderarzt|дитяч\w*\s+лікар|детск\w*\s+врач)")),
+    (_topic_re(r"(ортопед)"), _topic_re(r"(ортопед|orthopäd)")),
+    (_topic_re(r"(дерматолог|шкірн\w*\s+лікар|кожн\w*\s+врач)"),
+     _topic_re(r"(дерматолог|hautarzt|шкірн\w*\s+лікар|кожн\w*\s+врач)")),
+    (_topic_re(r"(гінеколог|гинеколог)"), _topic_re(r"(гінеколог|гинеколог|gynäkolog|frauenarzt)")),
+    (_topic_re(r"(окуліст|окулист|офтальмолог)"), _topic_re(r"(окуліст|окулист|офтальмолог|augenarzt)")),
+    (_topic_re(r"(хірург|хирург)"), _topic_re(r"(хірург|хирург|chirurg)")),
+    (_topic_re(r"(невролог)"), _topic_re(r"(невролог|neurolog)")),
+    (_topic_re(r"(кардіолог|кардиолог)"), _topic_re(r"(кардіолог|кардиолог|kardiolog)")),
+    # Beauty specialties
+    (_topic_re(r"(манікюр|маникюр|педикюр|нігт|ногт)"),
+     _topic_re(r"(манікюр|маникюр|педикюр|нігт|ногт|nail)")),
+    (_topic_re(r"(ресниц|вій|бров|брів)"), _topic_re(r"(ресниц|вій|бров|брів|lash|brow)")),
+    (_topic_re(r"(грумер|грумінг|груминг)"), _topic_re(r"(грумер|грумінг|груминг|groom)")),
+    # Legal/document specialties
+    (_topic_re(r"(перекладач|переводчик|übersetz|dolmetsch)"),
+     _topic_re(r"(перекладач|переводчик|übersetz|dolmetsch)")),
+    (_topic_re(r"(нотаріус|нотариус)"), _topic_re(r"(нотаріус|нотариус|notar)")),
+    # Education/care specialties
+    (_topic_re(r"(няня|нянь)"), _topic_re(r"(няня|нянь|babysit|kinderbetreuung)")),
+    (_topic_re(r"(репетитор|вчител|учител|викладач)"),
+     _topic_re(r"(репетитор|вчител|учител|викладач|nachhilfe|unterricht)")),
+]
+
+# Ordered broad families: (query-side detector, offer-side topic).
+_TOPIC_FAMILIES = [
+    (_FLORIST_QUERY_RE, _FLORIST_OFFER_RE),
+    (_FOOD_TOPIC_RE, _FOOD_TOPIC_RE),
+    (_BEAUTY_TOPIC_RE, _BEAUTY_TOPIC_RE),
+    (_MEDICAL_TOPIC_RE, _MEDICAL_TOPIC_RE),
+    (_AUTO_TOPIC_RE, _AUTO_TOPIC_RE),
+    (_PHOTO_TOPIC_RE, _PHOTO_TOPIC_RE),
+    (_TUTOR_TOPIC_RE, _TUTOR_TOPIC_RE),
+    (_LEGAL_TOPIC_RE, _LEGAL_TOPIC_RE),
+    (_CLEANING_TOPIC_RE, _CLEANING_TOPIC_RE),
+]
+
+_PROVIDER_OFFER_PATTERN = (
+    r"(?i)(?:\b(?:допоможу|помогу|пропоную|предлагаю|надаю|роблю|делаю|"
+    r"виконую|выполняю|ремонтирую|збираю|собираю|підключаю|подключаю)\b|"
+    r"\b(?:пишіть|пишите)\b.*\b(?:лс|особист|личн|direct)\b)"
+)
+
 
 def _is_hair_query(query: str) -> bool:
     return bool(_HAIR_TOPIC_RE.search(query))
@@ -459,16 +592,58 @@ _HAIR_SERVICE_KEYWORDS = [
 
 
 def _matches_query_topic(query: str, msg: Dict) -> bool:
-    """Avoid generic 'services' ads (moving, repair, etc.) when the user asked for hair/beauty."""
+    """Keep provider offers inside the service family requested by the user."""
+    text = msg.get("text") or ""
+    if _is_carrier_query(query):
+        return bool(_CARRIER_TOPIC_RE.search(text))
     if _is_hair_query(query):
-        return bool(_HAIR_TOPIC_RE.search(msg.get("text") or ""))
+        return bool(_HAIR_TOPIC_RE.search(text))
+    if _HANDYMAN_TOPIC_RE.search(query or ""):
+        return bool(_HANDYMAN_TOPIC_RE.search(text))
+    # Specific specialties first (dentist, physiotherapist, notary, etc.).
+    for query_re, offer_re in _SPECIFIC_TOPIC_FAMILIES:
+        if query_re.search(query or ""):
+            return bool(offer_re.search(text))
+    # Then broad service families (medical, beauty, food, florist, …).
+    for query_re, offer_re in _TOPIC_FAMILIES:
+        if query_re.search(query or ""):
+            return bool(offer_re.search(text))
     return True
 
 
 def _is_service_provider_query(query: str) -> bool:
     """User asks for people who provide/advertised a service, not people who search for it."""
     q = query.lower()
-    return any(h in q for h in _SERVICE_QUERY_HINTS)
+    return _is_carrier_query(query) or any(h in q for h in _SERVICE_QUERY_HINTS)
+
+
+def _provider_author_terms(query: str) -> List[str]:
+    """Return an explicit username or person name, never an arbitrary query word."""
+    words = re.findall(r"@?[\w.-]{3,}", query or "", flags=re.UNICODE)
+    usernames = [word.lstrip("@").strip(".-").lower() for word in words if word.startswith("@")]
+    if usernames:
+        return list(dict.fromkeys(usernames))
+
+    # Known aliases are safe even when the user types the name in lowercase.
+    for word in reversed(words):
+        clean = word.strip(".-").lower()
+        aliases = _PROVIDER_NAME_ALIASES.get(clean)
+        if aliases:
+            return list(dict.fromkeys(aliases))
+
+    # Arbitrary names are accepted only when explicitly capitalized. This avoids
+    # treating conjunctions and grammatical words such as "или" or "годину" as
+    # provider names while still supporting "электрик Сергей".
+    for word in reversed(words):
+        clean = word.strip(".-")
+        lowered = clean.lower()
+        if (
+            clean[:1].isupper()
+            and lowered not in _STOP_WORDS
+            and lowered not in _PROVIDER_TERM_NOISE
+        ):
+            return [lowered]
+    return []
 
 
 def _provider_signal_score(msg: Dict) -> int:
@@ -492,6 +667,70 @@ def _provider_signal_score(msg: Dict) -> int:
     return score
 
 
+def _phone_count(text: str) -> int:
+    """Count plausible international phone numbers, including compact replies."""
+    return len(re.findall(
+        r"(?:\+\d[\d\s()\-]{8,}\d|(?<![\d-])\d{10,13}(?!\d))",
+        text or "",
+    ))
+
+
+def _carrier_signal_score(msg: Dict) -> int:
+    text = msg.get("text") or ""
+    score = _provider_signal_score(msg)
+    if _CARRIER_TOPIC_RE.search(text):
+        score += 4
+    score += min(_phone_count(text), 3) * 3
+    if re.search(r"(україн|украин|німеч|герман|берлін|берлин|потсдам|чернів|львів)", text, re.IGNORECASE):
+        score += 1
+    return score
+
+
+def _prioritize_provider_candidates(messages: List[Dict], query: str) -> List[Dict]:
+    """Prefer concrete provider contacts; carrier questions without answers are noise."""
+    dedup: Dict[int, Dict] = {}
+    for message in messages:
+        dedup.setdefault(message.get("id"), message)
+
+    if _is_carrier_query(query):
+        ranked = []
+        for message in dedup.values():
+            text = message.get("text") or ""
+            if _BOT_ADDRESS_RE.search(text):
+                continue
+            score = _carrier_signal_score(message)
+            if not _CARRIER_TOPIC_RE.search(text) and _phone_count(text) < 2:
+                continue
+            if _phone_count(text) == 0 and _provider_signal_score(message) <= 1:
+                continue
+            ranked.append((score, message.get("date", ""), message))
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return _group_provider_history([item[2] for item in ranked])
+
+    # Keep offers inside the requested service family (a dentist search must not
+    # surface a groomer). Fall back to the unfiltered list if the topic filter
+    # would leave us with nothing to answer from. Within a topic, concrete
+    # offers/recommendations beat newer seeker questions deterministically.
+    all_messages = list(dedup.values())
+    on_topic = [m for m in all_messages if _matches_query_topic(query, m)]
+    pool = on_topic or all_messages
+    scored = sorted(
+        pool,
+        key=lambda message: (
+            _provider_signal_score(message),
+            _phone_count(message.get("text") or ""),
+            message.get("date", ""),
+        ),
+        reverse=True,
+    )
+    return _group_provider_history(scored)
+
+
+def _is_vector_ready() -> bool:
+    """Qdrant readiness is independent from the retired Chroma test hook."""
+    return os.getenv("VECTOR_BACKEND", "shadow").lower() == "qdrant"
+
+
 def _filter_provider_candidates(messages: List[Dict], query: str = "") -> List[Dict]:
     """For service-provider queries, drop pure seeker messages and sort likely providers first."""
     dedup: Dict[int, Dict] = {}
@@ -500,7 +739,7 @@ def _filter_provider_candidates(messages: List[Dict], query: str = "") -> List[D
     provider_like = []
     for m in dedup.values():
         text = (m.get("text") or "").lower().strip()
-        if text.startswith((TRIGGER_WORD, "потбот", "потсдам бот")):
+        if _BOT_ADDRESS_RE.search(text):
             continue
         if "barberini" in text or "museum-barberini" in text:
             continue
@@ -510,6 +749,57 @@ def _filter_provider_candidates(messages: List[Dict], query: str = "") -> List[D
             provider_like.append(m)
     provider_like.sort(key=lambda m: (_provider_signal_score(m), m.get("date", "")), reverse=True)
     return provider_like
+
+
+def _group_provider_history(messages: List[Dict]) -> List[Dict]:
+    """Keep several confirmations per provider instead of isolated posts."""
+    groups: Dict[str, List[Dict]] = {}
+    order: List[str] = []
+    for message in messages:
+        key = (message.get("user") or f"message:{message.get('id')}").lower()
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        if len(groups[key]) < 4:
+            groups[key].append(message)
+    return [message for key in order for message in groups[key]]
+
+
+def _search_provider_offers(session, chat_ids: List[int], query: str,
+                            scan_limit: int = 5000,
+                            result_limit: int = 40) -> List[Dict]:
+    """Find direct all-history service offers and keep the newest per author."""
+    if not chat_ids:
+        return []
+    offer_pattern = _PROVIDER_OFFER_PATTERN
+    if _is_carrier_query(query):
+        offer_pattern = (
+            r"(?i)(?:перевоз|перевез|перевіз|посыл|посилк|пасажир|пассажир|"
+            r"нова\s+пошт|новая\s+почт|транспорт|вантаж|грузоперев)"
+        )
+    rows = (
+        _exclude_bot_address(
+            session.query(Message, User)
+            .outerjoin(User, Message.from_id == User.id)
+            .filter(Message.from_chat.in_(chat_ids))
+            .filter(Message.text.isnot(None))
+            .filter(Message.text != "")
+            .filter(_TL.op("REGEXP")(offer_pattern))
+        )
+        .order_by(Message.date.desc())
+        .limit(scan_limit)
+        .all()
+    )
+    row_dicts = _rows_to_dicts(rows)
+    if _is_carrier_query(query):
+        candidates = _prioritize_provider_candidates(row_dicts, query)
+    else:
+        candidates = _filter_provider_candidates(row_dicts, query)
+    newest_by_author: Dict[str, Dict] = {}
+    for message in candidates:
+        key = (message.get("user") or f"message:{message.get('id')}").lower()
+        newest_by_author.setdefault(key, message)
+    return list(newest_by_author.values())[:result_limit]
 
 
 def _get_anchor_words(query: str) -> List[str]:
@@ -546,7 +836,12 @@ def _get_upcoming_date_patterns(days_ahead: int = 14) -> List[str]:
 
 # Messages addressed to the bot itself (questions, not community answers) must
 # never end up in the answer context — they pollute it with unanswered queries.
-_BOT_ADDRESS_PREFIXES = (f"{TRIGGER_WORD}%", "потбот%", "потсдам бот%")
+_BOT_ADDRESS_PATTERN = (
+    r"(?<!\w)(?:" + "|".join(
+        re.escape(alias) for alias in sorted(TRIGGER_ALIASES, key=len, reverse=True)
+    ) + r")(?!\w)"
+)
+_BOT_ADDRESS_RE = re.compile(_BOT_ADDRESS_PATTERN, re.IGNORECASE)
 
 
 # Cyrillic-safe lowercase text expression (SQLite lower() is ASCII-only,
@@ -555,32 +850,37 @@ _TL = func.coalesce(Message.text_lower, "")
 
 
 def _exclude_bot_address(q):
-    return q.filter(~or_(*[_TL.like(p) for p in _BOT_ADDRESS_PREFIXES]))
+    return q.filter(~_TL.op("REGEXP")(_BOT_ADDRESS_PATTERN))
 
 
-def _get_message_ids_by_keywords(session, chat_ids: List[int],
-                                  keywords: List[str],
-                                  anchor_words: Optional[List[str]] = None) -> List[int]:
-    """Per-keyword search with separate quotas for anchor vs expanded words."""
+def _search_keyword_ids(session, chat_ids: List[int],
+                        keywords: List[str],
+                        anchor_words: Optional[List[str]] = None,
+                        since: Optional[datetime] = None,
+                        before: Optional[datetime] = None) -> List[int]:
+    """Search message text with separate per-keyword quotas and date bounds."""
     if not chat_ids:
         return []
 
     seen: set = set()
     result: List[int] = []
-
     base_q = _exclude_bot_address(
         session.query(Message._id)
         .filter(Message.from_chat.in_(chat_ids))
         .filter(Message.text.isnot(None))
         .filter(Message.text != "")
     )
+    if since is not None:
+        base_q = base_q.filter(Message.date >= since)
+    if before is not None:
+        base_q = base_q.filter(Message.date < before)
 
     def _collect(words: List[str], per_kw: int) -> None:
-        for w in words:
-            if not w:
+        for word in words:
+            if not word:
                 continue
             rows = (
-                base_q.filter(_TL.like(f"%{w.lower()}%"))
+                base_q.filter(_TL.like(f"%{word.lower()}%"))
                 .order_by(Message.date.desc())
                 .limit(per_kw)
                 .all()
@@ -595,6 +895,50 @@ def _get_message_ids_by_keywords(session, chat_ids: List[int],
     return result
 
 
+def _get_message_ids_by_keywords(session, chat_ids: List[int],
+                                  keywords: List[str],
+                                  anchor_words: Optional[List[str]] = None) -> List[int]:
+    """Backward-compatible all-history keyword search."""
+    return _search_keyword_ids(session, chat_ids, keywords, anchor_words)
+
+
+def _search_provider_authors(session, chat_ids: List[int],
+                             terms: List[str], limit: int = 40):
+    """Find all-history messages by matching provider fullname or username."""
+    if not chat_ids or not terms:
+        return []
+    normalized_terms = [
+        term.lower().lstrip("@").strip()
+        for term in terms
+        if term.lower().lstrip("@").strip()
+    ]
+    if not normalized_terms:
+        return []
+
+    matching_user_ids = []
+    for user in session.query(User).all():
+        fullname = (user.fullname or "").lower()
+        username = (user.username or "").lower()
+        if any(term in fullname or term in username for term in normalized_terms):
+            matching_user_ids.append(user.id)
+    if not matching_user_ids:
+        return []
+
+    return (
+        _exclude_bot_address(
+            session.query(Message, User)
+            .outerjoin(User, Message.from_id == User.id)
+            .filter(Message.from_chat.in_(chat_ids))
+            .filter(Message.text.isnot(None))
+            .filter(Message.text != "")
+            .filter(Message.from_id.in_(matching_user_ids))
+        )
+        .order_by(Message.date.desc())
+        .limit(limit)
+        .all()
+    )
+
+
 def _fetch_chain(session, center_ids: List[int], window: int = CHAIN_WINDOW) -> List[Dict]:
     """Fetch surrounding messages as conversation chains."""
     if not center_ids:
@@ -604,16 +948,17 @@ def _fetch_chain(session, center_ids: List[int], window: int = CHAIN_WINDOW) -> 
         for offset in range(-window, window + 1):
             all_pks.add(pk + offset)
     rows = (
-        session.query(Message, User)
-        .outerjoin(User, Message.from_id == User.id)
-        .filter(Message._id.in_(all_pks))
-        .filter(Message.text.isnot(None))
-        .filter(Message.text != "")
+        _exclude_bot_address(
+            session.query(Message, User)
+            .outerjoin(User, Message.from_id == User.id)
+            .filter(Message._id.in_(all_pks))
+            .filter(Message.text.isnot(None))
+            .filter(Message.text != "")
+        )
         .order_by(Message.date.desc())
         .all()
     )
     return _rows_to_dicts(rows)
-
 
 def _search_recently_posted(session, chat_ids: List[int],
                              days: int = 7, limit: int = 60) -> List[Dict]:
@@ -661,52 +1006,28 @@ def _search_recent(session, chat_ids: List[int],
 
 def _search_keywords_with_fallback(session, chat_ids: List[int],
                                     keywords: List[str],
-                                    anchor_words: Optional[List[str]] = None) -> List[Dict]:
-    """Search keywords in last 365 days; if < 5 results — extend to all time.
-    Returns messages sorted by date DESCENDING (newest first)."""
-    RECENT_DAYS = 365
+                                    anchor_words: Optional[List[str]] = None,
+                                    provider_query: bool = False) -> List[Dict]:
+    """Search recent text, preserving an independent all-history provider quota."""
+    recent_days = int(os.getenv("SEARCH_RECENT_DAYS", "730"))
+    cutoff = datetime.utcnow() - timedelta(days=recent_days)
+    recent_ids = _search_keyword_ids(
+        session, chat_ids, keywords, anchor_words, since=cutoff,
+    )
+    logger.info(f"Keyword search (last {recent_days}d): {len(recent_ids)} ids")
 
-    def _do_search(cutoff_date: Optional[datetime]) -> List[int]:
-        seen: set = set()
-        result: List[int] = []
-        base_q = _exclude_bot_address(
-            session.query(Message._id)
-            .filter(Message.from_chat.in_(chat_ids))
-            .filter(Message.text.isnot(None))
-            .filter(Message.text != "")
+    if provider_query:
+        historical_ids = _search_keyword_ids(
+            session, chat_ids, keywords, anchor_words, before=cutoff,
         )
-        if cutoff_date:
-            base_q = base_q.filter(Message.date >= cutoff_date)
-
-        def _collect(words: List[str], per_kw: int) -> None:
-            for w in words:
-                if not w:
-                    continue
-                rows = (
-                    base_q.filter(_TL.like(f"%{w.lower()}%"))
-                    .order_by(Message.date.desc())
-                    .limit(per_kw)
-                    .all()
-                )
-                for (pk,) in rows:
-                    if pk not in seen:
-                        seen.add(pk)
-                        result.append(pk)
-
-        _collect(anchor_words or [], PER_KW_ANCHOR)
-        _collect(keywords or [], PER_KW_BROAD)
-        return result
-
-    # First try: last year
-    cutoff = datetime.utcnow() - timedelta(days=RECENT_DAYS)
-    ids = _do_search(cutoff)
-    logger.info(f"Keyword search (last {RECENT_DAYS}d): {len(ids)} ids")
-
-    # Fallback: all time if too few results
-    if len(ids) < 5:
-        logger.info("Too few results, falling back to full history search")
-        ids = _do_search(None)
+        logger.info(f"Provider keyword quota (older history): {len(historical_ids)} ids")
+        ids = list(dict.fromkeys(recent_ids + historical_ids))
+    elif len(recent_ids) < 5:
+        logger.info("Too few recent results, falling back to full history search")
+        ids = _search_keyword_ids(session, chat_ids, keywords, anchor_words)
         logger.info(f"Keyword search (all time): {len(ids)} ids")
+    else:
+        ids = recent_ids
 
     return _fetch_chain(session, ids)
 
@@ -784,47 +1105,8 @@ def _build_context(msgs: List[Dict]) -> str:
 
 # ── OpenRouter / OmniRoute calls ──────────────────────────────────────────
 
-def _call_gemini_direct(prompt: str, max_tokens: int = 4096, timeout: int = 90) -> str:
-    """Fallback: call Google Gemini API directly using GEMINI_API_KEY."""
-    if not GEMINI_API_KEY:
-        return ""
-
-    url = GEMINI_DIRECT_URL.format(model=GEMINI_DIRECT_MODEL, api_key=GEMINI_API_KEY)
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "maxOutputTokens": min(max_tokens, 8192),
-            "temperature": 0.2,
-        },
-    }
-    try:
-        resp = requests.post(url, json=payload, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        candidates = data.get("candidates", [])
-        if not candidates:
-            return ""
-        parts = candidates[0].get("content", {}).get("parts", [])
-        return "".join(p.get("text", "") for p in parts).strip()
-    except requests.exceptions.Timeout:
-        logger.error("Gemini direct API timeout")
-        return ""
-    except requests.exceptions.HTTPError as e:
-        status = e.response.status_code if e.response is not None else "?"
-        body = e.response.text[:200] if e.response is not None else ""
-        logger.error(f"Gemini direct HTTP error: {status} {body}")
-        return "RATE_LIMIT" if status == 429 else ""
-    except Exception as e:
-        logger.error(f"Gemini direct error: {e}")
-        return ""
-
-
 def _call_ai(prompt: str, max_tokens: int = 8192, timeout: int = 90) -> str:
-    """Call OpenRouter API; if it fails due credits/provider issue, fallback to direct Gemini."""
-    if not OPENROUTER_API_KEY:
-        logger.warning("OPENROUTER_API_KEY missing, using direct Gemini fallback")
-        return _call_gemini_direct(prompt, max_tokens=max_tokens, timeout=timeout)
-
+    """Call the configured OpenAI-compatible endpoint."""
     headers = {
         "Content-Type": "application/json",
     }
@@ -842,22 +1124,18 @@ def _call_ai(prompt: str, max_tokens: int = 8192, timeout: int = 90) -> str:
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"].strip()
     except requests.exceptions.Timeout:
-        logger.error("OpenRouter API timeout, using direct Gemini fallback")
-        return _call_gemini_direct(prompt, max_tokens=max_tokens, timeout=timeout)
+        logger.error("OpenRouter API timeout")
+        return ""
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else "?"
         body = e.response.text[:200] if e.response is not None else ""
         logger.error(f"OpenRouter HTTP error: {status} {body}")
-        if status in (402, 403, 404, 429, 500, 502, 503, 504):
-            logger.warning("Using direct Gemini fallback after OpenRouter failure")
-            fallback = _call_gemini_direct(prompt, max_tokens=max_tokens, timeout=timeout)
-            if fallback:
-                return fallback
-            return "RATE_LIMIT" if status == 429 else ""
+        if status == 429:
+            return "RATE_LIMIT"
         return ""
     except Exception as e:
-        logger.error(f"OpenRouter error: {e}, using direct Gemini fallback")
-        return _call_gemini_direct(prompt, max_tokens=max_tokens, timeout=timeout)
+        logger.error(f"OpenRouter error: {e}")
+        return ""
 
 
 def _normalize_query(query: str) -> str:
@@ -901,8 +1179,31 @@ def _expand_keywords(query: str) -> List[str]:
                        "барбер", "barber", "стрижка", "стрижки", "стригу", "стригут"],
         "стрижка": ["стрижка", "стрижки", "стригу", "прическа", "укладка", "зачіска", "friseur"],
         # Services / repairs
-        "ремонт": ["ремонт", "ремонту", "отремонтировать", "ремонтирование", "reparieren", "reparatur"],
+        "ремонт": ["ремонт", "ремонту", "отремонтировать", "ремонтирование", "reparieren", "reparatur",
+                   "муж на час", "чоловік на годину", "бытовой мастер", "побутовий майстер"],
+        "муж": ["муж на час", "чоловік на годину", "мастер", "майстер", "ремонт", "сборка мебели",
+                "збірка меблів", "установка кухни", "встановлення кухні", "подключение техники"],
+        "мебел": ["мебель", "мебели", "меблів", "сборка мебели", "збірка меблів", "кухня", "кухні"],
+        "кухн": ["кухня", "кухни", "кухні", "установка кухни", "встановлення кухні", "мебель", "меблів"],
+        "подключ": ["подключение", "подключить", "підключення", "підключити", "электроприбор", "електроприлад"],
         "перевозк": ["перевозк", "перевезен", "транспорт", "transport", "umzug"],
+        "перевозчик": ["перевозчик", "перевізник", "перевезення", "перевозка", "посилки", "посылки"],
+        "перевізник": ["перевізник", "перевозчик", "перевезення", "перевозка", "посилки", "посылки"],
+        "перевозит": ["перевозит", "перевозчик", "перевізник", "перевезення", "посилки", "посылки"],
+        "посылк": ["посылки", "посилки", "перевезення", "перевозка", "нова пошта", "новая почта"],
+        "посилк": ["посилки", "посылки", "перевезення", "перевозка", "нова пошта", "новая почта"],
+        # Medical specialties
+        "стоматолог": ["стоматолог", "зубной", "зубна", "zahnarzt", "dentist", "лечение зубов"],
+        "мануал": ["мануальщик", "мануальная терапия", "костоправ", "остеопат", "физиотерапевт", "массаж"],
+        "костоправ": ["костоправ", "мануальщик", "остеопат", "физиотерапевт", "массаж"],
+        "лікар": ["лікар", "врач", "доктор", "arzt", "praxis"],
+        "педіатр": ["педіатр", "педиатр", "kinderarzt", "детский врач", "дитячий лікар"],
+        # Food / florist
+        "торт": ["торт", "торты", "тортики", "кондитер", "выпечка", "випічка", "бенто", "капкейк"],
+        "тортики": ["торт", "торты", "тортики", "кондитер", "выпечка", "випічка", "бенто", "капкейк"],
+        "кондитер": ["кондитер", "торт", "торты", "выпечка", "випічка", "десерт"],
+        "флорист": ["флорист", "флористка", "букет", "цветочный магазин", "квітковий магазин"],
+        "букет": ["букет", "флорист", "флористка", "цветочный магазин", "квітковий магазин"],
         "уборк": ["уборк", "убираю", "клининг", "reinigung", "putzen"],
         # Education / language
         "мов": ["мов", "язык", "sprache", "language", "німецьк", "deutsch", "english"],
@@ -926,6 +1227,12 @@ def _expand_keywords(query: str) -> List[str]:
                 for s in syns:
                     result.add(s)
 
+    if _is_carrier_query(query):
+        result.update({
+            "перевезення", "перевозчик", "перевізник", "перевозка",
+            "посилки", "посылки", "пасажирські перевезення",
+        })
+
     # Add keyword variants with city name (common search pattern)
     has_city = any(c in query_lower for c in ["потсдам", "potsdam", "берлин", "berlin"])
     if has_city:
@@ -939,10 +1246,70 @@ def _expand_keywords(query: str) -> List[str]:
     return final if final else query.split()
 
 
-def _rerank(query: str, messages: List[Dict], top_k: int = 25) -> List[Dict]:
-    """Select the most relevant messages from the candidates pool."""
+def _rerank(query: str, messages: List[Dict], top_k: int = 25,
+            preserve_provider_offers: bool = False) -> List[Dict]:
+    """Select relevant messages while preserving strong direct service offers."""
+    protected = []
+    if preserve_provider_offers:
+        seen_users = set()
+        concrete = []
+        general = []
+        for message in messages:
+            score = _provider_signal_score(message)
+            text = message.get("text") or ""
+            has_contact = bool(
+                _phone_count(text)
+                or re.search(r"(@\w{3,}|https?://|t\.me/|instagram|wa\.me)", text)
+            )
+            if score < 2 and not has_contact:
+                continue
+            # Protect concrete answers first: phone/link/contact or a strong
+            # offer/recommendation. This prevents seeker questions with an
+            # unrelated URL inside a dialogue chunk from occupying every slot.
+            is_concrete = has_contact or score >= 6
+            (concrete if is_concrete else general).append(message)
+        provider_ranked = sorted(
+            concrete,
+            key=lambda message: (
+                bool(_phone_count(message.get("text") or "")),
+                _provider_signal_score(message),
+                message.get("date", ""),
+            ),
+            reverse=True,
+        )
+        # If no concrete answer exists, keep a small number of general
+        # recommendations so the final model can still answer honestly.
+        if not provider_ranked:
+            provider_ranked = sorted(
+                general,
+                key=lambda message: (
+                    _provider_signal_score(message),
+                    message.get("date", ""),
+                ),
+                reverse=True,
+            )[:3]
+        for message in provider_ranked:
+            user_key = (message.get("user") or f"message:{message.get('id')}").lower()
+            if user_key in seen_users:
+                continue
+            seen_users.add(user_key)
+            protected.append(message)
+            if len(protected) >= max(1, top_k // 2):
+                break
+
+    def _merge_protected(selected: List[Dict]) -> List[Dict]:
+        merged = protected + selected
+        dedup = []
+        seen_ids = set()
+        for message in merged:
+            if message.get("id") in seen_ids:
+                continue
+            seen_ids.add(message.get("id"))
+            dedup.append(message)
+        return dedup[:top_k]
+
     if len(messages) <= top_k:
-        return messages
+        return _merge_protected(messages)
 
     # Limit input to avoid oversized prompts (>150 msgs × 200 chars ≈ ~10k tokens)
     candidates = messages[:150]
@@ -977,10 +1344,10 @@ def _rerank(query: str, messages: List[Dict], top_k: int = 25) -> List[Dict]:
             selected = [candidates[i] for i in indices if 0 <= i < len(candidates)]
             if selected:
                 logger.info(f"Re-ranked: {len(messages)} → {len(selected)} messages")
-                return selected
+                return _merge_protected(selected)
     except Exception as e:
         logger.warning(f"Re-ranking failed: {e}")
-    return candidates[:top_k]
+    return _merge_protected(candidates[:top_k])
 
 
 # ── Output ────────────────────────────────────────────────────────────────
@@ -1004,6 +1371,27 @@ def _send_answer(message, text: str) -> None:
         message.reply_text(chunk.strip(), parse_mode=None)
 
 
+def _create_wait_indicator(update: Update):
+    """Acknowledge a long-running request with a removable status message."""
+    try:
+        return update.message.reply_text(
+            "⏳ Запит отримано. Шукаю відповідь, будь ласка, зачекайте…",
+            parse_mode=None,
+        )
+    except Exception as exc:
+        logger.warning("Failed to create wait indicator: %s", exc)
+        return None
+
+
+def _delete_wait_indicator(indicator) -> None:
+    if indicator is None:
+        return
+    try:
+        indicator.delete()
+    except Exception as exc:
+        logger.warning("Failed to delete wait indicator: %s", exc)
+
+
 # ── Main handler ──────────────────────────────────────────────────────────
 
 def handle_ai_query(update: Update, context: CallbackContext) -> None:
@@ -1013,6 +1401,8 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
     query = _extract_query(update.message.text)
     if query is None:
         return
+
+    wait_indicator = _create_wait_indicator(update)
 
     try:
         context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
@@ -1055,16 +1445,23 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
 
         is_temporal = _is_temporal_query(query)
         is_provider_query = _is_service_provider_query(query)
+        is_vacancy_query = _is_vacancy_query(query)
         anchor_words = _get_anchor_words(query)
 
-        logger.info(f"Query: {query!r} | temporal: {is_temporal} | provider: {is_provider_query} | anchor: {anchor_words}")
+        logger.info(
+            f"Query: {query!r} | temporal: {is_temporal} | provider: "
+            f"{is_provider_query} | vacancy: {is_vacancy_query} | anchor: {anchor_words}"
+        )
 
         # ── Step A: Vector search (primary) ───────────────────────────────
-        col = _get_chroma()
-        vector_ready = col is not None and _chroma_count > 0  # use cached count, never call col.count() again
+        vector_ready = _is_vector_ready()
 
         if vector_ready:
-            if is_temporal:
+            if is_vacancy_query:
+                vec_msgs = _vector_search(
+                    query, n_results=60, since_days=VACANCY_RECENT_DAYS,
+                )
+            elif is_temporal:
                 # Temporal: first try last 14 days, fallback to 90 days
                 vec_msgs = _vector_search(query, n_results=50, since_days=14)
                 if len(vec_msgs) < 5:
@@ -1077,30 +1474,59 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
                     logger.info("Too few results in 365d, searching all time")
                     vec_msgs = _vector_search(query, n_results=50)
         else:
-            logger.warning("ChromaDB not ready, falling back to keyword search")
+            logger.warning("Vector backend not ready, falling back to keyword search")
             vec_msgs = []
 
         # ── Step B: Keyword fallback / supplement ────────────────────────
         if not vector_ready:
-            # ChromaDB not available — full keyword search
+            # Vector backend not available — full keyword search
             keywords = _expand_keywords(query)
             if _is_hair_query(query):
                 keywords += _HAIR_SERVICE_KEYWORDS
             if is_temporal:
                 keywords += _get_upcoming_date_patterns(14)
             keyword_msgs = _search_keywords_with_fallback(
-                session, chat_ids, keywords, anchor_words=anchor_words
+                session, chat_ids, keywords, anchor_words=anchor_words,
+                provider_query=is_provider_query,
             )
         else:
-            # ChromaDB available — use keywords only for anchor words (high precision)
+            # Contact replies often embed poorly, so provider queries also keep
+            # the deterministic local synonym channel.
             keyword_msgs = []
-            if anchor_words:
+            if anchor_words or is_provider_query:
+                supplement_keywords = _expand_keywords(query) if is_provider_query else []
                 keyword_msgs = _search_keywords_with_fallback(
-                    session, chat_ids, [], anchor_words=anchor_words
+                    session, chat_ids, supplement_keywords, anchor_words=anchor_words,
+                    provider_query=is_provider_query,
                 )
 
-        # ── Step C: Recent posts for temporal queries ────────────────────
-        if is_temporal:
+        # Provider names and @usernames live in the user table, not in the
+        # message body. Always add their complete posting history as an
+        # independent retrieval channel.
+        author_msgs = []
+        offer_msgs = []
+        if is_provider_query:
+            author_terms = _provider_author_terms(query)
+            author_rows = _search_provider_authors(
+                session, chat_ids, author_terms, limit=40,
+            )
+            author_msgs = _rows_to_dicts(author_rows)
+            logger.info(
+                f"Provider author search: {len(author_msgs)} messages for {author_terms}"
+            )
+            offer_msgs = _search_provider_offers(session, chat_ids, query)
+            logger.info(f"Provider direct offers: {len(offer_msgs)} authors")
+
+        # ── Step C: Recent posts for time-sensitive queries ──────────────
+        if is_vacancy_query:
+            recent_msgs = _search_recently_posted(
+                session, chat_ids, days=VACANCY_RECENT_DAYS, limit=100,
+            )
+            logger.info(
+                f"Recent vacancy window ({VACANCY_RECENT_DAYS}d): "
+                f"{len(recent_msgs)} messages"
+            )
+        elif is_temporal:
             recent_msgs = _search_recently_posted(session, chat_ids, days=14, limit=60)
             logger.info(f"Recent 14d posts: {len(recent_msgs)}")
         elif is_provider_query:
@@ -1109,27 +1535,41 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         else:
             recent_msgs = _search_recent(session, chat_ids, limit=10)
 
-        if vec_msgs and keyword_msgs:
-            fused = _rrf_merge([vec_msgs, keyword_msgs])
+        ranked_sources = [
+            items for items in (offer_msgs, vec_msgs, keyword_msgs, author_msgs) if items
+        ]
+        if len(ranked_sources) > 1:
+            fused = _rrf_merge(ranked_sources)
         else:
-            fused = vec_msgs or keyword_msgs
+            fused = ranked_sources[0] if ranked_sources else []
         all_candidates = fused + recent_msgs
-        if is_provider_query:
+        if is_vacancy_query:
+            all_candidates = _prioritize_vacancy_candidates(all_candidates)
+            logger.info(
+                f"Vacancy freshness filter: {len(all_candidates)} candidates "
+                f"within {VACANCY_RECENT_DAYS}d"
+            )
+        elif is_provider_query:
             before_filter = len(all_candidates)
-            # Soft boost for provider-like messages, but don't drop seekers
-            scored = sorted(all_candidates,
-                key=lambda m: (_provider_signal_score(m), m.get("date", "")),
-                reverse=True)
-            all_candidates = scored
+            all_candidates = _prioritize_provider_candidates(all_candidates, query)
             logger.info(f"Provider boost: {before_filter} candidates sorted by signal score")
         if not all_candidates:
             update.message.reply_text("В базі немає повідомлень для відповіді.")
             return
 
-        logger.info(f"Candidates: {len(vec_msgs)} vector + {len(keyword_msgs)} keyword + {len(recent_msgs)} recent = {len(all_candidates)}")
+        logger.info(
+            f"Candidates: {len(offer_msgs)} offers + {len(vec_msgs)} vector + "
+            f"{len(keyword_msgs)} keyword + {len(author_msgs)} author + "
+            f"{len(recent_msgs)} recent = {len(all_candidates)}"
+        )
 
         # ── Step D: Re-rank top-25 ───────────────────────────────────────
-        top_msgs = _rerank(query, all_candidates, top_k=25)
+        top_msgs = _rerank(
+            query,
+            all_candidates,
+            top_k=25,
+            preserve_provider_offers=is_provider_query,
+        )
 
         # Step F: build context string
         ctx = _build_context(top_msgs)
@@ -1162,10 +1602,15 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
             pass
     finally:
         session.close()
+        _delete_wait_indicator(wait_indicator)
 
 
 # Handler registration
 handler = MessageHandler(
-    Filters.regex(rf"(?i)^{re.escape(TRIGGER_WORD)}\b") & (~Filters.command),
+    Filters.regex(
+        r"(?i)(?<!\w)(?:" + "|".join(
+            re.escape(alias) for alias in sorted(TRIGGER_ALIASES, key=len, reverse=True)
+        ) + r")(?!\w)"
+    ) & (~Filters.command),
     handle_ai_query,
 )

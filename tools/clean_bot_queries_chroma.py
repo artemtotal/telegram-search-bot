@@ -9,13 +9,18 @@ Run inside the container:
 
 import logging
 import os
+import re
 import sys
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
 CHROMA_PATH  = os.getenv("CHROMA_PATH", "/app/chroma")
-BOT_PREFIXES = ("потсдамбот", "потбот", "потсдам бот")
+BOT_PREFIXES = ("потсдамбот", "посдамбот", "потсдам бот")
+BOT_ADDRESS_RE = re.compile(
+    r"(?<!\w)(?:" + "|".join(map(re.escape, BOT_PREFIXES)) + r")(?!\w)",
+    re.IGNORECASE,
+)
 PAGE_SIZE    = 1000
 
 
@@ -49,7 +54,7 @@ def main():
         docs = batch.get("documents", [])
         for _id, doc in zip(ids, docs):
             scanned += 1
-            if (doc or "").strip().lower().startswith(BOT_PREFIXES):
+            if BOT_ADDRESS_RE.search(doc or ""):
                 to_delete.append(_id)
         offset += len(ids)
 
