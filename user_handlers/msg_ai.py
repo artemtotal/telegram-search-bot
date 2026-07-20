@@ -347,6 +347,40 @@ _SERVICE_QUERY_HINTS = [
     "сборк", "збірк", "мебел", "мебл", "установк", "встановлен", "кухн",
     "подключ", "підключ", "электроприбор", "електроприлад", "техник", "технік",
     "перевоз", "перевез", "перевіз", "посыл", "посилк", "транспорт",
+    # ── медицина / здоровье ────────────────────────────────────────────
+    "лікар", "лікаря", "врач", "врача", "доктор", "стоматолог", "зубн",
+    "терапевт", "педіатр", "педиатр", "ортопед", "дерматолог", "гінеколог",
+    "гинеколог", "окуліст", "окулист", "хірург", "хирург", "невролог",
+    "кардіолог", "кардиолог", "психолог", "психотерап", "логопед", "лор ",
+    "узи", "узд", "масаж", "массаж", "физиотерап", "фізіотерап", "мануал",
+    "костоправ", "остеопат", "медсестр", "медбрат", "капельниц",
+    # ── красота / уход ─────────────────────────────────────────────────
+    "манікюр", "маникюр", "педикюр", "брів", "бров", "вій", "ресниц",
+    "косметолог", "візаж", "визаж", "макіяж", "макияж", "епіляц", "депіляц",
+    "шугаринг", "тату", "нігт", "ногт", "грумер", "грумінг", "груминг",
+    # ── еда / кондитер ─────────────────────────────────────────────────
+    "торт", "тортик", "випічк", "випечк", "кондитер", "десерт", "бенто",
+    "пряник", "капкейк", "кейтеринг", "домашн", "готую їж", "готовлю ед",
+    # ── цветы / флорист ────────────────────────────────────────────────
+    "флорист", "букет", "композиці", "квіткар",
+    # ── уборка ─────────────────────────────────────────────────────────
+    "прибирання", "уборк", "клінінг", "клининг", "reinigung", "putzen",
+    "мийк вікон", "мытьё окон", "мытье окон",
+    # ── няня / образование / репетитор ─────────────────────────────────
+    "няня", "нянь", "репетитор", "вчитель", "учитель", "викладач",
+    "навчання", "занятт", "тренер", "інструктор", "инструктор",
+    # ── юрист / документы / перевод ────────────────────────────────────
+    "юрист", "адвокат", "перекладач", "переводчик", "нотаріус", "нотариус",
+    "übersetz", "dolmetsch", "консультаці", "steuerберат", "податков консульт",
+    # ── авто ───────────────────────────────────────────────────────────
+    "автомайстер", "автосервіс", "автосервис", "шиномонтаж", "автоелектрик",
+    "автоэлектрик", "перегін авто", "перегон авто", "запчаст", "механік",
+    # ── фото / видео ───────────────────────────────────────────────────
+    "фотограф", "відеограф", "видеограф", "фотосес", "фотозйомк", "зйомк",
+    "съёмк", "съемк", "оператор відео",
+    # ── обобщённые формулировки поиска исполнителя ─────────────────────
+    "скиньте контакт", "киньте контакт", "поділіться контакт", "поделитесь контакт",
+    "хто робить", "кто делает", "хто надає", "хто може зробити",
 ]
 
 _CARRIER_TOPIC_RE = re.compile(
@@ -428,6 +462,114 @@ _HANDYMAN_TOPIC_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Additional service families. Each entry pairs a query detector with the
+# topic a candidate offer must also match, so e.g. a dentist search does not
+# surface a groomer or a carrier just because they carry a strong provider
+# signal. Order matters: the first family whose query pattern matches wins.
+_MEDICAL_TOPIC_RE = re.compile(
+    r"(лікар|лікув|врач|доктор|стоматолог|зубн|zahnarzt|терапевт|педіатр|"
+    r"педиатр|ортопед|дерматолог|гінеколог|гинеколог|окуліст|окулист|хірург|"
+    r"хирург|невролог|кардіолог|кардиолог|психолог|психотерап|логопед|"
+    r"масаж|массаж|физиотерап|фізіотерап|мануал|костоправ|остеопат|"
+    r"praxis|праксис|клінік|клиник|медсестр|медбрат|arzt|ärzt)",
+    re.IGNORECASE,
+)
+_BEAUTY_TOPIC_RE = re.compile(
+    r"(манікюр|маникюр|педикюр|брів|бров|вій|ресниц|косметолог|візаж|визаж|"
+    r"макіяж|макияж|епіляц|депіляц|шугаринг|тату|нігт|ногт|грумер|грумінг|груминг|"
+    r"перукар|парикмах|стриж|friseur|барбер|barber|колорист)",
+    re.IGNORECASE,
+)
+_FOOD_TOPIC_RE = re.compile(
+    r"(торт|тортик|випічк|випечк|кондитер|десерт|бенто|пряник|капкейк|"
+    r"кейтеринг|печу|пеку|випікаю|готую\s+їж|домашн\w*\s+(їж|еда|обід|обед))",
+    re.IGNORECASE,
+)
+_FLORIST_QUERY_RE = re.compile(
+    r"(флорист|букет|квіткар|квітков|цветочн|композиці\w*\s+(?:з\s+)?квіт|"
+    r"композици\w*\s+(?:из\s+)?цвет)",
+    re.IGNORECASE,
+)
+_FLORIST_OFFER_RE = re.compile(
+    r"(флорист|квіткар|квітков\w*\s+магазин|цветочн\w*\s+магазин|"
+    r"(?:збираю|складаю|роблю|делаю|собираю|оформляю)\w*\s+(?:весільн\w*\s+)?букет|"
+    r"(?:букет|композиці\w*\s+(?:з\s+)?квіт|композици\w*\s+(?:из\s+)?цвет)\w*\s+на\s+(?:замовлення|заказ))",
+    re.IGNORECASE,
+)
+_CLEANING_TOPIC_RE = re.compile(
+    r"(прибирання|прибираю|уборк|убираю|клінінг|клининг|reinigung|putzen|мийк|мыть)",
+    re.IGNORECASE,
+)
+_TUTOR_TOPIC_RE = re.compile(
+    r"(няня|нянь|репетитор|вчител|учител|викладач|навчання|занятт|тренер|інструктор|инструктор)",
+    re.IGNORECASE,
+)
+_LEGAL_TOPIC_RE = re.compile(
+    r"(юрист|адвокат|перекладач|переводчик|нотаріус|нотариус|übersetz|"
+    r"dolmetsch|консультаці|steuerber|податков)",
+    re.IGNORECASE,
+)
+_AUTO_TOPIC_RE = re.compile(
+    r"(автомайстер|автосервіс|автосервис|шиномонтаж|автоелектрик|автоэлектрик|"
+    r"перегін\s+авто|перегон\s+авто|запчаст|механік|ремонт\s+авто)",
+    re.IGNORECASE,
+)
+_PHOTO_TOPIC_RE = re.compile(
+    r"(фотограф|відеограф|видеограф|фотосес|фотозйомк|зйомк|съёмк|съемк)",
+    re.IGNORECASE,
+)
+
+# Specific subtopics must run before broad service families. Otherwise a
+# dentist query would admit any medical offer (massage, psychologist, etc.).
+def _topic_re(pattern: str):
+    return re.compile(pattern, re.IGNORECASE)
+
+_SPECIFIC_TOPIC_FAMILIES = [
+    # Medical specialties
+    (_topic_re(r"(стоматолог|зубн|zahnarzt|dentist)"),
+     _topic_re(r"(стоматолог|зубн|zahnarzt|dentist|zahnärzt|zahnmedizin)")),
+    (_topic_re(r"(мануал|костоправ|остеопат|масаж|массаж|физиотерап|фізіотерап)"),
+     _topic_re(r"(мануал|костоправ|остеопат|масаж|массаж|физиотерап|фізіотерап|physiotherap)")),
+    (_topic_re(r"(психолог|психотерап)"), _topic_re(r"(психолог|психотерап|psycholog|psychotherap)")),
+    (_topic_re(r"(логопед|дефектолог)"), _topic_re(r"(логопед|дефектолог|logopäd)")),
+    (_topic_re(r"(педіатр|педиатр|дитяч\w*\s+лікар|детск\w*\s+врач)"),
+     _topic_re(r"(педіатр|педиатр|kinderarzt|дитяч\w*\s+лікар|детск\w*\s+врач)")),
+    (_topic_re(r"(ортопед)"), _topic_re(r"(ортопед|orthopäd)")),
+    (_topic_re(r"(дерматолог|шкірн\w*\s+лікар|кожн\w*\s+врач)"),
+     _topic_re(r"(дерматолог|hautarzt|шкірн\w*\s+лікар|кожн\w*\s+врач)")),
+    (_topic_re(r"(гінеколог|гинеколог)"), _topic_re(r"(гінеколог|гинеколог|gynäkolog|frauenarzt)")),
+    (_topic_re(r"(окуліст|окулист|офтальмолог)"), _topic_re(r"(окуліст|окулист|офтальмолог|augenarzt)")),
+    (_topic_re(r"(хірург|хирург)"), _topic_re(r"(хірург|хирург|chirurg)")),
+    (_topic_re(r"(невролог)"), _topic_re(r"(невролог|neurolog)")),
+    (_topic_re(r"(кардіолог|кардиолог)"), _topic_re(r"(кардіолог|кардиолог|kardiolog)")),
+    # Beauty specialties
+    (_topic_re(r"(манікюр|маникюр|педикюр|нігт|ногт)"),
+     _topic_re(r"(манікюр|маникюр|педикюр|нігт|ногт|nail)")),
+    (_topic_re(r"(ресниц|вій|бров|брів)"), _topic_re(r"(ресниц|вій|бров|брів|lash|brow)")),
+    (_topic_re(r"(грумер|грумінг|груминг)"), _topic_re(r"(грумер|грумінг|груминг|groom)")),
+    # Legal/document specialties
+    (_topic_re(r"(перекладач|переводчик|übersetz|dolmetsch)"),
+     _topic_re(r"(перекладач|переводчик|übersetz|dolmetsch)")),
+    (_topic_re(r"(нотаріус|нотариус)"), _topic_re(r"(нотаріус|нотариус|notar)")),
+    # Education/care specialties
+    (_topic_re(r"(няня|нянь)"), _topic_re(r"(няня|нянь|babysit|kinderbetreuung)")),
+    (_topic_re(r"(репетитор|вчител|учител|викладач)"),
+     _topic_re(r"(репетитор|вчител|учител|викладач|nachhilfe|unterricht)")),
+]
+
+# Ordered broad families: (query-side detector, offer-side topic).
+_TOPIC_FAMILIES = [
+    (_FLORIST_QUERY_RE, _FLORIST_OFFER_RE),
+    (_FOOD_TOPIC_RE, _FOOD_TOPIC_RE),
+    (_BEAUTY_TOPIC_RE, _BEAUTY_TOPIC_RE),
+    (_MEDICAL_TOPIC_RE, _MEDICAL_TOPIC_RE),
+    (_AUTO_TOPIC_RE, _AUTO_TOPIC_RE),
+    (_PHOTO_TOPIC_RE, _PHOTO_TOPIC_RE),
+    (_TUTOR_TOPIC_RE, _TUTOR_TOPIC_RE),
+    (_LEGAL_TOPIC_RE, _LEGAL_TOPIC_RE),
+    (_CLEANING_TOPIC_RE, _CLEANING_TOPIC_RE),
+]
+
 _PROVIDER_OFFER_PATTERN = (
     r"(?i)(?:\b(?:допоможу|помогу|пропоную|предлагаю|надаю|роблю|делаю|"
     r"виконую|выполняю|ремонтирую|збираю|собираю|підключаю|подключаю)\b|"
@@ -451,12 +593,21 @@ _HAIR_SERVICE_KEYWORDS = [
 
 def _matches_query_topic(query: str, msg: Dict) -> bool:
     """Keep provider offers inside the service family requested by the user."""
+    text = msg.get("text") or ""
     if _is_carrier_query(query):
-        return bool(_CARRIER_TOPIC_RE.search(msg.get("text") or ""))
+        return bool(_CARRIER_TOPIC_RE.search(text))
     if _is_hair_query(query):
-        return bool(_HAIR_TOPIC_RE.search(msg.get("text") or ""))
+        return bool(_HAIR_TOPIC_RE.search(text))
     if _HANDYMAN_TOPIC_RE.search(query or ""):
-        return bool(_HANDYMAN_TOPIC_RE.search(msg.get("text") or ""))
+        return bool(_HANDYMAN_TOPIC_RE.search(text))
+    # Specific specialties first (dentist, physiotherapist, notary, etc.).
+    for query_re, offer_re in _SPECIFIC_TOPIC_FAMILIES:
+        if query_re.search(query or ""):
+            return bool(offer_re.search(text))
+    # Then broad service families (medical, beauty, food, florist, …).
+    for query_re, offer_re in _TOPIC_FAMILIES:
+        if query_re.search(query or ""):
+            return bool(offer_re.search(text))
     return True
 
 
@@ -556,9 +707,20 @@ def _prioritize_provider_candidates(messages: List[Dict], query: str) -> List[Di
         ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
         return _group_provider_history([item[2] for item in ranked])
 
+    # Keep offers inside the requested service family (a dentist search must not
+    # surface a groomer). Fall back to the unfiltered list if the topic filter
+    # would leave us with nothing to answer from. Within a topic, concrete
+    # offers/recommendations beat newer seeker questions deterministically.
+    all_messages = list(dedup.values())
+    on_topic = [m for m in all_messages if _matches_query_topic(query, m)]
+    pool = on_topic or all_messages
     scored = sorted(
-        dedup.values(),
-        key=lambda message: (_provider_signal_score(message), message.get("date", "")),
+        pool,
+        key=lambda message: (
+            _provider_signal_score(message),
+            _phone_count(message.get("text") or ""),
+            message.get("date", ""),
+        ),
         reverse=True,
     )
     return _group_provider_history(scored)
@@ -1030,6 +1192,18 @@ def _expand_keywords(query: str) -> List[str]:
         "перевозит": ["перевозит", "перевозчик", "перевізник", "перевезення", "посилки", "посылки"],
         "посылк": ["посылки", "посилки", "перевезення", "перевозка", "нова пошта", "новая почта"],
         "посилк": ["посилки", "посылки", "перевезення", "перевозка", "нова пошта", "новая почта"],
+        # Medical specialties
+        "стоматолог": ["стоматолог", "зубной", "зубна", "zahnarzt", "dentist", "лечение зубов"],
+        "мануал": ["мануальщик", "мануальная терапия", "костоправ", "остеопат", "физиотерапевт", "массаж"],
+        "костоправ": ["костоправ", "мануальщик", "остеопат", "физиотерапевт", "массаж"],
+        "лікар": ["лікар", "врач", "доктор", "arzt", "praxis"],
+        "педіатр": ["педіатр", "педиатр", "kinderarzt", "детский врач", "дитячий лікар"],
+        # Food / florist
+        "торт": ["торт", "торты", "тортики", "кондитер", "выпечка", "випічка", "бенто", "капкейк"],
+        "тортики": ["торт", "торты", "тортики", "кондитер", "выпечка", "випічка", "бенто", "капкейк"],
+        "кондитер": ["кондитер", "торт", "торты", "выпечка", "випічка", "десерт"],
+        "флорист": ["флорист", "флористка", "букет", "цветочный магазин", "квітковий магазин"],
+        "букет": ["букет", "флорист", "флористка", "цветочный магазин", "квітковий магазин"],
         "уборк": ["уборк", "убираю", "клининг", "reinigung", "putzen"],
         # Education / language
         "мов": ["мов", "язык", "sprache", "language", "німецьк", "deutsch", "english"],
@@ -1075,15 +1249,46 @@ def _expand_keywords(query: str) -> List[str]:
 def _rerank(query: str, messages: List[Dict], top_k: int = 25,
             preserve_provider_offers: bool = False) -> List[Dict]:
     """Select relevant messages while preserving strong direct service offers."""
-    if len(messages) <= top_k:
-        return messages
-
     protected = []
     if preserve_provider_offers:
         seen_users = set()
+        concrete = []
+        general = []
         for message in messages:
-            if _provider_signal_score(message) < 5:
+            score = _provider_signal_score(message)
+            text = message.get("text") or ""
+            has_contact = bool(
+                _phone_count(text)
+                or re.search(r"(@\w{3,}|https?://|t\.me/|instagram|wa\.me)", text)
+            )
+            if score < 2 and not has_contact:
                 continue
+            # Protect concrete answers first: phone/link/contact or a strong
+            # offer/recommendation. This prevents seeker questions with an
+            # unrelated URL inside a dialogue chunk from occupying every slot.
+            is_concrete = has_contact or score >= 6
+            (concrete if is_concrete else general).append(message)
+        provider_ranked = sorted(
+            concrete,
+            key=lambda message: (
+                bool(_phone_count(message.get("text") or "")),
+                _provider_signal_score(message),
+                message.get("date", ""),
+            ),
+            reverse=True,
+        )
+        # If no concrete answer exists, keep a small number of general
+        # recommendations so the final model can still answer honestly.
+        if not provider_ranked:
+            provider_ranked = sorted(
+                general,
+                key=lambda message: (
+                    _provider_signal_score(message),
+                    message.get("date", ""),
+                ),
+                reverse=True,
+            )[:3]
+        for message in provider_ranked:
             user_key = (message.get("user") or f"message:{message.get('id')}").lower()
             if user_key in seen_users:
                 continue
@@ -1102,6 +1307,9 @@ def _rerank(query: str, messages: List[Dict], top_k: int = 25,
             seen_ids.add(message.get("id"))
             dedup.append(message)
         return dedup[:top_k]
+
+    if len(messages) <= top_k:
+        return _merge_protected(messages)
 
     # Limit input to avoid oversized prompts (>150 msgs × 200 chars ≈ ~10k tokens)
     candidates = messages[:150]

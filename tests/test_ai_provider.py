@@ -86,6 +86,45 @@ class AiProviderTests(unittest.TestCase):
                 self.assertTrue(msg_ai._is_service_provider_query(query))
                 self.assertTrue(msg_ai._is_carrier_query(query))
 
+    def test_provider_intent_recognizes_all_service_categories(self):
+        # Real seeker phrasings pulled from the last 6 months of chat history.
+        queries = (
+            # медицина
+            "порадьте хорошого стоматолога в Потсдамі",
+            "подскажите терапевта, который берёт новых пациентов",
+            "шукаю дитячого лікаря педіатра",
+            "нужен мануальщик или костоправ, спина болит",
+            "порекомендуйте масажиста",
+            "шукаю логопеда для дитини",
+            # красота
+            "підкажіть майстра манікюру",
+            "ищу мастера по наращиванию ресниц",
+            "порадьте грумера для собачки",
+            # кондитер / еда
+            "хто пече тортики? скиньте контакти",
+            "шукаю кондитера на замовлення",
+            # флорист
+            "може хтось є флорист, зробити букет",
+            # юрист / переводчик
+            "потрібен присяжний перекладач з англійської",
+            "шукаю юриста для консультації",
+            "нужен нотариус",
+            # няня / репетитор
+            "шукаю репетитора з математики",
+            "нужна няня для ребёнка",
+            # уборка
+            "шукаю людину на прибирання квартири",
+            # авто
+            "підкажіть контакти шиномонтажу",
+            "нужен автомастер",
+            # фото
+            "шукаю фотографа на сімейну зйомку",
+        )
+
+        for query in queries:
+            with self.subTest(query=query):
+                self.assertTrue(msg_ai._is_service_provider_query(query))
+
     def test_carrier_keywords_include_ads_and_route_terms(self):
         for query in (
             "перевізник до України",
@@ -158,6 +197,118 @@ class AiProviderTests(unittest.TestCase):
             "перевозчик в Украину",
             {"text": "Перевезення людей та посилок до України"},
         ))
+
+    def test_query_topic_keeps_offers_within_service_family(self):
+        # Medical query must reject a groomer / carrier and keep a dentist catalog.
+        self.assertFalse(msg_ai._matches_query_topic(
+            "порекомендуйте стоматолога в Потсдамі",
+            {"text": "Пропоную грумерські послуги, працюю з тваринками +49..."},
+        ))
+        self.assertFalse(msg_ai._matches_query_topic(
+            "порекомендуйте стоматолога в Потсдамі",
+            {"text": "Пропоную послуги з перевезення по Німеччині +380..."},
+        ))
+        self.assertFalse(msg_ai._matches_query_topic(
+            "порекомендуйте стоматолога в Потсдамі",
+            {"text": "Массаж и депиляция в салоне Потсдама"},
+        ))
+        self.assertFalse(msg_ai._matches_query_topic(
+            "порекомендуйте стоматолога в Потсдамі",
+            {"text": "Психолог AWO Potsdam, запис у групі"},
+        ))
+        self.assertFalse(msg_ai._matches_query_topic(
+            "порекомендуйте стоматолога в Потсдамі",
+            {"text": "Логопед і дефектолог для дітей від 3 років"},
+        ))
+        self.assertTrue(msg_ai._matches_query_topic(
+            "порекомендуйте стоматолога в Потсдамі",
+            {"text": "Zahnarzt Potsdam: Dr. Yulia, стоматолог, тел. 0331..."},
+        ))
+        # Confectioner query must reject a groomer and keep a cake baker.
+        self.assertFalse(msg_ai._matches_query_topic(
+            "хто пече тортики",
+            {"text": "Пропоную грумерські послуги для собак"},
+        ))
+        self.assertTrue(msg_ai._matches_query_topic(
+            "хто пече тортики",
+            {"text": "Печу торти на замовлення, бенто, капкейки +49..."},
+        ))
+        # Florist query keeps a florist, rejects a carrier.
+        self.assertTrue(msg_ai._matches_query_topic(
+            "може хтось є флорист зробити букет",
+            {"text": "Флористка, збираю букети та композиції з квітів"},
+        ))
+        self.assertFalse(msg_ai._matches_query_topic(
+            "може хтось є флорист зробити букет",
+            {"text": "Продаю синю коляску в гарному кольорі"},
+        ))
+        self.assertFalse(msg_ai._matches_query_topic(
+            "може хтось є флорист зробити букет",
+            {"text": "Розклад поїздок на квітень"},
+        ))
+        self.assertFalse(msg_ai._matches_query_topic(
+            "може хтось є флорист зробити букет",
+            {"text": "Кондитер: торти, зефір у вигляді букетів, приймаю замовлення"},
+        ))
+        self.assertFalse(msg_ai._matches_query_topic(
+            "може хтось є флорист зробити букет",
+            {"text": "Перевезення посилок до України"},
+        ))
+
+    def test_provider_rerank_fallback_keeps_direct_offers_ahead_of_questions(self):
+        messages = [
+            {
+                "id": 1,
+                "user": "seeker",
+                "date": "2026-07-19",
+                "text": "Порадьте стоматолога в Потсдамі?",
+            },
+            {
+                "id": 2,
+                "user": "answer",
+                "date": "2026-07-18",
+                "text": "Рекомендую стоматолога Dr. Yulia, телефон 0331 708335",
+            },
+        ]
+
+        with patch.object(msg_ai, "_call_ai", return_value=""):
+            result = msg_ai._rerank(
+                "порадьте стоматолога",
+                messages,
+                top_k=2,
+                preserve_provider_offers=True,
+            )
+
+        self.assertEqual([item["id"] for item in result], [2, 1])
+
+    def test_provider_rerank_prefers_concrete_contact_over_high_signal_discussion(self):
+        messages = [
+            {
+                "id": 1,
+                "user": "discussion",
+                "date": "2026-07-19",
+                "text": (
+                    "Рекомендую обговорити, хто пече тортики; пропонуйте варіанти "
+                    "і пишіть відповіді в чаті"
+                ),
+            },
+            {
+                "id": 2,
+                "user": "baker",
+                "date": "2025-12-01",
+                "text": "Кондитер Світлана. Торти на замовлення. Тел. +49 331 708335",
+            },
+        ]
+
+        with patch.object(msg_ai, "_call_ai", return_value=""):
+            result = msg_ai._rerank(
+                "хто пече тортики",
+                messages,
+                top_k=2,
+                preserve_provider_offers=True,
+            )
+
+        self.assertEqual([item["id"] for item in result], [2, 1])
 
     def test_qdrant_backend_is_vector_ready_without_chroma(self):
         with patch.dict(os.environ, {"VECTOR_BACKEND": "qdrant"}):
