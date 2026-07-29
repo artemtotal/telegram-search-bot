@@ -1139,11 +1139,25 @@ def _normalize_source_line(answer: str, messages: List[Dict]) -> str:
         if not re.match(r"^\s*(?:Джерело|Источник)\s*:", line, re.IGNORECASE)
     ]
     body = "\n".join(body_lines).rstrip()
-    source = next((message for message in messages if message.get("link")), None)
-    if source is None:
+    sources = []
+    seen_links = set()
+    for message in messages:
+        link = message.get("link")
+        if not link or link in seen_links:
+            continue
+        seen_links.add(link)
+        sources.append(message)
+        if len(sources) >= 5:
+            break
+    if not sources:
         return body
-    date = str(source.get("date") or "")[:10]
-    suffix = f"Джерело: {date} — {source['link']}" if date else f"Джерело: {source['link']}"
+
+    source_lines = []
+    for source in sources:
+        date = str(source.get("date") or "")[:10]
+        label = f"{date} — {source['link']}" if date else source["link"]
+        source_lines.append(f"• {label}")
+    suffix = "Джерела з чату:\n" + "\n".join(source_lines)
     return f"{body}\n\n{suffix}" if body else suffix
 
 

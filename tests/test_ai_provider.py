@@ -398,21 +398,35 @@ class AiProviderTests(unittest.TestCase):
         self.assertIn("Maria: Порада", context)
         self.assertNotIn("@Maria", context)
 
-    def test_source_line_uses_message_link_without_author_mention(self):
+    def test_source_line_uses_message_links_without_author_mentions(self):
         answer = "Корисна порада.\n\nДжерело: @Maria, 2026-07-29"
-        messages = [{
-            "id": 1,
-            "date": "2026-07-29 15:58",
-            "user": "Maria",
-            "text": "Порада",
-            "link": "https://t.me/UkrainischesBrandenburg/267272",
-        }]
+        messages = [
+            {
+                "id": 1,
+                "date": "2026-07-29 15:58",
+                "user": "Maria",
+                "text": "Порада",
+                "link": "https://t.me/UkrainischesBrandenburg/267272",
+            },
+            {
+                "id": 2,
+                "date": "2026-03-19 15:05",
+                "user": "artemtotal",
+                "text": "Тренер співбесід",
+                "link": "https://t.me/UkrainischesBrandenburg/252711",
+            },
+        ]
 
         result = msg_ai._normalize_source_line(answer, messages)
 
         self.assertNotIn("@Maria", result)
+        self.assertIn("Джерела з чату:", result)
         self.assertIn(
-            "Джерело: 2026-07-29 — https://t.me/UkrainischesBrandenburg/267272",
+            "2026-07-29 — https://t.me/UkrainischesBrandenburg/267272",
+            result,
+        )
+        self.assertIn(
+            "2026-03-19 — https://t.me/UkrainischesBrandenburg/252711",
             result,
         )
 

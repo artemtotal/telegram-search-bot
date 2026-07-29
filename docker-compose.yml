@@ -26,6 +26,7 @@ services:
       - tgbot_chroma_data:/app/chroma
       - tgbot_qdrant_state:/app/qdrant-state
       - C:\Media\Downloads\Docker\adbot-data:/adbot:ro
+      - C:\Media\Series:/media/series
     environment:
       # Secrets are loaded from the local .env file (excluded by .gitignore).
       - BOT_TOKEN=${BOT_TOKEN:?Set BOT_TOKEN in .env}
@@ -55,6 +56,8 @@ services:
       - EMBED_BOOTSTRAP_DAYS=730
       - SEARCH_RECENT_DAYS=730
       - ADMIN_ID=312029534
+      - ORGANIZER_SCRIPT=/app/tools/kodi_organizer.py
+      - SERIES_LIBRARY_ROOT=/media/series
       - CHAT_USERNAME=UkrainischesBrandenburg
       # Target chat for anonymous posts (Потсдам супергруппа)
       - ANON_TARGET_CHAT_ID=-1001724565311
