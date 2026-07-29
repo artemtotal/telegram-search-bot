@@ -114,7 +114,8 @@ SYSTEM_PROMPT_CHAT = """
     • Просте питання → 2-4 речення.
     • Запит на контакти/список/кроки → нумерований або маркований список.
     • Зведення/аналіз → структурований текст з підзаголовками.
-- В самому кінці — одна коротка строка з найрелевантнішим джерелом: "Джерело: @username, ДАТА".
+- Не вигадуй і не став `@` перед іменами авторів. Публічне ім'я користувача може бути відсутнє.
+- Не додавай власний рядок "Джерело" — бот сам поставить перевірене посилання на повідомлення.
 - Для подій: дата, час, місце, як зареєструватися.
 - Для вакансій: використовуй тільки оголошення не старші 90 днів, спочатку
   показуй найсвіжіші; дата публікації обов'язкова. Не називай вакансію
@@ -164,6 +165,14 @@ _VACANCY_MESSAGE_RE = re.compile(
 )
 _NON_VACANCY_QUERY_RE = re.compile(
     r"(стоимост\w*\s+работ|вартир|wohnung|робот(?:а|-пылесос)|robot(?:er)?\b)",
+    re.IGNORECASE,
+)
+_JOB_APPLICATION_ADVICE_RE = re.compile(
+    r"(как\s+(?:правильно\s+)?(?:подават|откликат|состав|напис|проход)|"
+    r"як\s+(?:правильно\s+)?(?:подават|відгукуват|скласт|написат|проход)|"
+    r"порад\w*\s+(?:по|щодо|для)|совет\w*\s+(?:по|для)|"
+    r"резюм|lebenslauf|bewerbung|anschreiben|собеседован|співбесід|"
+    r"vorstellungsgespr)",
     re.IGNORECASE,
 )
 
@@ -308,12 +317,18 @@ def _is_temporal_query(query: str) -> bool:
     return any(w in q for w in TEMPORAL_WORDS)
 
 
+def _is_job_application_advice_query(query: str) -> bool:
+    """Return True for CV/application/interview guidance, not job listings."""
+    return bool(_JOB_APPLICATION_ADVICE_RE.search(query or ""))
+
+
 def _is_vacancy_query(query: str) -> bool:
-    """Return True for job/vacancy intent in Russian, Ukrainian, or German."""
+    """Return True only when the user requests actual current job openings."""
     text = query or ""
     return bool(
         _VACANCY_QUERY_RE.search(text)
         and not _NON_VACANCY_QUERY_RE.search(text)
+        and not _is_job_application_advice_query(text)
     )
 
 
@@ -1007,8 +1022,14 @@ def _search_recent(session, chat_ids: List[int],
 def _search_keywords_with_fallback(session, chat_ids: List[int],
                                     keywords: List[str],
                                     anchor_words: Optional[List[str]] = None,
-                                    provider_query: bool = False) -> List[Dict]:
+                                    provider_query: bool = False,
+                                    full_history: bool = False) -> List[Dict]:
     """Search recent text, preserving an independent all-history provider quota."""
+    if full_history:
+        ids = _search_keyword_ids(session, chat_ids, keywords, anchor_words)
+        logger.info(f"Keyword search (all time, requested): {len(ids)} ids")
+        return _fetch_chain(session, ids)
+
     recent_days = int(os.getenv("SEARCH_RECENT_DAYS", "730"))
     cutoff = datetime.utcnow() - timedelta(days=recent_days)
     recent_ids = _search_keyword_ids(
@@ -1092,7 +1113,15 @@ def _build_context(msgs: List[Dict]) -> str:
     selected = []
     total_len = 0
     for m in combined:
-        line = f"[{m['date']}] @{m['user']}: {m['text']}"
+        # Telegram display names are not public usernames. Prefixing every
+        # stored author with '@' creates fake account mentions such as @Maria.
+        author = (m.get("user") or "Учасник").strip()
+        text = re.sub(
+            r"(^|\n)(\[(?:[^\]\n]+|reply to)\]\s*)@([^:\n]+):",
+            r"\1\2\3:",
+            m["text"],
+        )
+        line = f"[{m['date']}] {author}: {text}"
         if m.get("link"):
             line += f" →{m['link']}"
         if total_len + len(line) > MAX_CONTEXT:
@@ -1101,6 +1130,21 @@ def _build_context(msgs: List[Dict]) -> str:
         total_len += len(line) + 1
     selected.sort(key=lambda t: t[0]["date"], reverse=True)
     return "\n".join(line for _, line in selected)
+
+
+def _normalize_source_line(answer: str, messages: List[Dict]) -> str:
+    """Replace model-generated author mentions with a verified message link."""
+    body_lines = [
+        line for line in (answer or "").splitlines()
+        if not re.match(r"^\s*(?:Джерело|Источник)\s*:", line, re.IGNORECASE)
+    ]
+    body = "\n".join(body_lines).rstrip()
+    source = next((message for message in messages if message.get("link")), None)
+    if source is None:
+        return body
+    date = str(source.get("date") or "")[:10]
+    suffix = f"Джерело: {date} — {source['link']}" if date else f"Джерело: {source['link']}"
+    return f"{body}\n\n{suffix}" if body else suffix
 
 
 # ── OpenRouter / OmniRoute calls ──────────────────────────────────────────
@@ -1244,6 +1288,19 @@ def _expand_keywords(query: str) -> List[str]:
     final = [kw for kw in result if kw]
     logger.info(f"Local keyword expansion: {len(final)} keywords")
     return final if final else query.split()
+
+
+def _job_application_advice_keywords(query: str) -> List[str]:
+    """Cross-language terms for durable CV/application/interview guidance."""
+    keywords = set(_get_anchor_words(query))
+    keywords.update({
+        "резюме", "резюме для работодателя", "lebenslauf",
+        "bewerbung", "bewerbungsunterlagen", "anschreiben",
+        "мотивационное письмо", "мотиваційний лист",
+        "собеседование", "співбесіда", "vorstellungsgespräch",
+        "поиск работы", "пошук роботи", "подача заявки",
+    })
+    return list(keywords)
 
 
 def _rerank(query: str, messages: List[Dict], top_k: int = 25,
@@ -1445,12 +1502,14 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
 
         is_temporal = _is_temporal_query(query)
         is_provider_query = _is_service_provider_query(query)
+        is_job_application_advice = _is_job_application_advice_query(query)
         is_vacancy_query = _is_vacancy_query(query)
         anchor_words = _get_anchor_words(query)
 
         logger.info(
             f"Query: {query!r} | temporal: {is_temporal} | provider: "
-            f"{is_provider_query} | vacancy: {is_vacancy_query} | anchor: {anchor_words}"
+            f"{is_provider_query} | job_advice: {is_job_application_advice} | "
+            f"vacancy: {is_vacancy_query} | anchor: {anchor_words}"
         )
 
         # ── Step A: Vector search (primary) ───────────────────────────────
@@ -1467,6 +1526,10 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
                 if len(vec_msgs) < 5:
                     logger.info("Too few temporal results in 14d, expanding to 90d")
                     vec_msgs = _vector_search(query, n_results=50, since_days=90)
+            elif is_job_application_advice:
+                # Guidance on CVs, applications, and interviews is durable chat
+                # knowledge. Search the complete vector history directly.
+                vec_msgs = _vector_search(query, n_results=80)
             else:
                 # Non-temporal: last year first, fallback all time
                 vec_msgs = _vector_search(query, n_results=50, since_days=365)
@@ -1493,11 +1556,17 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
             # Contact replies often embed poorly, so provider queries also keep
             # the deterministic local synonym channel.
             keyword_msgs = []
-            if anchor_words or is_provider_query:
-                supplement_keywords = _expand_keywords(query) if is_provider_query else []
+            if anchor_words or is_provider_query or is_job_application_advice:
+                if is_provider_query:
+                    supplement_keywords = _expand_keywords(query)
+                elif is_job_application_advice:
+                    supplement_keywords = _job_application_advice_keywords(query)
+                else:
+                    supplement_keywords = []
                 keyword_msgs = _search_keywords_with_fallback(
                     session, chat_ids, supplement_keywords, anchor_words=anchor_words,
                     provider_query=is_provider_query,
+                    full_history=is_job_application_advice,
                 )
 
         # Provider names and @usernames live in the user table, not in the
@@ -1529,7 +1598,7 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         elif is_temporal:
             recent_msgs = _search_recently_posted(session, chat_ids, days=14, limit=60)
             logger.info(f"Recent 14d posts: {len(recent_msgs)}")
-        elif is_provider_query:
+        elif is_provider_query or is_job_application_advice:
             # For provider/contact searches, random recent chatter pollutes the answer.
             recent_msgs = []
         else:
@@ -1592,6 +1661,7 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         if not answer:
             update.message.reply_text("AI не зміг сформувати відповідь. Спробуйте пізніше.")
             return
+        answer = _normalize_source_line(answer, top_msgs)
         _send_answer(update.message, answer)
 
     except Exception as e:

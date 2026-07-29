@@ -328,6 +328,43 @@ class AiProviderTests(unittest.TestCase):
 
         self.assertFalse(msg_ai._is_vacancy_query("кто ремонтирует мебель"))
 
+    def test_job_application_advice_is_not_treated_as_fresh_vacancy_search(self):
+        advice_queries = (
+            "как подаваться на вакансии",
+            "какие советы по трудоустройству есть в чате",
+            "как составить резюме для работодателя",
+            "как пройти собеседование",
+            "поради щодо працевлаштування та Bewerbung",
+        )
+
+        for query in advice_queries:
+            with self.subTest(query=query):
+                self.assertTrue(msg_ai._is_job_application_advice_query(query))
+                self.assertFalse(msg_ai._is_vacancy_query(query))
+
+    def test_job_application_advice_keyword_search_uses_full_history(self):
+        expected = [{"id": 77}]
+        with patch.object(
+            msg_ai, "_search_keyword_ids", return_value=[77]
+        ) as search, patch.object(msg_ai, "_fetch_chain", return_value=expected):
+            result = msg_ai._search_keywords_with_fallback(
+                Mock(), [-1001], ["резюме"], full_history=True,
+            )
+
+        self.assertEqual(result, expected)
+        self.assertEqual(search.call_count, 1)
+        self.assertIsNone(search.call_args.kwargs.get("since"))
+        self.assertIsNone(search.call_args.kwargs.get("before"))
+
+    def test_job_application_advice_expands_across_cv_application_and_interview_terms(self):
+        keywords = msg_ai._job_application_advice_keywords("как подаваться на вакансии")
+
+        self.assertIn("резюме", keywords)
+        self.assertIn("lebenslauf", keywords)
+        self.assertIn("bewerbung", keywords)
+        self.assertIn("собеседование", keywords)
+        self.assertIn("співбесіда", keywords)
+
     def test_vacancy_candidates_are_limited_to_90_days_and_newest_first(self):
         from datetime import datetime, timedelta
 
@@ -348,6 +385,36 @@ class AiProviderTests(unittest.TestCase):
         result = msg_ai._prioritize_vacancy_candidates(candidates, now=now)
 
         self.assertEqual([item["id"] for item in result], [3, 1])
+
+    def test_context_does_not_turn_display_names_into_usernames(self):
+        context = msg_ai._build_context([{
+            "id": 1,
+            "date": "2026-07-29 15:58",
+            "user": "Maria",
+            "text": "Порада щодо Lebenslauf",
+            "link": "https://t.me/UkrainischesBrandenburg/267272",
+        }])
+
+        self.assertIn("Maria: Порада", context)
+        self.assertNotIn("@Maria", context)
+
+    def test_source_line_uses_message_link_without_author_mention(self):
+        answer = "Корисна порада.\n\nДжерело: @Maria, 2026-07-29"
+        messages = [{
+            "id": 1,
+            "date": "2026-07-29 15:58",
+            "user": "Maria",
+            "text": "Порада",
+            "link": "https://t.me/UkrainischesBrandenburg/267272",
+        }]
+
+        result = msg_ai._normalize_source_line(answer, messages)
+
+        self.assertNotIn("@Maria", result)
+        self.assertIn(
+            "Джерело: 2026-07-29 — https://t.me/UkrainischesBrandenburg/267272",
+            result,
+        )
 
     def test_wait_indicator_uses_ukrainian_text_and_is_deleted(self):
         message = Mock(text="Потсдамбот знайди сантехніка")
