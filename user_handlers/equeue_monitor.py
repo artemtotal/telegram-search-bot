@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Iterable, Optional, Tuple
 
 import requests
+from telegram.error import BadRequest
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
 
@@ -144,14 +145,17 @@ def _deactivate_subscription(user_id: int) -> None:
         session.close()
 
 
-def _render_menu(active: bool, prefix: str = "") -> str:
+def _render_menu(active: bool, user_id: Optional[int] = None, prefix: str = "") -> str:
     status = "увімкнена" if active else "вимкнена"
+    latest = _latest_status_text(user_id) if user_id else ""
     body = (
         f"🛂 <b>{html.escape(SERVICE_TITLE)}</b>\n\n"
         "Бот може кожні 15 хвилин перевіряти електронну чергу й написати вам, "
         "якщо зʼявляться вільні терміни.\n\n"
         f"Статус підписки: <b>{status}</b>."
     )
+    if latest:
+        body += f"\n\n{latest}"
     return (prefix + "\n\n" + body) if prefix else body
 
 
@@ -165,9 +169,13 @@ def show_menu(update: Update, context: CallbackContext, edit: bool = False, pref
             update.effective_message.reply_text(text)
         return
     active = _is_active(user.id)
-    text = _render_menu(active, prefix=prefix)
+    text = _render_menu(active, user_id=user.id, prefix=prefix)
     if edit and update.callback_query:
-        update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(active))
+        try:
+            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(active))
+        except BadRequest as exc:
+            if "Message is not modified" not in str(exc):
+                raise
     else:
         update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(active))
 

@@ -9,7 +9,7 @@ import sqlite3
 from datetime import datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters, MessageHandler
 
 from database import AnonymousPost, AnonymousTopic, AnonymousUser, Chat, DBSession, Message, User
@@ -34,6 +34,10 @@ MIN_LENGTH = max(1, int(os.getenv("ANON_MIN_LENGTH", "15") or 15))
 MAX_LENGTH = min(3500, max(MIN_LENGTH, int(os.getenv("ANON_MAX_LENGTH", "1500") or 1500)))
 CAPTCHA_LOCK_MINUTES = 15
 TOPICS_PER_PAGE = 8
+BTN_HOME = "🏠 Меню"
+BTN_EQUEUE = "🛂 ДП Документ"
+BTN_ANON = "✍️ Анонімне запитання"
+BTN_MY_POSTS = "📋 Мої публікації"
 
 def utc_now() -> datetime:
     return datetime.utcnow()
@@ -50,6 +54,13 @@ def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
     ]
     rows.extend(equeue_monitor.private_home_rows(user_id))
     return InlineKeyboardMarkup(rows)
+
+
+def reply_menu_keyboard(user_id=None) -> ReplyKeyboardMarkup:
+    rows = [[BTN_HOME, BTN_ANON], [BTN_MY_POSTS]]
+    if equeue_monitor.is_allowed(user_id):
+        rows[1].append(BTN_EQUEUE)
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
 
 def _cancel_keyboard() -> InlineKeyboardMarkup:
@@ -127,10 +138,15 @@ def show_home(update: Update, context: CallbackContext, edit: bool = False) -> N
         "Для учасників чату автор не відображається. Адміністратор зберігає Telegram ID автора "
         "лише для захисту від спаму та порушень. Посилання та контактні дані заборонені."
     )
+    user_id = update.effective_user.id if update.effective_user else None
     if edit and update.callback_query:
         update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_home_keyboard(update.effective_user.id if update.effective_user else None))
     else:
-        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_home_keyboard(update.effective_user.id if update.effective_user else None))
+        update.effective_message.reply_text(
+            "⬇️ Швидке меню закріплено внизу. Можна не натискати /start щоразу.",
+            reply_markup=reply_menu_keyboard(user_id),
+        )
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_home_keyboard(user_id))
 
 
 def _new_captcha(context: CallbackContext) -> InlineKeyboardMarkup:
@@ -298,6 +314,18 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
     if not update.message or update.message.chat.type != "private" or not update.message.text:
         return
     state = context.user_data.get("anonymous") or {}
+    text = update.message.text.strip()
+    if state.get("step") != "text":
+        if text == BTN_HOME:
+            show_home(update, context)
+            return
+        if text == BTN_EQUEUE and equeue_monitor.is_allowed(update.effective_user.id if update.effective_user else None):
+            equeue_monitor.show_menu(update, context)
+            return
+        if text in {BTN_ANON, BTN_MY_POSTS}:
+            show_home(update, context)
+            return
+        return
     if state.get("step") != "text":
         return
     error = validate_submission(update.message.text)
