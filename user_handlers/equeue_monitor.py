@@ -4,8 +4,9 @@ import html
 import logging
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Iterable, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import requests
 from telegram.error import BadRequest
@@ -27,10 +28,17 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 CHECK_TIMEOUT = int(os.getenv("PASSPORT_EQUEUE_TIMEOUT", "45") or 45)
 ADMIN_ERROR_COOLDOWN = timedelta(hours=6)
 BROWSER_ONLY = os.getenv("PASSPORT_EQUEUE_BROWSER_ONLY", "1") == "1"
+BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
 
 def utc_now() -> datetime:
     return datetime.utcnow()
+
+
+def _format_berlin_time(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(BERLIN_TZ).strftime("%d.%m.%Y %H:%M")
 
 
 def _allowed_user_ids() -> set:
@@ -93,7 +101,7 @@ def _latest_status_text(user_id: int) -> str:
                 "⏳ Браузерна перевірка ще не надходила. "
                 "Вона запускається через Chrome-розширення; натисніть значок розширення або дочекайтеся найближчого циклу."
             )
-        checked = row.last_checked_at.strftime("%d.%m.%Y %H:%M")
+        checked = _format_berlin_time(row.last_checked_at)
         status = row.last_status or "unknown"
         if status == "available":
             return f"🟢 Остання браузерна перевірка {checked}: є ознаки вільних термінів."
