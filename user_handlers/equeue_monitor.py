@@ -83,6 +83,28 @@ def _is_active(user_id: int) -> bool:
         session.close()
 
 
+def _latest_status_text(user_id: int) -> str:
+    session = DBSession()
+    try:
+        row = _get_subscription(session, user_id)
+        if not row or not row.last_checked_at:
+            return (
+                "⏳ Браузерна перевірка ще не надходила. "
+                "Вона запускається через Chrome-розширення; натисніть значок розширення або дочекайтеся найближчого циклу."
+            )
+        checked = row.last_checked_at.strftime("%d.%m.%Y %H:%M")
+        status = row.last_status or "unknown"
+        if status == "available":
+            return f"🟢 Остання браузерна перевірка {checked}: є ознаки вільних термінів."
+        if status == "none":
+            return f"⚪ Остання браузерна перевірка {checked}: вільні терміни не підтверджені."
+        if status == "blocked":
+            return f"⚠️ Остання браузерна перевірка {checked}: сторінка показала Cloudflare/JavaScript-перевірку."
+        return f"ℹ️ Остання браузерна перевірка {checked}: статус {html.escape(status)}."
+    finally:
+        session.close()
+
+
 def _upsert_subscription(user) -> None:
     session = DBSession()
     try:
@@ -396,6 +418,10 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         query.answer("Підписку вимкнено")
         show_menu(update, context, edit=True, prefix="🔕 Підписку вимкнено.")
     elif query.data == "equeue:check":
+        if BROWSER_ONLY:
+            query.answer("Показую останній браузерний статус")
+            show_menu(update, context, edit=True, prefix=_latest_status_text(user.id))
+            return
         query.answer("Перевіряю…")
         result = check_equeue_availability()
         if result.get("available"):
