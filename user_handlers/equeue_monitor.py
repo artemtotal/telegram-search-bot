@@ -25,6 +25,7 @@ SERVICE_URL = os.getenv(
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 CHECK_TIMEOUT = int(os.getenv("PASSPORT_EQUEUE_TIMEOUT", "45") or 45)
 ADMIN_ERROR_COOLDOWN = timedelta(hours=6)
+BROWSER_ONLY = os.getenv("PASSPORT_EQUEUE_BROWSER_ONLY", "1") == "1"
 
 
 def utc_now() -> datetime:
@@ -302,22 +303,7 @@ def _notify_admin_error(bot, result: Dict[str, object]) -> None:
         logger.exception("Could not notify admin about e-queue checker error")
 
 
-def check_job(context: CallbackContext) -> None:
-    subscribers = _active_subscribers()
-    if not subscribers:
-        return
-    result = check_equeue_availability()
-    status = str(result.get("status") or "unknown")
-    if not result.get("ok"):
-        logger.warning("E-queue check failed: %s", result)
-        _notify_admin_error(context.bot, result)
-        _update_status_for_active(status, notified=False)
-        return
-
-    if not result.get("available"):
-        _update_status_for_active(status, notified=False)
-        return
-
+def _notify_available(bot, subscribers, result: Dict[str, object]) -> None:
     text = (
         f"🟢 <b>Є ознаки вільних термінів: {html.escape(SERVICE_TITLE)}</b>\n\n"
         "Відкрийте сайт і перевірте запис вручну.\n"
@@ -331,7 +317,7 @@ def check_job(context: CallbackContext) -> None:
         if last_status == "available":
             continue
         try:
-            context.bot.send_message(
+            bot.send_message(
                 user_id,
                 text,
                 parse_mode="HTML",
@@ -340,6 +326,53 @@ def check_job(context: CallbackContext) -> None:
             )
         except Exception:
             logger.exception("Could not notify e-queue subscriber %s", user_id)
+
+
+def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
+    if payload.get("source") != SERVICE_KEY:
+        return {"ok": False, "error": "unsupported source"}
+    subscribers = _active_subscribers()
+    status = str(payload.get("status") or "unknown")
+    result = {
+        "ok": status not in {"blocked", "error", "http_error"},
+        "available": bool(payload.get("available")) or status == "available",
+        "status": status,
+        "reason": str(payload.get("reason") or ""),
+    }
+    if not subscribers:
+        _update_status_for_active(status, notified=False)
+        return {"ok": True, "subscribers": 0, "status": status}
+    if not result["ok"]:
+        _notify_admin_error(bot, result)
+        _update_status_for_active(status, notified=False)
+        return {"ok": True, "subscribers": len(subscribers), "status": status}
+    if result["available"]:
+        _notify_available(bot, subscribers, result)
+        _update_status_for_active(status, notified=True)
+        return {"ok": True, "subscribers": len(subscribers), "status": status, "notified": True}
+    _update_status_for_active(status, notified=False)
+    return {"ok": True, "subscribers": len(subscribers), "status": status, "notified": False}
+
+
+def check_job(context: CallbackContext) -> None:
+    subscribers = _active_subscribers()
+    if not subscribers:
+        return
+    if BROWSER_ONLY:
+        return
+    result = check_equeue_availability()
+    status = str(result.get("status") or "unknown")
+    if not result.get("ok"):
+        logger.warning("E-queue check failed: %s", result)
+        _notify_admin_error(context.bot, result)
+        _update_status_for_active(status, notified=False)
+        return
+
+    if not result.get("available"):
+        _update_status_for_active(status, notified=False)
+        return
+
+    _notify_available(context.bot, subscribers, result)
     _update_status_for_active(status, notified=True)
 
 

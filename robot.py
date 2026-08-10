@@ -18,6 +18,7 @@ from user_handlers import (
     msg_store,
     faq_admin,
     equeue_monitor,
+    equeue_receiver,
 )
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
@@ -112,6 +113,8 @@ def run_telethon_thread():
     loop.run_until_complete(run_telethon())
 
 if __name__ == "__main__":
+    equeue_receiver.start_receiver(updater.bot)
+
     if is_userbot_mode():
         telethon_thread = Thread(target=run_telethon_thread, name="Thread-userbot")
         telethon_thread.start()

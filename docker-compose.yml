@@ -19,6 +19,7 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "5006:5006"
+      - "127.0.0.1:5011:5011"
       - "9968:9968"
     volumes:
       - tgbot_tgbot_data:/app/config
@@ -59,6 +60,8 @@ services:
       # ADMIN_ID is always allowed.
       - PASSPORT_EQUEUE_ALLOWED_USER_IDS=${PASSPORT_EQUEUE_ALLOWED_USER_IDS:-}
       - PASSPORT_EQUEUE_URL=https://berlin.pasport.org.ua/solutions/e-queue
+      - PASSPORT_EQUEUE_BROWSER_ONLY=1
+      - EQUEUE_RECEIVER_PORT=5011
       - CHAT_USERNAME=UkrainischesBrandenburg
       # Target chat for anonymous posts (Потсдам супергруппа)
       - ANON_TARGET_CHAT_ID=-1001724565311
