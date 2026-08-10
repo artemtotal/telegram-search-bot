@@ -17,6 +17,7 @@ from user_handlers import (
     msg_ai,
     msg_store,
     faq_admin,
+    equeue_monitor,
 )
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
@@ -81,8 +82,12 @@ def run_qdrant_update(context=None):
 if os.getenv("QDRANT_UPDATER_ENABLED", "0") == "1":
     job.run_repeating(run_qdrant_update, interval=3600, first=300)
 
+job.run_repeating(equeue_monitor.check_job, interval=900, first=90)
+
 dispatcher.add_handler(msg_ai.handler)
 dispatcher.add_handler(faq_admin.handler)
+dispatcher.add_handler(equeue_monitor.command_handler)
+dispatcher.add_handler(equeue_monitor.callback_handler)
 dispatcher.add_handler(chat_start.handler)
 dispatcher.add_handler(chat_stop.handler)
 dispatcher.add_handler(chat_delete.handler)

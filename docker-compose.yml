@@ -55,6 +55,10 @@ services:
       - EMBED_BOOTSTRAP_DAYS=730
       - SEARCH_RECENT_DAYS=730
       - ADMIN_ID=312029534
+      # Comma-separated Telegram IDs that may use the DP Document e-queue watcher.
+      # ADMIN_ID is always allowed.
+      - PASSPORT_EQUEUE_ALLOWED_USER_IDS=${PASSPORT_EQUEUE_ALLOWED_USER_IDS:-}
+      - PASSPORT_EQUEUE_URL=https://berlin.pasport.org.ua/solutions/e-queue
       - CHAT_USERNAME=UkrainischesBrandenburg
       # Target chat for anonymous posts (Потсдам супергруппа)
       - ANON_TARGET_CHAT_ID=-1001724565311

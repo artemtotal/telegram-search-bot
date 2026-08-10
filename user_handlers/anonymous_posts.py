@@ -19,6 +19,7 @@ from user_handlers.anonymous_validation import (
     text_fingerprint,
     validate_submission as validate_submission_text,
 )
+from user_handlers import equeue_monitor
 from user_jobs.reindex_queue import enqueue_message_reindex
 
 
@@ -42,11 +43,13 @@ def validate_submission(text: str):
     return validate_submission_text(text, MIN_LENGTH, MAX_LENGTH)
 
 
-def _home_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
+    rows = [
         [InlineKeyboardButton("✍️ Поставити анонімне запитання", callback_data="anon:new")],
         [InlineKeyboardButton("📋 Мої публікації", callback_data="anon:mine")],
-    ])
+    ]
+    rows.extend(equeue_monitor.private_home_rows(user_id))
+    return InlineKeyboardMarkup(rows)
 
 
 def _cancel_keyboard() -> InlineKeyboardMarkup:
@@ -125,9 +128,9 @@ def show_home(update: Update, context: CallbackContext, edit: bool = False) -> N
         "лише для захисту від спаму та порушень. Посилання та контактні дані заборонені."
     )
     if edit and update.callback_query:
-        update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_home_keyboard())
+        update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_home_keyboard(update.effective_user.id if update.effective_user else None))
     else:
-        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_home_keyboard())
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_home_keyboard(update.effective_user.id if update.effective_user else None))
 
 
 def _new_captcha(context: CallbackContext) -> InlineKeyboardMarkup:

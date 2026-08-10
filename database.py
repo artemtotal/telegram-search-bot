@@ -113,6 +113,25 @@ class AnonymousPost(Base):
     deleted_at = Column(DATETIME)
 
 
+class EqueueSubscription(Base):
+    __tablename__ = 'equeue_subscription'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'service', name='uq_equeue_subscription_user_service'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    username = Column(TEXT)
+    display_name = Column(TEXT)
+    service = Column(TEXT, nullable=False, default='dp_document_berlin')
+    active = Column(BOOLEAN, nullable=False, default=True)
+    last_status = Column(TEXT)
+    last_checked_at = Column(DATETIME)
+    last_notified_at = Column(DATETIME)
+    created_at = Column(DATETIME, nullable=False)
+    updated_at = Column(DATETIME, nullable=False)
+
+
 Base.metadata.create_all(engine)
 
 
