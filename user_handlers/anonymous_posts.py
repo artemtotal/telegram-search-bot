@@ -325,6 +325,7 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
         if text in {BTN_ANON, BTN_MY_POSTS}:
             show_home(update, context)
             return
+        show_home(update, context)
         return
     if state.get("step") != "text":
         return

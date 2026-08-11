@@ -3,6 +3,7 @@ from datetime import datetime
 from types import SimpleNamespace
 
 from user_handlers import anonymous_validation
+from user_handlers import anonymous_posts
 
 
 class AnonymousPostValidationTests(unittest.TestCase):
@@ -40,8 +41,8 @@ class AnonymousPostValidationTests(unittest.TestCase):
         now = datetime.utcnow()
         user = SimpleNamespace(last_submission_at=now)
         self.assertIn(
-            "Новый анонимный пост",
-            anonymous_validation.cooldown_text(user.last_submission_at, 7, now),
+            "анонімний пост",
+            anonymous_validation.cooldown_text(user.last_submission_at, 7, now).lower(),
         )
 
     def test_forum_message_link_contains_thread(self):
@@ -65,6 +66,44 @@ class AnonymousPostValidationTests(unittest.TestCase):
             anonymous_validation.message_link(public_message),
             "https://t.me/PotsdamChat/77/99",
         )
+
+    def test_new_private_user_gets_anonymous_menu_buttons(self):
+        keyboard = anonymous_posts.reply_menu_keyboard(user_id=123).to_dict()["keyboard"]
+        flattened = [button["text"] for row in keyboard for button in row]
+
+        self.assertIn(anonymous_posts.BTN_HOME, flattened)
+        self.assertIn(anonymous_posts.BTN_ANON, flattened)
+        self.assertIn(anonymous_posts.BTN_MY_POSTS, flattened)
+        self.assertNotIn(anonymous_posts.BTN_EQUEUE, flattened)
+
+
+class FakeBot:
+    def __init__(self):
+        self.commands = []
+        self.menu_buttons = []
+
+    def set_my_commands(self, commands, **kwargs):
+        self.commands.append((commands, kwargs))
+        return True
+
+    def set_chat_menu_button(self, **kwargs):
+        self.menu_buttons.append(kwargs)
+        return True
+
+
+class BotCommandMenuTests(unittest.TestCase):
+    def test_private_commands_and_menu_button_are_registered(self):
+        from user_jobs.commands_set import set_bot_commands
+
+        bot = FakeBot()
+        set_bot_commands(SimpleNamespace(bot=bot))
+
+        self.assertGreaterEqual(len(bot.commands), 2)
+        private_commands, private_kwargs = bot.commands[0]
+        self.assertEqual(private_commands[0][0], "start")
+        self.assertEqual(private_commands[1][0], "anonymous")
+        self.assertEqual(private_kwargs["scope"].type, "all_private_chats")
+        self.assertTrue(bot.menu_buttons)
 
 
 if __name__ == "__main__":
