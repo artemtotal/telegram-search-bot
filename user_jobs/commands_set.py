@@ -10,6 +10,7 @@ def set_bot_commands(context: telegram.ext.CallbackContext):
     private_commands = [
         ('start', 'головне меню'),
         ('anonymous', 'поставити анонімне запитання'),
+        ('dps_document', 'перевірка термінів ДП Документ'),
     ]
     commands = [
         ('start', _('start bot in current group ( userbot mode need `start <group_id>`)')),

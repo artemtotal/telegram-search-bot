@@ -74,7 +74,7 @@ class AnonymousPostValidationTests(unittest.TestCase):
         self.assertIn(anonymous_posts.BTN_HOME, flattened)
         self.assertIn(anonymous_posts.BTN_ANON, flattened)
         self.assertIn(anonymous_posts.BTN_MY_POSTS, flattened)
-        self.assertNotIn(anonymous_posts.BTN_EQUEUE, flattened)
+        self.assertIn(anonymous_posts.BTN_EQUEUE, flattened)
 
 
 class FakeBot:
@@ -102,6 +102,7 @@ class BotCommandMenuTests(unittest.TestCase):
         private_commands, private_kwargs = bot.commands[0]
         self.assertEqual(private_commands[0][0], "start")
         self.assertEqual(private_commands[1][0], "anonymous")
+        self.assertEqual(private_commands[2][0], "dps_document")
         self.assertEqual(private_kwargs["scope"].type, "all_private_chats")
         self.assertTrue(bot.menu_buttons)
 

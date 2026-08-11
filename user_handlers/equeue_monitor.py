@@ -51,7 +51,7 @@ def _allowed_user_ids() -> set:
 
 
 def is_allowed(user_id: Optional[int]) -> bool:
-    return bool(user_id and user_id in _allowed_user_ids())
+    return bool(user_id)
 
 
 def private_home_rows(user_id: Optional[int]) -> Iterable[list]:
