@@ -1,5 +1,6 @@
 import os
 import unittest
+from datetime import datetime
 from unittest import mock
 
 
@@ -40,6 +41,50 @@ class EqueueMonitorTest(unittest.TestCase):
 
         self.assertTrue(_looks_like_cloudflare_challenge("Just a moment... cf_chl", 403))
         self.assertFalse(_looks_like_cloudflare_challenge("Just a moment... cf_chl", 200))
+
+    def test_latest_status_uses_newest_browser_check_globally(self):
+        import user_handlers.equeue_monitor as monitor
+
+        session = monitor.DBSession()
+        user_ids = [900000001, 900000002]
+        try:
+            session.query(monitor.EqueueSubscription).filter(
+                monitor.EqueueSubscription.user_id.in_(user_ids)
+            ).delete(synchronize_session=False)
+            old_row = monitor.EqueueSubscription(
+                user_id=user_ids[0],
+                username="old",
+                display_name="Old",
+                service=monitor.SERVICE_KEY,
+                active=True,
+                last_status="none",
+                last_checked_at=datetime(2099, 1, 1, 8, 0, 0),
+                created_at=datetime(2099, 1, 1, 8, 0, 0),
+                updated_at=datetime(2099, 1, 1, 8, 0, 0),
+            )
+            newest_row = monitor.EqueueSubscription(
+                user_id=user_ids[1],
+                username="new",
+                display_name="New",
+                service=monitor.SERVICE_KEY,
+                active=True,
+                last_status="available",
+                last_checked_at=datetime(2099, 1, 1, 10, 0, 0),
+                created_at=datetime(2099, 1, 1, 10, 0, 0),
+                updated_at=datetime(2099, 1, 1, 10, 0, 0),
+            )
+            session.add_all([old_row, newest_row])
+            session.commit()
+
+            text = monitor._latest_status_text(user_ids[0])
+            self.assertIn("11:00", text)
+            self.assertIn("є ознаки", text)
+        finally:
+            session.query(monitor.EqueueSubscription).filter(
+                monitor.EqueueSubscription.user_id.in_(user_ids)
+            ).delete(synchronize_session=False)
+            session.commit()
+            session.close()
 
 
 if __name__ == "__main__":

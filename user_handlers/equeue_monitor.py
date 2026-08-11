@@ -93,13 +93,27 @@ def _is_active(user_id: int) -> bool:
 
 
 def _latest_status_text(user_id: int) -> str:
+    """Return the latest browser-submitted status for the service.
+
+    Browser-only checks are global: Chrome checks the site once and posts the
+    result to the bot receiver. The menu must therefore show the newest browser
+    result for the service, not a possibly stale per-user subscription row.
+    """
     session = DBSession()
     try:
-        row = _get_subscription(session, user_id)
-        if not row or not row.last_checked_at:
+        row = (
+            session.query(EqueueSubscription)
+            .filter(
+                EqueueSubscription.service == SERVICE_KEY,
+                EqueueSubscription.last_checked_at.isnot(None),
+            )
+            .order_by(EqueueSubscription.last_checked_at.desc())
+            .first()
+        )
+        if not row:
             return (
                 "⏳ Браузерна перевірка ще не надходила. "
-                "Вона запускається через Chrome-розширення; натисніть значок розширення або дочекайтеся найближчого циклу."
+                "Вона запускається через Chrome-розширення; дочекайтеся найближчого циклу."
             )
         checked = _format_berlin_time(row.last_checked_at)
         status = row.last_status or "unknown"
