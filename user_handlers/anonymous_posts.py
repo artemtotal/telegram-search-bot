@@ -19,7 +19,7 @@ from user_handlers.anonymous_validation import (
     text_fingerprint,
     validate_submission as validate_submission_text,
 )
-from user_handlers import equeue_monitor
+from user_handlers import equeue_monitor, housing_monitor
 from user_jobs.reindex_queue import enqueue_message_reindex
 
 
@@ -36,6 +36,7 @@ CAPTCHA_LOCK_MINUTES = 15
 TOPICS_PER_PAGE = 8
 BTN_HOME = "🏠 Меню"
 BTN_EQUEUE = "🛂 ДП Документ"
+BTN_HOUSING = "🏠 Моніторинг житла"
 BTN_ANON = "✍️ Анонімне запитання"
 BTN_MY_POSTS = "📋 Мої публікації"
 
@@ -53,6 +54,7 @@ def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("📋 Мої публікації", callback_data="anon:mine")],
     ]
     rows.extend(equeue_monitor.private_home_rows(user_id))
+    rows.extend(housing_monitor.private_home_rows(user_id))
     return InlineKeyboardMarkup(rows)
 
 
@@ -60,6 +62,8 @@ def reply_menu_keyboard(user_id=None) -> ReplyKeyboardMarkup:
     rows = [[BTN_HOME, BTN_ANON], [BTN_MY_POSTS]]
     if equeue_monitor.is_allowed(user_id):
         rows[1].append(BTN_EQUEUE)
+    if housing_monitor.is_allowed(user_id):
+        rows.append([BTN_HOUSING])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
 
@@ -321,6 +325,11 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
             return
         if text == BTN_EQUEUE and equeue_monitor.is_allowed(update.effective_user.id if update.effective_user else None):
             equeue_monitor.show_menu(update, context)
+            return
+        if text == BTN_HOUSING and housing_monitor.is_allowed(update.effective_user.id if update.effective_user else None):
+            housing_monitor.show_menu(update, context)
+            return
+        if housing_monitor.handle_private_text(update, context):
             return
         if text in {BTN_ANON, BTN_MY_POSTS}:
             show_home(update, context)

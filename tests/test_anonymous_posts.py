@@ -1,6 +1,7 @@
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
+from unittest import mock
 
 from user_handlers import anonymous_validation
 from user_handlers import anonymous_posts
@@ -76,6 +77,13 @@ class AnonymousPostValidationTests(unittest.TestCase):
         self.assertIn(anonymous_posts.BTN_MY_POSTS, flattened)
         self.assertIn(anonymous_posts.BTN_EQUEUE, flattened)
 
+    def test_housing_button_is_shown_for_allowed_user(self):
+        with mock.patch("user_handlers.anonymous_posts.housing_monitor.is_allowed", return_value=True):
+            keyboard = anonymous_posts.reply_menu_keyboard(user_id=123).to_dict()["keyboard"]
+        flattened = [button["text"] for row in keyboard for button in row]
+
+        self.assertIn(anonymous_posts.BTN_HOUSING, flattened)
+
 
 class FakeBot:
     def __init__(self):
@@ -103,6 +111,7 @@ class BotCommandMenuTests(unittest.TestCase):
         self.assertEqual(private_commands[0][0], "start")
         self.assertEqual(private_commands[1][0], "anonymous")
         self.assertEqual(private_commands[2][0], "dps_document")
+        self.assertEqual(private_commands[3][0], "housing")
         self.assertEqual(private_kwargs["scope"].type, "all_private_chats")
         self.assertTrue(bot.menu_buttons)
 

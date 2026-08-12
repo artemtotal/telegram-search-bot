@@ -19,6 +19,7 @@ from user_handlers import (
     faq_admin,
     equeue_monitor,
     equeue_receiver,
+    housing_monitor,
 )
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
@@ -89,6 +90,12 @@ dispatcher.add_handler(msg_ai.handler)
 dispatcher.add_handler(faq_admin.handler)
 dispatcher.add_handler(equeue_monitor.command_handler)
 dispatcher.add_handler(equeue_monitor.callback_handler)
+dispatcher.add_handler(housing_monitor.command_handler)
+dispatcher.add_handler(housing_monitor.callback_handler)
+dispatcher.add_handler(housing_monitor.add_handler)
+dispatcher.add_handler(housing_monitor.list_handler)
+dispatcher.add_handler(housing_monitor.enable_handler)
+dispatcher.add_handler(housing_monitor.disable_handler)
 dispatcher.add_handler(chat_start.handler)
 dispatcher.add_handler(chat_stop.handler)
 dispatcher.add_handler(chat_delete.handler)

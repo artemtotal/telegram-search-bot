@@ -62,6 +62,7 @@ services:
       - PASSPORT_EQUEUE_URL=https://berlin.pasport.org.ua/solutions/e-queue
       - PASSPORT_EQUEUE_BROWSER_ONLY=1
       - EQUEUE_RECEIVER_PORT=5011
+      - CHECK_WOHNUNG_BASE_URL=http://host.docker.internal:18765
       - CHAT_USERNAME=UkrainischesBrandenburg
       # Target chat for anonymous posts (Потсдам супергруппа)
       - ANON_TARGET_CHAT_ID=-1001724565311
