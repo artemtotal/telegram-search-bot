@@ -1,7 +1,7 @@
 # coding: utf-8
 import os
 
-from sqlalchemy import Column, INTEGER, TEXT, BOOLEAN, DATETIME, create_engine, UniqueConstraint
+from sqlalchemy import Column, INTEGER, TEXT, BOOLEAN, DATETIME, FLOAT, create_engine, UniqueConstraint
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.pool import StaticPool
@@ -132,7 +132,55 @@ class EqueueSubscription(Base):
     updated_at = Column(DATETIME, nullable=False)
 
 
+class ProPotsdamListing(Base):
+    __tablename__ = 'propotsdam_listing'
+
+    listing_key = Column(TEXT, primary_key=True)
+    title = Column(TEXT, nullable=False)
+    address = Column(TEXT)
+    district = Column(TEXT)
+    rooms = Column(FLOAT)
+    area_m2 = Column(FLOAT)
+    total_rent_eur = Column(FLOAT)
+    available_from = Column(TEXT)
+    detail_url = Column(TEXT)
+    image_url = Column(TEXT)
+    raw_json = Column(TEXT)
+    first_seen_at = Column(DATETIME, nullable=False)
+    last_seen_at = Column(DATETIME, nullable=False)
+    is_active = Column(BOOLEAN, nullable=False, default=True)
+
+
+class ProPotsdamFilter(Base):
+    __tablename__ = 'propotsdam_filter'
+
+    filter_id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    title = Column(TEXT, nullable=False)
+    districts = Column(TEXT)
+    min_rooms = Column(FLOAT)
+    max_rooms = Column(FLOAT)
+    min_area_m2 = Column(FLOAT)
+    max_area_m2 = Column(FLOAT)
+    max_total_rent_eur = Column(FLOAT)
+    active = Column(BOOLEAN, nullable=False, default=True)
+    created_at = Column(DATETIME, nullable=False)
+
+
+class ProPotsdamDelivery(Base):
+    __tablename__ = 'propotsdam_delivery'
+    __table_args__ = (
+        UniqueConstraint('filter_id', 'listing_key', name='uq_propot_delivery_filter_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    filter_id = Column(INTEGER, nullable=False, index=True)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    sent_at = Column(DATETIME, nullable=False)
+
+
 Base.metadata.create_all(engine)
+
 
 
 def _migrate_text_lower(retries=5, delay=1):

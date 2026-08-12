@@ -1,4 +1,4 @@
-"""Private housing monitoring menu backed by the local check-Wohnung receiver."""
+"""Private housing monitoring menu backed by local housing receivers."""
 
 import html
 import logging
@@ -10,6 +10,8 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
 from telegram.error import BadRequest
 
+from user_jobs import propotsdam_store
+
 logger = logging.getLogger(__name__)
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
@@ -18,9 +20,20 @@ CHECK_WOHNUNG_BASE_URL = os.getenv(
     "http://host.docker.internal:18765",
 ).rstrip("/")
 TIMEOUT = int(os.getenv("HOUSING_MONITOR_TIMEOUT", "20") or 20)
-BTN_ADMIN_ADD = "➕ Додати користувача житла"
+BTN_ADMIN_ADD = "➕ Додати Immowelt користувача"
+BTN_ADMIN_ADD_PROPOT = "🏢 Додати ProPotsdam користувача"
 BTN_ADMIN_LIST = "📋 Користувачі житла"
 BTN_CANCEL = "✖ Скасувати"
+PROPOT_NUMERIC_STEPS = ["min_rooms", "max_rooms", "min_area_m2", "max_area_m2", "max_total_rent_eur"]
+PROPOT_PROMPTS = {
+    "title": "Надішліть імʼя або назву фільтра.",
+    "districts": "Надішліть райони Потсдама через кому або 'всі'.",
+    "min_rooms": "Мінімум кімнат або '-'.",
+    "max_rooms": "Максимум кімнат або '-'.",
+    "min_area_m2": "Мінімальна площа або '-'.",
+    "max_area_m2": "Максимальна площа або '-'.",
+    "max_total_rent_eur": "Максимальна загальна оренда або '-'.",
+}
 
 
 def _request(method: str, path: str, **kwargs) -> Dict[str, object]:
@@ -46,7 +59,9 @@ def _tasks() -> list:
 def user_filters(user_id: Optional[int]) -> list:
     if not user_id:
         return []
-    return [task for task in _tasks() if int(task.get("user_id") or 0) == int(user_id)]
+    immowelt = [task for task in _tasks() if int(task.get("user_id") or 0) == int(user_id)]
+    propot = propotsdam_store.list_filters(user_id=int(user_id), active_only=True)
+    return immowelt + propot
 
 
 def is_allowed(user_id: Optional[int]) -> bool:
@@ -70,6 +85,7 @@ def _menu_keyboard(user_id: Optional[int] = None) -> InlineKeyboardMarkup:
 def _admin_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(BTN_ADMIN_ADD, callback_data="housing:add")],
+        [InlineKeyboardButton(BTN_ADMIN_ADD_PROPOT, callback_data="housing:propot_add")],
         [InlineKeyboardButton(BTN_ADMIN_LIST, callback_data="housing:list")],
         [InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")],
     ])
@@ -80,7 +96,7 @@ def _render_menu(user_id: int) -> str:
     lines = [
         "🏠 <b>Моніторинг житла</b>",
         "",
-        "Бот перевіряє ваші посилання Immowelt через браузерний профіль Артема й надсилає нові оголошення.",
+        "Бот перевіряє Immowelt та ProPotsdam і надсилає нові оголошення за вашими фільтрами.",
         "",
     ]
     if not filters:
@@ -88,9 +104,8 @@ def _render_menu(user_id: int) -> str:
     else:
         lines.append("Ваші фільтри:")
         for item in filters:
-            lines.append(
-                f"• #{int(item.get('filter_id'))}: {html.escape(str(item.get('title') or 'Пошук житла'))}"
-            )
+            prefix = "P" if "districts" in item else ""
+            lines.append(f"• #{prefix}{int(item.get('filter_id'))}: {html.escape(str(item.get('title') or 'Пошук житла'))}")
     return "\n".join(lines)
 
 
@@ -114,16 +129,20 @@ def show_menu(update: Update, context: CallbackContext, edit: bool = False) -> N
         update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(user.id))
 
 
-
 def _render_admin() -> str:
     tasks = _tasks()
-    lines = ["⚙️ <b>Адмінка житла</b>", "", "Тут можна додати користувача до моніторингу Immowelt.", ""]
-    if not tasks:
+    propot_filters = propotsdam_store.list_filters()
+    lines = ["⚙️ <b>Адмінка житла</b>", "", "Тут можна додати користувача до моніторингу Immowelt або ProPotsdam.", ""]
+    if not tasks and not propot_filters:
         lines.append("Активних фільтрів поки немає.")
-    else:
-        lines.append("Активні користувачі житла:")
+    if tasks:
+        lines.append("Фільтри Immowelt:")
         for item in tasks:
             lines.append(f"• #{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {html.escape(str(item.get('title') or 'Пошук житла'))}")
+    if propot_filters:
+        lines.extend(["", "Фільтри ProPotsdam:"])
+        for item in propot_filters:
+            lines.append(f"• P#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {html.escape(str(item.get('title') or 'ProPotsdam'))}")
     return "\n".join(lines)
 
 
@@ -142,8 +161,20 @@ def start_add_flow(update: Update, context: CallbackContext, edit: bool = False)
     user = update.effective_user
     if not user or int(user.id) != ADMIN_ID:
         return
-    context.user_data["housing_admin"] = {"step": "user_id"}
-    text = "➕ <b>Додати користувача житла</b>\n\nНадішліть Telegram ID користувача."
+    context.user_data["housing_admin"] = {"mode": "immowelt", "step": "user_id"}
+    text = "➕ <b>Додати Immowelt користувача</b>\n\nНадішліть Telegram ID користувача."
+    if edit and update.callback_query:
+        update.callback_query.edit_message_text(text, parse_mode="HTML")
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML")
+
+
+def start_propot_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    user = update.effective_user
+    if not user or int(user.id) != ADMIN_ID:
+        return
+    context.user_data["housing_admin"] = {"mode": "propotsdam", "step": "user_id"}
+    text = "🏢 <b>Додати ProPotsdam користувача</b>\n\nНадішліть Telegram ID користувача."
     if edit and update.callback_query:
         update.callback_query.edit_message_text(text, parse_mode="HTML")
     else:
@@ -163,6 +194,57 @@ def _finish_add_flow(update: Update, context: CallbackContext, state: dict, url:
     )
 
 
+def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
+    step = state.get("step")
+    if step == "user_id":
+        if not text.lstrip("-").isdigit():
+            update.message.reply_text("Telegram ID має бути числом. Надішліть ID ще раз.")
+            return True
+        state["user_id"] = int(text)
+        state["step"] = "title"
+        update.message.reply_text(PROPOT_PROMPTS["title"])
+        return True
+    if step == "title":
+        if not text:
+            update.message.reply_text("Назва не може бути порожньою. Надішліть назву ще раз.")
+            return True
+        state["title"] = text[:120]
+        state["step"] = "districts"
+        update.message.reply_text(PROPOT_PROMPTS["districts"])
+        return True
+    if step == "districts":
+        state["districts"] = propotsdam_store.normalize_districts(text)
+        state["step"] = "min_rooms"
+        update.message.reply_text(PROPOT_PROMPTS["min_rooms"])
+        return True
+    if step in PROPOT_NUMERIC_STEPS:
+        value = propotsdam_store.parse_optional_number(text)
+        if value is None and text.strip() not in {"", "-", "—", "–"}:
+            update.message.reply_text("Потрібне число або '-'. Надішліть значення ще раз.")
+            return True
+        state[step] = value
+        index = PROPOT_NUMERIC_STEPS.index(step)
+        if index < len(PROPOT_NUMERIC_STEPS) - 1:
+            next_step = PROPOT_NUMERIC_STEPS[index + 1]
+            state["step"] = next_step
+            update.message.reply_text(PROPOT_PROMPTS[next_step])
+            return True
+        filter_id = propotsdam_store.create_filter(
+            user_id=state["user_id"],
+            title=state["title"],
+            districts=state.get("districts", ""),
+            min_rooms=state.get("min_rooms"),
+            max_rooms=state.get("max_rooms"),
+            min_area_m2=state.get("min_area_m2"),
+            max_area_m2=state.get("max_area_m2"),
+            max_total_rent_eur=state.get("max_total_rent_eur"),
+        )
+        context.user_data.pop("housing_admin", None)
+        update.message.reply_text(f"✅ Фільтр ProPotsdam додано.\nID: P{filter_id}\nКористувач: {state['user_id']}\nНазва: {html.escape(str(state['title']))}")
+        return True
+    return False
+
+
 def handle_private_text(update: Update, context: CallbackContext) -> bool:
     if not update.message or not update.message.text or not update.effective_user:
         return False
@@ -171,6 +253,9 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
     text = update.message.text.strip()
     if text == BTN_ADMIN_ADD:
         start_add_flow(update, context)
+        return True
+    if text == BTN_ADMIN_ADD_PROPOT:
+        start_propot_add_flow(update, context)
         return True
     if text == BTN_ADMIN_LIST:
         show_admin(update, context)
@@ -182,6 +267,8 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
         context.user_data.pop("housing_admin", None)
         update.message.reply_text("Скасовано.")
         return True
+    if state.get("mode") == "propotsdam":
+        return _handle_propot_flow(update, context, state, text)
     step = state.get("step")
     if step == "user_id":
         if not text.lstrip("-").isdigit():
@@ -221,6 +308,9 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:add":
         query.answer()
         start_add_flow(update, context, edit=True)
+    elif query.data == "housing:propot_add":
+        query.answer()
+        start_propot_add_flow(update, context, edit=True)
     elif query.data == "housing:list":
         query.answer()
         show_admin(update, context, edit=True)
@@ -251,34 +341,36 @@ def add_filter(update: Update, context: CallbackContext) -> None:
         logger.exception("Could not add housing filter")
         update.message.reply_text(f"⚠️ Не вдалося додати фільтр: {exc}")
         return
-    update.message.reply_text(
-        f"✅ Фільтр житла додано.\nID: {payload.get('filter_id')}\nКористувач: {user_id}\nНазва: {title}"
-    )
+    update.message.reply_text(f"✅ Фільтр житла додано.\nID: {payload.get('filter_id')}\nКористувач: {user_id}\nНазва: {title}")
 
 
 def list_filters(update: Update, context: CallbackContext) -> None:
     if not _admin_only(update):
         return
-    tasks = _tasks()
-    if not tasks:
-        update.message.reply_text("Активних фільтрів житла поки немає.")
-        return
-    lines = ["🏠 Активні фільтри житла:", ""]
-    for item in tasks:
-        lines.append(
-            f"#{int(item.get('filter_id'))} · user_id={int(item.get('user_id'))} · {item.get('title')}"
-        )
-    update.message.reply_text("\n".join(lines))
+    update.message.reply_text(_render_admin(), parse_mode="HTML")
 
 
 def _set_active(update: Update, context: CallbackContext, active: bool) -> None:
     if not _admin_only(update):
         return
-    if len(context.args) != 1 or not context.args[0].isdigit():
+    if len(context.args) != 1:
         cmd = "/housing_enable" if active else "/housing_disable"
-        update.message.reply_text(f"Використання: {cmd} FILTER_ID")
+        update.message.reply_text(f"Використання: {cmd} FILTER_ID або PPRO_FILTER_ID")
         return
-    filter_id = int(context.args[0])
+    raw_id = context.args[0]
+    if raw_id.upper().startswith("P"):
+        ok = propotsdam_store.set_filter_active(int(raw_id[1:]), active) if raw_id[1:].isdigit() else False
+        if not ok:
+            update.message.reply_text(f"⚠️ Не знайдено ProPotsdam фільтр {raw_id}.")
+            return
+        status = "увімкнено" if active else "вимкнено"
+        update.message.reply_text(f"✅ Фільтр {raw_id.upper()} {status}.")
+        return
+    if not raw_id.isdigit():
+        cmd = "/housing_enable" if active else "/housing_disable"
+        update.message.reply_text(f"Використання: {cmd} FILTER_ID або PPRO_FILTER_ID")
+        return
+    filter_id = int(raw_id)
     try:
         _request("PATCH", f"/api/housing/filters/{filter_id}/active", json={"active": active})
     except Exception as exc:

@@ -63,6 +63,28 @@ class HousingAdminFlowTests(unittest.TestCase):
         self.assertEqual(context.user_data['housing_admin']['user_id'], 123456789)
         self.assertEqual(context.user_data['housing_admin']['step'], 'title')
 
+    def test_admin_add_propot_flow_collects_filter_bounds(self):
+        context = SimpleNamespace(user_data={})
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch('user_handlers.housing_monitor.propotsdam_store.create_filter', return_value=77) as create_filter:
+            housing_monitor.start_propot_add_flow(self._update(housing_monitor.BTN_ADMIN_ADD_PROPOT), context)
+            for text in ['123456789', 'Pro Potsdam Ivan', 'Babelsberg, Waldstadt 2', '2', '3', '50', '80', '1000']:
+                update = self._update(text)
+                self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        create_filter.assert_called_once_with(
+            user_id=123456789,
+            title='Pro Potsdam Ivan',
+            districts='Babelsberg,Waldstadt 2',
+            min_rooms=2.0,
+            max_rooms=3.0,
+            min_area_m2=50.0,
+            max_area_m2=80.0,
+            max_total_rent_eur=1000.0,
+        )
+        self.assertNotIn('housing_admin', context.user_data)
+        self.assertIn('ProPotsdam', update.message.replies[-1][0])
+
 
 if __name__ == '__main__':
     unittest.main()

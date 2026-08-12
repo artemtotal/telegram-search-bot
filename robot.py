@@ -1,4 +1,4 @@
-﻿from telegram.ext import Updater
+from telegram.ext import Updater
 from threading import Thread
 import asyncio
 import datetime
@@ -23,6 +23,7 @@ from user_handlers import (
 )
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
+from user_jobs import propotsdam_monitor
 
 from userbot import run_telethon
 from utils import is_userbot_mode, get_text_func
@@ -85,6 +86,7 @@ if os.getenv("QDRANT_UPDATER_ENABLED", "0") == "1":
     job.run_repeating(run_qdrant_update, interval=3600, first=300)
 
 job.run_repeating(equeue_monitor.check_job, interval=900, first=90)
+job.run_repeating(propotsdam_monitor.check_job, interval=1800, first=180)
 
 dispatcher.add_handler(msg_ai.handler)
 dispatcher.add_handler(faq_admin.handler)
