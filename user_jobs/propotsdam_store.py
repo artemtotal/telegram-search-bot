@@ -1,12 +1,19 @@
-"""Persistent operations for ProPotsdam filters, listings, and deliveries."""
+"""Persistent operations for ProPotsdam filters, listings, deliveries, and status."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
-from database import DBSession, ProPotsdamDelivery, ProPotsdamFilter, ProPotsdamListing
+from database import (
+    DBSession,
+    ProPotsdamDelivery,
+    ProPotsdamFilter,
+    ProPotsdamListing,
+    ProPotsdamStatus,
+)
 from user_jobs import propotsdam_matching, propotsdam_parser
 
 ALL_DISTRICTS_WORDS = {"", "-", "all", "alle", "всі", "все", "усі", "любой", "любые"}
+STATUS_KEY = "global"
 
 
 def utc_now() -> datetime:
@@ -42,6 +49,7 @@ def filter_to_dict(row: ProPotsdamFilter) -> Dict:
         "max_rooms": row.max_rooms,
         "min_area_m2": row.min_area_m2,
         "max_area_m2": row.max_area_m2,
+        "min_total_rent_eur": row.min_total_rent_eur,
         "max_total_rent_eur": row.max_total_rent_eur,
         "active": row.active,
     }
@@ -78,6 +86,7 @@ def create_filter(
     max_rooms: Optional[float] = None,
     min_area_m2: Optional[float] = None,
     max_area_m2: Optional[float] = None,
+    min_total_rent_eur: Optional[float] = None,
     max_total_rent_eur: Optional[float] = None,
 ) -> int:
     session = DBSession()
@@ -90,6 +99,7 @@ def create_filter(
             max_rooms=max_rooms,
             min_area_m2=min_area_m2,
             max_area_m2=max_area_m2,
+            min_total_rent_eur=min_total_rent_eur,
             max_total_rent_eur=max_total_rent_eur,
             active=True,
             created_at=utc_now(),
@@ -210,3 +220,35 @@ def select_unsent_matches(
             if propotsdam_matching.matches_filter(listing, filt):
                 matches.append((filt, listing))
     return matches
+
+
+def record_status(status: str, listings_count: int = 0, error: str = "") -> None:
+    session = DBSession()
+    try:
+        row = session.query(ProPotsdamStatus).filter(ProPotsdamStatus.key == STATUS_KEY).first()
+        if row is None:
+            row = ProPotsdamStatus(key=STATUS_KEY)
+            session.add(row)
+        row.last_checked_at = utc_now()
+        row.last_status = status
+        row.last_error = str(error or "")[:500]
+        row.listings_count = int(listings_count or 0)
+        session.commit()
+    finally:
+        session.close()
+
+
+def latest_status() -> Dict:
+    session = DBSession()
+    try:
+        row = session.query(ProPotsdamStatus).filter(ProPotsdamStatus.key == STATUS_KEY).first()
+        if not row:
+            return {}
+        return {
+            "last_checked_at": row.last_checked_at,
+            "last_status": row.last_status,
+            "last_error": row.last_error,
+            "listings_count": row.listings_count,
+        }
+    finally:
+        session.close()

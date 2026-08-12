@@ -17,10 +17,17 @@ class ProPotsdamMatchingTests(unittest.TestCase):
             'max_rooms': 3.0,
             'min_area_m2': 50.0,
             'max_area_m2': 70.0,
+            'min_total_rent_eur': 900.0,
             'max_total_rent_eur': 1000.0,
         }
 
         self.assertTrue(propotsdam_matching.matches_filter(listing, filt))
+
+    def test_rejects_listing_below_minimum_rent(self):
+        listing = {'district': 'Babelsberg', 'rooms': 2.0, 'area_m2': 64.0, 'total_rent_eur': 700.0}
+        filt = {'districts': 'Babelsberg', 'min_total_rent_eur': 800.0}
+
+        self.assertFalse(propotsdam_matching.matches_filter(listing, filt))
 
     def test_filter_only_decides_delivery_not_message_fields(self):
         listing = {

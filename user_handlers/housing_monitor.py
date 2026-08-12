@@ -3,7 +3,9 @@
 import html
 import logging
 import os
+from datetime import timezone
 from typing import Dict, Iterable, Optional
+from zoneinfo import ZoneInfo
 
 import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -24,14 +26,46 @@ BTN_ADMIN_ADD = "➕ Додати Immowelt користувача"
 BTN_ADMIN_ADD_PROPOT = "🏢 Додати ProPotsdam користувача"
 BTN_ADMIN_LIST = "📋 Користувачі житла"
 BTN_CANCEL = "✖ Скасувати"
-PROPOT_NUMERIC_STEPS = ["min_rooms", "max_rooms", "min_area_m2", "max_area_m2", "max_total_rent_eur"]
+BERLIN_TZ = ZoneInfo("Europe/Berlin")
+PROPOT_DISTRICTS = [
+    "Babelsberg",
+    "Babelsberg Nord",
+    "Babelsberg Süd",
+    "Berliner Vorstadt",
+    "Bornim",
+    "Bornstedt",
+    "Brandenburger Vorstadt",
+    "Drewitz",
+    "Eiche",
+    "Fahrland",
+    "Golm",
+    "Groß Glienicke",
+    "Innenstadt",
+    "Jägervorstadt",
+    "Kirchsteigfeld",
+    "Nauener Vorstadt",
+    "Potsdam West",
+    "Schlaatz",
+    "Stern",
+    "Teltower Vorstadt",
+    "Waldstadt 1",
+    "Waldstadt 2",
+]
+PROPOT_NUMERIC_STEPS = [
+    "min_rooms",
+    "max_rooms",
+    "min_area_m2",
+    "max_area_m2",
+    "min_total_rent_eur",
+    "max_total_rent_eur",
+]
 PROPOT_PROMPTS = {
     "title": "Надішліть імʼя або назву фільтра.",
-    "districts": "Надішліть райони Потсдама через кому або 'всі'.",
     "min_rooms": "Мінімум кімнат або '-'.",
     "max_rooms": "Максимум кімнат або '-'.",
     "min_area_m2": "Мінімальна площа або '-'.",
     "max_area_m2": "Максимальна площа або '-'.",
+    "min_total_rent_eur": "Мінімальна загальна оренда або '-'.",
     "max_total_rent_eur": "Максимальна загальна оренда або '-'.",
 }
 
@@ -91,12 +125,38 @@ def _admin_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def _format_time(value) -> str:
+    if not value:
+        return "ще не було"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(BERLIN_TZ).strftime("%d.%m.%Y %H:%M")
+
+
+def _status_lines() -> list:
+    lines = []
+    status = propotsdam_store.latest_status()
+    if status:
+        last = _format_time(status.get("last_checked_at"))
+        label = status.get("last_status") or "unknown"
+        count = status.get("listings_count") or 0
+        lines.append(f"ProPotsdam: остання перевірка {last}, статус {html.escape(str(label))}, квартир: {count}.")
+        if status.get("last_error"):
+            lines.append(f"Остання помилка ProPotsdam: {html.escape(str(status.get('last_error')))}")
+    else:
+        lines.append("ProPotsdam: перевірка ще не запускалась.")
+    return lines
+
+
 def _render_menu(user_id: int) -> str:
     filters = user_filters(user_id)
     lines = [
         "🏠 <b>Моніторинг житла</b>",
         "",
         "Бот перевіряє Immowelt та ProPotsdam і надсилає нові оголошення за вашими фільтрами.",
+        "",
+        "Статус перевірки:",
+        *_status_lines(),
         "",
     ]
     if not filters:
@@ -105,7 +165,8 @@ def _render_menu(user_id: int) -> str:
         lines.append("Ваші фільтри:")
         for item in filters:
             prefix = "P" if "districts" in item else ""
-            lines.append(f"• #{prefix}{int(item.get('filter_id'))}: {html.escape(str(item.get('title') or 'Пошук житла'))}")
+            title = html.escape(str(item.get('title') or 'Пошук житла'))
+            lines.append(f"• #{prefix}{int(item.get('filter_id'))}: {title}")
     return "\n".join(lines)
 
 
@@ -169,11 +230,29 @@ def start_add_flow(update: Update, context: CallbackContext, edit: bool = False)
         update.effective_message.reply_text(text, parse_mode="HTML")
 
 
+def _district_keyboard(selected=None) -> InlineKeyboardMarkup:
+    selected = set(selected or [])
+    rows = []
+    for district in PROPOT_DISTRICTS:
+        mark = "✅" if district in selected else "☐"
+        rows.append([InlineKeyboardButton(f"{mark} {district}", callback_data=f"housing:propot_district:{district}")])
+    rows.append([InlineKeyboardButton("✅ Готово", callback_data="housing:propot_district_done")])
+    rows.append([InlineKeyboardButton("🌍 Усі райони", callback_data="housing:propot_district_all")])
+    rows.append([InlineKeyboardButton(BTN_CANCEL, callback_data="housing:propot_cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _district_text(selected=None) -> str:
+    selected = selected or []
+    suffix = ", ".join(selected) if selected else "усі райони"
+    return f"🏢 <b>Райони ProPotsdam</b>\n\nОберіть райони галочками.\nПоточний вибір: {html.escape(suffix)}"
+
+
 def start_propot_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
     user = update.effective_user
     if not user or int(user.id) != ADMIN_ID:
         return
-    context.user_data["housing_admin"] = {"mode": "propotsdam", "step": "user_id"}
+    context.user_data["housing_admin"] = {"mode": "propotsdam", "step": "user_id", "districts_selected": []}
     text = "🏢 <b>Додати ProPotsdam користувача</b>\n\nНадішліть Telegram ID користувача."
     if edit and update.callback_query:
         update.callback_query.edit_message_text(text, parse_mode="HTML")
@@ -210,12 +289,10 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
             return True
         state["title"] = text[:120]
         state["step"] = "districts"
-        update.message.reply_text(PROPOT_PROMPTS["districts"])
+        update.message.reply_text(_district_text(state.get("districts_selected")), parse_mode="HTML", reply_markup=_district_keyboard(state.get("districts_selected")))
         return True
     if step == "districts":
-        state["districts"] = propotsdam_store.normalize_districts(text)
-        state["step"] = "min_rooms"
-        update.message.reply_text(PROPOT_PROMPTS["min_rooms"])
+        update.message.reply_text("Оберіть райони кнопками нижче і натисніть 'Готово'.", reply_markup=_district_keyboard(state.get("districts_selected")))
         return True
     if step in PROPOT_NUMERIC_STEPS:
         value = propotsdam_store.parse_optional_number(text)
@@ -237,6 +314,7 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
             max_rooms=state.get("max_rooms"),
             min_area_m2=state.get("min_area_m2"),
             max_area_m2=state.get("max_area_m2"),
+            min_total_rent_eur=state.get("min_total_rent_eur"),
             max_total_rent_eur=state.get("max_total_rent_eur"),
         )
         context.user_data.pop("housing_admin", None)
@@ -295,6 +373,35 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
     return False
 
 
+def _toggle_district(update: Update, context: CallbackContext, district: str) -> None:
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    if state.get("mode") != "propotsdam" or state.get("step") != "districts":
+        query.answer()
+        return
+    selected = list(state.get("districts_selected") or [])
+    if district in selected:
+        selected.remove(district)
+    else:
+        selected.append(district)
+    state["districts_selected"] = selected
+    query.answer()
+    query.edit_message_text(_district_text(selected), parse_mode="HTML", reply_markup=_district_keyboard(selected))
+
+
+def _finish_districts(update: Update, context: CallbackContext, all_districts: bool = False) -> None:
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    if state.get("mode") != "propotsdam" or state.get("step") != "districts":
+        query.answer()
+        return
+    selected = [] if all_districts else list(state.get("districts_selected") or [])
+    state["districts"] = propotsdam_store.normalize_districts(",".join(selected))
+    state["step"] = "min_rooms"
+    query.answer()
+    query.edit_message_text(PROPOT_PROMPTS["min_rooms"])
+
+
 def handle_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     if not query or not query.data:
@@ -311,6 +418,16 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:propot_add":
         query.answer()
         start_propot_add_flow(update, context, edit=True)
+    elif query.data.startswith("housing:propot_district:"):
+        _toggle_district(update, context, query.data.split(":", 2)[2])
+    elif query.data == "housing:propot_district_done":
+        _finish_districts(update, context)
+    elif query.data == "housing:propot_district_all":
+        _finish_districts(update, context, all_districts=True)
+    elif query.data == "housing:propot_cancel":
+        context.user_data.pop("housing_admin", None)
+        query.answer()
+        query.edit_message_text("Скасовано.")
     elif query.data == "housing:list":
         query.answer()
         show_admin(update, context, edit=True)

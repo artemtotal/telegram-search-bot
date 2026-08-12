@@ -162,9 +162,20 @@ class ProPotsdamFilter(Base):
     max_rooms = Column(FLOAT)
     min_area_m2 = Column(FLOAT)
     max_area_m2 = Column(FLOAT)
+    min_total_rent_eur = Column(FLOAT)
     max_total_rent_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+
+
+class ProPotsdamStatus(Base):
+    __tablename__ = 'propotsdam_status'
+
+    key = Column(TEXT, primary_key=True)
+    last_checked_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_error = Column(TEXT)
+    listings_count = Column(INTEGER)
 
 
 class ProPotsdamDelivery(Base):
@@ -180,6 +191,22 @@ class ProPotsdamDelivery(Base):
 
 
 Base.metadata.create_all(engine)
+
+
+def _ensure_column(table_name: str, column_name: str, column_type: str) -> None:
+    fairy = engine.raw_connection()
+    try:
+        dbapi_con = getattr(fairy, "driver_connection", None) or fairy.connection
+        cur = dbapi_con.cursor()
+        cols = [row[1] for row in cur.execute(f"PRAGMA table_info({table_name})").fetchall()]
+        if column_name not in cols:
+            cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+            dbapi_con.commit()
+    finally:
+        fairy.close()
+
+
+_ensure_column('propotsdam_filter', 'min_total_rent_eur', 'FLOAT')
 
 
 

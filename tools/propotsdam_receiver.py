@@ -38,6 +38,7 @@ def _click_text(page, patterns, timeout=5000):
     for pattern in patterns:
         try:
             page.get_by_text(re.compile(pattern, re.I)).first.click(timeout=timeout)
+            page.wait_for_timeout(1200)
             return True
         except Exception:
             pass
@@ -63,6 +64,19 @@ def _login_if_needed(page):
         pass
 
 
+def _navigate_to_list(page):
+    page.goto(PORTAL_URL, wait_until="domcontentloaded", timeout=60000)
+    page.wait_for_timeout(3000)
+    _login_if_needed(page)
+    for pattern in ["Immobiliensuche", "mehr anzeigen", "^Immobilien$", "Immobilien"]:
+        _click_text(page, [pattern], timeout=5000)
+    try:
+        page.wait_for_load_state("networkidle", timeout=20000)
+    except PlaywrightTimeoutError:
+        pass
+    page.wait_for_timeout(3000)
+
+
 def _extract_cards_from_dom(page):
     raw_cards = page.evaluate(
         """
@@ -84,7 +98,7 @@ def _extract_cards_from_dom(page):
         def after(label):
             match = re.search(label + r"\s*:?\s*([^|\n]+?)(?=\s+(?:Stadtteil|Zimmer|Wohnfläche|Gesamt|Verfügbar)|$)", text, re.I)
             return match.group(1).strip() if match else ""
-        listing = propotsdam_parser.normalize_listing({
+        listings.append(propotsdam_parser.normalize_listing({
             "title": text.split(" Stadtteil ")[0].strip()[:160],
             "address": after("Adresse"),
             "district": after("Stadtteil"),
@@ -95,14 +109,14 @@ def _extract_cards_from_dom(page):
             "detail_url": (card.get("links") or [""])[0],
             "image_url": (card.get("images") or [""])[0],
             "extra": extra,
-        })
-        listings.append(listing)
+        }))
     return listings
 
 
 def scan():
     with _scan_lock:
         PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        xml_bodies = []
         responses = []
         with sync_playwright() as p:
             kwargs = {"headless": False, "viewport": {"width": 1440, "height": 1000}}
@@ -110,13 +124,24 @@ def scan():
                 kwargs["executable_path"] = BROWSER
             context = p.chromium.launch_persistent_context(str(PROFILE_DIR), **kwargs)
             page = context.pages[0] if context.pages else context.new_page()
-            page.on("response", lambda response: responses.append(response.url) if "xmlforms" in response.url else None)
-            page.goto(PORTAL_URL, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(3000)
-            _login_if_needed(page)
-            page.goto(PORTAL_URL, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(8000)
-            listings = _extract_cards_from_dom(page)
+
+            def on_response(response):
+                url = response.url
+                if "xmlforms" not in url:
+                    return
+                responses.append(url)
+                try:
+                    xml_bodies.append(response.text())
+                except Exception as exc:
+                    logger.warning("Could not read xmlforms body from %s: %s", url, exc)
+
+            page.on("response", on_response)
+            _navigate_to_list(page)
+            listings = []
+            for xml_text in xml_bodies:
+                listings.extend(propotsdam_parser.parse_boxlist_xml(xml_text))
+            if not listings:
+                listings = _extract_cards_from_dom(page)
             result = {"ok": True, "url": page.url, "listings": listings, "count": len(listings), "xmlforms": responses[-20:]}
             context.close()
             return result

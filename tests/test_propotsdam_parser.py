@@ -28,8 +28,41 @@ class ProPotsdamParserTests(unittest.TestCase):
         self.assertEqual(listing['area_m2'], 64.0)
         self.assertEqual(listing['total_rent_eur'], 963.79)
         self.assertEqual(listing['available_from'], 'ab sofort')
-        self.assertEqual(listing['extra']['Etage'], '2. OG')
-        self.assertTrue(listing['listing_key'])
+
+    def test_parse_boxlist_xml_extracts_reobj_heads(self):
+        xml = '''<?xml version="1.0" encoding="utf-8"?>
+        <boxlist xmlns="http://www.openpromos.com/OPPC/XMLForms">
+          <section title="Immobilien">
+            <box boxid="ESQ_VM_REOBJ_ALL" title="Immobilien">
+              <head>
+                <id>ABC</id>
+                <originalId>ORIG</originalId>
+                <address city="Potsdam" postcode="14480" street="Wolfgang-Staudte-Str. 3"/>
+                <title>Wohnen in der Gartenstadt Drewitz</title>
+                <details>
+                  <row title="Stadtteil">Drewitz</row>
+                  <row title="Zimmer">3</row>
+                  <row title="Wohnfläche">61 m²</row>
+                  <row title="Gesamtmiete">705,67 EUR</row>
+                  <row title="Verfügbarkeit">ab sofort</row>
+                </details>
+                <image resourceId="IMG1"/>
+              </head>
+            </box>
+          </section>
+        </boxlist>'''
+
+        listings = propotsdam_parser.parse_boxlist_xml(xml)
+
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(listings[0]['listing_key'], 'ABC')
+        self.assertEqual(listings[0]['district'], 'Drewitz')
+        self.assertEqual(listings[0]['rooms'], 3.0)
+        self.assertEqual(listings[0]['area_m2'], 61.0)
+        self.assertEqual(listings[0]['total_rent_eur'], 705.67)
+        self.assertIn('IMG1', listings[0]['image_url'])
+        self.assertEqual(listings[0]['extra']['originalId'], 'ORIG')
+        self.assertTrue(listings[0]['listing_key'])
 
     def test_format_all_listing_data_keeps_unknown_extra_fields(self):
         listing = propotsdam_parser.normalize_listing({

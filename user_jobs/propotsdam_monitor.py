@@ -36,10 +36,16 @@ def _request_scan() -> List[Dict]:
 
 def check_job(context) -> Dict[str, int]:
     if not PROPOTSDAM_CHECK_ENABLED:
+        propotsdam_store.record_status("disabled", listings_count=0)
         return {"ok": 1, "enabled": 0, "sent": 0}
     bot = context.bot
-    listings = _request_scan()
+    try:
+        listings = _request_scan()
+    except Exception as exc:
+        propotsdam_store.record_status("error", listings_count=0, error=str(exc))
+        raise
     stored = propotsdam_store.upsert_listings(listings)
+    propotsdam_store.record_status("ok", listings_count=stored)
     active_listings = propotsdam_store.list_active_listings()
     filters = propotsdam_store.list_filters(active_only=True)
     matches = propotsdam_store.select_unsent_matches(active_listings, filters, propotsdam_store.delivered_pairs())

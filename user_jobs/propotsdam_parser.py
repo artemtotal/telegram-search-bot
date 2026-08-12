@@ -4,9 +4,11 @@ import hashlib
 import html
 import json
 import re
-from typing import Any, Dict, Optional
+import xml.etree.ElementTree as ET
+from typing import Any, Dict, List, Optional
 
 PORTAL_URL = "https://propotsdam-kundenportal.easysquare.com/propotsdam-kundenportal/index.html#/formlist/%252Fsection%252F0%252Fbox%252F0"
+IMAGE_URL_TEMPLATE = "https://propotsdam-kundenportal.easysquare.com/propotsdam-kundenportal/api5/accndocs2/{resource_id}"
 
 
 def clean_text(value: Any) -> str:
@@ -57,6 +59,68 @@ def normalize_listing(payload: Dict[str, Any]) -> Dict[str, Any]:
         "extra": {clean_text(k): clean_text(v) for k, v in extra.items() if clean_text(k) and clean_text(v)},
     }
     return listing
+
+
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def parse_boxlist_xml(xml_text: str) -> List[Dict[str, Any]]:
+    """Extract apartment heads from easysquare/OpenPromos boxlist XML."""
+    root = ET.fromstring(xml_text)
+    listings = []
+    for box in root.iter():
+        if _local_name(box.tag) != "box" or box.attrib.get("boxid") != "ESQ_VM_REOBJ_ALL":
+            continue
+        for head in box:
+            if _local_name(head.tag) != "head":
+                continue
+            data: Dict[str, Any] = {"extra": {}}
+            images = []
+            address = {}
+            for child in head:
+                name = _local_name(child.tag)
+                text = clean_text(child.text)
+                if name == "id":
+                    data["id"] = text
+                elif name == "originalId":
+                    data["extra"]["originalId"] = text
+                elif name == "title":
+                    data["title"] = text
+                elif name == "address":
+                    address = child.attrib
+                elif name == "details":
+                    for row in child:
+                        if _local_name(row.tag) != "row":
+                            continue
+                        title = clean_text(row.attrib.get("title"))
+                        value = clean_text(row.text)
+                        data["extra"][title] = value
+                        if title == "Stadtteil":
+                            data["district"] = value
+                        elif title == "Zimmer":
+                            data["rooms"] = value
+                        elif title == "Wohnfläche":
+                            data["area"] = value
+                        elif title == "Gesamtmiete":
+                            data["total_rent"] = value
+                        elif title == "Verfügbarkeit":
+                            data["available_from"] = value
+                elif name == "image" and child.attrib.get("resourceId"):
+                    images.append(child.attrib["resourceId"])
+                elif name == "headBar" and child.attrib.get("barText"):
+                    data["extra"]["headBar"] = child.attrib["barText"]
+            street = clean_text(address.get("street"))
+            postcode = clean_text(address.get("postcode"))
+            city = clean_text(address.get("city"))
+            data["address"] = clean_text(", ".join(part for part in [street, f"{postcode} {city}".strip()] if part))
+            if images:
+                data["image_url"] = IMAGE_URL_TEMPLATE.format(resource_id=images[0])
+                data["extra"]["image_resource_ids"] = ",".join(images)
+            if not data.get("title"):
+                data["title"] = data.get("extra", {}).get("headBar") or "ProPotsdam Wohnung"
+            listings.append(normalize_listing(data))
+    return listings
 
 
 def dumps_raw(listing: Dict[str, Any]) -> str:

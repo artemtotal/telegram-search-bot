@@ -68,22 +68,53 @@ class HousingAdminFlowTests(unittest.TestCase):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
              mock.patch('user_handlers.housing_monitor.propotsdam_store.create_filter', return_value=77) as create_filter:
             housing_monitor.start_propot_add_flow(self._update(housing_monitor.BTN_ADMIN_ADD_PROPOT), context)
-            for text in ['123456789', 'Pro Potsdam Ivan', 'Babelsberg, Waldstadt 2', '2', '3', '50', '80', '1000']:
+            for text in ['123456789', 'Pro Potsdam Ivan']:
+                update = self._update(text)
+                self.assertTrue(housing_monitor.handle_private_text(update, context))
+            self.assertEqual(context.user_data['housing_admin']['step'], 'districts')
+            housing_monitor._finish_districts(
+                SimpleNamespace(
+                    callback_query=SimpleNamespace(
+                        answer=mock.Mock(),
+                        edit_message_text=mock.Mock(),
+                    ),
+                    effective_user=SimpleNamespace(id=312029534),
+                ),
+                context,
+                all_districts=True,
+            )
+            for text in ['2', '3', '50', '80', '800', '1000']:
                 update = self._update(text)
                 self.assertTrue(housing_monitor.handle_private_text(update, context))
 
         create_filter.assert_called_once_with(
             user_id=123456789,
             title='Pro Potsdam Ivan',
-            districts='Babelsberg,Waldstadt 2',
+            districts='',
             min_rooms=2.0,
             max_rooms=3.0,
             min_area_m2=50.0,
             max_area_m2=80.0,
+            min_total_rent_eur=800.0,
             max_total_rent_eur=1000.0,
         )
         self.assertNotIn('housing_admin', context.user_data)
         self.assertIn('ProPotsdam', update.message.replies[-1][0])
+
+    def test_propot_district_callback_toggles_checkbox_selection(self):
+        context = SimpleNamespace(user_data={'housing_admin': {'mode': 'propotsdam', 'step': 'districts', 'districts_selected': []}})
+        query = SimpleNamespace(
+            data='housing:propot_district:Babelsberg',
+            answer=mock.Mock(),
+            edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=312029534))
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            housing_monitor.handle_callback(update, context)
+
+        self.assertEqual(context.user_data['housing_admin']['districts_selected'], ['Babelsberg'])
+        query.edit_message_text.assert_called_once()
 
 
 if __name__ == '__main__':
