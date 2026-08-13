@@ -27,7 +27,7 @@ BTN_ADMIN_ADD_PROPOT = "🏢 Додати ProPotsdam користувача"
 BTN_ADMIN_LIST = "📋 Користувачі житла"
 BTN_CANCEL = "✖ Скасувати"
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
-IMMOWELT_STALE_AFTER = timedelta(hours=3)
+IMMOWELT_STALE_AFTER = timedelta(minutes=30)
 PROPOTSDAM_STALE_AFTER = timedelta(minutes=45)
 PROPOT_DISTRICTS = [
     "Babelsberg",
