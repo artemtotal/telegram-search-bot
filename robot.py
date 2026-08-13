@@ -20,6 +20,7 @@ from user_handlers import (
     equeue_monitor,
     equeue_receiver,
     housing_monitor,
+    housing_receiver,
 )
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
@@ -130,6 +131,7 @@ def run_telethon_thread():
 
 if __name__ == "__main__":
     equeue_receiver.start_receiver(updater.bot)
+    housing_receiver.start_receiver(updater.bot)
 
     if is_userbot_mode():
         telethon_thread = Thread(target=run_telethon_thread, name="Thread-userbot")

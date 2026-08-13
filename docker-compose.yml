@@ -20,6 +20,7 @@ services:
     ports:
       - "5006:5006"
       - "127.0.0.1:5011:5011"
+      - "127.0.0.1:5012:5012"
       - "9968:9968"
     volumes:
       - tgbot_tgbot_data:/app/config
@@ -62,6 +63,7 @@ services:
       - PASSPORT_EQUEUE_URL=https://berlin.pasport.org.ua/solutions/e-queue
       - PASSPORT_EQUEUE_BROWSER_ONLY=1
       - EQUEUE_RECEIVER_PORT=5011
+      - HOUSING_RECEIVER_PORT=5012
       - CHECK_WOHNUNG_BASE_URL=http://host.docker.internal:18765
       - PROPOTSDAM_CHECK_ENABLED=${PROPOTSDAM_CHECK_ENABLED:-0}
       - PROPOTSDAM_RECEIVER_URL=http://host.docker.internal:18766
