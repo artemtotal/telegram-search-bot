@@ -107,7 +107,12 @@ def _sync_propot_filters() -> None:
 def user_filters(user_id: Optional[int]) -> list:
     if not user_id:
         return []
-    immowelt = [task for task in _tasks() if int(task.get("user_id") or 0) == int(user_id)]
+    immowelt = [
+        task
+        for task in _tasks()
+        if int(task.get("user_id") or 0) == int(user_id)
+        and task.get("source") == "immowelt"
+    ]
     propot = propotsdam_store.list_filters(user_id=int(user_id), active_only=True)
     return immowelt + propot
 

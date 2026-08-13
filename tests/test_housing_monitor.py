@@ -35,6 +35,20 @@ class HousingAdminFlowTests(unittest.TestCase):
 
         self.assertEqual(rows[0][0].text, '🏠 Моніторинг житла')
 
+    def test_user_filters_do_not_duplicate_synced_propotsdam_tasks(self):
+        tasks = [
+            {'filter_id': 2, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt'},
+            {'filter_id': 2, 'user_id': 544675510, 'title': 'ProPotsdam synced', 'source': 'propotsdam'},
+        ]
+        propotsdam = [
+            {'filter_id': 2, 'user_id': 544675510, 'title': 'ProPotsdam', 'districts': 'Drewitz'},
+        ]
+        with mock.patch.object(housing_monitor, '_tasks', return_value=tasks), \
+             mock.patch.object(housing_monitor.propotsdam_store, 'list_filters', return_value=propotsdam):
+            filters = housing_monitor.user_filters(544675510)
+
+        self.assertEqual([item['title'] for item in filters], ['Immowelt', 'ProPotsdam'])
+
     def test_admin_add_flow_collects_id_name_and_immowelt_url(self):
         context = SimpleNamespace(user_data={})
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
