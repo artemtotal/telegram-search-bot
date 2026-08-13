@@ -90,6 +90,13 @@ def _tasks() -> list:
     return tasks if isinstance(tasks, list) else []
 
 
+def _sync_propot_filters() -> None:
+    try:
+        _request("POST", "/api/propotsdam/filters", json={"filters": propotsdam_store.list_filters()})
+    except Exception:
+        logger.exception("Could not sync ProPotsdam filters to shared browser receiver")
+
+
 def user_filters(user_id: Optional[int]) -> list:
     if not user_id:
         return []
@@ -135,15 +142,28 @@ def _format_time(value) -> str:
 
 def _status_lines() -> list:
     lines = []
+    try:
+        payload = _request("GET", "/api/status")
+        if payload.get("dp_document_last_check_at"):
+            lines.append(f"DP Document: остання перевірка {html.escape(str(payload.get('dp_document_last_check_at')))}.")
+        if payload.get("propotsdam_last_check_at"):
+            lines.append(
+                f"ProPotsdam: остання перевірка {html.escape(str(payload.get('propotsdam_last_check_at')))}, "
+                f"квартир: {html.escape(str(payload.get('propotsdam_last_count') or 0))}."
+            )
+        elif payload.get("ok"):
+            lines.append("ProPotsdam: перевірка ще не запускалась.")
+    except Exception:
+        logger.exception("Could not load shared housing receiver status")
     status = propotsdam_store.latest_status()
-    if status:
+    if status and not any(line.startswith("ProPotsdam:") for line in lines):
         last = _format_time(status.get("last_checked_at"))
         label = status.get("last_status") or "unknown"
         count = status.get("listings_count") or 0
         lines.append(f"ProPotsdam: остання перевірка {last}, статус {html.escape(str(label))}, квартир: {count}.")
         if status.get("last_error"):
             lines.append(f"Остання помилка ProPotsdam: {html.escape(str(status.get('last_error')))}")
-    else:
+    elif not lines:
         lines.append("ProPotsdam: перевірка ще не запускалась.")
     return lines
 
@@ -317,6 +337,7 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
             min_total_rent_eur=state.get("min_total_rent_eur"),
             max_total_rent_eur=state.get("max_total_rent_eur"),
         )
+        _sync_propot_filters()
         context.user_data.pop("housing_admin", None)
         update.message.reply_text(f"✅ Фільтр ProPotsdam додано.\nID: P{filter_id}\nКористувач: {state['user_id']}\nНазва: {html.escape(str(state['title']))}")
         return True
@@ -481,6 +502,7 @@ def _set_active(update: Update, context: CallbackContext, active: bool) -> None:
             update.message.reply_text(f"⚠️ Не знайдено ProPotsdam фільтр {raw_id}.")
             return
         status = "увімкнено" if active else "вимкнено"
+        _sync_propot_filters()
         update.message.reply_text(f"✅ Фільтр {raw_id.upper()} {status}.")
         return
     if not raw_id.isdigit():

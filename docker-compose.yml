@@ -63,8 +63,6 @@ services:
       - PASSPORT_EQUEUE_BROWSER_ONLY=1
       - EQUEUE_RECEIVER_PORT=5011
       - CHECK_WOHNUNG_BASE_URL=http://host.docker.internal:18765
-      - PROPOTSDAM_RECEIVER_URL=http://host.docker.internal:18766
-      - PROPOTSDAM_CHECK_ENABLED=${PROPOTSDAM_CHECK_ENABLED:-0}
       - CHAT_USERNAME=UkrainischesBrandenburg
       # Target chat for anonymous posts (Потсдам супергруппа)
       - ANON_TARGET_CHAT_ID=-1001724565311

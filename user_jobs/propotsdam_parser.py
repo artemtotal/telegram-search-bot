@@ -1,11 +1,13 @@
-"""Parsing and formatting helpers for ProPotsdam/easysquare listings."""
+"""Parser and formatter for ProPotsdam/easysquare apartment payloads."""
+
+from __future__ import annotations
 
 import hashlib
 import html
 import json
 import re
 import xml.etree.ElementTree as ET
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 PORTAL_URL = "https://propotsdam-kundenportal.easysquare.com/propotsdam-kundenportal/index.html#/formlist/%252Fsection%252F0%252Fbox%252F0"
 IMAGE_URL_TEMPLATE = "https://propotsdam-kundenportal.easysquare.com/propotsdam-kundenportal/api5/accndocs2/{resource_id}"
@@ -15,7 +17,7 @@ def clean_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
-def parse_decimal(value: Any) -> Optional[float]:
+def parse_decimal(value: Any) -> float | None:
     text = clean_text(value)
     if not text or text in {"-", "—", "–"}:
         return None
@@ -33,7 +35,7 @@ def parse_decimal(value: Any) -> Optional[float]:
         return None
 
 
-def _stable_key(payload: Dict[str, Any]) -> str:
+def _stable_key(payload: dict[str, Any]) -> str:
     explicit = clean_text(payload.get("id") or payload.get("listing_key") or payload.get("detail_url"))
     if explicit:
         return explicit
@@ -43,11 +45,11 @@ def _stable_key(payload: Dict[str, Any]) -> str:
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:24]
 
 
-def normalize_listing(payload: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_listing(payload: dict[str, Any]) -> dict[str, Any]:
     extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}
-    listing = {
+    return {
         "listing_key": _stable_key(payload),
-        "title": clean_text(payload.get("title")),
+        "title": clean_text(payload.get("title")) or "ProPotsdam Wohnung",
         "address": clean_text(payload.get("address")),
         "district": clean_text(payload.get("district")),
         "rooms": parse_decimal(payload.get("rooms")),
@@ -58,26 +60,24 @@ def normalize_listing(payload: Dict[str, Any]) -> Dict[str, Any]:
         "image_url": clean_text(payload.get("image_url")),
         "extra": {clean_text(k): clean_text(v) for k, v in extra.items() if clean_text(k) and clean_text(v)},
     }
-    return listing
 
 
 def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
 
-def parse_boxlist_xml(xml_text: str) -> List[Dict[str, Any]]:
-    """Extract apartment heads from easysquare/OpenPromos boxlist XML."""
+def parse_boxlist_xml(xml_text: str) -> list[dict[str, Any]]:
     root = ET.fromstring(xml_text)
-    listings = []
+    listings: list[dict[str, Any]] = []
     for box in root.iter():
         if _local_name(box.tag) != "box" or box.attrib.get("boxid") != "ESQ_VM_REOBJ_ALL":
             continue
         for head in box:
             if _local_name(head.tag) != "head":
                 continue
-            data: Dict[str, Any] = {"extra": {}}
-            images = []
-            address = {}
+            data: dict[str, Any] = {"extra": {}}
+            images: list[str] = []
+            address: dict[str, str] = {}
             for child in head:
                 name = _local_name(child.tag)
                 text = clean_text(child.text)
@@ -123,18 +123,43 @@ def parse_boxlist_xml(xml_text: str) -> List[Dict[str, Any]]:
     return listings
 
 
-def dumps_raw(listing: Dict[str, Any]) -> str:
+def parse_dom_cards(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    listings = []
+    for card in cards:
+        text = clean_text(card.get("text"))
+        if not text:
+            continue
+
+        def after(label: str) -> str:
+            match = re.search(label + r"\s*:?\s*([^|\n]+?)(?=\s+(?:Stadtteil|Zimmer|Wohnfläche|Gesamt|Verfügbar)|$)", text, re.I)
+            return match.group(1).strip() if match else ""
+
+        listings.append(normalize_listing({
+            "title": text.split(" Stadtteil ")[0].strip()[:160],
+            "address": after("Adresse"),
+            "district": after("Stadtteil"),
+            "rooms": after("Zimmer"),
+            "area": after("Wohnfläche"),
+            "total_rent": after("Gesamtmiete|Gesamtmi(?:ete)?"),
+            "available_from": after("Verfügbar(?: ab)?"),
+            "detail_url": (card.get("links") or [""])[0],
+            "image_url": (card.get("images") or [""])[0],
+            "extra": {"raw_text": text},
+        }))
+    return listings
+
+
+def dumps_raw(listing: dict[str, Any]) -> str:
     return json.dumps(listing, ensure_ascii=False, sort_keys=True)
 
 
-def _line(label: str, value: Any) -> Optional[str]:
+def _line(label: str, value: Any) -> str | None:
     if value is None or value == "":
         return None
     return f"{label}: {html.escape(str(value))}"
 
 
-def format_listing_message(listing: Dict[str, Any], portal_url: str = PORTAL_URL) -> str:
-    """Render all extracted apartment data, not just filter-matching fields."""
+def format_listing_message(listing: dict[str, Any], portal_url: str = PORTAL_URL) -> str:
     lines = ["🏢 Нова квартира ProPotsdam", ""]
     for label, key in [
         ("Назва", "title"),
