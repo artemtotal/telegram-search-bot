@@ -105,8 +105,22 @@ def create_filter(
             created_at=utc_now(),
         )
         session.add(row)
+        session.flush()
+        filter_id = int(row.filter_id)
+        filter_data = filter_to_dict(row)
+        now = utc_now()
+        for listing_row in session.query(ProPotsdamListing).filter(
+            ProPotsdamListing.is_active.is_(True)
+        ).all():
+            listing = listing_to_dict(listing_row)
+            if propotsdam_matching.matches_filter(listing, filter_data):
+                session.add(ProPotsdamDelivery(
+                    filter_id=filter_id,
+                    listing_key=str(listing["listing_key"]),
+                    sent_at=now,
+                ))
         session.commit()
-        return int(row.filter_id)
+        return filter_id
     finally:
         session.close()
 
