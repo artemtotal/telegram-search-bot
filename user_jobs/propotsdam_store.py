@@ -138,10 +138,13 @@ def list_filters(user_id: Optional[int] = None, active_only: bool = False) -> Li
         session.close()
 
 
-def set_filter_active(filter_id: int, active: bool) -> bool:
+def set_filter_active(filter_id: int, active: bool, user_id: Optional[int] = None) -> bool:
     session = DBSession()
     try:
-        row = session.query(ProPotsdamFilter).filter(ProPotsdamFilter.filter_id == int(filter_id)).first()
+        query = session.query(ProPotsdamFilter).filter(ProPotsdamFilter.filter_id == int(filter_id))
+        if user_id is not None:
+            query = query.filter(ProPotsdamFilter.user_id == int(user_id))
+        row = query.first()
         if not row:
             return False
         row.active = bool(active)

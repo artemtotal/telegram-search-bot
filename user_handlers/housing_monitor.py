@@ -31,6 +31,9 @@ BTN_ADMIN_ADD = "➕ Додати Immowelt користувача"
 BTN_ADMIN_ADD_PROPOT = "🏢 Додати ProPotsdam користувача"
 BTN_ADMIN_LIST = "📋 Користувачі житла"
 BTN_CANCEL = "✖ Скасувати"
+BTN_SELF_ADD = "➕ Додати Immowelt"
+BTN_SELF_ADD_PROPOT = "🏢 Додати ProPotsdam"
+BTN_SELF_MANAGE = "⚙️ Мої фільтри"
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 IMMOWELT_STALE_AFTER = timedelta(minutes=30)
 PROPOTSDAM_STALE_AFTER = timedelta(minutes=45)
@@ -97,6 +100,16 @@ def _tasks() -> list:
     return tasks if isinstance(tasks, list) else []
 
 
+def _all_immowelt_filters() -> list:
+    try:
+        payload = _request("GET", "/api/housing/filters")
+    except Exception:
+        logger.exception("Could not load all housing filters")
+        return []
+    filters = payload.get("filters")
+    return filters if isinstance(filters, list) else []
+
+
 def _sync_propot_filters() -> None:
     try:
         _request("POST", "/api/propotsdam/filters", json={"filters": propotsdam_store.list_filters()})
@@ -114,6 +127,19 @@ def user_filters(user_id: Optional[int]) -> list:
         and task.get("source") == "immowelt"
     ]
     propot = propotsdam_store.list_filters(user_id=int(user_id), active_only=True)
+    return immowelt + propot
+
+
+def manageable_filters(user_id: Optional[int]) -> list:
+    if not user_id:
+        return []
+    immowelt = [
+        item for item in _all_immowelt_filters()
+        if int(item.get("user_id") or 0) == int(user_id)
+    ]
+    propot = propotsdam_store.list_filters(user_id=int(user_id))
+    for item in propot:
+        item.setdefault("source", "propotsdam")
     return immowelt + propot
 
 
@@ -138,6 +164,10 @@ def _menu_keyboard(user_id: Optional[int] = None) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton("🔄 Оновити статус", callback_data="housing:menu")]]
     if user_id and int(user_id) == ADMIN_ID:
         rows.insert(0, [InlineKeyboardButton("⚙️ Адмінка житла", callback_data="housing:admin")])
+    elif is_allowed(user_id):
+        rows.insert(0, [InlineKeyboardButton(BTN_SELF_ADD, callback_data="housing:self_add")])
+        rows.insert(1, [InlineKeyboardButton(BTN_SELF_ADD_PROPOT, callback_data="housing:self_propot_add")])
+        rows.insert(2, [InlineKeyboardButton(BTN_SELF_MANAGE, callback_data="housing:self_manage")])
     rows.append([InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
 
@@ -341,6 +371,111 @@ def start_propot_add_flow(update: Update, context: CallbackContext, edit: bool =
         update.effective_message.reply_text(text, parse_mode="HTML")
 
 
+def start_self_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    user = update.effective_user
+    if not user or not is_allowed(user.id):
+        return
+    context.user_data["housing_admin"] = {
+        "mode": "immowelt", "step": "title", "user_id": int(user.id)
+    }
+    text = "➕ <b>Додати Immowelt</b>\n\nНадішліть назву фільтра."
+    if edit and update.callback_query:
+        update.callback_query.edit_message_text(text, parse_mode="HTML")
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML")
+
+
+def start_self_propot_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    user = update.effective_user
+    if not user or not is_allowed(user.id):
+        return
+    context.user_data["housing_admin"] = {
+        "mode": "propotsdam", "step": "title", "user_id": int(user.id),
+        "districts_selected": [],
+    }
+    text = "🏢 <b>Додати ProPotsdam</b>\n\nНадішліть назву фільтра."
+    if edit and update.callback_query:
+        update.callback_query.edit_message_text(text, parse_mode="HTML")
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML")
+
+
+def _self_manage_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    rows = []
+    for item in manageable_filters(user_id):
+        is_propot = item.get("source") == "propotsdam" or "districts" in item
+        source = "propotsdam" if is_propot else "immowelt"
+        filter_id = int(item.get("filter_id"))
+        active = bool(item.get("active", True))
+        mark = "✅" if active else "⏸"
+        title = str(item.get("title") or "Пошук житла")[:30]
+        rows.append([InlineKeyboardButton(
+            f"{mark} {title}",
+            callback_data=f"housing:toggle:{source}:{filter_id}:{0 if active else 1}",
+        )])
+    rows.append([InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")])
+    return InlineKeyboardMarkup(rows)
+
+
+def show_self_manage(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    user = update.effective_user
+    if not user or not is_allowed(user.id):
+        return
+    filters = manageable_filters(user.id)
+    text = (
+        "⚙️ <b>Мої фільтри</b>\n\nНатисніть фільтр, щоб увімкнути або призупинити його."
+        if filters else "⚙️ <b>Мої фільтри</b>\n\nУ вас ще немає фільтрів."
+    )
+    keyboard = _self_manage_keyboard(user.id)
+    if edit and update.callback_query:
+        update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+
+def _toggle_owned_filter(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    try:
+        _, _, source, raw_id, raw_active = query.data.split(":", 4)
+        filter_id = int(raw_id)
+        active = bool(int(raw_active))
+    except (TypeError, ValueError):
+        query.answer("Некоректна команда.", show_alert=True)
+        return
+    own = []
+    for item in manageable_filters(user.id):
+        item_is_propot = item.get("source") == "propotsdam" or "districts" in item
+        source_matches = (source == "propotsdam" and item_is_propot) or (
+            source == "immowelt" and not item_is_propot
+        )
+        if (int(item.get("filter_id") or 0) == filter_id
+                and int(item.get("user_id") or 0) == int(user.id)
+                and source_matches):
+            own.append(item)
+    if not own:
+        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        return
+    if source == "propotsdam":
+        ok = propotsdam_store.set_filter_active(filter_id, active, user_id=user.id)
+        if ok:
+            _sync_propot_filters()
+    else:
+        try:
+            _request("PATCH", f"/api/housing/filters/{filter_id}/active", json={"active": active})
+            ok = True
+        except Exception:
+            logger.exception("Could not update owned housing filter")
+            ok = False
+    if not ok:
+        query.answer("Не вдалося оновити фільтр.", show_alert=True)
+        return
+    query.answer("Фільтр оновлено.")
+    show_self_manage(update, context, edit=True)
+
+
 def _finish_add_flow(update: Update, context: CallbackContext, state: dict, url: str) -> None:
     try:
         payload = _request("POST", "/api/housing/filters", json={"user_id": state["user_id"], "title": state["title"], "url": url})
@@ -408,16 +543,33 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
 def handle_private_text(update: Update, context: CallbackContext) -> bool:
     if not update.message or not update.message.text or not update.effective_user:
         return False
-    if int(update.effective_user.id) != ADMIN_ID:
+    user_id = int(update.effective_user.id)
+    if user_id != ADMIN_ID and not is_allowed(user_id):
         return False
     text = update.message.text.strip()
+    if user_id != ADMIN_ID:
+        if text == BTN_SELF_ADD:
+            start_self_add_flow(update, context)
+            return True
+        if text == BTN_SELF_ADD_PROPOT:
+            start_self_propot_add_flow(update, context)
+            return True
+        if text == BTN_SELF_MANAGE:
+            show_self_manage(update, context)
+            return True
     if text == BTN_ADMIN_ADD:
+        if user_id != ADMIN_ID:
+            return False
         start_add_flow(update, context)
         return True
     if text == BTN_ADMIN_ADD_PROPOT:
+        if user_id != ADMIN_ID:
+            return False
         start_propot_add_flow(update, context)
         return True
     if text == BTN_ADMIN_LIST:
+        if user_id != ADMIN_ID:
+            return False
         show_admin(update, context)
         return True
     state = context.user_data.get("housing_admin")
@@ -510,6 +662,17 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         context.user_data.pop("housing_admin", None)
         query.answer()
         query.edit_message_text("Скасовано.")
+    elif query.data == "housing:self_add":
+        query.answer()
+        start_self_add_flow(update, context, edit=True)
+    elif query.data == "housing:self_propot_add":
+        query.answer()
+        start_self_propot_add_flow(update, context, edit=True)
+    elif query.data == "housing:self_manage":
+        query.answer()
+        show_self_manage(update, context, edit=True)
+    elif query.data.startswith("housing:toggle:"):
+        _toggle_owned_filter(update, context)
     elif query.data == "housing:list":
         query.answer()
         show_admin(update, context, edit=True)

@@ -82,6 +82,41 @@ class ProPotsdamStoreTests(unittest.TestCase):
         )
         self.assertEqual(propotsdam_store.normalize_districts('всі'), '')
 
+    def test_filter_owner_scope_prevents_other_user_from_toggling(self):
+        engine = create_engine(
+            'sqlite://',
+            connect_args={'check_same_thread': False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        test_session = sessionmaker(bind=engine)
+        original_session = propotsdam_store.DBSession
+        propotsdam_store.DBSession = test_session
+        try:
+            filter_id = propotsdam_store.create_filter(
+                user_id=544675510,
+                title='Пошук Каті',
+            )
+            self.assertFalse(
+                propotsdam_store.set_filter_active(
+                    filter_id, False, user_id=312029534
+                )
+            )
+            self.assertTrue(
+                propotsdam_store.list_filters(user_id=544675510)[0]['active']
+            )
+            self.assertTrue(
+                propotsdam_store.set_filter_active(
+                    filter_id, False, user_id=544675510
+                )
+            )
+            self.assertFalse(
+                propotsdam_store.list_filters(user_id=544675510)[0]['active']
+            )
+        finally:
+            propotsdam_store.DBSession = original_session
+            engine.dispose()
+
     def test_select_unsent_matches_uses_delivery_keys(self):
         listing = {'listing_key': 'abc', 'district': 'Babelsberg', 'rooms': 2.0, 'area_m2': 64.0, 'total_rent_eur': 900.0}
         filt = {'filter_id': 7, 'user_id': 123, 'districts': 'Babelsberg', 'max_total_rent_eur': 1000.0}

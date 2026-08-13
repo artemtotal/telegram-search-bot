@@ -35,6 +35,74 @@ class HousingAdminFlowTests(unittest.TestCase):
 
         self.assertEqual(rows[0][0].text, '🏠 Моніторинг житла')
 
+    def test_allowed_user_menu_has_self_service_filter_controls(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            labels = [button.text for row in housing_monitor._menu_keyboard(544675510).inline_keyboard for button in row]
+
+        self.assertIn('➕ Додати Immowelt', labels)
+        self.assertIn('🏢 Додати ProPotsdam', labels)
+        self.assertIn('⚙️ Мої фільтри', labels)
+        self.assertNotIn('⚙️ Адмінка житла', labels)
+
+    def test_allowed_user_add_flow_uses_own_telegram_id(self):
+        context = SimpleNamespace(user_data={})
+        update = self._update('', user_id=544675510)
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            housing_monitor.start_self_add_flow(update, context)
+
+        self.assertEqual(context.user_data['housing_admin'], {
+            'mode': 'immowelt',
+            'step': 'title',
+            'user_id': 544675510,
+        })
+
+    def test_allowed_user_can_toggle_only_own_filter(self):
+        own_filter = {
+            'filter_id': 2,
+            'user_id': 544675510,
+            'title': 'Пошук Каті',
+            'source': 'immowelt',
+            'active': True,
+        }
+        foreign_filter = {
+            'filter_id': 1,
+            'user_id': 312029534,
+            'title': 'Пошук Артема',
+            'source': 'immowelt',
+            'active': True,
+        }
+        query = SimpleNamespace(
+            data='housing:toggle:immowelt:2:0',
+            answer=mock.Mock(),
+            edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch.object(housing_monitor, '_request', return_value={'ok': True}) as request:
+            housing_monitor.handle_callback(update, context)
+
+        request.assert_called_once_with(
+            'PATCH',
+            '/api/housing/filters/2/active',
+            json={'active': False},
+        )
+
+        query.data = 'housing:toggle:immowelt:1:0'
+        query.answer.reset_mock()
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[foreign_filter]), \
+             mock.patch.object(housing_monitor, '_request') as request:
+            housing_monitor.handle_callback(update, context)
+
+        request.assert_not_called()
+        query.answer.assert_called_with('Цей фільтр вам не належить.', show_alert=True)
+
     def test_user_filters_do_not_duplicate_synced_propotsdam_tasks(self):
         tasks = [
             {'filter_id': 2, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt'},
