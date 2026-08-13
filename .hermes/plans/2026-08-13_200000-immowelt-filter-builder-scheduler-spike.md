@@ -37,7 +37,7 @@
 - Do not modify production `background.js`.
 
 **Cases:**
-1. Potsdam, rent, apartment+house, rooms >= 2, area >= 65.
+1. Potsdam, rent, apartment+house, broad source sorted newest first. Confirmed input URL from Artem: `https://www.immowelt.de/classified-search?distributionTypes=Rent&estateTypes=House,Apartment&locations=AD08DE8638&order=DateDesc&m=homepage_new_search_classified_search_result`.
 2. Potsdam, rent, apartment, rooms >= 3, area >= 70, price <= 1500.
 3. A second supported city or postal code to test location encoding.
 4. Invalid/unknown location to observe the page's failure mode.
