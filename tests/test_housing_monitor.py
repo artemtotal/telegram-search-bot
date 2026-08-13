@@ -26,6 +26,15 @@ class HousingAdminFlowTests(unittest.TestCase):
             effective_user=SimpleNamespace(id=user_id),
         )
 
+    def test_allowed_user_sees_housing_before_filters_are_created(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'user_filters', return_value=[]):
+            self.assertTrue(housing_monitor.is_allowed(544675510))
+            rows = list(housing_monitor.private_home_rows(544675510))
+
+        self.assertEqual(rows[0][0].text, '🏠 Моніторинг житла')
+
     def test_admin_add_flow_collects_id_name_and_immowelt_url(self):
         context = SimpleNamespace(user_data={})
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \

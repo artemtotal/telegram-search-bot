@@ -64,6 +64,9 @@ services:
       - PASSPORT_EQUEUE_BROWSER_ONLY=1
       - EQUEUE_RECEIVER_PORT=5011
       - HOUSING_RECEIVER_PORT=5012
+      # Comma-separated Telegram IDs that may open housing monitoring before filters exist.
+      # ADMIN_ID and users with existing housing filters are always allowed.
+      - HOUSING_ALLOWED_USER_IDS=${HOUSING_ALLOWED_USER_IDS:-}
       - CHECK_WOHNUNG_BASE_URL=http://host.docker.internal:18765
       - PROPOTSDAM_CHECK_ENABLED=${PROPOTSDAM_CHECK_ENABLED:-0}
       - PROPOTSDAM_RECEIVER_URL=http://host.docker.internal:18766

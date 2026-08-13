@@ -17,6 +17,11 @@ from user_jobs import propotsdam_store
 logger = logging.getLogger(__name__)
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
+ALLOWED_USER_IDS = {
+    int(value.strip())
+    for value in os.getenv("HOUSING_ALLOWED_USER_IDS", "").split(",")
+    if value.strip().lstrip("-").isdigit()
+}
 CHECK_WOHNUNG_BASE_URL = os.getenv(
     "CHECK_WOHNUNG_BASE_URL",
     "http://host.docker.internal:18765",
@@ -108,7 +113,14 @@ def user_filters(user_id: Optional[int]) -> list:
 
 
 def is_allowed(user_id: Optional[int]) -> bool:
-    return bool(user_id and (int(user_id) == ADMIN_ID or user_filters(int(user_id))))
+    return bool(
+        user_id
+        and (
+            int(user_id) == ADMIN_ID
+            or int(user_id) in ALLOWED_USER_IDS
+            or user_filters(int(user_id))
+        )
+    )
 
 
 def private_home_rows(user_id: Optional[int]) -> Iterable[list]:
