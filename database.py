@@ -132,6 +132,16 @@ class EqueueSubscription(Base):
     updated_at = Column(DATETIME, nullable=False)
 
 
+class HousingAccessUser(Base):
+    __tablename__ = 'housing_access_user'
+
+    user_id = Column(INTEGER, primary_key=True)
+    display_name = Column(TEXT, nullable=False, default='')
+    active = Column(BOOLEAN, nullable=False, default=True)
+    created_at = Column(DATETIME, nullable=False)
+    updated_at = Column(DATETIME, nullable=False)
+
+
 class ProPotsdamListing(Base):
     __tablename__ = 'propotsdam_listing'
 

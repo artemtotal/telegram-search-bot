@@ -45,6 +45,56 @@ class HousingAdminFlowTests(unittest.TestCase):
         self.assertIn('⚙️ Мої фільтри', labels)
         self.assertNotIn('⚙️ Адмінка житла', labels)
 
+    def test_database_allowed_user_gets_self_service_controls_without_env_access(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', set()), \
+             mock.patch.object(housing_monitor.housing_access_store, 'is_allowed', return_value=True), \
+             mock.patch.object(housing_monitor, 'user_filters', return_value=[]):
+            self.assertTrue(housing_monitor.is_allowed(777))
+            labels = [
+                button.text
+                for row in housing_monitor._menu_keyboard(777).inline_keyboard
+                for button in row
+            ]
+
+        self.assertIn('➕ Додати Immowelt', labels)
+        self.assertIn('🏢 Додати ProPotsdam', labels)
+        self.assertIn('⚙️ Мої фільтри', labels)
+
+    def test_admin_can_add_housing_access_user(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            labels = [
+                button.text
+                for row in housing_monitor._admin_keyboard().inline_keyboard
+                for button in row
+            ]
+        self.assertIn('👤 Додати доступ користувачу', labels)
+        self.assertIn('👥 Доступ до моніторингу', labels)
+
+        context = SimpleNamespace(user_data={})
+        update = self._update('', user_id=312029534)
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            housing_monitor.start_access_add_flow(update, context)
+
+        self.assertEqual(
+            context.user_data['housing_access_admin'],
+            {'step': 'user_id'},
+        )
+
+        update = self._update('777', user_id=312029534)
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            self.assertTrue(housing_monitor.handle_private_text(update, context))
+        self.assertEqual(context.user_data['housing_access_admin']['step'], 'name')
+
+        update = self._update('Новий користувач', user_id=312029534)
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'grant_access') as grant:
+            self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        grant.assert_called_once_with(777, 'Новий користувач')
+        self.assertNotIn('housing_access_admin', context.user_data)
+        self.assertIn('Доступ до моніторингу житла надано', update.message.replies[-1][0])
+
     def test_allowed_user_add_flow_uses_own_telegram_id(self):
         context = SimpleNamespace(user_data={})
         update = self._update('', user_id=544675510)

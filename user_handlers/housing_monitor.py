@@ -12,7 +12,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
 from telegram.error import BadRequest
 
-from user_jobs import propotsdam_store
+from user_jobs import housing_access_store, propotsdam_store
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,8 @@ TIMEOUT = int(os.getenv("HOUSING_MONITOR_TIMEOUT", "20") or 20)
 BTN_ADMIN_ADD = "➕ Додати Immowelt користувача"
 BTN_ADMIN_ADD_PROPOT = "🏢 Додати ProPotsdam користувача"
 BTN_ADMIN_LIST = "📋 Користувачі житла"
+BTN_ADMIN_ACCESS_ADD = "👤 Додати доступ користувачу"
+BTN_ADMIN_ACCESS_LIST = "👥 Доступ до моніторингу"
 BTN_CANCEL = "✖ Скасувати"
 BTN_SELF_ADD = "➕ Додати Immowelt"
 BTN_SELF_ADD_PROPOT = "🏢 Додати ProPotsdam"
@@ -149,6 +151,7 @@ def is_allowed(user_id: Optional[int]) -> bool:
         and (
             int(user_id) == ADMIN_ID
             or int(user_id) in ALLOWED_USER_IDS
+            or housing_access_store.is_allowed(int(user_id))
             or user_filters(int(user_id))
         )
     )
@@ -177,6 +180,8 @@ def _admin_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(BTN_ADMIN_ADD, callback_data="housing:add")],
         [InlineKeyboardButton(BTN_ADMIN_ADD_PROPOT, callback_data="housing:propot_add")],
         [InlineKeyboardButton(BTN_ADMIN_LIST, callback_data="housing:list")],
+        [InlineKeyboardButton(BTN_ADMIN_ACCESS_ADD, callback_data="housing:access_add")],
+        [InlineKeyboardButton(BTN_ADMIN_ACCESS_LIST, callback_data="housing:access_list")],
         [InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")],
     ])
 
@@ -327,6 +332,48 @@ def show_admin(update: Update, context: CallbackContext, edit: bool = False) -> 
         update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_admin_keyboard())
     else:
         update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_admin_keyboard())
+
+
+def start_access_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    user = update.effective_user
+    if not user or int(user.id) != ADMIN_ID:
+        return
+    context.user_data["housing_access_admin"] = {"step": "user_id"}
+    text = "👤 <b>Додати доступ користувачу</b>\n\nНадішліть Telegram ID користувача."
+    if edit and update.callback_query:
+        update.callback_query.edit_message_text(text, parse_mode="HTML")
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML")
+
+
+def _render_access_users() -> str:
+    users = housing_access_store.list_users()
+    lines = ["👥 <b>Доступ до моніторингу житла</b>", ""]
+    if not users:
+        lines.append("Окремо доданих користувачів поки немає.")
+    for item in users:
+        mark = "✅" if item.get("active") else "⏸"
+        name = html.escape(str(item.get("display_name") or "без назви"))
+        lines.append(f"{mark} {int(item['user_id'])} · {name}")
+    return "\n".join(lines)
+
+
+def show_access_users(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    user = update.effective_user
+    if not user or int(user.id) != ADMIN_ID:
+        return
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(BTN_ADMIN_ACCESS_ADD, callback_data="housing:access_add")],
+        [InlineKeyboardButton("⬅ До адмінки", callback_data="housing:admin")],
+    ])
+    if edit and update.callback_query:
+        update.callback_query.edit_message_text(
+            _render_access_users(), parse_mode="HTML", reply_markup=keyboard
+        )
+    else:
+        update.effective_message.reply_text(
+            _render_access_users(), parse_mode="HTML", reply_markup=keyboard
+        )
 
 
 def start_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
@@ -572,6 +619,42 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
             return False
         show_admin(update, context)
         return True
+    if text == BTN_ADMIN_ACCESS_ADD:
+        if user_id != ADMIN_ID:
+            return False
+        start_access_add_flow(update, context)
+        return True
+    if text == BTN_ADMIN_ACCESS_LIST:
+        if user_id != ADMIN_ID:
+            return False
+        show_access_users(update, context)
+        return True
+    access_state = context.user_data.get("housing_access_admin")
+    if access_state:
+        if text == BTN_CANCEL:
+            context.user_data.pop("housing_access_admin", None)
+            update.message.reply_text("Скасовано.")
+            return True
+        if access_state.get("step") == "user_id":
+            if not text.lstrip("-").isdigit():
+                update.message.reply_text("Telegram ID має бути числом. Надішліть ID ще раз.")
+                return True
+            access_state["user_id"] = int(text)
+            access_state["step"] = "name"
+            update.message.reply_text("Надішліть імʼя або назву користувача.")
+            return True
+        if access_state.get("step") == "name":
+            if not text:
+                update.message.reply_text("Імʼя не може бути порожнім.")
+                return True
+            housing_access_store.grant_access(access_state["user_id"], text[:120])
+            granted_id = access_state["user_id"]
+            context.user_data.pop("housing_access_admin", None)
+            update.message.reply_text(
+                f"✅ Доступ до моніторингу житла надано.\n"
+                f"Користувач: {granted_id}\nІмʼя: {html.escape(text[:120])}"
+            )
+            return True
     state = context.user_data.get("housing_admin")
     if not state:
         return False
@@ -652,6 +735,12 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:propot_add":
         query.answer()
         start_propot_add_flow(update, context, edit=True)
+    elif query.data == "housing:access_add":
+        query.answer()
+        start_access_add_flow(update, context, edit=True)
+    elif query.data == "housing:access_list":
+        query.answer()
+        show_access_users(update, context, edit=True)
     elif query.data.startswith("housing:propot_district:"):
         _toggle_district(update, context, query.data.split(":", 2)[2])
     elif query.data == "housing:propot_district_done":
