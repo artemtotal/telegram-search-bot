@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 from types import SimpleNamespace
 from unittest import mock
 
@@ -100,6 +101,53 @@ class HousingAdminFlowTests(unittest.TestCase):
         )
         self.assertNotIn('housing_admin', context.user_data)
         self.assertIn('ProPotsdam', update.message.replies[-1][0])
+
+    def test_housing_status_shows_local_times_and_never_dp_document(self):
+        immowelt_task = {
+            'source': 'immowelt',
+            'last_checked_at': '2026-08-13T00:25:29.671153+00:00',
+            'seen_count': 3,
+        }
+        propotsdam_status = {
+            'last_checked_at': datetime(2026, 8, 13, 4, 50, 6),
+            'last_status': 'ok',
+            'listings_count': 4,
+            'last_error': '',
+        }
+
+        now = datetime(2026, 8, 13, 5, 0, 0, tzinfo=housing_monitor.BERLIN_TZ)
+        with mock.patch.object(housing_monitor, '_tasks', return_value=[immowelt_task]), \
+             mock.patch.object(housing_monitor.propotsdam_store, 'latest_status', return_value=propotsdam_status), \
+             mock.patch.object(housing_monitor, '_now_berlin', return_value=now):
+            lines = housing_monitor._status_lines()
+
+        rendered = '\n'.join(lines)
+        self.assertIn('Immowelt: остання перевірка 13.08.2026 02:25', rendered)
+        self.assertIn('ProPotsdam: остання перевірка 13.08.2026 06:50', rendered)
+        self.assertNotIn('DP Document', rendered)
+        self.assertNotIn('2026-08-13T', rendered)
+
+    def test_housing_status_marks_stale_checks(self):
+        now = datetime(2026, 8, 13, 8, 0, 0, tzinfo=housing_monitor.BERLIN_TZ)
+        immowelt_task = {
+            'source': 'immowelt',
+            'last_checked_at': '2026-08-13T00:25:29.671153+00:00',
+            'seen_count': 3,
+        }
+        propotsdam_status = {
+            'last_checked_at': datetime(2026, 8, 13, 4, 50, 6),
+            'last_status': 'ok',
+            'listings_count': 4,
+            'last_error': '',
+        }
+
+        with mock.patch.object(housing_monitor, '_tasks', return_value=[immowelt_task]), \
+             mock.patch.object(housing_monitor.propotsdam_store, 'latest_status', return_value=propotsdam_status), \
+             mock.patch.object(housing_monitor, '_now_berlin', return_value=now):
+            rendered = '\n'.join(housing_monitor._status_lines())
+
+        self.assertIn('Immowelt: перевірка прострочена', rendered)
+        self.assertIn('ProPotsdam: перевірка прострочена', rendered)
 
     def test_propot_district_callback_toggles_checkbox_selection(self):
         context = SimpleNamespace(user_data={'housing_admin': {'mode': 'propotsdam', 'step': 'districts', 'districts_selected': []}})

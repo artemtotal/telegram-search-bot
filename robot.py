@@ -23,6 +23,7 @@ from user_handlers import (
 )
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
+from user_jobs import propotsdam_monitor
 
 
 from userbot import run_telethon
@@ -86,6 +87,12 @@ if os.getenv("QDRANT_UPDATER_ENABLED", "0") == "1":
     job.run_repeating(run_qdrant_update, interval=3600, first=300)
 
 job.run_repeating(equeue_monitor.check_job, interval=900, first=90)
+if os.getenv("PROPOTSDAM_CHECK_ENABLED", "0") == "1":
+    job.run_repeating(
+        propotsdam_monitor.check_job,
+        interval=propotsdam_monitor.CHECK_INTERVAL_SECONDS,
+        first=120,
+    )
 
 
 dispatcher.add_handler(msg_ai.handler)

@@ -3,7 +3,7 @@
 import html
 import logging
 import os
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Iterable, Optional
 from zoneinfo import ZoneInfo
 
@@ -27,6 +27,8 @@ BTN_ADMIN_ADD_PROPOT = "🏢 Додати ProPotsdam користувача"
 BTN_ADMIN_LIST = "📋 Користувачі житла"
 BTN_CANCEL = "✖ Скасувати"
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
+IMMOWELT_STALE_AFTER = timedelta(hours=3)
+PROPOTSDAM_STALE_AFTER = timedelta(minutes=45)
 PROPOT_DISTRICTS = [
     "Babelsberg",
     "Babelsberg Nord",
@@ -135,35 +137,77 @@ def _admin_keyboard() -> InlineKeyboardMarkup:
 def _format_time(value) -> str:
     if not value:
         return "ще не було"
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return html.escape(value)
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(BERLIN_TZ).strftime("%d.%m.%Y %H:%M")
 
 
+def _as_berlin_datetime(value):
+    if not value:
+        return None
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(BERLIN_TZ)
+
+
+def _now_berlin() -> datetime:
+    return datetime.now(BERLIN_TZ)
+
+
+def _is_stale(value, max_age: timedelta) -> bool:
+    checked_at = _as_berlin_datetime(value)
+    return bool(checked_at and _now_berlin() - checked_at > max_age)
+
+
 def _status_lines() -> list:
     lines = []
     try:
-        payload = _request("GET", "/api/status")
-        if payload.get("dp_document_last_check_at"):
-            lines.append(f"DP Document: остання перевірка {html.escape(str(payload.get('dp_document_last_check_at')))}.")
-        if payload.get("propotsdam_last_check_at"):
-            lines.append(
-                f"ProPotsdam: остання перевірка {html.escape(str(payload.get('propotsdam_last_check_at')))}, "
-                f"квартир: {html.escape(str(payload.get('propotsdam_last_count') or 0))}."
+        tasks = _tasks()
+        immowelt_tasks = [task for task in tasks if task.get("source") == "immowelt"]
+        if immowelt_tasks:
+            latest = max(
+                (str(task.get("last_checked_at") or "") for task in immowelt_tasks),
+                default="",
             )
-        elif payload.get("ok"):
-            lines.append("ProPotsdam: перевірка ще не запускалась.")
+            seen_total = sum(int(task.get("seen_count") or 0) for task in immowelt_tasks)
+            if latest:
+                if _is_stale(latest, IMMOWELT_STALE_AFTER):
+                    lines.append(
+                        f"⚠️ Immowelt: перевірка прострочена; остання {_format_time(latest)}, "
+                        f"збережено: {seen_total}."
+                    )
+                else:
+                    lines.append(f"Immowelt: остання перевірка {_format_time(latest)}, збережено: {seen_total}.")
+            else:
+                lines.append("Immowelt: перевірка ще не запускалась.")
     except Exception:
-        logger.exception("Could not load shared housing receiver status")
+        logger.exception("Could not load Immowelt status")
+
     status = propotsdam_store.latest_status()
-    if status and not any(line.startswith("ProPotsdam:") for line in lines):
+    if status:
         last = _format_time(status.get("last_checked_at"))
         label = status.get("last_status") or "unknown"
         count = status.get("listings_count") or 0
-        lines.append(f"ProPotsdam: остання перевірка {last}, статус {html.escape(str(label))}, квартир: {count}.")
+        if _is_stale(status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER):
+            lines.append(
+                f"⚠️ ProPotsdam: перевірка прострочена; остання {last}, "
+                f"статус {html.escape(str(label))}, квартир: {count}."
+            )
+        else:
+            lines.append(f"ProPotsdam: остання перевірка {last}, статус {html.escape(str(label))}, квартир: {count}.")
         if status.get("last_error"):
             lines.append(f"Остання помилка ProPotsdam: {html.escape(str(status.get('last_error')))}")
-    elif not lines:
+    else:
         lines.append("ProPotsdam: перевірка ще не запускалась.")
     return lines
 
