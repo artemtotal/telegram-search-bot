@@ -93,9 +93,11 @@
 
 Вынести исследование и последующую реализацию в отдельный Telegram-топик, не останавливая и не изменяя текущее суточное наблюдение этапа 5.
 
-Базовая ссылка широкого источника — вся аренда домов и квартир Потсдама, сначала новые:
+Базовая ссылка широкого источника — аренда домов и квартир Потсдама без `Tauschwohnung`, сначала новые:
 
-`https://www.immowelt.de/classified-search?distributionTypes=Rent&estateTypes=House,Apartment&locations=AD08DE8638&order=DateDesc&m=homepage_new_search_classified_search_result`
+`https://www.immowelt.de/classified-search?distributionTypes=Rent&estateTypes=House,Apartment&locations=AD08DE8638&projectTypes=Stock,New_Build,Flatsharing&order=DateDesc&m=homepage_new_search_classified_search_result`
+
+Живая проверка 14.08.2026: 76 результатов, 32 карточки на первой странице, 3 страницы; в карточках первой страницы `Tauschwohnung` не найдено. Исходная широкая ссылка давала 256–262 результата и до 9 страниц, поэтому сокращённый источник выбран как штатный.
 
 Целевая архитектура: один обход широкой выдачи Immowelt сохраняет новые объявления в общую базу, затем локальный движок применяет структурированные фильтры пользователей и выполняет независимую доставку. Одинаковые пользовательские условия не должны приводить к повторному открытию страницы.
 

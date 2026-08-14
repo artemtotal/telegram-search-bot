@@ -10,9 +10,9 @@
 
 Цель: проверить и затем построить архитектуру, при которой Immowelt открывается не отдельно для каждого пользователя, а один раз для широкой выдачи Потсдама. Все полученные объявления сохраняются в общую базу, после чего локальные фильтры определяют, кому что отправлять.
 
-Базовая ссылка — вся аренда домов и квартир Потсдама, сначала новые:
+Базовая ссылка — аренда домов и квартир Потсдама без `Tauschwohnung`, сначала новые:
 
-`https://www.immowelt.de/classified-search?distributionTypes=Rent&estateTypes=House,Apartment&locations=AD08DE8638&order=DateDesc&m=homepage_new_search_classified_search_result`
+`https://www.immowelt.de/classified-search?distributionTypes=Rent&estateTypes=House,Apartment&locations=AD08DE8638&projectTypes=Stock,New_Build,Flatsharing&order=DateDesc&m=homepage_new_search_classified_search_result`
 
 Сначала провести только исследование через действующий профиль Chrome, не меняя рабочий суточный мониторинг:
 
