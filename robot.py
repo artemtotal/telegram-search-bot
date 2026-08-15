@@ -35,7 +35,16 @@ logging.basicConfig(format="%(asctime)s - %(threadName)s - %(levelname)s - %(mes
 _ = get_text_func()
 
 bot_token = os.getenv("BOT_TOKEN")
-updater = Updater(token=bot_token, workers=8)
+# Из контейнера примерно половина соединений к api.telegram.org повисает, хотя с
+# хоста тот же адрес отвечает всегда — сеть Docker на этой машине теряет пакеты.
+# С дефолтными 5 с уведомление о квартире просто не уходило: приёмник отдавал
+# 500, и объявление ждало следующего обхода. Успешный коннект занимает 0.04 с,
+# так что запас ничего не замедляет — он нужен только медленным попыткам.
+_REQUEST_KWARGS = {
+    "connect_timeout": float(os.getenv("TELEGRAM_CONNECT_TIMEOUT", "20") or 20),
+    "read_timeout": float(os.getenv("TELEGRAM_READ_TIMEOUT", "20") or 20),
+}
+updater = Updater(token=bot_token, workers=8, request_kwargs=_REQUEST_KWARGS)
 dispatcher = updater.dispatcher
 
 job = updater.job_queue
