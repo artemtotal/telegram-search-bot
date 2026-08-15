@@ -325,7 +325,11 @@ class HousingAdminFlowTests(unittest.TestCase):
         text, kwargs = update.callback_query.edit_message_text.call_args.args[0], update.callback_query.edit_message_text.call_args.kwargs
         self.assertIn('ще немає фільтра ProPotsdam', text)
         buttons = [btn for row in kwargs['reply_markup'].inline_keyboard for btn in row]
-        self.assertTrue(any(btn.callback_data == 'housing:self_propot_add' for btn in buttons))
+        self.assertTrue(any(btn.callback_data == 'housing:clone_propot' for btn in buttons))
+        stashed = context.user_data['housing_clone_source']
+        self.assertEqual(stashed['target'], 'propotsdam')
+        self.assertEqual(stashed['districts'], ['Golm'])
+        self.assertEqual(stashed['title'], 'Катя')
 
     def test_saving_own_immowelt_filter_skips_suggestion_if_propotsdam_already_exists(self):
         context = SimpleNamespace(user_data={'housing_admin': {
@@ -388,7 +392,8 @@ class HousingAdminFlowTests(unittest.TestCase):
         text, kwargs = update.message.replies[-1]
         self.assertIn('ще немає фільтра Immowelt', text)
         buttons = [btn for row in kwargs['reply_markup'].inline_keyboard for btn in row]
-        self.assertTrue(any(btn.callback_data == 'housing:self_add' for btn in buttons))
+        self.assertTrue(any(btn.callback_data == 'housing:clone_immo' for btn in buttons))
+        self.assertEqual(context.user_data['housing_clone_source']['target'], 'immowelt')
 
     def test_finishing_propotsdam_filter_for_someone_else_never_touches_immowelt_lookup(self):
         state = {
@@ -406,6 +411,64 @@ class HousingAdminFlowTests(unittest.TestCase):
 
         all_immo.assert_not_called()
         self.assertNotIn('Immowelt', update.message.replies[-1][0])
+
+    def test_clone_propot_from_immowelt_saves_immediately_with_transferred_criteria(self):
+        """Кнопка «Створити такий самий» не веде майстром — зберігає одразу."""
+        context = SimpleNamespace(user_data={'housing_clone_source': {
+            'target': 'propotsdam', 'user_id': 544675510, 'title': 'Катя',
+            'districts': ['Golm', 'Waldstadt 1'],
+            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': 50.0, 'max_area_m2': None,
+        }})
+        update = self._cb_update(544675510)
+
+        with mock.patch('user_handlers.housing_monitor.propotsdam_store.create_filter', return_value=42) as create_filter, \
+             mock.patch.object(housing_monitor, '_sync_propot_filters') as sync:
+            housing_monitor._clone_propot_from_immowelt(update, context)
+
+        create_filter.assert_called_once_with(
+            user_id=544675510, title='Катя', districts='Golm,Waldstadt 1',
+            min_rooms=2.0, max_rooms=None, min_area_m2=50.0, max_area_m2=None,
+        )
+        sync.assert_called_once()
+        self.assertNotIn('housing_clone_source', context.user_data)
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        self.assertIn('P42', text)
+        self.assertIn('Оренду не переносив', text)
+
+    def test_clone_immowelt_from_propot_saves_immediately_with_transferred_criteria(self):
+        context = SimpleNamespace(user_data={'housing_clone_source': {
+            'target': 'immowelt', 'user_id': 123456789, 'title': 'Іван',
+            'districts': ['Golm', 'Waldstadt I'],
+            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': 90.0,
+        }})
+        update = self._cb_update(123456789)
+
+        with mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 7}) as request:
+            housing_monitor._clone_immowelt_from_propot(update, context)
+
+        request.assert_called_once_with('POST', '/api/housing/filters', json={
+            'user_id': 123456789, 'title': 'Іван', 'districts': ['Golm', 'Waldstadt I'],
+            'min_price_eur': None, 'max_price_eur': None,
+            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': 90.0,
+        })
+        self.assertNotIn('housing_clone_source', context.user_data)
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        self.assertIn('ID: 7', text)
+        self.assertIn('Ціну не переносив', text)
+
+    def test_waldstadt_district_name_translates_between_sources(self):
+        self.assertEqual(
+            housing_monitor._translate_districts(
+                ['Waldstadt I', 'Golm'], housing_monitor.IMMOWELT_TO_PROPOT_DISTRICT, set(housing_monitor.PROPOT_DISTRICTS),
+            ),
+            ['Waldstadt 1', 'Golm'],
+        )
+        self.assertEqual(
+            housing_monitor._translate_districts(
+                ['Waldstadt 2', 'Babelsberg Nord'], housing_monitor.PROPOT_TO_IMMOWELT_DISTRICT, set(housing_monitor.IMMOWELT_DISTRICTS),
+            ),
+            ['Waldstadt II'],
+        )
 
     def test_preview_reports_what_matches_right_now(self):
         """Перший обхід мовчки збирає базову лінію, тож людині потрібен доказ."""

@@ -90,6 +90,18 @@ IMMOWELT_DISTRICTS = [
     "Waldstadt I",
     "Waldstadt II",
 ]
+# Тільки Waldstadt пишеться по-різному між джерелами — решта райони збігаються
+# рядок-в-рядок. У ProPotsdam ще є «Babelsberg Nord»/«Süd» без відповідника в
+# Immowelt; такі райони при клонуванні фільтра просто відкидаються.
+IMMOWELT_TO_PROPOT_DISTRICT = {"Waldstadt I": "Waldstadt 1", "Waldstadt II": "Waldstadt 2"}
+PROPOT_TO_IMMOWELT_DISTRICT = {value: key for key, value in IMMOWELT_TO_PROPOT_DISTRICT.items()}
+
+
+def _translate_districts(districts, mapping: Dict[str, str], valid_targets) -> list:
+    translated = [mapping.get(d, d) for d in districts]
+    return [d for d in translated if d in valid_targets]
+
+
 # Галочками людина каже, ЩО саме хоче задати, а потім майстер веде її по
 # цьому самому списку й питає кожну умову окремим числом. Довгий майстер із
 # шести запитань поспіль люди кидають на середині — але тут ніхто не бачить
@@ -1228,21 +1240,43 @@ def _show_immowelt_preview(message, state: dict) -> None:
     )
 
 
-def _cross_source_suggestion(chatter_id: int, filter_user_id: int, just_created: str) -> Optional[InlineKeyboardButton]:
-    """Кнопка «заведіть і другий фільтр», коли людина щойно завела перший.
+def _cross_source_suggestion(
+    context: CallbackContext, chatter_id: int, filter_user_id: int, just_created: str, criteria: Dict[str, object]
+) -> Optional[InlineKeyboardButton]:
+    """Кнопка «заведіть і другий фільтр» — і сама переносить уже введене.
 
     Джерела ловлять різні сайти — той, хто стежить лише за Immowelt, легко
     забуває, що ProPotsdam треба заводити окремо (і навпаки). Показуємо
     підказку лише самому власнику: якщо адмін додає фільтр іншій людині,
     підказка адміну про чужий другий фільтр була б не до речі.
+
+    Район, кімнати й площу переносимо без повторних питань — це ті самі
+    одиниці й майже ті самі назви районів. Ціну свідомо не чіпаємо: Immowelt
+    рахує холодну оренду, ProPotsdam — повну, тож перенесене число означало б
+    зовсім іншу суму, а не ту саму умову.
     """
     if int(chatter_id) != int(filter_user_id):
         return None
+    districts = list(criteria.get("districts") or [])
+    title = str(criteria.get("title") or "Пошук житла")
+    shared = {
+        "user_id": int(filter_user_id),
+        "title": title,
+        "min_rooms": criteria.get("min_rooms"),
+        "max_rooms": criteria.get("max_rooms"),
+        "min_area_m2": criteria.get("min_area_m2"),
+        "max_area_m2": criteria.get("max_area_m2"),
+    }
     if just_created == "immowelt":
         if propotsdam_store.list_filters(user_id=int(filter_user_id), active_only=True):
             return None
+        context.user_data["housing_clone_source"] = {
+            "target": "propotsdam",
+            "districts": _translate_districts(districts, IMMOWELT_TO_PROPOT_DISTRICT, set(PROPOT_DISTRICTS)),
+            **shared,
+        }
         return InlineKeyboardButton(
-            "🏢 Створити такий самий фільтр ProPotsdam", callback_data="housing:self_propot_add"
+            "🏢 Створити такий самий фільтр ProPotsdam", callback_data="housing:clone_propot"
         )
     if just_created == "propotsdam":
         immowelt = [
@@ -1251,10 +1285,70 @@ def _cross_source_suggestion(chatter_id: int, filter_user_id: int, just_created:
         ]
         if immowelt:
             return None
+        context.user_data["housing_clone_source"] = {
+            "target": "immowelt",
+            "districts": _translate_districts(districts, PROPOT_TO_IMMOWELT_DISTRICT, set(IMMOWELT_DISTRICTS)),
+            **shared,
+        }
         return InlineKeyboardButton(
-            "🏠 Створити такий самий фільтр Immowelt", callback_data="housing:self_add"
+            "🏠 Створити такий самий фільтр Immowelt", callback_data="housing:clone_immo"
         )
     return None
+
+
+def _clone_propot_from_immowelt(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    source = context.user_data.pop("housing_clone_source", None)
+    if not source or source.get("target") != "propotsdam":
+        query.answer()
+        return
+    filter_id = propotsdam_store.create_filter(
+        user_id=source["user_id"],
+        title=source["title"],
+        districts=propotsdam_store.normalize_districts(",".join(source.get("districts") or [])),
+        min_rooms=source.get("min_rooms"),
+        max_rooms=source.get("max_rooms"),
+        min_area_m2=source.get("min_area_m2"),
+        max_area_m2=source.get("max_area_m2"),
+    )
+    _sync_propot_filters()
+    query.answer("Фільтр ProPotsdam створено.")
+    query.edit_message_text(
+        f"✅ Фільтр ProPotsdam додано.\nID: P{filter_id}\nНазва: {html.escape(str(source['title']))}\n\n"
+        "Район, кімнати й площу перенесено з Immowelt-фільтра. Оренду не переносив — "
+        "Immowelt рахує холодну, ProPotsdam повну; за потреби задайте її окремо через «Мої фільтри»."
+    )
+
+
+def _clone_immowelt_from_propot(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    source = context.user_data.pop("housing_clone_source", None)
+    if not source or source.get("target") != "immowelt":
+        query.answer()
+        return
+    try:
+        payload = _request("POST", "/api/housing/filters", json={
+            "user_id": source["user_id"],
+            "title": source["title"],
+            "districts": source.get("districts") or [],
+            "min_price_eur": None,
+            "max_price_eur": None,
+            "min_rooms": source.get("min_rooms"),
+            "max_rooms": source.get("max_rooms"),
+            "min_area_m2": source.get("min_area_m2"),
+            "max_area_m2": source.get("max_area_m2"),
+        })
+    except Exception as exc:
+        logger.exception("Could not clone Immowelt filter from ProPotsdam")
+        query.answer("Не вдалося зберегти фільтр.", show_alert=True)
+        query.edit_message_text(f"⚠️ Не вдалося зберегти фільтр: {html.escape(str(exc))}")
+        return
+    query.answer("Фільтр Immowelt створено.")
+    query.edit_message_text(
+        f"✅ Фільтр житла додано.\nID: {payload.get('filter_id')}\nНазва: {html.escape(str(source['title']))}\n\n"
+        "Район, кімнати й площу перенесено з ProPotsdam-фільтра. Ціну не переносив — "
+        "ProPotsdam рахує повну оренду, Immowelt холодну; за потреби задайте її окремо через «Мої фільтри»."
+    )
 
 
 def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
@@ -1300,7 +1394,10 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
     )
     rows = [[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]
     if not edit_filter_id:
-        suggestion = _cross_source_suggestion(int(update.effective_user.id), int(state["user_id"]), "immowelt")
+        suggestion = _cross_source_suggestion(
+            context, int(update.effective_user.id), int(state["user_id"]), "immowelt",
+            {**criteria, "title": state["title"]},
+        )
         if suggestion is not None:
             text_out += "\n\n💡 У вас ще немає фільтра ProPotsdam — можна завести такий самий."
             rows.insert(0, [suggestion])
@@ -1517,7 +1614,17 @@ def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, 
         f"✅ Фільтр ProPotsdam додано.\nID: P{filter_id}\n"
         f"Користувач: {state['user_id']}\nНазва: {html.escape(str(state['title']))}"
     )
-    suggestion = _cross_source_suggestion(chatter_id, int(state["user_id"]), "propotsdam")
+    suggestion = _cross_source_suggestion(
+        context, chatter_id, int(state["user_id"]), "propotsdam",
+        {
+            "title": state["title"],
+            "districts": [d for d in str(state.get("districts") or "").split(",") if d],
+            "min_rooms": state.get("min_rooms"),
+            "max_rooms": state.get("max_rooms"),
+            "min_area_m2": state.get("min_area_m2"),
+            "max_area_m2": state.get("max_area_m2"),
+        },
+    )
     if suggestion is None:
         message.reply_text(text_out)
     else:
@@ -1741,6 +1848,10 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:self_propot_add":
         query.answer()
         start_self_propot_add_flow(update, context, edit=True)
+    elif query.data == "housing:clone_propot":
+        _clone_propot_from_immowelt(update, context)
+    elif query.data == "housing:clone_immo":
+        _clone_immowelt_from_propot(update, context)
     elif query.data == "housing:self_manage":
         query.answer()
         show_self_manage(update, context, edit=True)
