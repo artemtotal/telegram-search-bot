@@ -265,6 +265,109 @@ class HousingAdminFlowTests(unittest.TestCase):
         )
         self.assertNotIn('housing_admin', context.user_data)
 
+    def test_saving_own_immowelt_filter_suggests_propotsdam_when_none_exists(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'immowelt', 'step': 'preview', 'user_id': 544675510,
+            'title': 'Катя', 'districts_selected': ['Golm'],
+            'min_price_eur': None, 'max_price_eur': 800,
+            'min_rooms': None, 'max_rooms': None,
+            'min_area_m2': None, 'max_area_m2': None,
+        }})
+        update = SimpleNamespace(
+            callback_query=mock.Mock(),
+            effective_user=SimpleNamespace(id=544675510),
+        )
+
+        with mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 5}), \
+             mock.patch.object(housing_monitor.propotsdam_store, 'list_filters', return_value=[]) as list_filters:
+            housing_monitor._save_immowelt_filter(update, context)
+
+        list_filters.assert_called_once_with(user_id=544675510, active_only=True)
+        text, kwargs = update.callback_query.edit_message_text.call_args.args[0], update.callback_query.edit_message_text.call_args.kwargs
+        self.assertIn('ще немає фільтра ProPotsdam', text)
+        buttons = [btn for row in kwargs['reply_markup'].inline_keyboard for btn in row]
+        self.assertTrue(any(btn.callback_data == 'housing:self_propot_add' for btn in buttons))
+
+    def test_saving_own_immowelt_filter_skips_suggestion_if_propotsdam_already_exists(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'immowelt', 'step': 'preview', 'user_id': 544675510,
+            'title': 'Катя', 'districts_selected': ['Golm'],
+            'min_price_eur': None, 'max_price_eur': 800,
+            'min_rooms': None, 'max_rooms': None,
+            'min_area_m2': None, 'max_area_m2': None,
+        }})
+        update = SimpleNamespace(
+            callback_query=mock.Mock(),
+            effective_user=SimpleNamespace(id=544675510),
+        )
+
+        with mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 5}), \
+             mock.patch.object(housing_monitor.propotsdam_store, 'list_filters', return_value=[{'filter_id': 1}]):
+            housing_monitor._save_immowelt_filter(update, context)
+
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        kwargs = update.callback_query.edit_message_text.call_args.kwargs
+        self.assertNotIn('ProPotsdam', text)
+        buttons = [btn for row in kwargs['reply_markup'].inline_keyboard for btn in row]
+        self.assertEqual(len(buttons), 1)
+
+    def test_saving_someone_elses_immowelt_filter_never_touches_propotsdam_lookup(self):
+        """Адміну, що додає фільтр іншій людині, чужа підказка не потрібна."""
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'immowelt', 'step': 'preview', 'user_id': 123456789,
+            'title': 'Іван', 'districts_selected': ['Golm'],
+            'min_price_eur': None, 'max_price_eur': 800,
+            'min_rooms': None, 'max_rooms': None,
+            'min_area_m2': None, 'max_area_m2': None,
+        }})
+        update = SimpleNamespace(
+            callback_query=mock.Mock(),
+            effective_user=SimpleNamespace(id=312029534),
+        )
+
+        with mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 5}), \
+             mock.patch.object(housing_monitor.propotsdam_store, 'list_filters') as list_filters:
+            housing_monitor._save_immowelt_filter(update, context)
+
+        list_filters.assert_not_called()
+
+    def test_finishing_own_propotsdam_filter_suggests_immowelt_when_none_exists(self):
+        state = {
+            'mode': 'propotsdam', 'step': 'price', 'user_id': 544675510,
+            'title': 'Катя', 'districts': '',
+            'min_rooms': None, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
+        }
+        context = SimpleNamespace(user_data={'housing_admin': state})
+        update = self._update('800-1500', user_id=544675510)
+
+        with mock.patch('user_handlers.housing_monitor.propotsdam_store.create_filter', return_value=9), \
+             mock.patch.object(housing_monitor, '_sync_propot_filters'), \
+             mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[]) as all_immo:
+            housing_monitor._handle_propot_flow(update, context, state, '800-1500')
+
+        all_immo.assert_called_once()
+        text, kwargs = update.message.replies[-1]
+        self.assertIn('ще немає фільтра Immowelt', text)
+        buttons = [btn for row in kwargs['reply_markup'].inline_keyboard for btn in row]
+        self.assertTrue(any(btn.callback_data == 'housing:self_add' for btn in buttons))
+
+    def test_finishing_propotsdam_filter_for_someone_else_never_touches_immowelt_lookup(self):
+        state = {
+            'mode': 'propotsdam', 'step': 'price', 'user_id': 123456789,
+            'title': 'Іван', 'districts': '',
+            'min_rooms': None, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
+        }
+        context = SimpleNamespace(user_data={'housing_admin': state})
+        update = self._update('800-1500', user_id=312029534)
+
+        with mock.patch('user_handlers.housing_monitor.propotsdam_store.create_filter', return_value=9), \
+             mock.patch.object(housing_monitor, '_sync_propot_filters'), \
+             mock.patch.object(housing_monitor, '_all_immowelt_filters') as all_immo:
+            housing_monitor._handle_propot_flow(update, context, state, '800-1500')
+
+        all_immo.assert_not_called()
+        self.assertNotIn('Immowelt', update.message.replies[-1][0])
+
     def test_preview_reports_what_matches_right_now(self):
         """Перший обхід мовчки збирає базову лінію, тож людині потрібен доказ."""
         text = housing_monitor._preview_text(
@@ -349,7 +452,7 @@ class HousingAdminFlowTests(unittest.TestCase):
                 context,
                 all_districts=True,
             )
-            for text in ['2', '3', '50', '80', '800', '1000']:
+            for text in ['2-3', '50-80', '800-1000']:
                 update = self._update(text)
                 self.assertTrue(housing_monitor.handle_private_text(update, context))
 
@@ -366,6 +469,48 @@ class HousingAdminFlowTests(unittest.TestCase):
         )
         self.assertNotIn('housing_admin', context.user_data)
         self.assertIn('ProPotsdam', update.message.replies[-1][0])
+
+    def test_propot_range_with_open_ends_and_bare_numbers(self):
+        """Той самий формат діапазону, що й у майстрі Immowelt, тепер і тут."""
+        context = SimpleNamespace(user_data={
+            'housing_admin': {
+                'mode': 'propotsdam', 'step': 'rooms', 'user_id': 123456789,
+                'title': 'Ivan', 'districts': '',
+            }
+        })
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch('user_handlers.housing_monitor.propotsdam_store.create_filter', return_value=77) as create_filter:
+            for text in ['2-', '-80', '800-1000']:
+                update = self._update(text)
+                self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        create_filter.assert_called_once_with(
+            user_id=123456789,
+            title='Ivan',
+            districts='',
+            min_rooms=2.0,
+            max_rooms=None,
+            min_area_m2=None,
+            max_area_m2=80.0,
+            min_total_rent_eur=800.0,
+            max_total_rent_eur=1000.0,
+        )
+
+    def test_propot_range_with_min_above_max_is_rejected(self):
+        context = SimpleNamespace(user_data={
+            'housing_admin': {
+                'mode': 'propotsdam', 'step': 'rooms', 'user_id': 123456789,
+                'title': 'Ivan', 'districts': '',
+            }
+        })
+        update = self._update('5-2')
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        self.assertEqual(context.user_data['housing_admin']['step'], 'rooms')
+        self.assertIn('Не розпізнав формат', update.message.replies[-1][0])
 
     def test_housing_status_shows_local_times_and_never_dp_document(self):
         immowelt_task = {

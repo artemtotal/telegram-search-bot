@@ -122,22 +122,35 @@ IMMOWELT_PROMPTS = {
     ),
 }
 ADMIN_PAGE_SIZE = 20
-PROPOT_NUMERIC_STEPS = [
-    "min_rooms",
-    "max_rooms",
-    "min_area_m2",
-    "max_area_m2",
-    "min_total_rent_eur",
-    "max_total_rent_eur",
+# Той самий прийом, що й у майстра Immowelt: три питання замість шести,
+# кожне бере відразу мін і макс через «мін-макс».
+PROPOT_RANGE_STEPS = [
+    {"key": "rooms", "min_field": "min_rooms", "max_field": "max_rooms", "single_as": "min"},
+    {"key": "area", "min_field": "min_area_m2", "max_field": "max_area_m2", "single_as": "min"},
+    {"key": "price", "min_field": "min_total_rent_eur", "max_field": "max_total_rent_eur", "single_as": "max"},
 ]
+PROPOT_RANGE_STEP_KEYS = [spec["key"] for spec in PROPOT_RANGE_STEPS]
+PROPOT_RANGE_BY_KEY = {spec["key"]: spec for spec in PROPOT_RANGE_STEPS}
 PROPOT_PROMPTS = {
     "title": "Надішліть імʼя або назву фільтра.",
-    "min_rooms": "Мінімум кімнат або '-'.",
-    "max_rooms": "Максимум кімнат або '-'.",
-    "min_area_m2": "Мінімальна площа або '-'.",
-    "max_area_m2": "Максимальна площа або '-'.",
-    "min_total_rent_eur": "Мінімальна загальна оренда або '-'.",
-    "max_total_rent_eur": "Максимальна загальна оренда або '-'.",
+    "rooms": (
+        "Кількість кімнат.\n"
+        "Формат «мін-макс»: 2-4. Можна відкрито: 2- (від), -4 (до).\n"
+        "Одне число саме по собі — це «від»: 2 = від 2 кімнат.\n"
+        "«-» — без обмежень."
+    ),
+    "area": (
+        "Площа в м².\n"
+        "Формат «мін-макс»: 50-90. Можна відкрито: 50- (від), -90 (до).\n"
+        "Одне число саме по собі — це «від»: 50 = від 50 м².\n"
+        "«-» — без обмежень."
+    ),
+    "price": (
+        "Загальна оренда (Gesamtmiete) в євро.\n"
+        "Формат «мін-макс»: 800-1500. Можна відкрито: 800- (від), -1500 (до).\n"
+        "Одне число саме по собі — це «до»: 1500 = до 1500 €.\n"
+        "«-» — без обмежень."
+    ),
 }
 
 
@@ -1194,6 +1207,35 @@ def _show_immowelt_preview(message, state: dict) -> None:
     )
 
 
+def _cross_source_suggestion(chatter_id: int, filter_user_id: int, just_created: str) -> Optional[InlineKeyboardButton]:
+    """Кнопка «заведіть і другий фільтр», коли людина щойно завела перший.
+
+    Джерела ловлять різні сайти — той, хто стежить лише за Immowelt, легко
+    забуває, що ProPotsdam треба заводити окремо (і навпаки). Показуємо
+    підказку лише самому власнику: якщо адмін додає фільтр іншій людині,
+    підказка адміну про чужий другий фільтр була б не до речі.
+    """
+    if int(chatter_id) != int(filter_user_id):
+        return None
+    if just_created == "immowelt":
+        if propotsdam_store.list_filters(user_id=int(filter_user_id), active_only=True):
+            return None
+        return InlineKeyboardButton(
+            "🏢 Створити такий самий фільтр ProPotsdam", callback_data="housing:self_propot_add"
+        )
+    if just_created == "propotsdam":
+        immowelt = [
+            item for item in _all_immowelt_filters()
+            if int(item.get("user_id") or 0) == int(filter_user_id) and item.get("active")
+        ]
+        if immowelt:
+            return None
+        return InlineKeyboardButton(
+            "🏠 Створити такий самий фільтр Immowelt", callback_data="housing:self_add"
+        )
+    return None
+
+
 def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
     """Зберігає зібраний майстром фільтр разом із його умовами.
 
@@ -1229,16 +1271,19 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
     context.user_data.pop("housing_admin", None)
     heading = "Фільтр оновлено" if edit_filter_id else "Фільтр житла додано"
     query.answer("Фільтр оновлено." if edit_filter_id else "Фільтр збережено.")
-    query.edit_message_text(
+    text_out = (
         f"✅ <b>{heading}</b>\n\n"
         f"ID: {filter_id}\n"
         f"Назва: {html.escape(str(state['title']))}\n"
-        f"Умови: {_describe_criteria(criteria)}",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]
-        ]),
+        f"Умови: {_describe_criteria(criteria)}"
     )
+    rows = [[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]
+    if not edit_filter_id:
+        suggestion = _cross_source_suggestion(int(update.effective_user.id), int(state["user_id"]), "immowelt")
+        if suggestion is not None:
+            text_out += "\n\n💡 У вас ще немає фільтра ProPotsdam — можна завести такий самий."
+            rows.insert(0, [suggestion])
+    query.edit_message_text(text_out, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(rows))
 
 
 def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
@@ -1348,15 +1393,18 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
     if step == "districts":
         update.message.reply_text("Оберіть райони кнопками нижче і натисніть 'Готово'.", reply_markup=_district_keyboard(state.get("districts_selected")))
         return True
-    if step in PROPOT_NUMERIC_STEPS:
-        value = propotsdam_store.parse_optional_number(text)
-        if value is None and text.strip() not in {"", "-", "—", "–"}:
-            update.message.reply_text("Потрібне число або '-'. Надішліть значення ще раз.")
+    if step in PROPOT_RANGE_BY_KEY:
+        spec = PROPOT_RANGE_BY_KEY[step]
+        parsed = _parse_range(text, single_as=spec["single_as"])
+        if parsed is None:
+            update.message.reply_text("Не розпізнав формат.\n\n" + PROPOT_PROMPTS[step])
             return True
-        state[step] = value
-        index = PROPOT_NUMERIC_STEPS.index(step)
-        if index < len(PROPOT_NUMERIC_STEPS) - 1:
-            next_step = PROPOT_NUMERIC_STEPS[index + 1]
+        min_val, max_val = parsed
+        state[spec["min_field"]] = min_val
+        state[spec["max_field"]] = max_val
+        index = PROPOT_RANGE_STEP_KEYS.index(step)
+        if index < len(PROPOT_RANGE_STEP_KEYS) - 1:
+            next_step = PROPOT_RANGE_STEP_KEYS[index + 1]
             state["step"] = next_step
             update.message.reply_text(PROPOT_PROMPTS[next_step])
             return True
@@ -1373,7 +1421,18 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
         )
         _sync_propot_filters()
         context.user_data.pop("housing_admin", None)
-        update.message.reply_text(f"✅ Фільтр ProPotsdam додано.\nID: P{filter_id}\nКористувач: {state['user_id']}\nНазва: {html.escape(str(state['title']))}")
+        text_out = (
+            f"✅ Фільтр ProPotsdam додано.\nID: P{filter_id}\n"
+            f"Користувач: {state['user_id']}\nНазва: {html.escape(str(state['title']))}"
+        )
+        suggestion = _cross_source_suggestion(int(update.effective_user.id), int(state["user_id"]), "propotsdam")
+        if suggestion is None:
+            update.message.reply_text(text_out)
+        else:
+            update.message.reply_text(
+                text_out + "\n\n💡 У вас ще немає фільтра Immowelt — можна завести такий самий.",
+                reply_markup=InlineKeyboardMarkup([[suggestion]]),
+            )
         return True
     return False
 
@@ -1482,9 +1541,10 @@ def _finish_districts(update: Update, context: CallbackContext, all_districts: b
         return
     selected = [] if all_districts else list(state.get("districts_selected") or [])
     state["districts"] = propotsdam_store.normalize_districts(",".join(selected))
-    state["step"] = "min_rooms"
+    first_step = PROPOT_RANGE_STEP_KEYS[0]
+    state["step"] = first_step
     query.answer()
-    query.edit_message_text(PROPOT_PROMPTS["min_rooms"])
+    query.edit_message_text(PROPOT_PROMPTS[first_step])
 
 
 def handle_callback(update: Update, context: CallbackContext) -> None:
