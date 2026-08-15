@@ -3,8 +3,10 @@ name: Docker Image CI
 on:
   push:
     branches: ["master"]
+  # Робота йде в гілках поза master, і PR у них не проганявся зовсім: тести
+  # бачили зміни лише під час злиття. Публікації це не чіпає — образ
+  # відправляється тільки коли подія не pull_request.
   pull_request:
-    branches: ["master"]
   workflow_dispatch:
 
 env:
