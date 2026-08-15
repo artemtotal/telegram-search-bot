@@ -33,7 +33,10 @@ class EqueueMonitorTest(unittest.TestCase):
             importlib.reload(monitor)
             self.assertTrue(monitor.is_allowed(312029534))
             self.assertTrue(monitor.is_allowed(111))
-            self.assertFalse(monitor.is_allowed(333))
+            # «Open DP Document checks to all users» зняв білий список, тож чергу
+            # бачить будь-який Telegram ID; закритим лишається тільки порожній.
+            self.assertTrue(monitor.is_allowed(333))
+            self.assertFalse(monitor.is_allowed(None))
             self.assertEqual(len(list(monitor.private_home_rows(111))), 1)
 
     def test_cloudflare_challenge_detection(self):

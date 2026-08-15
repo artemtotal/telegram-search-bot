@@ -154,14 +154,13 @@ class HousingAdminFlowTests(unittest.TestCase):
         query.answer.assert_called_with('Цей фільтр вам не належить.', show_alert=True)
 
     def test_user_filters_do_not_duplicate_synced_propotsdam_tasks(self):
-        tasks = [
-            {'filter_id': 2, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt'},
-            {'filter_id': 2, 'user_id': 544675510, 'title': 'ProPotsdam synced', 'source': 'propotsdam'},
+        immowelt = [
+            {'filter_id': 2, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True},
         ]
         propotsdam = [
             {'filter_id': 2, 'user_id': 544675510, 'title': 'ProPotsdam', 'districts': 'Drewitz'},
         ]
-        with mock.patch.object(housing_monitor, '_tasks', return_value=tasks), \
+        with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=immowelt), \
              mock.patch.object(housing_monitor.propotsdam_store, 'list_filters', return_value=propotsdam):
             filters = housing_monitor.user_filters(544675510)
 
@@ -246,6 +245,7 @@ class HousingAdminFlowTests(unittest.TestCase):
     def test_housing_status_shows_local_times_and_never_dp_document(self):
         immowelt_task = {
             'source': 'immowelt',
+            'active': True,
             'last_checked_at': '2026-08-13T00:25:29.671153+00:00',
             'seen_count': 3,
         }
@@ -257,7 +257,8 @@ class HousingAdminFlowTests(unittest.TestCase):
         }
 
         now = datetime(2026, 8, 13, 2, 40, 0, tzinfo=housing_monitor.BERLIN_TZ)
-        with mock.patch.object(housing_monitor, '_tasks', return_value=[immowelt_task]), \
+        with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[immowelt_task]), \
+             mock.patch.object(housing_monitor, '_receiver_status', return_value={}), \
              mock.patch.object(housing_monitor.propotsdam_store, 'latest_status', return_value=propotsdam_status), \
              mock.patch.object(housing_monitor, '_now_berlin', return_value=now):
             lines = housing_monitor._status_lines()
@@ -272,6 +273,7 @@ class HousingAdminFlowTests(unittest.TestCase):
         now = datetime(2026, 8, 13, 8, 0, 0, tzinfo=housing_monitor.BERLIN_TZ)
         immowelt_task = {
             'source': 'immowelt',
+            'active': True,
             'last_checked_at': '2026-08-13T00:25:29.671153+00:00',
             'seen_count': 3,
         }
@@ -282,7 +284,8 @@ class HousingAdminFlowTests(unittest.TestCase):
             'last_error': '',
         }
 
-        with mock.patch.object(housing_monitor, '_tasks', return_value=[immowelt_task]), \
+        with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[immowelt_task]), \
+             mock.patch.object(housing_monitor, '_receiver_status', return_value={}), \
              mock.patch.object(housing_monitor.propotsdam_store, 'latest_status', return_value=propotsdam_status), \
              mock.patch.object(housing_monitor, '_now_berlin', return_value=now):
             rendered = '\n'.join(housing_monitor._status_lines())
@@ -294,11 +297,13 @@ class HousingAdminFlowTests(unittest.TestCase):
         now = datetime(2026, 8, 13, 8, 0, 0, tzinfo=housing_monitor.BERLIN_TZ)
         immowelt_task = {
             'source': 'immowelt',
+            'active': True,
             'last_checked_at': '2026-08-13T05:29:00+00:00',
             'seen_count': 3,
         }
 
-        with mock.patch.object(housing_monitor, '_tasks', return_value=[immowelt_task]), \
+        with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[immowelt_task]), \
+             mock.patch.object(housing_monitor, '_receiver_status', return_value={}), \
              mock.patch.object(housing_monitor.propotsdam_store, 'latest_status', return_value=None), \
              mock.patch.object(housing_monitor, '_now_berlin', return_value=now):
             rendered = '\n'.join(housing_monitor._status_lines())

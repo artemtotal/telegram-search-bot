@@ -10,7 +10,12 @@ try:
 except ModuleNotFoundError:
     sys.modules["requests"] = SimpleNamespace()
 
-from user_jobs import embed_updater, reindex_queue
+# fastembed не входить у тестове оточення CI: воркфлоу ставить лише Python
+# і запускає unittest, тож без пропуску ці модулі валили весь прогін.
+try:
+    from user_jobs import embed_updater, reindex_queue
+except ImportError as exc:  # pragma: no cover
+    raise unittest.SkipTest(f"optional embedding dependency is missing: {exc}")
 
 
 class ReindexResolutionTests(unittest.TestCase):

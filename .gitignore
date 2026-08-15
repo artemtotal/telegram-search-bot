@@ -5,3 +5,8 @@
 __pycache__/
 *.pyc
 *.pyo
+
+# Робочі файли SQLite: змінюються на кожному запуску й засмічують кожен коміт.
+config/*.db
+config/*.db-shm
+config/*.db-wal
