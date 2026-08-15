@@ -166,10 +166,16 @@ class HousingAdminFlowTests(unittest.TestCase):
 
         self.assertEqual([item['title'] for item in filters], ['Immowelt', 'ProPotsdam'])
 
-    def test_admin_add_flow_collects_id_name_and_immowelt_url(self):
+    def test_admin_add_flow_collects_id_name_and_search_bounds(self):
+        """Майстер збирає умови, а не посилання.
+
+        Обхід Immowelt ходить своєю адресою й посилання фільтра не відкриває, а
+        відбір іде за умовами в самому записі. Фільтр без умов збігається з
+        будь-якою квартирою, тож людина з «до 800 €» отримувала весь Потсдам.
+        """
         context = SimpleNamespace(user_data={})
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
-             mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 42}) as request:
+             mock.patch.object(housing_monitor, '_preview_criteria', return_value={}):
             housing_monitor.start_add_flow(self._update(housing_monitor.BTN_ADMIN_ADD), context)
             self.assertEqual(context.user_data['housing_admin']['step'], 'user_id')
 
@@ -177,10 +183,34 @@ class HousingAdminFlowTests(unittest.TestCase):
             self.assertEqual(context.user_data['housing_admin']['step'], 'title')
 
             housing_monitor.handle_private_text(self._update('Іван'), context)
-            self.assertEqual(context.user_data['housing_admin']['step'], 'url')
+            self.assertEqual(context.user_data['housing_admin']['step'], 'districts')
 
-            final_update = self._update('https://www.immowelt.de/classified-search?foo=bar')
-            self.assertTrue(housing_monitor.handle_private_text(final_update, context))
+            state = context.user_data['housing_admin']
+            state['districts_selected'] = ['Golm']
+            state['step'] = 'max_price_eur'
+
+            for text in ['800', '2', '-']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'preview')
+        self.assertEqual(state['max_price_eur'], 800)
+        self.assertEqual(state['min_rooms'], 2)
+        self.assertIsNone(state['min_area_m2'])
+
+    def test_saving_a_filter_sends_its_criteria(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'immowelt', 'step': 'preview', 'user_id': 123456789,
+            'title': 'Іван', 'districts_selected': ['Golm'],
+            'max_price_eur': 800, 'min_rooms': 2, 'min_area_m2': None,
+        }})
+        update = SimpleNamespace(
+            callback_query=mock.Mock(),
+            effective_user=SimpleNamespace(id=312029534),
+        )
+
+        with mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 42}) as request:
+            housing_monitor._save_immowelt_filter(update, context)
 
         request.assert_called_once_with(
             'POST',
@@ -188,11 +218,55 @@ class HousingAdminFlowTests(unittest.TestCase):
             json={
                 'user_id': 123456789,
                 'title': 'Іван',
-                'url': 'https://www.immowelt.de/classified-search?foo=bar',
+                'districts': ['Golm'],
+                'max_price_eur': 800,
+                'min_rooms': 2,
+                'min_area_m2': None,
             },
         )
         self.assertNotIn('housing_admin', context.user_data)
-        self.assertIn('Фільтр житла додано', final_update.message.replies[-1][0])
+
+    def test_preview_reports_what_matches_right_now(self):
+        """Перший обхід мовчки збирає базову лінію, тож людині потрібен доказ."""
+        text = housing_monitor._preview_text(
+            'Іван',
+            {'districts': ['Golm'], 'max_price_eur': 800},
+            {'catalog_size': 120, 'match_count': 3, 'matches': [
+                {'url': 'https://www.immowelt.de/expose/abc', 'title': 'Wohnung',
+                 'price_eur': 700, 'rooms': 2, 'area_m2': 55},
+            ]},
+        )
+
+        self.assertIn('підходить 3 з 120', text)
+        self.assertIn('immowelt.de/expose/abc', text)
+
+    def test_preview_warns_when_nothing_matches(self):
+        text = housing_monitor._preview_text(
+            'Іван', {'districts': [], 'max_price_eur': 100},
+            {'catalog_size': 120, 'match_count': 0, 'matches': []},
+        )
+
+        self.assertIn('не підходить жодна', text)
+
+    def test_admin_panel_pages_a_long_filter_list(self):
+        """Перелік друкувався цілком і впирався б у ліміт Telegram у 4096 знаків."""
+        immowelt = [
+            {'filter_id': index, 'user_id': 500 + index, 'title': f'Фільтр {index}', 'active': True}
+            for index in range(1, 51)
+        ]
+        with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=immowelt), \
+             mock.patch.object(housing_monitor.propotsdam_store, 'list_filters', return_value=[]):
+            first = housing_monitor._render_admin(0)
+            second = housing_monitor._render_admin(1)
+            beyond = housing_monitor._render_admin(99)
+
+        self.assertLess(len(first), 4096)
+        self.assertIn('сторінка 1 з 3', first)
+        self.assertIn('#1 ', first)
+        self.assertNotIn('#21 ', first)
+        self.assertIn('#21 ', second)
+        # Сторінка поза межами має впиратися в останню, а не падати.
+        self.assertIn('сторінка 3 з 3', beyond)
 
     def test_anonymous_private_text_delegates_active_housing_admin_flow(self):
         context = SimpleNamespace(user_data={'housing_admin': {'step': 'user_id'}})
@@ -324,6 +398,116 @@ class HousingAdminFlowTests(unittest.TestCase):
 
         self.assertEqual(context.user_data['housing_admin']['districts_selected'], ['Babelsberg'])
         query.edit_message_text.assert_called_once()
+
+    def test_immowelt_district_callback_toggles_checkbox_selection(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'immowelt', 'step': 'districts', 'districts_selected': [],
+        }})
+        query = SimpleNamespace(
+            data='housing:imm_district:Golm',
+            answer=mock.Mock(),
+            edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=312029534))
+
+        housing_monitor.handle_callback(update, context)
+
+        self.assertEqual(context.user_data['housing_admin']['districts_selected'], ['Golm'])
+
+
+class HousingAccessRequestTests(unittest.TestCase):
+    """Доступ видавався лише тим, що адмін вручну вбивав Telegram ID."""
+
+    def _update(self, user_id=777, data='housing:access_request'):
+        query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_text=mock.Mock())
+        return SimpleNamespace(
+            callback_query=query,
+            effective_user=SimpleNamespace(
+                id=user_id, first_name='Іван', last_name='', username='ivan',
+            ),
+        )
+
+    def test_locked_menu_offers_a_way_to_ask_for_access(self):
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=False):
+            labels = [
+                button.text
+                for row in housing_monitor._locked_keyboard().inline_keyboard
+                for button in row
+            ]
+
+        self.assertIn('📩 Запросити доступ', labels)
+
+    def test_housing_button_is_visible_without_access(self):
+        # Без кнопки людина без доступу не могла навіть попросити про нього.
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=False):
+            rows = list(housing_monitor.private_home_rows(777))
+
+        self.assertEqual(rows[0][0].text, '🏠 Моніторинг житла')
+
+    def test_request_reaches_the_admin_with_decision_buttons(self):
+        context = SimpleNamespace(user_data={}, bot_data={}, bot=mock.Mock())
+        update = self._update()
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'is_allowed', return_value=False):
+            housing_monitor.handle_callback(update, context)
+
+        context.bot.send_message.assert_called_once()
+        kwargs = context.bot.send_message.call_args.kwargs
+        self.assertEqual(kwargs['chat_id'], 312029534)
+        self.assertIn('777', kwargs['text'])
+        payloads = [
+            button.callback_data
+            for row in kwargs['reply_markup'].inline_keyboard
+            for button in row
+        ]
+        self.assertIn('housing:access_grant:777', payloads)
+        self.assertIn('housing:access_deny:777', payloads)
+
+    def test_second_request_is_not_forwarded_again(self):
+        context = SimpleNamespace(
+            user_data={'housing_access_requested': True}, bot_data={}, bot=mock.Mock()
+        )
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'is_allowed', return_value=False):
+            housing_monitor.handle_callback(self._update(), context)
+
+        context.bot.send_message.assert_not_called()
+
+    def test_admin_approval_grants_access_and_tells_the_user(self):
+        context = SimpleNamespace(
+            user_data={}, bot_data={'housing_access_names': {777: 'Іван (@ivan)'}}, bot=mock.Mock()
+        )
+        update = self._update(user_id=312029534, data='housing:access_grant:777')
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'grant_access') as grant:
+            housing_monitor.handle_callback(update, context)
+
+        grant.assert_called_once_with(777, 'Іван (@ivan)')
+        self.assertEqual(context.bot.send_message.call_args.kwargs['chat_id'], 777)
+
+    def test_denial_does_not_grant_anything(self):
+        context = SimpleNamespace(user_data={}, bot_data={}, bot=mock.Mock())
+        update = self._update(user_id=312029534, data='housing:access_deny:777')
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'grant_access') as grant:
+            housing_monitor.handle_callback(update, context)
+
+        grant.assert_not_called()
+
+    def test_only_the_admin_can_decide(self):
+        context = SimpleNamespace(user_data={}, bot_data={}, bot=mock.Mock())
+        update = self._update(user_id=999, data='housing:access_grant:777')
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'grant_access') as grant:
+            housing_monitor.handle_callback(update, context)
+
+        grant.assert_not_called()
+        context.bot.send_message.assert_not_called()
 
 
 if __name__ == '__main__':
