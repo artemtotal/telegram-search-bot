@@ -33,6 +33,11 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q .
 
+      # Без залежностей прогін падав на імпорті sqlalchemy й telegram: із 75
+      # тестів реально виконувались 34, решта числилась помилками збірки.
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
