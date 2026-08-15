@@ -216,6 +216,25 @@ class ProPotsdamDelivery(Base):
     sent_at = Column(DATETIME, nullable=False)
 
 
+class HousingDelivery(Base):
+    """Immowelt-объявления, уже отправленные конкретному человеку.
+
+    Сеть до Telegram на этой машине рвётся так, что ответ теряется уже после
+    доставки сообщения. Отправитель видит ошибку и присылает то же объявление
+    снова — без этой записи человек получал бы одну квартиру по несколько раз.
+    """
+
+    __tablename__ = 'housing_delivery'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'listing_id', name='uq_housing_delivery_user_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    listing_id = Column(TEXT, nullable=False, index=True)
+    sent_at = Column(DATETIME, nullable=False)
+
+
 Base.metadata.create_all(engine)
 
 

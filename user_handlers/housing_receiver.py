@@ -4,20 +4,71 @@ import html
 import json
 import logging
 import os
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import urlparse
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import NetworkError
+
+from database import DBSession, HousingDelivery
 
 
 logger = logging.getLogger(__name__)
 HOST = os.getenv("HOUSING_RECEIVER_HOST", "0.0.0.0")
 PORT = int(os.getenv("HOUSING_RECEIVER_PORT", "5012") or 5012)
+# Подписи ошибок, при которых запрос до Telegram заведомо не дошёл: соединение
+# не открылось, значит сообщения человек не видел и повтор безопасен. Всё
+# остальное (оборванный ответ, таймаут чтения) неоднозначно — там запрос уже
+# ушёл, и повтор рискует прислать вторую копию одной квартиры.
+_NOT_SENT_MARKERS = (
+    "connect timeout",
+    "connecttimeout",
+    "timed out. (connect timeout",
+    "failed to establish a new connection",
+    "name or service not known",
+    "temporary failure in name resolution",
+)
 
 
 def _text(value):
     return html.escape(str(value or "").strip())
+
+
+def _already_delivered(user_id, listing_id):
+    session = DBSession()
+    try:
+        return session.query(HousingDelivery).filter(
+            HousingDelivery.user_id == int(user_id),
+            HousingDelivery.listing_id == str(listing_id),
+        ).first() is not None
+    finally:
+        session.close()
+
+
+def _mark_delivered(user_id, listing_id):
+    session = DBSession()
+    try:
+        exists = session.query(HousingDelivery).filter(
+            HousingDelivery.user_id == int(user_id),
+            HousingDelivery.listing_id == str(listing_id),
+        ).first()
+        if exists is None:
+            session.add(HousingDelivery(
+                user_id=int(user_id),
+                listing_id=str(listing_id),
+                sent_at=datetime.utcnow(),
+            ))
+            session.commit()
+    finally:
+        session.close()
+
+
+def _request_never_left(exc):
+    """Точно ли сообщение не ушло — только тогда повтор не создаст дубликат."""
+    text = str(exc).casefold()
+    return any(marker in text for marker in _NOT_SENT_MARKERS)
 
 
 def handle_immowelt_result(bot, payload):
@@ -40,6 +91,13 @@ def handle_immowelt_result(bot, payload):
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.netloc.casefold().endswith("immowelt.de"):
         raise ValueError("listing URL must be an Immowelt HTTPS URL")
+
+    listing_id = str(listing.get("listing_id") or "").strip() or url
+    if _already_delivered(user_id, listing_id):
+        # Отправитель повторяет объявление, когда не дождался ответа. Само
+        # сообщение при этом уже у человека, так что второй раз слать нечего.
+        logger.info("Immowelt listing %s already delivered to %s; skipping", listing_id, user_id)
+        return {"ok": True, "duplicate": True}
 
     lines = [
         "🏠 <b>Нове житло на Immowelt</b>",
@@ -64,13 +122,28 @@ def handle_immowelt_result(bot, payload):
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton("Відкрити на Immowelt", url=url)]]
     )
-    bot.send_message(
-        chat_id=user_id,
-        text="\n".join(lines),
-        parse_mode="HTML",
-        reply_markup=keyboard,
-        disable_web_page_preview=True,
-    )
+    try:
+        bot.send_message(
+            chat_id=user_id,
+            text="\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
+    except NetworkError as exc:
+        if _request_never_left(exc):
+            raise
+        # Запрос ушёл, но ответ потерялся. На практике Telegram в этом случае
+        # сообщение доставляет, поэтому отмечаем его отправленным: повтор
+        # прислал бы человеку вторую копию той же квартиры.
+        _mark_delivered(user_id, listing_id)
+        logger.warning(
+            "Immowelt listing %s to %s: response lost, assuming delivered (%s)",
+            listing_id, user_id, exc,
+        )
+        return {"ok": True, "assumed_delivered": True}
+
+    _mark_delivered(user_id, listing_id)
     return {"ok": True}
 
 

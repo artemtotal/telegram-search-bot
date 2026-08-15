@@ -1,17 +1,55 @@
 import unittest
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+from telegram.error import NetworkError
+
+from database import Base
 from user_handlers import housing_receiver
 
 
 class FakeBot:
-    def __init__(self):
+    def __init__(self, error=None):
         self.messages = []
+        self.error = error
 
     def send_message(self, **kwargs):
+        if self.error is not None:
+            raise self.error
         self.messages.append(kwargs)
 
 
+def _payload(listing_id="abc", user_id=544675510):
+    return {
+        "source": "immowelt",
+        "user_id": user_id,
+        "filter_title": "Пошук Каті",
+        "listing": {
+            "listing_id": listing_id,
+            "url": "https://www.immowelt.de/expose/%s" % listing_id,
+            "title": "Wohnung zur Miete",
+            "price": "1.119 €",
+            "rooms": "3 Zimmer",
+            "address": "Brunnenallee 3 a, Waldstadt I, Potsdam (14478)",
+        },
+    }
+
+
 class HousingReceiverTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine(
+            'sqlite://',
+            connect_args={'check_same_thread': False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(self.engine)
+        self._original_session = housing_receiver.DBSession
+        housing_receiver.DBSession = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        housing_receiver.DBSession = self._original_session
+        self.engine.dispose()
     def test_immowelt_payload_is_sent_to_filter_owner(self):
         bot = FakeBot()
         payload = {
@@ -60,6 +98,59 @@ class HousingReceiverTests(unittest.TestCase):
             housing_receiver.handle_immowelt_result(bot, payload)
 
         self.assertEqual(bot.messages, [])
+
+    def test_same_listing_is_not_sent_to_the_same_person_twice(self):
+        bot = FakeBot()
+
+        first = housing_receiver.handle_immowelt_result(bot, _payload())
+        second = housing_receiver.handle_immowelt_result(bot, _payload())
+
+        self.assertEqual(first, {"ok": True})
+        self.assertEqual(second, {"ok": True, "duplicate": True})
+        self.assertEqual(len(bot.messages), 1)
+
+    def test_other_person_still_gets_the_same_listing(self):
+        bot = FakeBot()
+
+        housing_receiver.handle_immowelt_result(bot, _payload(user_id=1))
+        housing_receiver.handle_immowelt_result(bot, _payload(user_id=2))
+
+        self.assertEqual([m["chat_id"] for m in bot.messages], [1, 2])
+
+    def test_lost_response_counts_as_delivered_and_blocks_the_retry(self):
+        # Telegram доставляет сообщение и обрывает ответ: отправитель повторит,
+        # и без этой ветки человек получил бы вторую копию.
+        broken = FakeBot(error=NetworkError(
+            "urllib3 HTTPError ('Connection aborted.', "
+            "RemoteDisconnected('Remote end closed connection without response'))"
+        ))
+
+        result = housing_receiver.handle_immowelt_result(broken, _payload())
+
+        self.assertEqual(result, {"ok": True, "assumed_delivered": True})
+
+        retry = FakeBot()
+        self.assertEqual(
+            housing_receiver.handle_immowelt_result(retry, _payload()),
+            {"ok": True, "duplicate": True},
+        )
+        self.assertEqual(retry.messages, [])
+
+    def test_connect_timeout_stays_retryable(self):
+        # Соединение не открылось — сообщения человек не видел, повтор обязан
+        # состояться, иначе объявление потеряется совсем.
+        broken = FakeBot(error=NetworkError(
+            "urllib3 HTTPError HTTPSConnectionPool(host='api.telegram.org', port=443): "
+            "Max retries exceeded (Caused by ConnectTimeoutError("
+            "'Connection to api.telegram.org timed out. (connect timeout=5.0)'))"
+        ))
+
+        with self.assertRaises(NetworkError):
+            housing_receiver.handle_immowelt_result(broken, _payload())
+
+        retry = FakeBot()
+        self.assertEqual(housing_receiver.handle_immowelt_result(retry, _payload()), {"ok": True})
+        self.assertEqual(len(retry.messages), 1)
 
 
 if __name__ == "__main__":
