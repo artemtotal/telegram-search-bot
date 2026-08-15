@@ -147,6 +147,39 @@ def handle_immowelt_result(bot, payload):
     return {"ok": True}
 
 
+def handle_system_message(bot, payload):
+    """Пересылает готовый HTML-текст одному человеку.
+
+    Для heartbeat-алертов, денного дайджеста та зведення про перевищений
+    ліміт — усе, що check-Wohnung раніше слав напряму зі свого окремого бота.
+    Дедуплікації тут немає: на відміну від оголошень, ці повідомлення не
+    мають стабільного ключа, а повторюються рідко й самі по собі ідемпотентні.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("JSON body must be an object")
+    user_id = int(payload.get("user_id") or 0)
+    if user_id <= 0:
+        raise ValueError("user_id is required")
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        raise ValueError("text is required")
+
+    try:
+        bot.send_message(
+            chat_id=user_id,
+            text=text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except NetworkError as exc:
+        if _request_never_left(exc):
+            raise
+        logger.warning("System message to %s: response lost, assuming delivered (%s)", user_id, exc)
+        return {"ok": True, "assumed_delivered": True}
+
+    return {"ok": True}
+
+
 def start_receiver(bot):
     server = ThreadingHTTPServer((HOST, PORT), _handler_factory(bot))
     thread = Thread(target=server.serve_forever, name="Thread-housing-receiver", daemon=True)
@@ -175,20 +208,24 @@ def _handler_factory(bot):
             self._json_response(200, {"ok": True})
 
         def do_POST(self):
-            if self.path != "/housing/immowelt":
+            if self.path == "/housing/immowelt":
+                handler, label = handle_immowelt_result, "Immowelt notification"
+            elif self.path == "/housing/system":
+                handler, label = handle_system_message, "system message"
+            else:
                 self._json_response(404, {"ok": False, "error": "not found"})
                 return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 raw = self.rfile.read(min(length, 1024 * 1024))
                 payload = json.loads(raw.decode("utf-8"))
-                result = handle_immowelt_result(bot, payload)
+                result = handler(bot, payload)
             except (json.JSONDecodeError, TypeError, ValueError) as exc:
-                logger.warning("Rejected Immowelt notification: %s", exc)
+                logger.warning("Rejected %s: %s", label, exc)
                 self._json_response(400, {"ok": False, "error": str(exc)})
                 return
             except Exception as exc:
-                logger.exception("Could not process Immowelt notification")
+                logger.exception("Could not process %s", label)
                 self._json_response(500, {"ok": False, "error": "internal error"})
                 return
             self._json_response(200, result)

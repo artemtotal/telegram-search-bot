@@ -152,6 +152,45 @@ class HousingReceiverTests(unittest.TestCase):
         self.assertEqual(housing_receiver.handle_immowelt_result(retry, _payload()), {"ok": True})
         self.assertEqual(len(retry.messages), 1)
 
+    def test_system_message_is_sent_as_html(self):
+        bot = FakeBot()
+
+        result = housing_receiver.handle_system_message(bot, {"user_id": 312029534, "text": "🟡 <b>Тест</b>"})
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(bot.messages[0]["chat_id"], 312029534)
+        self.assertEqual(bot.messages[0]["text"], "🟡 <b>Тест</b>")
+        self.assertEqual(bot.messages[0]["parse_mode"], "HTML")
+
+    def test_system_message_requires_user_id_and_text(self):
+        bot = FakeBot()
+
+        with self.assertRaisesRegex(ValueError, "user_id"):
+            housing_receiver.handle_system_message(bot, {"text": "hi"})
+        with self.assertRaisesRegex(ValueError, "text"):
+            housing_receiver.handle_system_message(bot, {"user_id": 1})
+        self.assertEqual(bot.messages, [])
+
+    def test_system_message_lost_response_counts_as_delivered(self):
+        broken = FakeBot(error=NetworkError(
+            "urllib3 HTTPError ('Connection aborted.', "
+            "RemoteDisconnected('Remote end closed connection without response'))"
+        ))
+
+        result = housing_receiver.handle_system_message(broken, {"user_id": 1, "text": "hi"})
+
+        self.assertEqual(result, {"ok": True, "assumed_delivered": True})
+
+    def test_system_message_connect_timeout_stays_retryable(self):
+        broken = FakeBot(error=NetworkError(
+            "urllib3 HTTPError HTTPSConnectionPool(host='api.telegram.org', port=443): "
+            "Max retries exceeded (Caused by ConnectTimeoutError("
+            "'Connection to api.telegram.org timed out. (connect timeout=5.0)'))"
+        ))
+
+        with self.assertRaises(NetworkError):
+            housing_receiver.handle_system_message(broken, {"user_id": 1, "text": "hi"})
+
 
 if __name__ == "__main__":
     unittest.main()
