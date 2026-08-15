@@ -132,6 +132,22 @@ class EqueueSubscription(Base):
     updated_at = Column(DATETIME, nullable=False)
 
 
+class EqueueStatus(Base):
+    """Останній браузерний результат сервісу, окремо від підписок.
+
+    Перевірку робить Chrome один раз на всіх, тому її відмітка не належить
+    жодній підписці. Поки вона писалась лише в активні рядки, вимкнена
+    підписка морозила час у меню на моменті останнього вмикання.
+    """
+
+    __tablename__ = 'equeue_status'
+
+    service = Column(TEXT, primary_key=True)
+    last_checked_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_reason = Column(TEXT)
+
+
 class HousingAccessUser(Base):
     __tablename__ = 'housing_access_user'
 

@@ -13,7 +13,7 @@ from telegram.error import BadRequest
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
 
-from database import DBSession, EqueueSubscription
+from database import DBSession, EqueueStatus, EqueueSubscription
 
 
 logger = logging.getLogger(__name__)
@@ -101,16 +101,20 @@ def _latest_status_text(user_id: int) -> str:
     """
     session = DBSession()
     try:
-        row = (
-            session.query(EqueueSubscription)
-            .filter(
-                EqueueSubscription.service == SERVICE_KEY,
-                EqueueSubscription.last_checked_at.isnot(None),
+        row = session.query(EqueueStatus).filter(EqueueStatus.service == SERVICE_KEY).first()
+        if row is None or row.last_checked_at is None:
+            # Рядки підписок лишаються запасним джерелом для баз, які ще не
+            # бачили жодного результату після появи equeue_status.
+            row = (
+                session.query(EqueueSubscription)
+                .filter(
+                    EqueueSubscription.service == SERVICE_KEY,
+                    EqueueSubscription.last_checked_at.isnot(None),
+                )
+                .order_by(EqueueSubscription.last_checked_at.desc())
+                .first()
             )
-            .order_by(EqueueSubscription.last_checked_at.desc())
-            .first()
-        )
-        if not row:
+        if not row or row.last_checked_at is None:
             return (
                 "⏳ Браузерна перевірка ще не надходила. "
                 "Вона запускається через Chrome-розширення; дочекайтеся найближчого циклу."
@@ -302,6 +306,27 @@ def _active_subscribers():
         session.close()
 
 
+def _record_service_status(status: str, reason: str = "") -> None:
+    """Зберігає останній браузерний результат незалежно від підписок.
+
+    Раніше час писався лише в активні підписки, тож із вимкненою підпискою
+    жоден рядок не оновлювався: меню показувало відмітку того моменту, коли
+    підписку востаннє вмикали, і мовчазний простій виглядав як свіжа перевірка.
+    """
+    session = DBSession()
+    try:
+        row = session.query(EqueueStatus).filter(EqueueStatus.service == SERVICE_KEY).first()
+        if row is None:
+            row = EqueueStatus(service=SERVICE_KEY)
+            session.add(row)
+        row.last_checked_at = utc_now()
+        row.last_status = str(status or "unknown")
+        row.last_reason = str(reason or "")[:500]
+        session.commit()
+    finally:
+        session.close()
+
+
 def _update_status_for_active(status: str, notified: bool = False) -> None:
     session = DBSession()
     try:
@@ -391,6 +416,7 @@ def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
         "status": status,
         "reason": str(payload.get("reason") or ""),
     }
+    _record_service_status(status, str(result["reason"]))
     if not subscribers:
         _update_status_for_active(status, notified=False)
         return {"ok": True, "subscribers": 0, "status": status}

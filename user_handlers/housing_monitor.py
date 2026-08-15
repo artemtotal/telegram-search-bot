@@ -93,6 +93,12 @@ def _request(method: str, path: str, **kwargs) -> Dict[str, object]:
 
 
 def _tasks() -> list:
+    """Завдання для браузера, а не список фільтрів користувачів.
+
+    Приймач обходить Immowelt одним широким проходом на всіх, тому віддає тут
+    одне зведене завдання без `filter_id`, `user_id` і `last_checked_at`.
+    Для всього, що показуємо людині, треба `_all_immowelt_filters()`.
+    """
     try:
         payload = _request("GET", "/api/housing/tasks")
     except Exception:
@@ -112,6 +118,21 @@ def _all_immowelt_filters() -> list:
     return filters if isinstance(filters, list) else []
 
 
+def _receiver_status() -> Dict[str, object]:
+    try:
+        return _request("GET", "/api/status")
+    except Exception:
+        logger.exception("Could not load receiver status")
+        return {}
+
+
+def _filter_id(item: Dict[str, object]) -> Optional[int]:
+    try:
+        return int(item.get("filter_id"))
+    except (TypeError, ValueError):
+        return None
+
+
 def _sync_propot_filters() -> None:
     try:
         _request("POST", "/api/propotsdam/filters", json={"filters": propotsdam_store.list_filters()})
@@ -123,10 +144,9 @@ def user_filters(user_id: Optional[int]) -> list:
     if not user_id:
         return []
     immowelt = [
-        task
-        for task in _tasks()
-        if int(task.get("user_id") or 0) == int(user_id)
-        and task.get("source") == "immowelt"
+        item
+        for item in _all_immowelt_filters()
+        if int(item.get("user_id") or 0) == int(user_id) and item.get("active")
     ]
     propot = propotsdam_store.list_filters(user_id=int(user_id), active_only=True)
     return immowelt + propot
@@ -221,27 +241,48 @@ def _is_stale(value, max_age: timedelta) -> bool:
     return bool(checked_at and _now_berlin() - checked_at > max_age)
 
 
+def _immowelt_status_lines() -> list:
+    """Рядки про стан обходу Immowelt.
+
+    Час беремо з `/api/status`: обхід один на всіх, тому власної відмітки у
+    фільтрів немає. Поки приймач її не віддає, відкочуємось на
+    `last_checked_at` самих фільтрів, інакше панель мовчала б про перевірку.
+    """
+    filters = [item for item in _all_immowelt_filters() if item.get("active")]
+    if not filters:
+        return ["Immowelt: активних фільтрів немає."]
+
+    status = _receiver_status()
+    checked_at = str(status.get("immowelt_last_check_at") or "")
+    if not checked_at:
+        checked_at = max((str(item.get("last_checked_at") or "") for item in filters), default="")
+    seen_total = sum(int(item.get("seen_count") or 0) for item in filters)
+    error = str(status.get("immowelt_last_error") or "")
+    skip_reason = str(status.get("immowelt_last_skip_reason") or "")
+
+    lines = []
+    if not checked_at:
+        lines.append("Immowelt: перевірка ще не запускалась.")
+    elif _is_stale(checked_at, IMMOWELT_STALE_AFTER):
+        lines.append(
+            f"⚠️ Immowelt: перевірка прострочена; остання {_format_time(checked_at)}, "
+            f"збережено: {seen_total}."
+        )
+    else:
+        lines.append(f"Immowelt: остання перевірка {_format_time(checked_at)}, збережено: {seen_total}.")
+    # Мовчазна поломка виглядала як звичайна перевірка без новин, тож причину
+    # показуємо окремим рядком, а не ховаємо за старою відміткою часу.
+    if error:
+        lines.append(f"Остання помилка Immowelt: {html.escape(error)}")
+    elif skip_reason:
+        lines.append(f"Перевірку Immowelt пропущено: {html.escape(skip_reason)}")
+    return lines
+
+
 def _status_lines() -> list:
     lines = []
     try:
-        tasks = _tasks()
-        immowelt_tasks = [task for task in tasks if task.get("source") == "immowelt"]
-        if immowelt_tasks:
-            latest = max(
-                (str(task.get("last_checked_at") or "") for task in immowelt_tasks),
-                default="",
-            )
-            seen_total = sum(int(task.get("seen_count") or 0) for task in immowelt_tasks)
-            if latest:
-                if _is_stale(latest, IMMOWELT_STALE_AFTER):
-                    lines.append(
-                        f"⚠️ Immowelt: перевірка прострочена; остання {_format_time(latest)}, "
-                        f"збережено: {seen_total}."
-                    )
-                else:
-                    lines.append(f"Immowelt: остання перевірка {_format_time(latest)}, збережено: {seen_total}.")
-            else:
-                lines.append("Immowelt: перевірка ще не запускалась.")
+        lines.extend(_immowelt_status_lines())
     except Exception:
         logger.exception("Could not load Immowelt status")
 
@@ -307,15 +348,21 @@ def show_menu(update: Update, context: CallbackContext, edit: bool = False) -> N
 
 
 def _render_admin() -> str:
-    tasks = _tasks()
+    # Раніше сюди йшов `_tasks()`, а зведене завдання браузера не має
+    # `filter_id`: `int(None)` валив колбек, і адмінка просто не відкривалась.
+    immowelt_filters = _all_immowelt_filters()
     propot_filters = propotsdam_store.list_filters()
     lines = ["⚙️ <b>Адмінка житла</b>", "", "Тут можна додати користувача до моніторингу Immowelt або ProPotsdam.", ""]
-    if not tasks and not propot_filters:
+    if not immowelt_filters and not propot_filters:
         lines.append("Активних фільтрів поки немає.")
-    if tasks:
+    if immowelt_filters:
         lines.append("Фільтри Immowelt:")
-        for item in tasks:
-            lines.append(f"• #{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {html.escape(str(item.get('title') or 'Пошук житла'))}")
+        for item in immowelt_filters:
+            filter_id = _filter_id(item)
+            label = f"#{filter_id}" if filter_id is not None else "#?"
+            title = html.escape(str(item.get("title") or "Пошук житла"))
+            suffix = "" if item.get("active") else " · вимкнено"
+            lines.append(f"• {label} · {int(item.get('user_id') or 0)} · {title}{suffix}")
     if propot_filters:
         lines.extend(["", "Фільтри ProPotsdam:"])
         for item in propot_filters:

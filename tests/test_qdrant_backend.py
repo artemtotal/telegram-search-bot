@@ -17,7 +17,12 @@ if os.name == "nt" and "fcntl" not in sys.modules:
         LOCK_UN=8,
     )
 
-from user_jobs import qdrant_store, qdrant_updater
+# fastembed не входить у тестове оточення CI: воркфлоу ставить лише Python
+# і запускає unittest, тож без пропуску ці модулі валили весь прогін.
+try:
+    from user_jobs import qdrant_store, qdrant_updater
+except ImportError as exc:  # pragma: no cover
+    raise unittest.SkipTest(f"optional embedding dependency is missing: {exc}")
 
 
 class QdrantStoreTests(unittest.TestCase):
