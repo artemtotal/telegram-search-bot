@@ -8,6 +8,7 @@
 """
 
 import unittest
+from datetime import datetime
 from types import SimpleNamespace
 from unittest import mock
 
@@ -88,46 +89,55 @@ class WideTaskRegressionTests(unittest.TestCase):
             self.assertEqual(housing_monitor.user_filters(312029534), [])
 
     def test_status_uses_the_receiver_scan_time(self):
+        now = datetime(2026, 8, 15, 12, 0, 0, tzinfo=housing_monitor.BERLIN_TZ)
         status = {
             "ok": True,
-            "immowelt_last_check_at": housing_monitor._now_berlin().isoformat(),
+            "immowelt_last_check_at": now.isoformat(),
             "immowelt_last_error": "",
             "immowelt_last_skip_reason": "",
         }
         with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[HOUSING_FILTER]), \
-                mock.patch.object(housing_monitor, '_receiver_status', return_value=status):
+                mock.patch.object(housing_monitor, '_receiver_status', return_value=status), \
+                mock.patch.object(housing_monitor, '_now_berlin', return_value=now):
             lines = housing_monitor._immowelt_status_lines()
 
-        self.assertIn("остання перевірка", lines[0])
+        self.assertIn("🟢 Immowelt: перевірка щойно", lines[0])
         self.assertNotIn("ще не запускалась", " ".join(lines))
 
     def test_status_shows_why_the_check_stopped_arriving(self):
+        now = datetime(2026, 8, 15, 12, 0, 0, tzinfo=housing_monitor.BERLIN_TZ)
         status = {
             "ok": True,
             "immowelt_last_check_at": "2026-08-15T06:00:00+00:00",
             "immowelt_last_error": "Вкладка не відповіла на запит до сторінки",
         }
         with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[HOUSING_FILTER]), \
-                mock.patch.object(housing_monitor, '_receiver_status', return_value=status):
+                mock.patch.object(housing_monitor, '_receiver_status', return_value=status), \
+                mock.patch.object(housing_monitor, '_now_berlin', return_value=now):
             lines = housing_monitor._immowelt_status_lines()
 
         joined = " ".join(lines)
-        self.assertIn("прострочена", joined)
+        self.assertIn("🔴", joined)
         self.assertIn("Вкладка не відповіла", joined)
 
     def test_status_falls_back_to_filter_time_on_an_old_receiver(self):
         """Приймач без нових полів не повинен ховати перевірку зовсім."""
+        # HOUSING_FILTER.last_checked_at = 2026-08-15T08:30:00+00:00 UTC = 10:30 Берлін (CEST).
+        now = datetime(2026, 8, 15, 10, 40, 0, tzinfo=housing_monitor.BERLIN_TZ)
 
         with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[HOUSING_FILTER]), \
-                mock.patch.object(housing_monitor, '_receiver_status', return_value={"ok": True}):
+                mock.patch.object(housing_monitor, '_receiver_status', return_value={"ok": True}), \
+                mock.patch.object(housing_monitor, '_now_berlin', return_value=now):
             lines = housing_monitor._immowelt_status_lines()
 
-        self.assertIn("15.08.2026", " ".join(lines))
+        joined = " ".join(lines)
+        self.assertNotIn("ще не запускалась", joined)
+        self.assertIn("хв тому", joined)
 
     def test_status_says_plainly_when_no_filter_is_active(self):
         with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[]), \
                 mock.patch.object(housing_monitor, '_receiver_status', return_value={"ok": True}):
-            self.assertEqual(housing_monitor._immowelt_status_lines(), ["Immowelt: активних фільтрів немає."])
+            self.assertEqual(housing_monitor._immowelt_status_lines(), ["⚪ Immowelt: активних фільтрів немає."])
 
 
 if __name__ == '__main__':
