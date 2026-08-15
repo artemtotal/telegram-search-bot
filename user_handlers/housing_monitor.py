@@ -91,12 +91,35 @@ IMMOWELT_DISTRICTS = [
     "Waldstadt II",
 ]
 # Три питання замість шести: довгий майстер люди кидають на середині, а решту
-# завжди можна дописати потім.
-IMMOWELT_NUMERIC_STEPS = ["max_price_eur", "min_rooms", "min_area_m2"]
+# завжди можна дописати потім. Кожне питання все ж бере повний діапазон
+# (мін і макс за раз) через «800-1500», а не лише одну межу — так усі шість
+# полів заповнюються тими самими трьома повідомленнями.
+IMMOWELT_RANGE_STEPS = [
+    {"key": "price", "min_field": "min_price_eur", "max_field": "max_price_eur", "single_as": "max"},
+    {"key": "rooms", "min_field": "min_rooms", "max_field": "max_rooms", "single_as": "min"},
+    {"key": "area", "min_field": "min_area_m2", "max_field": "max_area_m2", "single_as": "min"},
+]
+IMMOWELT_RANGE_STEP_KEYS = [spec["key"] for spec in IMMOWELT_RANGE_STEPS]
+IMMOWELT_RANGE_BY_KEY = {spec["key"]: spec for spec in IMMOWELT_RANGE_STEPS}
 IMMOWELT_PROMPTS = {
-    "max_price_eur": "Максимальна холодна оренда в євро або «-», щоб не обмежувати.",
-    "min_rooms": "Мінімальна кількість кімнат або «-».",
-    "min_area_m2": "Мінімальна площа в м² або «-».",
+    "price": (
+        "Холодна оренда (Kaltmiete) в євро.\n"
+        "Формат «мін-макс»: 800-1500. Можна відкрито: 800- (від), -1500 (до).\n"
+        "Одне число саме по собі — це «до»: 1500 = до 1500 €.\n"
+        "«-» — без обмежень."
+    ),
+    "rooms": (
+        "Кількість кімнат.\n"
+        "Формат «мін-макс»: 2-4. Можна відкрито: 2- (від), -4 (до).\n"
+        "Одне число саме по собі — це «від»: 2 = від 2 кімнат.\n"
+        "«-» — без обмежень."
+    ),
+    "area": (
+        "Площа в м².\n"
+        "Формат «мін-макс»: 50-90. Можна відкрито: 50- (від), -90 (до).\n"
+        "Одне число саме по собі — це «від»: 50 = від 50 м².\n"
+        "«-» — без обмежень."
+    ),
 }
 ADMIN_PAGE_SIZE = 20
 PROPOT_NUMERIC_STEPS = [
@@ -182,22 +205,69 @@ def _preview_criteria(criteria: Dict[str, object]) -> Dict[str, object]:
         return {}
 
 
+def _parse_range(text: str, *, single_as: str) -> Optional[tuple]:
+    """Розбирає «800-1500», «800-», «-1500», голе число або «-».
+
+    `single_as` каже, куди йде голе число без дефіса: ціні звично верхня
+    межа («до»), кімнатам і площі — нижня («від»). Повертає `None`, якщо
+    текст не розпізнано, і саме за це відповідає викликач — порожній чи
+    «-» результат тут завжди `(None, None)`, тобто «без обмежень».
+    """
+    raw = (text or "").strip()
+    if not raw or raw in {"-", "—", "–"}:
+        return (None, None)
+    normalized = raw.replace("–", "-").replace("—", "-")
+    if "-" in normalized:
+        parts = normalized.split("-")
+        if len(parts) != 2:
+            return None
+        left, right = parts[0].strip(), parts[1].strip()
+        if not left and not right:
+            return None
+        min_val = propotsdam_store.parse_optional_number(left) if left else None
+        max_val = propotsdam_store.parse_optional_number(right) if right else None
+        if (left and min_val is None) or (right and max_val is None):
+            return None
+        if min_val is not None and max_val is not None and min_val > max_val:
+            return None
+        return (min_val, max_val)
+    value = propotsdam_store.parse_optional_number(normalized)
+    if value is None:
+        return None
+    return (None, value) if single_as == "max" else (value, None)
+
+
 def _criteria_from_state(state: Dict[str, object]) -> Dict[str, object]:
     criteria = {"districts": list(state.get("districts_selected") or [])}
-    for step in IMMOWELT_NUMERIC_STEPS:
-        criteria[step] = state.get(step)
+    for spec in IMMOWELT_RANGE_STEPS:
+        criteria[spec["min_field"]] = state.get(spec["min_field"])
+        criteria[spec["max_field"]] = state.get(spec["max_field"])
     return criteria
+
+
+def _describe_range(min_val, max_val, *, unit: str, is_int: bool = False) -> Optional[str]:
+    if min_val is None and max_val is None:
+        return None
+    fmt = (lambda v: str(int(round(v)))) if is_int else (lambda v: f"{v:g}")
+    if min_val is not None and max_val is not None:
+        return f"{fmt(min_val)}–{fmt(max_val)}{unit}"
+    if min_val is not None:
+        return f"від {fmt(min_val)}{unit}"
+    return f"до {fmt(max_val)}{unit}"
 
 
 def _describe_criteria(criteria: Dict[str, object]) -> str:
     districts = criteria.get("districts") or []
     parts = [", ".join(str(item) for item in districts) if districts else "усі райони"]
-    if criteria.get("max_price_eur") is not None:
-        parts.append(f"до {int(criteria['max_price_eur'])} €")
-    if criteria.get("min_rooms") is not None:
-        parts.append(f"від {criteria['min_rooms']:g} кімн.")
-    if criteria.get("min_area_m2") is not None:
-        parts.append(f"від {criteria['min_area_m2']:g} м²")
+    price = _describe_range(criteria.get("min_price_eur"), criteria.get("max_price_eur"), unit=" €", is_int=True)
+    if price:
+        parts.append(price)
+    rooms = _describe_range(criteria.get("min_rooms"), criteria.get("max_rooms"), unit=" кімн.")
+    if rooms:
+        parts.append(rooms)
+    area = _describe_range(criteria.get("min_area_m2"), criteria.get("max_area_m2"), unit=" м²")
+    if area:
+        parts.append(area)
     return html.escape(" · ".join(parts))
 
 
@@ -1097,9 +1167,12 @@ def start_edit_flow(update: Update, context: CallbackContext, filter_id: int) ->
         "mode": "immowelt", "step": "districts", "user_id": int(user.id),
         "title": str(item.get("title") or "Пошук житла"),
         "districts_selected": districts_selected,
+        "min_price_eur": item.get("min_price_eur"),
         "max_price_eur": item.get("max_price_eur"),
         "min_rooms": item.get("min_rooms"),
+        "max_rooms": item.get("max_rooms"),
         "min_area_m2": item.get("min_area_m2"),
+        "max_area_m2": item.get("max_area_m2"),
         "edit_filter_id": filter_id,
     }
     query.answer()
@@ -1200,15 +1273,18 @@ def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict,
     if step == "preview":
         update.message.reply_text("Натисніть «Зберегти фільтр» або «Скасувати».", reply_markup=_preview_keyboard())
         return True
-    if step in IMMOWELT_NUMERIC_STEPS:
-        value = propotsdam_store.parse_optional_number(text)
-        if value is None and text.strip() not in {"", "-", "—", "–"}:
-            update.message.reply_text("Потрібне число або «-». Надішліть значення ще раз.")
+    if step in IMMOWELT_RANGE_BY_KEY:
+        spec = IMMOWELT_RANGE_BY_KEY[step]
+        parsed = _parse_range(text, single_as=spec["single_as"])
+        if parsed is None:
+            update.message.reply_text("Не розпізнав формат.\n\n" + IMMOWELT_PROMPTS[step])
             return True
-        state[step] = value
-        index = IMMOWELT_NUMERIC_STEPS.index(step)
-        if index < len(IMMOWELT_NUMERIC_STEPS) - 1:
-            next_step = IMMOWELT_NUMERIC_STEPS[index + 1]
+        min_val, max_val = parsed
+        state[spec["min_field"]] = min_val
+        state[spec["max_field"]] = max_val
+        index = IMMOWELT_RANGE_STEP_KEYS.index(step)
+        if index < len(IMMOWELT_RANGE_STEP_KEYS) - 1:
+            next_step = IMMOWELT_RANGE_STEP_KEYS[index + 1]
             state["step"] = next_step
             update.message.reply_text(IMMOWELT_PROMPTS[next_step])
             return True
@@ -1245,7 +1321,7 @@ def _finish_immowelt_districts(update: Update, context: CallbackContext, all_dis
         return
     if all_districts:
         state["districts_selected"] = []
-    first_step = IMMOWELT_NUMERIC_STEPS[0]
+    first_step = IMMOWELT_RANGE_STEP_KEYS[0]
     state["step"] = first_step
     query.answer()
     query.edit_message_text(IMMOWELT_PROMPTS[first_step])

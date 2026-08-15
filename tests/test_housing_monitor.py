@@ -187,22 +187,61 @@ class HousingAdminFlowTests(unittest.TestCase):
 
             state = context.user_data['housing_admin']
             state['districts_selected'] = ['Golm']
-            state['step'] = 'max_price_eur'
+            state['step'] = 'price'
 
             for text in ['800', '2', '-']:
                 self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
 
         state = context.user_data['housing_admin']
         self.assertEqual(state['step'], 'preview')
+        # Голе число саме по собі: ціна йде у «до», кімнати — у «від».
+        self.assertIsNone(state['min_price_eur'])
         self.assertEqual(state['max_price_eur'], 800)
         self.assertEqual(state['min_rooms'], 2)
+        self.assertIsNone(state['max_rooms'])
         self.assertIsNone(state['min_area_m2'])
+        self.assertIsNone(state['max_area_m2'])
+
+    def test_range_syntax_fills_both_bounds_from_one_message(self):
+        """Три питання лишаються трьома, але кожне бере відразу мін і макс."""
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'immowelt', 'step': 'price', 'user_id': 123456789,
+            'title': 'Іван', 'districts_selected': ['Golm'],
+        }})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            for text in ['800-1200', '2-4', '50-']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'preview')
+        self.assertEqual(state['min_price_eur'], 800)
+        self.assertEqual(state['max_price_eur'], 1200)
+        self.assertEqual(state['min_rooms'], 2)
+        self.assertEqual(state['max_rooms'], 4)
+        self.assertEqual(state['min_area_m2'], 50)
+        self.assertIsNone(state['max_area_m2'])
+
+    def test_range_with_min_above_max_is_rejected(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'immowelt', 'step': 'price', 'user_id': 123456789,
+            'title': 'Іван', 'districts_selected': ['Golm'],
+        }})
+        update = self._update('1500-800')
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        self.assertEqual(context.user_data['housing_admin']['step'], 'price')
+        self.assertIn('Не розпізнав формат', update.message.replies[-1][0])
 
     def test_saving_a_filter_sends_its_criteria(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'immowelt', 'step': 'preview', 'user_id': 123456789,
             'title': 'Іван', 'districts_selected': ['Golm'],
-            'max_price_eur': 800, 'min_rooms': 2, 'min_area_m2': None,
+            'min_price_eur': None, 'max_price_eur': 800,
+            'min_rooms': 2, 'max_rooms': None,
+            'min_area_m2': None, 'max_area_m2': None,
         }})
         update = SimpleNamespace(
             callback_query=mock.Mock(),
@@ -219,9 +258,9 @@ class HousingAdminFlowTests(unittest.TestCase):
                 'user_id': 123456789,
                 'title': 'Іван',
                 'districts': ['Golm'],
-                'max_price_eur': 800,
-                'min_rooms': 2,
-                'min_area_m2': None,
+                'min_price_eur': None, 'max_price_eur': 800,
+                'min_rooms': 2, 'max_rooms': None,
+                'min_area_m2': None, 'max_area_m2': None,
             },
         )
         self.assertNotIn('housing_admin', context.user_data)
@@ -247,6 +286,18 @@ class HousingAdminFlowTests(unittest.TestCase):
         )
 
         self.assertIn('не підходить жодна', text)
+
+    def test_describe_criteria_shows_both_bounds_when_both_are_set(self):
+        description = housing_monitor._describe_criteria({
+            'districts': ['Golm'],
+            'min_price_eur': 800, 'max_price_eur': 1200,
+            'min_rooms': 2, 'max_rooms': 4,
+            'min_area_m2': 50, 'max_area_m2': None,
+        })
+
+        self.assertIn('800–1200 €', description)
+        self.assertIn('2–4 кімн.', description)
+        self.assertIn('від 50 м²', description)
 
     def test_admin_panel_pages_a_long_filter_list(self):
         """Перелік друкувався цілком і впирався б у ліміт Telegram у 4096 знаків."""
@@ -501,7 +552,9 @@ class HousingAdminFlowTests(unittest.TestCase):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'immowelt', 'step': 'preview', 'user_id': 544675510,
             'title': 'Пошук Каті', 'districts_selected': ['Golm'],
-            'max_price_eur': 900, 'min_rooms': 2, 'min_area_m2': None,
+            'min_price_eur': None, 'max_price_eur': 900,
+            'min_rooms': 2, 'max_rooms': None,
+            'min_area_m2': None, 'max_area_m2': None,
             'edit_filter_id': 2,
         }})
         update = SimpleNamespace(
@@ -515,7 +568,9 @@ class HousingAdminFlowTests(unittest.TestCase):
             'PATCH', '/api/housing/filters/2',
             json={
                 'title': 'Пошук Каті', 'districts': ['Golm'],
-                'max_price_eur': 900, 'min_rooms': 2, 'min_area_m2': None,
+                'min_price_eur': None, 'max_price_eur': 900,
+                'min_rooms': 2, 'max_rooms': None,
+                'min_area_m2': None, 'max_area_m2': None,
             },
         )
         self.assertNotIn('housing_admin', context.user_data)
