@@ -154,6 +154,30 @@ def set_filter_active(filter_id: int, active: bool, user_id: Optional[int] = Non
         session.close()
 
 
+def delete_filter(filter_id: int, user_id: Optional[int] = None) -> bool:
+    """Видаляє фільтр ProPotsdam разом з його історією надісланих оголошень.
+
+    «Мої фільтри» раніше вміло лише паузу — одруківся в районі, і виправити
+    вже нічого не можна було, тільки завести новий фільтр поруч зі старим.
+    """
+    session = DBSession()
+    try:
+        query = session.query(ProPotsdamFilter).filter(ProPotsdamFilter.filter_id == int(filter_id))
+        if user_id is not None:
+            query = query.filter(ProPotsdamFilter.user_id == int(user_id))
+        row = query.first()
+        if not row:
+            return False
+        session.query(ProPotsdamDelivery).filter(
+            ProPotsdamDelivery.filter_id == int(filter_id)
+        ).delete(synchronize_session=False)
+        session.delete(row)
+        session.commit()
+        return True
+    finally:
+        session.close()
+
+
 def upsert_listings(listings: Iterable[Dict]) -> int:
     session = DBSession()
     try:

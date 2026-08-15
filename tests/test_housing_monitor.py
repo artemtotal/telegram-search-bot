@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest import mock
 
@@ -338,8 +338,8 @@ class HousingAdminFlowTests(unittest.TestCase):
             lines = housing_monitor._status_lines()
 
         rendered = '\n'.join(lines)
-        self.assertIn('Immowelt: остання перевірка 13.08.2026 02:25', rendered)
-        self.assertIn('ProPotsdam: остання перевірка 13.08.2026 06:50', rendered)
+        self.assertIn('🟢 Immowelt: перевірка 14 хв тому', rendered)
+        self.assertIn('ProPotsdam: перевірка', rendered)
         self.assertNotIn('DP Document', rendered)
         self.assertNotIn('2026-08-13T', rendered)
 
@@ -364,8 +364,8 @@ class HousingAdminFlowTests(unittest.TestCase):
              mock.patch.object(housing_monitor, '_now_berlin', return_value=now):
             rendered = '\n'.join(housing_monitor._status_lines())
 
-        self.assertIn('Immowelt: перевірка прострочена', rendered)
-        self.assertIn('ProPotsdam: перевірка прострочена', rendered)
+        self.assertIn('🔴 Immowelt: перевірка 5 год тому', rendered)
+        self.assertIn('🔴 ProPotsdam: перевірка 1 год тому', rendered)
 
     def test_immowelt_status_is_stale_after_30_minutes(self):
         now = datetime(2026, 8, 13, 8, 0, 0, tzinfo=housing_monitor.BERLIN_TZ)
@@ -382,7 +382,35 @@ class HousingAdminFlowTests(unittest.TestCase):
              mock.patch.object(housing_monitor, '_now_berlin', return_value=now):
             rendered = '\n'.join(housing_monitor._status_lines())
 
-        self.assertIn('Immowelt: перевірка прострочена', rendered)
+        self.assertIn('🔴 Immowelt: перевірка 31 хв тому', rendered)
+
+    def test_relative_time_reads_naturally(self):
+        base = datetime(2026, 8, 13, 12, 0, 0, tzinfo=housing_monitor.BERLIN_TZ)
+        with mock.patch.object(housing_monitor, '_now_berlin', return_value=base):
+            self.assertEqual(housing_monitor._relative_time(base.isoformat()), 'щойно')
+            self.assertEqual(
+                housing_monitor._relative_time((base - timedelta(minutes=5)).isoformat()), '5 хв тому'
+            )
+            self.assertEqual(
+                housing_monitor._relative_time((base - timedelta(hours=3)).isoformat()), '3 год тому'
+            )
+            self.assertEqual(
+                housing_monitor._relative_time((base - timedelta(days=1, hours=1)).isoformat()),
+                f'учора о {(base - timedelta(days=1, hours=1)).strftime("%H:%M")}',
+            )
+            self.assertEqual(housing_monitor._relative_time(None), 'ще не було')
+
+    def test_traffic_light_has_three_states(self):
+        base = datetime(2026, 8, 13, 12, 0, 0, tzinfo=housing_monitor.BERLIN_TZ)
+        max_age = timedelta(minutes=30)
+        with mock.patch.object(housing_monitor, '_now_berlin', return_value=base):
+            fresh = (base - timedelta(minutes=5)).isoformat()
+            aging = (base - timedelta(minutes=20)).isoformat()
+            stale = (base - timedelta(minutes=40)).isoformat()
+            self.assertEqual(housing_monitor._traffic_light(fresh, max_age), '🟢')
+            self.assertEqual(housing_monitor._traffic_light(aging, max_age), '🟡')
+            self.assertEqual(housing_monitor._traffic_light(stale, max_age), '🔴')
+            self.assertEqual(housing_monitor._traffic_light(None, max_age), '🔴')
 
     def test_propot_district_callback_toggles_checkbox_selection(self):
         context = SimpleNamespace(user_data={'housing_admin': {'mode': 'propotsdam', 'step': 'districts', 'districts_selected': []}})
@@ -399,6 +427,195 @@ class HousingAdminFlowTests(unittest.TestCase):
         self.assertEqual(context.user_data['housing_admin']['districts_selected'], ['Babelsberg'])
         query.edit_message_text.assert_called_once()
 
+    def test_toggle_routes_an_immowelt_filter_with_districts_to_the_right_table(self):
+        """Регресія: Immowelt-фільтр з критеріями плутався з ProPotsdam.
+
+        Обидва джерела тепер несуть ключ `districts`, і стара перевірка
+        `"districts" in item` бачила його в Immowelt-записі й вирішувала, що
+        це ProPotsdam — пауза йшла в чужу таблицю й тихо нічого не міняла.
+        """
+        own_filter = {
+            'filter_id': 2, 'user_id': 544675510, 'title': 'Пошук Каті', 'source': 'immowelt',
+            'active': True, 'districts': ('Golm',), 'max_price_eur': 800.0,
+        }
+        query = SimpleNamespace(
+            data='housing:toggle:immowelt:2:0', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch.object(housing_monitor, '_request', return_value={'ok': True}) as request, \
+             mock.patch.object(housing_monitor.propotsdam_store, 'set_filter_active') as set_propot_active:
+            housing_monitor.handle_callback(update, context)
+
+        request.assert_called_once_with('PATCH', '/api/housing/filters/2/active', json={'active': False})
+        set_propot_active.assert_not_called()
+
+    def test_edit_flow_prefills_the_wizard_with_current_criteria(self):
+        """Раніше в «Мої фільтри» можна було лише поставити фільтр на паузу."""
+        own_filter = {
+            'filter_id': 2, 'user_id': 544675510, 'title': 'Пошук Каті', 'source': 'immowelt',
+            'active': True, 'districts': ('Golm',), 'max_price_eur': 800.0,
+            'min_rooms': 2.0, 'min_area_m2': None,
+        }
+        query = SimpleNamespace(
+            data='housing:edit:immowelt:2', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]):
+            housing_monitor.handle_callback(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['edit_filter_id'], 2)
+        self.assertEqual(state['title'], 'Пошук Каті')
+        self.assertEqual(state['districts_selected'], ['Golm'])
+        self.assertEqual(state['max_price_eur'], 800.0)
+        self.assertEqual(state['step'], 'districts')
+
+    def test_edit_flow_rejects_someone_elses_filter(self):
+        foreign_filter = {
+            'filter_id': 1, 'user_id': 312029534, 'title': 'Пошук Артема', 'source': 'immowelt', 'active': True,
+        }
+        query = SimpleNamespace(
+            data='housing:edit:immowelt:1', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[foreign_filter]):
+            housing_monitor.handle_callback(update, context)
+
+        query.answer.assert_called_with('Цей фільтр вам не належить.', show_alert=True)
+        self.assertNotIn('housing_admin', context.user_data)
+
+    def test_saving_an_edit_patches_the_existing_filter(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'immowelt', 'step': 'preview', 'user_id': 544675510,
+            'title': 'Пошук Каті', 'districts_selected': ['Golm'],
+            'max_price_eur': 900, 'min_rooms': 2, 'min_area_m2': None,
+            'edit_filter_id': 2,
+        }})
+        update = SimpleNamespace(
+            callback_query=mock.Mock(), effective_user=SimpleNamespace(id=544675510),
+        )
+
+        with mock.patch.object(housing_monitor, '_request', return_value={'ok': True}) as request:
+            housing_monitor._save_immowelt_filter(update, context)
+
+        request.assert_called_once_with(
+            'PATCH', '/api/housing/filters/2',
+            json={
+                'title': 'Пошук Каті', 'districts': ['Golm'],
+                'max_price_eur': 900, 'min_rooms': 2, 'min_area_m2': None,
+            },
+        )
+        self.assertNotIn('housing_admin', context.user_data)
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        self.assertIn('Фільтр оновлено', text)
+
+    def test_delete_asks_for_confirmation_first(self):
+        own_filter = {'filter_id': 2, 'user_id': 544675510, 'title': 'Пошук Каті', 'source': 'immowelt', 'active': True}
+        query = SimpleNamespace(
+            data='housing:delete:immowelt:2', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch.object(housing_monitor, '_request') as request:
+            housing_monitor.handle_callback(update, context)
+
+        request.assert_not_called()
+        keyboard_data = [
+            button.callback_data
+            for row in query.edit_message_text.call_args.kwargs['reply_markup'].inline_keyboard
+            for button in row
+        ]
+        self.assertIn('housing:delete_confirm:immowelt:2', keyboard_data)
+
+    def test_delete_confirm_removes_an_immowelt_filter(self):
+        own_filter = {'filter_id': 2, 'user_id': 544675510, 'title': 'Пошук Каті', 'source': 'immowelt', 'active': True}
+        query = SimpleNamespace(
+            data='housing:delete_confirm:immowelt:2', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch.object(housing_monitor, '_request', return_value={'ok': True}) as request:
+            housing_monitor.handle_callback(update, context)
+
+        request.assert_called_once_with('DELETE', '/api/housing/filters/2')
+        query.answer.assert_called_with('Фільтр видалено.')
+
+    def test_delete_confirm_rejects_someone_elses_filter(self):
+        foreign_filter = {'filter_id': 1, 'user_id': 312029534, 'title': 'Пошук Артема', 'source': 'immowelt', 'active': True}
+        query = SimpleNamespace(
+            data='housing:delete_confirm:immowelt:1', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[foreign_filter]), \
+             mock.patch.object(housing_monitor, '_request') as request:
+            housing_monitor.handle_callback(update, context)
+
+        request.assert_not_called()
+        query.answer.assert_called_with('Цей фільтр вам не належить.', show_alert=True)
+
+    def test_delete_confirm_removes_a_propotsdam_filter(self):
+        own_filter = {
+            'filter_id': 5, 'user_id': 544675510, 'title': 'ProPotsdam', 'source': 'propotsdam',
+            'districts': 'Drewitz', 'active': True,
+        }
+        query = SimpleNamespace(
+            data='housing:delete_confirm:propotsdam:5', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch.object(housing_monitor.propotsdam_store, 'delete_filter', return_value=True) as delete_filter, \
+             mock.patch.object(housing_monitor, '_sync_propot_filters') as sync_filters:
+            housing_monitor.handle_callback(update, context)
+
+        delete_filter.assert_called_once_with(5, user_id=544675510)
+        sync_filters.assert_called_once()
+        query.answer.assert_called_with('Фільтр видалено.')
+
+    def test_self_manage_keyboard_offers_edit_only_for_immowelt(self):
+        immowelt = {'filter_id': 1, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True}
+        propotsdam = {
+            'filter_id': 2, 'user_id': 544675510, 'title': 'ProPotsdam', 'source': 'propotsdam',
+            'districts': 'Drewitz', 'active': True,
+        }
+
+        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt, propotsdam]):
+            keyboard = housing_monitor._self_manage_keyboard(544675510)
+
+        callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
+        self.assertIn('housing:edit:immowelt:1', callbacks)
+        self.assertIn('housing:delete:immowelt:1', callbacks)
+        self.assertNotIn('housing:edit:propotsdam:2', callbacks)
+        self.assertIn('housing:delete:propotsdam:2', callbacks)
+
     def test_immowelt_district_callback_toggles_checkbox_selection(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'immowelt', 'step': 'districts', 'districts_selected': [],
@@ -413,6 +630,94 @@ class HousingAdminFlowTests(unittest.TestCase):
         housing_monitor.handle_callback(update, context)
 
         self.assertEqual(context.user_data['housing_admin']['districts_selected'], ['Golm'])
+
+
+class HousingNotificationSettingsTests(unittest.TestCase):
+    """Тиха ніч і денний дайджест — вибирає користувач, не адмін."""
+
+    def _update(self, user_id=544675510, data='housing:notify_settings'):
+        query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_text=mock.Mock())
+        return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
+
+    def test_settings_screen_reads_prefs_via_query_params(self):
+        update = self._update()
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(
+                 housing_monitor, '_request',
+                 return_value={'ok': True, 'quiet_hours_enabled': True, 'digest_mode': 'daily'},
+             ) as request:
+            housing_monitor.handle_callback(update, context)
+
+        request.assert_called_once_with(
+            'GET', '/api/housing/notification-prefs', params={'user_id': 544675510}
+        )
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        self.assertIn('увімкнена', text)
+        self.assertIn('раз на день', text)
+
+    def test_toggle_quiet_hours_sends_the_new_value(self):
+        update = self._update(data='housing:notify_quiet:1')
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(
+                 housing_monitor, '_request',
+                 return_value={'ok': True, 'quiet_hours_enabled': True, 'digest_mode': 'instant'},
+             ) as request:
+            housing_monitor.handle_callback(update, context)
+
+        calls = [c for c in request.call_args_list if c.args[0] == 'POST']
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(
+            calls[0].kwargs['json'],
+            {'user_id': 544675510, 'quiet_hours_enabled': True},
+        )
+
+    def test_set_digest_mode_sends_daily(self):
+        update = self._update(data='housing:notify_digest:daily')
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(
+                 housing_monitor, '_request',
+                 return_value={'ok': True, 'quiet_hours_enabled': False, 'digest_mode': 'daily'},
+             ) as request:
+            housing_monitor.handle_callback(update, context)
+
+        calls = [c for c in request.call_args_list if c.args[0] == 'POST']
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(
+            calls[0].kwargs['json'],
+            {'user_id': 544675510, 'digest_mode': 'daily'},
+        )
+
+    def test_a_user_without_access_cannot_reach_settings(self):
+        update = self._update(user_id=999)
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'is_allowed', return_value=False), \
+             mock.patch.object(housing_monitor, '_request') as request:
+            housing_monitor.handle_callback(update, context)
+
+        request.assert_not_called()
+
+    def test_settings_button_is_offered_to_self_service_users(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            labels = [
+                button.text
+                for row in housing_monitor._menu_keyboard(544675510).inline_keyboard
+                for button in row
+            ]
+
+        self.assertIn('🔔 Сповіщення', labels)
 
 
 class HousingAccessRequestTests(unittest.TestCase):

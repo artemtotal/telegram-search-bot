@@ -271,10 +271,12 @@ def _menu_keyboard(user_id: Optional[int] = None) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton("🔄 Оновити статус", callback_data="housing:menu")]]
     if user_id and int(user_id) == ADMIN_ID:
         rows.insert(0, [InlineKeyboardButton("⚙️ Адмінка житла", callback_data="housing:admin")])
+        rows.insert(1, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
     elif is_allowed(user_id):
         rows.insert(0, [InlineKeyboardButton(BTN_SELF_ADD, callback_data="housing:self_add")])
         rows.insert(1, [InlineKeyboardButton(BTN_SELF_ADD_PROPOT, callback_data="housing:self_propot_add")])
         rows.insert(2, [InlineKeyboardButton(BTN_SELF_MANAGE, callback_data="housing:self_manage")])
+        rows.insert(3, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
     rows.append([InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
 
@@ -336,6 +338,47 @@ def _is_stale(value, max_age: timedelta) -> bool:
     return bool(checked_at and _now_berlin() - checked_at > max_age)
 
 
+def _relative_time(value) -> str:
+    """Час словами замість дати-часу, яку людина йде перевіряти вручну.
+
+    Технічна відмітка «13.08.2026 02:25» вимагає рахувати самому, скільки це
+    було тому. «3 хв тому» відповідає на реальне питання одразу.
+    """
+    checked_at = _as_berlin_datetime(value)
+    if checked_at is None:
+        return "ще не було"
+    now = _now_berlin()
+    seconds = max(0.0, (now - checked_at).total_seconds())
+    if seconds < 60:
+        return "щойно"
+    minutes = int(seconds // 60)
+    if minutes < 60:
+        return f"{minutes} хв тому"
+    hours = int(minutes // 60)
+    if hours < 24:
+        return f"{hours} год тому"
+    if checked_at.date() == (now - timedelta(days=1)).date():
+        return f"учора о {checked_at.strftime('%H:%M')}"
+    return checked_at.strftime("%d.%m.%Y %H:%M")
+
+
+def _traffic_light(value, max_age: timedelta) -> str:
+    """🟢 свіжо, 🟡 наближається до простроченого, 🔴 прострочено або й не було.
+
+    Абсолютна мітка часу вимагала подумки порівнювати її із зараз; колір видно
+    одним поглядом ще до читання тексту.
+    """
+    checked_at = _as_berlin_datetime(value)
+    if checked_at is None:
+        return "🔴"
+    age = _now_berlin() - checked_at
+    if age <= max_age / 2:
+        return "🟢"
+    if age <= max_age:
+        return "🟡"
+    return "🔴"
+
+
 def _immowelt_status_lines() -> list:
     """Рядки про стан обходу Immowelt.
 
@@ -345,7 +388,7 @@ def _immowelt_status_lines() -> list:
     """
     filters = [item for item in _all_immowelt_filters() if item.get("active")]
     if not filters:
-        return ["Immowelt: активних фільтрів немає."]
+        return ["⚪ Immowelt: активних фільтрів немає."]
 
     status = _receiver_status()
     checked_at = str(status.get("immowelt_last_check_at") or "")
@@ -355,16 +398,11 @@ def _immowelt_status_lines() -> list:
     error = str(status.get("immowelt_last_error") or "")
     skip_reason = str(status.get("immowelt_last_skip_reason") or "")
 
-    lines = []
+    light = _traffic_light(checked_at, IMMOWELT_STALE_AFTER)
     if not checked_at:
-        lines.append("Immowelt: перевірка ще не запускалась.")
-    elif _is_stale(checked_at, IMMOWELT_STALE_AFTER):
-        lines.append(
-            f"⚠️ Immowelt: перевірка прострочена; остання {_format_time(checked_at)}, "
-            f"збережено: {seen_total}."
-        )
+        lines = ["🔴 Immowelt: перевірка ще не запускалась."]
     else:
-        lines.append(f"Immowelt: остання перевірка {_format_time(checked_at)}, збережено: {seen_total}.")
+        lines = [f"{light} Immowelt: перевірка {_relative_time(checked_at)}, збережено: {seen_total}."]
     # Мовчазна поломка виглядала як звичайна перевірка без новин, тож причину
     # показуємо окремим рядком, а не ховаємо за старою відміткою часу.
     if error:
@@ -383,20 +421,17 @@ def _status_lines() -> list:
 
     status = propotsdam_store.latest_status()
     if status:
-        last = _format_time(status.get("last_checked_at"))
+        light = _traffic_light(status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER)
         label = status.get("last_status") or "unknown"
         count = status.get("listings_count") or 0
-        if _is_stale(status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER):
-            lines.append(
-                f"⚠️ ProPotsdam: перевірка прострочена; остання {last}, "
-                f"статус {html.escape(str(label))}, квартир: {count}."
-            )
-        else:
-            lines.append(f"ProPotsdam: остання перевірка {last}, статус {html.escape(str(label))}, квартир: {count}.")
+        lines.append(
+            f"{light} ProPotsdam: перевірка {_relative_time(status.get('last_checked_at'))}, "
+            f"статус {html.escape(str(label))}, квартир: {count}."
+        )
         if status.get("last_error"):
             lines.append(f"Остання помилка ProPotsdam: {html.escape(str(status.get('last_error')))}")
     else:
-        lines.append("ProPotsdam: перевірка ще не запускалась.")
+        lines.append("🔴 ProPotsdam: перевірка ще не запускалась.")
     return lines
 
 
@@ -780,11 +815,24 @@ def start_self_propot_add_flow(update: Update, context: CallbackContext, edit: b
         update.effective_message.reply_text(text, parse_mode="HTML")
 
 
+def _item_source(item: Dict[str, object]) -> str:
+    """Джерело фільтра: довіряємо явному полю, а не вгадуємо його з набору ключів.
+
+    Immowelt-записи від receiver теж носять `districts` (критерії фільтра),
+    тож стара перевірка `"districts" in item` плутала будь-який Immowelt-
+    фільтр із ProPotsdam, щойно в нього з'являлись критерії — пауза чи
+    редагування йшли не в ту таблицю і тихо нічого не змінювали.
+    """
+    source = item.get("source")
+    if source:
+        return str(source)
+    return "propotsdam" if "districts" in item else "immowelt"
+
+
 def _self_manage_keyboard(user_id: int) -> InlineKeyboardMarkup:
     rows = []
     for item in manageable_filters(user_id):
-        is_propot = item.get("source") == "propotsdam" or "districts" in item
-        source = "propotsdam" if is_propot else "immowelt"
+        source = _item_source(item)
         filter_id = int(item.get("filter_id"))
         active = bool(item.get("active", True))
         mark = "✅" if active else "⏸"
@@ -793,6 +841,17 @@ def _self_manage_keyboard(user_id: int) -> InlineKeyboardMarkup:
             f"{mark} {title}",
             callback_data=f"housing:toggle:{source}:{filter_id}:{0 if active else 1}",
         )])
+        # Раніше тут можна було лише поставити фільтр на паузу: одруківся в
+        # ціні — і йшли зі скаргою до адміна, бо змінити нічого не могли.
+        actions = []
+        if source == "immowelt":
+            actions.append(InlineKeyboardButton(
+                "✏️ Редагувати", callback_data=f"housing:edit:{source}:{filter_id}"
+            ))
+        actions.append(InlineKeyboardButton(
+            "🗑 Видалити", callback_data=f"housing:delete:{source}:{filter_id}"
+        ))
+        rows.append(actions)
     rows.append([InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")])
     return InlineKeyboardMarkup(rows)
 
@@ -813,6 +872,108 @@ def show_self_manage(update: Update, context: CallbackContext, edit: bool = Fals
         update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
+# Вікно тихої ночі й ліміт на годину задаються приймачу через змінні
+# оточення (HOUSING_QUIET_HOURS_*, HOUSING_HOURLY_SEND_CAP) і спільні для всіх
+# користувачів; тут лише типові значення для тексту, самі не змінюють нічого.
+QUIET_HOURS_LABEL = "23:00–08:00"
+DEFAULT_HOURLY_CAP_LABEL = "5 оголошень"
+
+
+def _notification_prefs(user_id: int) -> Dict[str, object]:
+    try:
+        return _request("GET", "/api/housing/notification-prefs", params={"user_id": user_id})
+    except Exception:
+        logger.exception("Could not load notification prefs")
+        return {"quiet_hours_enabled": False, "digest_mode": "instant"}
+
+
+def _set_notification_prefs(user_id: int, **kwargs) -> Dict[str, object]:
+    return _request("POST", "/api/housing/notification-prefs", json={"user_id": user_id, **kwargs})
+
+
+def _notify_settings_text(prefs: Dict[str, object]) -> str:
+    quiet = "✅ увімкнена" if prefs.get("quiet_hours_enabled") else "вимкнена"
+    mode = "раз на день" if prefs.get("digest_mode") == "daily" else "одразу"
+    return (
+        "🔔 <b>Сповіщення</b>\n\n"
+        f"🌙 Тиха ніч ({QUIET_HOURS_LABEL}): {quiet}\n"
+        f"📬 Режим доставки: {mode}\n\n"
+        "У тиху ніч і в режимі «раз на день» оголошення не пропадають — "
+        "прийдуть, щойно ніч закінчиться чи настане час зведення. Понад "
+        f"{DEFAULT_HOURLY_CAP_LABEL} за годину теж не приходить одразу: "
+        "решта — одним підсумковим повідомленням."
+    )
+
+
+def _notify_settings_keyboard(prefs: Dict[str, object]) -> InlineKeyboardMarkup:
+    quiet_on = bool(prefs.get("quiet_hours_enabled"))
+    mode = str(prefs.get("digest_mode") or "instant")
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            "🌙 Тиха ніч: увімкнена ✅" if quiet_on else "🌙 Тиха ніч: вимкнена",
+            callback_data=f"housing:notify_quiet:{0 if quiet_on else 1}",
+        )],
+        [
+            InlineKeyboardButton(
+                ("✅ " if mode == "instant" else "") + "📬 Одразу",
+                callback_data="housing:notify_digest:instant",
+            ),
+            InlineKeyboardButton(
+                ("✅ " if mode == "daily" else "") + "📮 Раз на день",
+                callback_data="housing:notify_digest:daily",
+            ),
+        ],
+        [InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")],
+    ])
+
+
+def show_notify_settings(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    user = update.effective_user
+    if not user or not is_allowed(user.id):
+        return
+    prefs = _notification_prefs(int(user.id))
+    text = _notify_settings_text(prefs)
+    keyboard = _notify_settings_keyboard(prefs)
+    if edit and update.callback_query:
+        try:
+            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+        except BadRequest as exc:
+            if "Message is not modified" not in str(exc):
+                raise
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+
+def toggle_quiet_hours(update: Update, context: CallbackContext, enabled: bool) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    try:
+        _set_notification_prefs(int(user.id), quiet_hours_enabled=enabled)
+    except Exception:
+        logger.exception("Could not update notification prefs")
+        query.answer("Не вдалося оновити налаштування.", show_alert=True)
+        return
+    query.answer("Оновлено.")
+    show_notify_settings(update, context, edit=True)
+
+
+def set_digest_mode(update: Update, context: CallbackContext, mode: str) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    try:
+        _set_notification_prefs(int(user.id), digest_mode=mode)
+    except Exception:
+        logger.exception("Could not update notification prefs")
+        query.answer("Не вдалося оновити налаштування.", show_alert=True)
+        return
+    query.answer("Оновлено.")
+    show_notify_settings(update, context, edit=True)
+
+
 def _toggle_owned_filter(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     user = update.effective_user
@@ -825,16 +986,12 @@ def _toggle_owned_filter(update: Update, context: CallbackContext) -> None:
     except (TypeError, ValueError):
         query.answer("Некоректна команда.", show_alert=True)
         return
-    own = []
-    for item in manageable_filters(user.id):
-        item_is_propot = item.get("source") == "propotsdam" or "districts" in item
-        source_matches = (source == "propotsdam" and item_is_propot) or (
-            source == "immowelt" and not item_is_propot
-        )
-        if (int(item.get("filter_id") or 0) == filter_id
-                and int(item.get("user_id") or 0) == int(user.id)
-                and source_matches):
-            own.append(item)
+    own = [
+        item for item in manageable_filters(user.id)
+        if int(item.get("filter_id") or 0) == filter_id
+        and int(item.get("user_id") or 0) == int(user.id)
+        and _item_source(item) == source
+    ]
     if not own:
         query.answer("Цей фільтр вам не належить.", show_alert=True)
         return
@@ -856,6 +1013,103 @@ def _toggle_owned_filter(update: Update, context: CallbackContext) -> None:
     show_self_manage(update, context, edit=True)
 
 
+def _delete_confirm_keyboard(source: str, filter_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "🗑 Так, видалити", callback_data=f"housing:delete_confirm:{source}:{filter_id}"
+        ),
+        InlineKeyboardButton(BTN_CANCEL, callback_data="housing:self_manage"),
+    ]])
+
+
+def _own_filter(user_id: int, source: str, filter_id: int) -> Optional[Dict[str, object]]:
+    for item in manageable_filters(user_id):
+        if (
+            int(item.get("filter_id") or 0) == filter_id
+            and int(item.get("user_id") or 0) == user_id
+            and _item_source(item) == source
+        ):
+            return item
+    return None
+
+
+def start_delete_flow(update: Update, context: CallbackContext, source: str, filter_id: int) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    item = _own_filter(int(user.id), source, filter_id)
+    if not item:
+        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        return
+    title = html.escape(str(item.get("title") or "Пошук житла"))
+    query.answer()
+    query.edit_message_text(
+        f"🗑 Видалити фільтр «{title}»? Це не можна скасувати.",
+        parse_mode="HTML",
+        reply_markup=_delete_confirm_keyboard(source, filter_id),
+    )
+
+
+def confirm_delete_filter(update: Update, context: CallbackContext, source: str, filter_id: int) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    if not _own_filter(int(user.id), source, filter_id):
+        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        return
+    if source == "propotsdam":
+        ok = propotsdam_store.delete_filter(filter_id, user_id=user.id)
+        if ok:
+            _sync_propot_filters()
+    else:
+        try:
+            _request("DELETE", f"/api/housing/filters/{filter_id}")
+            ok = True
+        except Exception:
+            logger.exception("Could not delete housing filter")
+            ok = False
+    if not ok:
+        query.answer("Не вдалося видалити фільтр.", show_alert=True)
+        return
+    query.answer("Фільтр видалено.")
+    show_self_manage(update, context, edit=True)
+
+
+def start_edit_flow(update: Update, context: CallbackContext, filter_id: int) -> None:
+    """Заводить майстер наново, заповнений поточними умовами фільтра.
+
+    Змінюємо лише критерії — район, ціну, кімнати, площу; користувача й назву
+    редагування не чіпає, це прибрало б потребу перебирати весь той самий
+    майстер, що і при додаванні.
+    """
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    item = _own_filter(int(user.id), "immowelt", filter_id)
+    if not item:
+        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        return
+    districts_selected = list(item.get("districts") or [])
+    context.user_data["housing_admin"] = {
+        "mode": "immowelt", "step": "districts", "user_id": int(user.id),
+        "title": str(item.get("title") or "Пошук житла"),
+        "districts_selected": districts_selected,
+        "max_price_eur": item.get("max_price_eur"),
+        "min_rooms": item.get("min_rooms"),
+        "min_area_m2": item.get("min_area_m2"),
+        "edit_filter_id": filter_id,
+    }
+    query.answer()
+    query.edit_message_text(
+        _immowelt_district_text(districts_selected),
+        parse_mode="HTML",
+        reply_markup=_immowelt_district_keyboard(districts_selected),
+    )
+
+
 def _show_immowelt_preview(message, state: dict) -> None:
     criteria = _criteria_from_state(state)
     state["step"] = "preview"
@@ -872,6 +1126,8 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
 
     Раніше сюди йшли лише назва й посилання, а відбір іде за умовами в самому
     записі: фільтр без умов збігається з будь-якою квартирою Потсдама.
+    Той самий майстер веде і редагування — відрізняє лише `edit_filter_id`
+    у стані, з яким сюди приходять.
     """
     query = update.callback_query
     state = context.user_data.get("housing_admin") or {}
@@ -879,21 +1135,30 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
         query.answer()
         return
     criteria = _criteria_from_state(state)
+    edit_filter_id = state.get("edit_filter_id")
     try:
-        payload = _request("POST", "/api/housing/filters", json={
-            "user_id": state["user_id"], "title": state["title"], **criteria,
-        })
+        if edit_filter_id:
+            _request("PATCH", f"/api/housing/filters/{edit_filter_id}", json={
+                "title": state["title"], **criteria,
+            })
+            filter_id = edit_filter_id
+        else:
+            payload = _request("POST", "/api/housing/filters", json={
+                "user_id": state["user_id"], "title": state["title"], **criteria,
+            })
+            filter_id = payload.get("filter_id")
     except Exception as exc:
-        logger.exception("Could not add housing filter")
+        logger.exception("Could not save housing filter")
         query.answer("Не вдалося зберегти фільтр.", show_alert=True)
-        query.edit_message_text(f"⚠️ Не вдалося додати фільтр: {html.escape(str(exc))}")
+        query.edit_message_text(f"⚠️ Не вдалося зберегти фільтр: {html.escape(str(exc))}")
         context.user_data.pop("housing_admin", None)
         return
     context.user_data.pop("housing_admin", None)
-    query.answer("Фільтр збережено.")
+    heading = "Фільтр оновлено" if edit_filter_id else "Фільтр житла додано"
+    query.answer("Фільтр оновлено." if edit_filter_id else "Фільтр збережено.")
     query.edit_message_text(
-        "✅ <b>Фільтр житла додано</b>\n\n"
-        f"ID: {payload.get('filter_id')}\n"
+        f"✅ <b>{heading}</b>\n\n"
+        f"ID: {filter_id}\n"
         f"Назва: {html.escape(str(state['title']))}\n"
         f"Умови: {_describe_criteria(criteria)}",
         parse_mode="HTML",
@@ -1205,8 +1470,35 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:self_manage":
         query.answer()
         show_self_manage(update, context, edit=True)
+    elif query.data == "housing:notify_settings":
+        query.answer()
+        show_notify_settings(update, context, edit=True)
+    elif query.data.startswith("housing:notify_quiet:"):
+        raw = query.data.split(":")[2]
+        toggle_quiet_hours(update, context, raw == "1")
+    elif query.data.startswith("housing:notify_digest:"):
+        mode = query.data.split(":", 2)[2]
+        set_digest_mode(update, context, mode)
     elif query.data.startswith("housing:toggle:"):
         _toggle_owned_filter(update, context)
+    elif query.data.startswith("housing:edit:"):
+        _, _, source, raw_id = query.data.split(":", 3)
+        if source == "immowelt" and raw_id.isdigit():
+            start_edit_flow(update, context, int(raw_id))
+        else:
+            query.answer()
+    elif query.data.startswith("housing:delete_confirm:"):
+        _, _, source, raw_id = query.data.split(":", 3)
+        if raw_id.isdigit():
+            confirm_delete_filter(update, context, source, int(raw_id))
+        else:
+            query.answer()
+    elif query.data.startswith("housing:delete:"):
+        _, _, source, raw_id = query.data.split(":", 3)
+        if raw_id.isdigit():
+            start_delete_flow(update, context, source, int(raw_id))
+        else:
+            query.answer()
     elif query.data.startswith("housing:list"):
         query.answer()
         parts = query.data.split(":")
