@@ -14,6 +14,7 @@ from user_jobs import propotsdam_matching, propotsdam_parser
 
 ALL_DISTRICTS_WORDS = {"", "-", "all", "alle", "всі", "все", "усі", "любой", "любые"}
 STATUS_KEY = "global"
+EMPTY_ALERT_KEY = "empty_alert"
 
 
 def utc_now() -> datetime:
@@ -207,6 +208,11 @@ def upsert_listings(listings: Iterable[Dict]) -> int:
             count += 1
         if seen:
             session.query(ProPotsdamListing).filter(~ProPotsdamListing.listing_key.in_(seen)).update({"is_active": False}, synchronize_session=False)
+        else:
+            # An empty scan means the portal currently lists nothing, so everything we
+            # knew about is gone too. Without this the last batch stays is_active
+            # forever and /housing keeps showing apartments that are no longer offered.
+            session.query(ProPotsdamListing).filter(ProPotsdamListing.is_active.is_(True)).update({"is_active": False}, synchronize_session=False)
         session.commit()
         return count
     finally:
@@ -291,5 +297,40 @@ def latest_status() -> Dict:
             "last_error": row.last_error,
             "listings_count": row.listings_count,
         }
+    finally:
+        session.close()
+
+
+def latest_listing_seen_at() -> Optional[datetime]:
+    """When any listing was last observed on the portal, regardless of filters."""
+    session = DBSession()
+    try:
+        row = session.query(ProPotsdamListing.last_seen_at).order_by(ProPotsdamListing.last_seen_at.desc()).first()
+        return row[0] if row else None
+    finally:
+        session.close()
+
+
+def last_empty_alert_at() -> Optional[datetime]:
+    session = DBSession()
+    try:
+        row = session.query(ProPotsdamStatus).filter(ProPotsdamStatus.key == EMPTY_ALERT_KEY).first()
+        return row.last_checked_at if row else None
+    finally:
+        session.close()
+
+
+def record_empty_alert() -> None:
+    session = DBSession()
+    try:
+        row = session.query(ProPotsdamStatus).filter(ProPotsdamStatus.key == EMPTY_ALERT_KEY).first()
+        if row is None:
+            row = ProPotsdamStatus(key=EMPTY_ALERT_KEY)
+            session.add(row)
+        row.last_checked_at = utc_now()
+        row.last_status = "alerted"
+        row.last_error = ""
+        row.listings_count = 0
+        session.commit()
     finally:
         session.close()

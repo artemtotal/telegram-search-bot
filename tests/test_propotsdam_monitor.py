@@ -66,6 +66,51 @@ class ProPotsdamMonitorTests(unittest.TestCase):
         self.assertEqual(result['admin_alerted'], 0)
         self.assertEqual(context.bot.messages, [])
 
+    def _run_empty_scan(self, context, last_seen, last_alert=None):
+        with mock.patch.object(propotsdam_monitor, 'PROPOTSDAM_CHECK_ENABLED', True), \
+             mock.patch.object(propotsdam_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(propotsdam_monitor, '_request_scan', return_value=[]), \
+             mock.patch.object(propotsdam_store, 'upsert_listings', return_value=0), \
+             mock.patch.object(propotsdam_store, 'record_status'), \
+             mock.patch.object(propotsdam_store, 'latest_listing_seen_at', return_value=last_seen), \
+             mock.patch.object(propotsdam_store, 'last_empty_alert_at', return_value=last_alert), \
+             mock.patch.object(propotsdam_store, 'record_empty_alert') as record_empty_alert, \
+             mock.patch.object(propotsdam_store, 'list_active_listings', return_value=[]), \
+             mock.patch.object(propotsdam_store, 'list_filters', return_value=[]), \
+             mock.patch.object(propotsdam_store, 'select_unsent_matches', return_value=[]), \
+             mock.patch.object(propotsdam_store, 'delivered_pairs', return_value=set()):
+            result = propotsdam_monitor.check_job(context)
+        return result, record_empty_alert
+
+    def test_prolonged_emptiness_alerts_admin(self):
+        context = FakeContext()
+        stale = propotsdam_store.utc_now() - timedelta(hours=30)
+        result, record_empty_alert = self._run_empty_scan(context, stale)
+
+        self.assertEqual(result['empty_alerted'], 1)
+        self.assertEqual(context.bot.messages[0]['chat_id'], 312029534)
+        self.assertIn('ни одной квартиры', context.bot.messages[0]['text'])
+        record_empty_alert.assert_called_once_with()
+
+    def test_short_emptiness_is_not_alerted(self):
+        context = FakeContext()
+        recent = propotsdam_store.utc_now() - timedelta(hours=2)
+        result, record_empty_alert = self._run_empty_scan(context, recent)
+
+        self.assertEqual(result['empty_alerted'], 0)
+        self.assertEqual(context.bot.messages, [])
+        record_empty_alert.assert_not_called()
+
+    def test_empty_alert_is_rate_limited(self):
+        context = FakeContext()
+        stale = propotsdam_store.utc_now() - timedelta(hours=30)
+        just_alerted = propotsdam_store.utc_now() - timedelta(hours=1)
+        result, record_empty_alert = self._run_empty_scan(context, stale, last_alert=just_alerted)
+
+        self.assertEqual(result['empty_alerted'], 0)
+        self.assertEqual(context.bot.messages, [])
+        record_empty_alert.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

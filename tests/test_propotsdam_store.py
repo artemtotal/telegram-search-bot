@@ -117,6 +117,67 @@ class ProPotsdamStoreTests(unittest.TestCase):
             propotsdam_store.DBSession = original_session
             engine.dispose()
 
+    def test_empty_scan_deactivates_previously_active_listings(self):
+        engine = create_engine(
+            'sqlite://',
+            connect_args={'check_same_thread': False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        test_session = sessionmaker(bind=engine)
+        now = datetime.utcnow()
+        session = test_session()
+        session.add(
+            ProPotsdamListing(
+                listing_key='gone-from-portal',
+                title='Withdrawn apartment',
+                district='Drewitz',
+                rooms=3.0,
+                area_m2=70.0,
+                total_rent_eur=1200.0,
+                first_seen_at=now,
+                last_seen_at=now,
+                is_active=True,
+            )
+        )
+        session.commit()
+        session.close()
+
+        original_session = propotsdam_store.DBSession
+        propotsdam_store.DBSession = test_session
+        try:
+            self.assertEqual(propotsdam_store.upsert_listings([]), 0)
+            self.assertEqual(propotsdam_store.list_active_listings(), [])
+        finally:
+            propotsdam_store.DBSession = original_session
+            engine.dispose()
+
+    def test_latest_listing_seen_at_returns_most_recent_observation(self):
+        engine = create_engine(
+            'sqlite://',
+            connect_args={'check_same_thread': False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        test_session = sessionmaker(bind=engine)
+        older = datetime(2026, 8, 12, 10, 0, 0)
+        newer = datetime(2026, 8, 14, 21, 42, 0)
+        session = test_session()
+        session.add_all([
+            ProPotsdamListing(listing_key='old', title='Older', first_seen_at=older, last_seen_at=older, is_active=False),
+            ProPotsdamListing(listing_key='new', title='Newer', first_seen_at=older, last_seen_at=newer, is_active=False),
+        ])
+        session.commit()
+        session.close()
+
+        original_session = propotsdam_store.DBSession
+        propotsdam_store.DBSession = test_session
+        try:
+            self.assertEqual(propotsdam_store.latest_listing_seen_at(), newer)
+        finally:
+            propotsdam_store.DBSession = original_session
+            engine.dispose()
+
     def test_select_unsent_matches_uses_delivery_keys(self):
         listing = {'listing_key': 'abc', 'district': 'Babelsberg', 'rooms': 2.0, 'area_m2': 64.0, 'total_rent_eur': 900.0}
         filt = {'filter_id': 7, 'user_id': 123, 'districts': 'Babelsberg', 'max_total_rent_eur': 1000.0}
