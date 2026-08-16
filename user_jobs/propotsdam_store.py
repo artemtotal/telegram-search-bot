@@ -126,6 +126,61 @@ def create_filter(
         session.close()
 
 
+def update_filter(
+    filter_id: int,
+    user_id: int,
+    title: str,
+    districts: str = "",
+    min_rooms: Optional[float] = None,
+    max_rooms: Optional[float] = None,
+    min_area_m2: Optional[float] = None,
+    max_area_m2: Optional[float] = None,
+    min_total_rent_eur: Optional[float] = None,
+    max_total_rent_eur: Optional[float] = None,
+) -> bool:
+    """Оновлює критерії фільтра й наново базує його на поточному каталозі.
+
+    Як і при створенні: розширений фільтр спершу тихо запамʼятовує, що вже
+    підходить під нові умови, а не шле весь цей збіг одним потоком «нових»
+    оголошень. Старі записи доставки видаляємо — інакше повторний insert на
+    те саме (filter_id, listing_key) впав би на унікальному обмеженні.
+    """
+    session = DBSession()
+    try:
+        row = session.query(ProPotsdamFilter).filter(
+            ProPotsdamFilter.filter_id == int(filter_id),
+            ProPotsdamFilter.user_id == int(user_id),
+        ).first()
+        if not row:
+            return False
+        row.title = str(title)[:120]
+        row.districts = normalize_districts(districts)
+        row.min_rooms = min_rooms
+        row.max_rooms = max_rooms
+        row.min_area_m2 = min_area_m2
+        row.max_area_m2 = max_area_m2
+        row.min_total_rent_eur = min_total_rent_eur
+        row.max_total_rent_eur = max_total_rent_eur
+        session.flush()
+        filter_data = filter_to_dict(row)
+        now = utc_now()
+        session.query(ProPotsdamDelivery).filter(ProPotsdamDelivery.filter_id == int(filter_id)).delete()
+        for listing_row in session.query(ProPotsdamListing).filter(
+            ProPotsdamListing.is_active.is_(True)
+        ).all():
+            listing = listing_to_dict(listing_row)
+            if propotsdam_matching.matches_filter(listing, filter_data):
+                session.add(ProPotsdamDelivery(
+                    filter_id=int(filter_id),
+                    listing_key=str(listing["listing_key"]),
+                    sent_at=now,
+                ))
+        session.commit()
+        return True
+    finally:
+        session.close()
+
+
 def list_filters(user_id: Optional[int] = None, active_only: bool = False) -> List[Dict]:
     session = DBSession()
     try:

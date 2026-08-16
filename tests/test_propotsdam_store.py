@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from database import Base, ProPotsdamDelivery, ProPotsdamListing
+from database import Base, ProPotsdamDelivery, ProPotsdamFilter, ProPotsdamListing
 from user_jobs import propotsdam_store
 
 
@@ -69,6 +69,87 @@ class ProPotsdamStoreTests(unittest.TestCase):
         engine.dispose()
 
         self.assertEqual([row.listing_key for row in deliveries], ['matching'])
+
+    def test_update_filter_rebaselines_delivery_for_the_new_criteria(self):
+        """Розширений фільтр тихо базується на нових умовах, а не шле все одним потоком."""
+        engine = create_engine(
+            'sqlite://',
+            connect_args={'check_same_thread': False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        test_session = sessionmaker(bind=engine)
+        now = datetime.utcnow()
+        session = test_session()
+        session.add(
+            ProPotsdamListing(
+                listing_key='bigger-flat',
+                title='Bigger apartment',
+                district='Drewitz',
+                rooms=4.0,
+                area_m2=90.0,
+                total_rent_eur=1400.0,
+                first_seen_at=now,
+                last_seen_at=now,
+                is_active=True,
+            )
+        )
+        session.commit()
+        session.close()
+
+        original_session = propotsdam_store.DBSession
+        propotsdam_store.DBSession = test_session
+        try:
+            filter_id = propotsdam_store.create_filter(
+                user_id=544675510, title='Katya', districts='Drewitz',
+                min_rooms=3.0, max_rooms=3.0,
+            )
+            # До оновлення 4-кімнатна квартира не підходила під ліміт "3 кімнати" —
+            # доставки для неї ще немає.
+            session = test_session()
+            self.assertEqual(
+                session.query(ProPotsdamDelivery).filter(ProPotsdamDelivery.filter_id == filter_id).count(), 0
+            )
+            session.close()
+
+            ok = propotsdam_store.update_filter(
+                filter_id=filter_id, user_id=544675510, title='Katya', districts='Drewitz',
+                min_rooms=3.0, max_rooms=None,
+            )
+        finally:
+            propotsdam_store.DBSession = original_session
+
+        self.assertTrue(ok)
+        session = test_session()
+        deliveries = session.query(ProPotsdamDelivery).filter(ProPotsdamDelivery.filter_id == filter_id).all()
+        row = session.query(ProPotsdamFilter).filter(ProPotsdamFilter.filter_id == filter_id).first()
+        session.close()
+        engine.dispose()
+
+        self.assertEqual([d.listing_key for d in deliveries], ['bigger-flat'])
+        self.assertIsNone(row.max_rooms)
+
+    def test_update_filter_rejects_someone_elses_filter(self):
+        engine = create_engine(
+            'sqlite://',
+            connect_args={'check_same_thread': False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        test_session = sessionmaker(bind=engine)
+
+        original_session = propotsdam_store.DBSession
+        propotsdam_store.DBSession = test_session
+        try:
+            filter_id = propotsdam_store.create_filter(user_id=544675510, title='Katya', districts='Drewitz')
+            ok = propotsdam_store.update_filter(
+                filter_id=filter_id, user_id=312029534, title='Hijacked', districts='Golm',
+            )
+        finally:
+            propotsdam_store.DBSession = original_session
+            engine.dispose()
+
+        self.assertFalse(ok)
 
     def test_numeric_text_parsing_for_admin_flow(self):
         self.assertEqual(propotsdam_store.parse_optional_number('1,5'), 1.5)

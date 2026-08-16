@@ -946,83 +946,84 @@ SOURCE_ICON = {"immowelt": "🏠", "propotsdam": "🏢"}
 SOURCE_LABEL = {"immowelt": "Immowelt", "propotsdam": "ProPotsdam", "all": "усі джерела"}
 
 
-def _self_manage_keyboard(user_id: int, source: str = "all") -> InlineKeyboardMarkup:
+def _item_criteria_summary(item: Dict[str, object], source: str) -> str:
+    """Стислий опис умов фільтра для кнопки.
+
+    Назва каже лише «чий це пошук» («Пошук Артема»), а не «який» — двоє
+    фільтрів на одну людину виглядали в списку однаково, поки не відкриєш
+    кожен окремо. ProPotsdam зберігає район рядком через кому й ціну як
+    «загальну оренду» під іншою назвою поля — приводимо до одного вигляду,
+    яким уже вміє оперувати `_describe_criteria`.
+    """
+    if source == "propotsdam":
+        districts = [d for d in str(item.get("districts") or "").split(",") if d]
+        criteria = {
+            "districts": districts,
+            "min_price_eur": item.get("min_total_rent_eur"),
+            "max_price_eur": item.get("max_total_rent_eur"),
+            "min_rooms": item.get("min_rooms"),
+            "max_rooms": item.get("max_rooms"),
+            "min_area_m2": item.get("min_area_m2"),
+            "max_area_m2": item.get("max_area_m2"),
+        }
+    else:
+        criteria = item
+    # _describe_criteria готує текст для HTML-повідомлення; кнопки HTML не
+    # розбирають, тож &, < і подібне мають лишитися як є, а не як сутності.
+    summary = html.unescape(_describe_criteria(criteria))
+    if len(summary) > 40:
+        summary = summary[:39].rstrip(" ,·") + "…"
+    return summary
+
+
+def _self_manage_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """Список фільтрів, розбитий на розділи за джерелом.
+
+    Immowelt і ProPotsdam малювали однакові на вигляд кнопки в одному
+    суцільному списку — назва фільтра каже, чий це пошук, а не який портал
+    він дивиться, тож два фільтри однієї людини були невідрізненні. Заголовок
+    розділу — теж кнопка (Telegram не має нейтральних рядків у клавіатурі),
+    але веде в нікуди: `housing:noop` лише гасить «годинник» на кнопці.
+    """
     rows = []
     items = manageable_filters(user_id)
-    if source != "all":
-        items = [item for item in items if _item_source(item) == source]
-    for item in items:
-        item_source = _item_source(item)
-        icon = SOURCE_ICON.get(item_source, "")
-        filter_id = int(item.get("filter_id"))
-        active = bool(item.get("active", True))
-        mark = "✅" if active else "⏸"
-        title = str(item.get("title") or "Пошук житла")[:30]
+    for source in ("immowelt", "propotsdam"):
+        group = [item for item in items if _item_source(item) == source]
+        if not group:
+            continue
         rows.append([InlineKeyboardButton(
-            f"{mark} {icon} {title}",
-            callback_data=f"housing:toggle:{item_source}:{filter_id}:{0 if active else 1}",
+            f"── {SOURCE_ICON[source]} Фільтри {SOURCE_LABEL[source]} ──", callback_data="housing:noop"
         )])
-        # Раніше тут можна було лише поставити фільтр на паузу: одруківся в
-        # ціні — і йшли зі скаргою до адміна, бо змінити нічого не могли.
-        actions = []
-        if item_source == "immowelt":
-            actions.append(InlineKeyboardButton(
-                "✏️ Редагувати", callback_data=f"housing:edit:{item_source}:{filter_id}"
-            ))
-        actions.append(InlineKeyboardButton(
-            "🗑 Видалити", callback_data=f"housing:delete:{item_source}:{filter_id}"
-        ))
-        rows.append(actions)
-    rows.append([InlineKeyboardButton("⬅ Інше джерело", callback_data="housing:self_manage")])
+        for item in group:
+            filter_id = int(item.get("filter_id"))
+            active = bool(item.get("active", True))
+            mark = "✅" if active else "⏸"
+            title = str(item.get("title") or "Пошук житла")[:30]
+            summary = _item_criteria_summary(item, source)
+            rows.append([InlineKeyboardButton(
+                f"{mark} {title} — {summary}",
+                callback_data=f"housing:toggle:{source}:{filter_id}:{0 if active else 1}",
+            )])
+            # Раніше ProPotsdam-фільтр можна було лише поставити на паузу чи
+            # видалити: одруківся в районі — і заводь новий фільтр з нуля.
+            rows.append([
+                InlineKeyboardButton("✏️ Редагувати", callback_data=f"housing:edit:{source}:{filter_id}"),
+                InlineKeyboardButton("🗑 Видалити", callback_data=f"housing:delete:{source}:{filter_id}"),
+            ])
     rows.append([InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")])
     return InlineKeyboardMarkup(rows)
 
 
-def _self_manage_picker_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🏠 Immowelt", callback_data="housing:self_manage_src:immowelt")],
-        [InlineKeyboardButton("🏢 ProPotsdam", callback_data="housing:self_manage_src:propotsdam")],
-        [InlineKeyboardButton("📋 Усі джерела", callback_data="housing:self_manage_src:all")],
-        [InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")],
-    ])
-
-
 def show_self_manage(update: Update, context: CallbackContext, edit: bool = False) -> None:
-    """Питає, які фільтри показати — інакше в спільному списку не видно, який фільтр чий.
-
-    Immowelt і ProPotsdam ведуть окремі списки з однаковим виглядом кнопок,
-    тож без явного вибору джерела «Мої фільтри» показували все підряд і
-    незрозуміло було, який фільтр до якого порталу належить.
-    """
     user = update.effective_user
     if not user or not is_allowed(user.id):
         return
     filters = manageable_filters(user.id)
-    if filters:
-        text = "⚙️ <b>Мої фільтри</b>\n\nЯкі фільтри показати?"
-        keyboard = _self_manage_picker_keyboard()
-    else:
-        text = "⚙️ <b>Мої фільтри</b>\n\nУ вас ще немає фільтрів."
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]])
-    if edit and update.callback_query:
-        update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
-    else:
-        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
-
-
-def show_self_manage_filtered(update: Update, context: CallbackContext, source: str, edit: bool = True) -> None:
-    user = update.effective_user
-    if not user or not is_allowed(user.id):
-        return
-    items = manageable_filters(user.id)
-    if source != "all":
-        items = [item for item in items if _item_source(item) == source]
-    label = SOURCE_LABEL.get(source, source)
     text = (
-        f"⚙️ <b>Мої фільтри — {label}</b>\n\nНатисніть фільтр, щоб увімкнути або призупинити його."
-        if items else f"⚙️ <b>Мої фільтри — {label}</b>\n\nТут поки що немає фільтрів."
+        "⚙️ <b>Мої фільтри</b>\n\nНатисніть фільтр, щоб увімкнути або призупинити його."
+        if filters else "⚙️ <b>Мої фільтри</b>\n\nУ вас ще немає фільтрів."
     )
-    keyboard = _self_manage_keyboard(user.id, source)
+    keyboard = _self_manage_keyboard(user.id)
     if edit and update.callback_query:
         update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
     else:
@@ -1167,7 +1168,7 @@ def _toggle_owned_filter(update: Update, context: CallbackContext) -> None:
         query.answer("Не вдалося оновити фільтр.", show_alert=True)
         return
     query.answer("Фільтр оновлено.")
-    show_self_manage_filtered(update, context, source, edit=True)
+    show_self_manage(update, context, edit=True)
 
 
 def _delete_confirm_keyboard(source: str, filter_id: int) -> InlineKeyboardMarkup:
@@ -1175,7 +1176,7 @@ def _delete_confirm_keyboard(source: str, filter_id: int) -> InlineKeyboardMarku
         InlineKeyboardButton(
             "🗑 Так, видалити", callback_data=f"housing:delete_confirm:{source}:{filter_id}"
         ),
-        InlineKeyboardButton(BTN_CANCEL, callback_data=f"housing:self_manage_src:{source}"),
+        InlineKeyboardButton(BTN_CANCEL, callback_data="housing:self_manage"),
     ]])
 
 
@@ -1231,7 +1232,7 @@ def confirm_delete_filter(update: Update, context: CallbackContext, source: str,
         query.answer("Не вдалося видалити фільтр.", show_alert=True)
         return
     query.answer("Фільтр видалено.")
-    show_self_manage_filtered(update, context, source, edit=True)
+    show_self_manage(update, context, edit=True)
 
 
 def start_edit_flow(update: Update, context: CallbackContext, filter_id: int) -> None:
@@ -1270,6 +1271,42 @@ def start_edit_flow(update: Update, context: CallbackContext, filter_id: int) ->
         _immowelt_district_text(districts_selected),
         parse_mode="HTML",
         reply_markup=_immowelt_district_keyboard(districts_selected),
+    )
+
+
+def start_propot_edit_flow(update: Update, context: CallbackContext, filter_id: int) -> None:
+    """Той самий підхід, що й у `start_edit_flow` для Immowelt.
+
+    Раніше «Мої фільтри» вміло для ProPotsdam лише паузу й видалення —
+    одруківся в районі чи площі, і єдиний вихід був завести фільтр з нуля.
+    """
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    item = _own_filter(int(user.id), "propotsdam", filter_id)
+    if not item:
+        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        return
+    districts_selected = [d for d in str(item.get("districts") or "").split(",") if d]
+    context.user_data["housing_admin"] = {
+        "mode": "propotsdam", "step": "districts", "user_id": int(user.id),
+        "title": str(item.get("title") or "Пошук житла"),
+        "districts_selected": districts_selected,
+        "min_rooms": item.get("min_rooms"),
+        "max_rooms": item.get("max_rooms"),
+        "min_area_m2": item.get("min_area_m2"),
+        "max_area_m2": item.get("max_area_m2"),
+        "min_total_rent_eur": item.get("min_total_rent_eur"),
+        "max_total_rent_eur": item.get("max_total_rent_eur"),
+        "criteria_selected": [key for key in PROPOT_CRITERIA_KEYS if item.get(key) is not None],
+        "edit_filter_id": filter_id,
+    }
+    query.answer()
+    query.edit_message_text(
+        _district_text(districts_selected),
+        parse_mode="HTML",
+        reply_markup=_district_keyboard(districts_selected),
     )
 
 
@@ -1641,8 +1678,9 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
 
 
 def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, state: dict) -> None:
-    filter_id = propotsdam_store.create_filter(
-        user_id=state["user_id"],
+    """Той самий майстер веде і редагування — відрізняє лише `edit_filter_id`."""
+    edit_filter_id = state.get("edit_filter_id")
+    common = dict(
         title=state["title"],
         districts=state.get("districts", ""),
         min_rooms=state.get("min_rooms"),
@@ -1652,12 +1690,27 @@ def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, 
         min_total_rent_eur=state.get("min_total_rent_eur"),
         max_total_rent_eur=state.get("max_total_rent_eur"),
     )
+    if edit_filter_id:
+        ok = propotsdam_store.update_filter(
+            filter_id=int(edit_filter_id), user_id=int(state["user_id"]), **common
+        )
+        filter_id = int(edit_filter_id)
+    else:
+        filter_id = propotsdam_store.create_filter(user_id=state["user_id"], **common)
+        ok = True
     _sync_propot_filters()
     context.user_data.pop("housing_admin", None)
+    if not ok:
+        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        return
+    heading = "Фільтр ProPotsdam оновлено" if edit_filter_id else "Фільтр ProPotsdam додано"
     text_out = (
-        f"✅ Фільтр ProPotsdam додано.\nID: P{filter_id}\n"
+        f"✅ {heading}.\nID: P{filter_id}\n"
         f"Користувач: {state['user_id']}\nНазва: {html.escape(str(state['title']))}"
     )
+    if edit_filter_id:
+        message.reply_text(text_out)
+        return
     suggestion = _cross_source_suggestion(
         context, chatter_id, int(state["user_id"]), "propotsdam",
         {
@@ -1899,9 +1952,8 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:self_manage":
         query.answer()
         show_self_manage(update, context, edit=True)
-    elif query.data.startswith("housing:self_manage_src:"):
+    elif query.data == "housing:noop":
         query.answer()
-        show_self_manage_filtered(update, context, query.data.split(":", 2)[2], edit=True)
     elif query.data == "housing:notify_settings":
         query.answer()
         show_notify_settings(update, context, edit=True)
@@ -1915,8 +1967,12 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _toggle_owned_filter(update, context)
     elif query.data.startswith("housing:edit:"):
         _, _, source, raw_id = query.data.split(":", 3)
-        if source == "immowelt" and raw_id.isdigit():
+        if not raw_id.isdigit():
+            query.answer()
+        elif source == "immowelt":
             start_edit_flow(update, context, int(raw_id))
+        elif source == "propotsdam":
+            start_propot_edit_flow(update, context, int(raw_id))
         else:
             query.answer()
     elif query.data.startswith("housing:delete_confirm:"):
