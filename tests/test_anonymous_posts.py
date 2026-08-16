@@ -84,6 +84,101 @@ class AnonymousPostValidationTests(unittest.TestCase):
 
         self.assertIn(anonymous_posts.BTN_HOUSING, flattened)
 
+    def test_feedback_button_is_shown_to_everyone(self):
+        keyboard = anonymous_posts.reply_menu_keyboard(user_id=123).to_dict()["keyboard"]
+        flattened = [button["text"] for row in keyboard for button in row]
+
+        self.assertIn(anonymous_posts.BTN_FEEDBACK, flattened)
+
+
+class FakeMessage:
+    def __init__(self, text=""):
+        self.text = text
+        self.chat = SimpleNamespace(type="private")
+        self.replies = []
+
+    def reply_text(self, text, **kwargs):
+        self.replies.append((text, kwargs))
+
+
+class FakeBotSender:
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.sent = []
+
+    def send_message(self, chat_id, text, **kwargs):
+        if self.fail:
+            raise RuntimeError("boom")
+        self.sent.append((chat_id, text, kwargs))
+
+
+class FeedbackTests(unittest.TestCase):
+    def test_start_feedback_from_reply_keyboard_prompts_for_text(self):
+        message = FakeMessage(text=anonymous_posts.BTN_FEEDBACK)
+        update = SimpleNamespace(
+            message=message, effective_message=message, callback_query=None,
+            effective_user=SimpleNamespace(id=544675510),
+        )
+        context = SimpleNamespace(user_data={})
+
+        anonymous_posts.handle_private_text(update, context)
+
+        self.assertEqual(context.user_data["feedback"], {"step": "text"})
+        self.assertIn("Зворотній звʼязок", message.replies[-1][0])
+
+    def test_feedback_text_is_forwarded_to_admin_and_confirmed(self):
+        message = FakeMessage(text="Кнопка редагування не працює на телефоні")
+        update = SimpleNamespace(
+            message=message, effective_message=message,
+            effective_user=SimpleNamespace(id=544675510, username="katya", full_name="Katya"),
+        )
+        bot = FakeBotSender()
+        context = SimpleNamespace(user_data={"feedback": {"step": "text"}}, bot=bot)
+
+        with mock.patch.object(anonymous_posts, "ADMIN_ID", 312029534):
+            anonymous_posts.handle_private_text(update, context)
+
+        self.assertNotIn("feedback", context.user_data)
+        self.assertEqual(len(bot.sent), 1)
+        chat_id, text, _ = bot.sent[0]
+        self.assertEqual(chat_id, 312029534)
+        self.assertIn("не працює на телефоні", text)
+        self.assertIn("544675510", text)
+        self.assertIn("Дякуємо", message.replies[-1][0])
+
+    def test_too_short_feedback_is_rejected_and_asked_again(self):
+        message = FakeMessage(text="ок")
+        update = SimpleNamespace(message=message, effective_message=message, effective_user=SimpleNamespace(id=1))
+        context = SimpleNamespace(user_data={"feedback": {"step": "text"}}, bot=FakeBotSender())
+
+        anonymous_posts.handle_private_text(update, context)
+
+        self.assertEqual(context.user_data["feedback"], {"step": "text"})
+        self.assertIn("Закоротко", message.replies[-1][0])
+
+    def test_feedback_delivery_failure_still_clears_state_and_tells_the_user(self):
+        message = FakeMessage(text="Довге повідомлення про помилку в боті")
+        update = SimpleNamespace(
+            message=message, effective_message=message, effective_user=SimpleNamespace(id=1),
+        )
+        context = SimpleNamespace(user_data={"feedback": {"step": "text"}}, bot=FakeBotSender(fail=True))
+
+        with mock.patch.object(anonymous_posts, "ADMIN_ID", 312029534):
+            anonymous_posts.handle_private_text(update, context)
+
+        self.assertNotIn("feedback", context.user_data)
+        self.assertIn("Не вдалося", message.replies[-1][0])
+
+    def test_cancel_feedback_clears_state(self):
+        query = SimpleNamespace(data="anon:feedback_cancel", answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=1))
+        context = SimpleNamespace(user_data={"feedback": {"step": "text"}})
+
+        anonymous_posts.handle_callback(update, context)
+
+        self.assertNotIn("feedback", context.user_data)
+        query.answer.assert_called_once()
+
 
 class FakeBot:
     def __init__(self):

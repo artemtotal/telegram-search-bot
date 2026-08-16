@@ -39,6 +39,9 @@ BTN_EQUEUE = "🛂 ДП Документ"
 BTN_HOUSING = "🏠 Моніторинг житла"
 BTN_ANON = "✍️ Анонімне запитання"
 BTN_MY_POSTS = "📋 Мої публікації"
+BTN_FEEDBACK = "💬 Зворотній звʼязок"
+FEEDBACK_MIN_LENGTH = 5
+FEEDBACK_MAX_LENGTH = 2000
 
 def utc_now() -> datetime:
     return datetime.utcnow()
@@ -55,6 +58,7 @@ def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
     ]
     rows.extend(equeue_monitor.private_home_rows(user_id))
     rows.extend(housing_monitor.private_home_rows(user_id))
+    rows.append([InlineKeyboardButton(BTN_FEEDBACK, callback_data="anon:feedback")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -64,6 +68,7 @@ def reply_menu_keyboard(user_id=None) -> ReplyKeyboardMarkup:
         rows[1].append(BTN_EQUEUE)
     if housing_monitor.is_allowed(user_id):
         rows.append([BTN_HOUSING])
+    rows.append([BTN_FEEDBACK])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
 
@@ -71,6 +76,70 @@ def _cancel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✖ Скасувати", callback_data="anon:cancel")],
     ])
+
+
+def _feedback_cancel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✖ Скасувати", callback_data="anon:feedback_cancel")],
+    ])
+
+
+def start_feedback(update: Update, context: CallbackContext) -> None:
+    """Одне повідомлення від людини йде особисто адміністратору.
+
+    Раніше зв'язатися з адміном можна було лише випадково натрапивши на нього
+    в чаті — жодного окремого каналу для скарги, ідеї чи помилки не було.
+    """
+    context.user_data["feedback"] = {"step": "text"}
+    text = (
+        "💬 <b>Зворотній звʼязок</b>\n\n"
+        "Напишіть одним повідомленням — помилку, ідею чи скаргу. "
+        "Дійде особисто адміністратору, без публікації в чаті."
+    )
+    query = update.callback_query
+    if query:
+        query.answer()
+        query.edit_message_text(text, parse_mode="HTML", reply_markup=_feedback_cancel_keyboard())
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_feedback_cancel_keyboard())
+
+
+def _handle_feedback_text(update: Update, context: CallbackContext) -> None:
+    text = (update.message.text or "").strip()
+    if len(text) < FEEDBACK_MIN_LENGTH:
+        update.message.reply_text(
+            f"Закоротко — хоча б {FEEDBACK_MIN_LENGTH} символів. Напишіть ще раз або натисніть «Скасувати».",
+            reply_markup=_feedback_cancel_keyboard(),
+        )
+        return
+    text = text[:FEEDBACK_MAX_LENGTH]
+    context.user_data.pop("feedback", None)
+    user = update.effective_user
+    username = getattr(user, "username", None) if user else None
+    sender = f"@{username}" if username else (getattr(user, "full_name", None) or "Невідомо")
+    user_id = user.id if user else 0
+    delivered = False
+    if ADMIN_ID:
+        try:
+            context.bot.send_message(
+                ADMIN_ID,
+                f"💬 <b>Зворотній звʼязок</b>\nВід: {html.escape(sender)} (ID {user_id})\n\n{html.escape(text)}",
+                parse_mode="HTML",
+            )
+            delivered = True
+        except Exception:
+            logger.exception("Could not forward feedback to admin")
+    reply = (
+        "Дякуємо! Повідомлення передано адміністратору."
+        if delivered else
+        "Не вдалося передати повідомлення адміністратору — спробуйте пізніше."
+    )
+    update.message.reply_text(reply, reply_markup=_home_keyboard(user_id))
+
+
+def cancel_feedback(update: Update, context: CallbackContext) -> None:
+    context.user_data.pop("feedback", None)
+    show_home(update, context, edit=True)
 
 
 def _main_menu_keyboard() -> InlineKeyboardMarkup:
@@ -317,11 +386,18 @@ def _preview_text(state) -> str:
 def handle_private_text(update: Update, context: CallbackContext) -> None:
     if not update.message or update.message.chat.type != "private" or not update.message.text:
         return
+    feedback_state = context.user_data.get("feedback") or {}
+    if feedback_state.get("step") == "text":
+        _handle_feedback_text(update, context)
+        return
     state = context.user_data.get("anonymous") or {}
     text = update.message.text.strip()
     if state.get("step") != "text":
         if text == BTN_HOME:
             show_home(update, context)
+            return
+        if text == BTN_FEEDBACK:
+            start_feedback(update, context)
             return
         if text == BTN_EQUEUE and equeue_monitor.is_allowed(update.effective_user.id if update.effective_user else None):
             equeue_monitor.show_menu(update, context)
@@ -657,6 +733,11 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     if data == "anon:home" or data == "anon:cancel":
         query.answer()
         show_home(update, context, edit=True)
+    elif data == "anon:feedback":
+        start_feedback(update, context)
+    elif data == "anon:feedback_cancel":
+        query.answer()
+        cancel_feedback(update, context)
     elif data == "anon:new":
         _start_new(query, context)
     elif data.startswith("anon:captcha:"):
