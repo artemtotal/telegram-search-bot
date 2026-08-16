@@ -776,29 +776,6 @@ def _immowelt_district_text(selected=None) -> str:
     )
 
 
-def _immowelt_criteria_keyboard(selected=None) -> InlineKeyboardMarkup:
-    selected = set(selected or [])
-    rows = []
-    for spec in IMMOWELT_CRITERIA_FIELDS:
-        mark = "✅" if spec["key"] in selected else "☐"
-        rows.append([InlineKeyboardButton(
-            f"{mark} {spec['label']}", callback_data=f"housing:imm_crit:{spec['key']}"
-        )])
-    rows.append([InlineKeyboardButton("➡️ Далі", callback_data="housing:imm_crit_done")])
-    rows.append([InlineKeyboardButton(BTN_CANCEL, callback_data="housing:imm_cancel")])
-    return InlineKeyboardMarkup(rows)
-
-
-def _immowelt_criteria_text(selected=None) -> str:
-    selected = selected or []
-    labels = [spec["label"] for spec in IMMOWELT_CRITERIA_FIELDS if spec["key"] in selected]
-    suffix = ", ".join(labels) if labels else "без додаткових умов"
-    return (
-        "🎚 <b>Умови Immowelt</b>\n\n"
-        "Оберіть, які умови хочете задати — далі спитаю кожну окремим числом.\n"
-        f"Поточний вибір: {html.escape(suffix)}"
-    )
-
 
 def _preview_text(title: str, criteria: Dict[str, object], preview: Dict[str, object]) -> str:
     lines = [
@@ -841,6 +818,7 @@ def _preview_text(title: str, criteria: Dict[str, object], preview: Dict[str, ob
 def _preview_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Зберегти фільтр", callback_data="housing:imm_save")],
+        [InlineKeyboardButton("⬅ Назад", callback_data="housing:imm_back")],
         [InlineKeyboardButton(BTN_CANCEL, callback_data="housing:imm_cancel")],
     ])
 
@@ -862,29 +840,6 @@ def _district_text(selected=None) -> str:
     suffix = ", ".join(selected) if selected else "усі райони"
     return f"🏢 <b>Райони ProPotsdam</b>\n\nОберіть райони галочками.\nПоточний вибір: {html.escape(suffix)}"
 
-
-def _propot_criteria_keyboard(selected=None) -> InlineKeyboardMarkup:
-    selected = set(selected or [])
-    rows = []
-    for spec in PROPOT_CRITERIA_FIELDS:
-        mark = "✅" if spec["key"] in selected else "☐"
-        rows.append([InlineKeyboardButton(
-            f"{mark} {spec['label']}", callback_data=f"housing:propot_crit:{spec['key']}"
-        )])
-    rows.append([InlineKeyboardButton("➡️ Далі", callback_data="housing:propot_crit_done")])
-    rows.append([InlineKeyboardButton(BTN_CANCEL, callback_data="housing:propot_cancel")])
-    return InlineKeyboardMarkup(rows)
-
-
-def _propot_criteria_text(selected=None) -> str:
-    selected = selected or []
-    labels = [spec["label"] for spec in PROPOT_CRITERIA_FIELDS if spec["key"] in selected]
-    suffix = ", ".join(labels) if labels else "без додаткових умов"
-    return (
-        "🎚 <b>Умови ProPotsdam</b>\n\n"
-        "Оберіть, які умови хочете задати — далі спитаю кожну окремим числом.\n"
-        f"Поточний вибір: {html.escape(suffix)}"
-    )
 
 
 def start_propot_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
@@ -1261,9 +1216,6 @@ def start_edit_flow(update: Update, context: CallbackContext, filter_id: int) ->
         "max_rooms": item.get("max_rooms"),
         "min_area_m2": item.get("min_area_m2"),
         "max_area_m2": item.get("max_area_m2"),
-        # Раніше задані умови показуємо вже позначеними — інакше редагування
-        # виглядало б так, ніби всі попередні обмеження скинулися.
-        "criteria_selected": [key for key in IMMOWELT_CRITERIA_KEYS if item.get(key) is not None],
         "edit_filter_id": filter_id,
     }
     query.answer()
@@ -1299,7 +1251,6 @@ def start_propot_edit_flow(update: Update, context: CallbackContext, filter_id: 
         "max_area_m2": item.get("max_area_m2"),
         "min_total_rent_eur": item.get("min_total_rent_eur"),
         "max_total_rent_eur": item.get("max_total_rent_eur"),
-        "criteria_selected": [key for key in PROPOT_CRITERIA_KEYS if item.get(key) is not None],
         "edit_filter_id": filter_id,
     }
     query.answer()
@@ -1318,6 +1269,27 @@ def _show_immowelt_preview(message, state: dict) -> None:
         parse_mode="HTML",
         reply_markup=_preview_keyboard(),
         disable_web_page_preview=True,
+    )
+
+
+def _back_from_immowelt_preview(update: Update, context: CallbackContext) -> None:
+    """«Назад» із перевірки фільтра — раніше єдиним виходом було «Скасувати» й почати з нуля.
+
+    Повертає до вибору районів, зберігаючи вже введені назву й райони; умови
+    доведеться відповісти заново — той самий компроміс простоти, що й у
+    решті майстра без чекбоксів.
+    """
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    if state.get("mode") != "immowelt" or state.get("step") != "preview":
+        query.answer()
+        return
+    state["step"] = "districts"
+    query.answer()
+    query.edit_message_text(
+        _immowelt_district_text(state.get("districts_selected")),
+        parse_mode="HTML",
+        reply_markup=_immowelt_district_keyboard(state.get("districts_selected")),
     )
 
 
@@ -1378,26 +1350,29 @@ def _cross_source_suggestion(
 
 
 def _clone_propot_from_immowelt(update: Update, context: CallbackContext) -> None:
+    """Переносить район/кімнати/площу й питає лише оренду — двома питаннями.
+
+    Instant-копія без питань раніше просто пропускала оренду мовчки: Immowelt
+    рахує холодну (Kaltmiete), ProPotsdam — повну (Gesamtmiete), тож перенесене
+    число означало б інакшу умову, а не ту саму.
+    """
     query = update.callback_query
     source = context.user_data.pop("housing_clone_source", None)
     if not source or source.get("target") != "propotsdam":
         query.answer()
         return
-    filter_id = propotsdam_store.create_filter(
-        user_id=source["user_id"],
-        title=source["title"],
-        districts=propotsdam_store.normalize_districts(",".join(source.get("districts") or [])),
-        min_rooms=source.get("min_rooms"),
-        max_rooms=source.get("max_rooms"),
-        min_area_m2=source.get("min_area_m2"),
-        max_area_m2=source.get("max_area_m2"),
-    )
-    _sync_propot_filters()
-    query.answer("Фільтр ProPotsdam створено.")
+    context.user_data["housing_admin"] = {
+        "mode": "propotsdam", "step": "clone_price_min",
+        "user_id": source["user_id"], "title": source["title"],
+        "districts": propotsdam_store.normalize_districts(",".join(source.get("districts") or [])),
+        "min_rooms": source.get("min_rooms"), "max_rooms": source.get("max_rooms"),
+        "min_area_m2": source.get("min_area_m2"), "max_area_m2": source.get("max_area_m2"),
+    }
+    query.answer()
     query.edit_message_text(
-        f"✅ Фільтр ProPotsdam додано.\nID: P{filter_id}\nНазва: {html.escape(str(source['title']))}\n\n"
-        "Район, кімнати й площу перенесено з Immowelt-фільтра. Оренду не переносив — "
-        "Immowelt рахує холодну, ProPotsdam повну; за потреби задайте її окремо через «Мої фільтри»."
+        "Район, кімнати й площу перенесено з Immowelt-фільтра. Лишилось уточнити оренду — "
+        "ProPotsdam рахує її як повну (Gesamtmiete), а Immowelt як холодну (Kaltmiete).\n\n"
+        + PROPOT_CRITERIA_BY_KEY["min_total_rent_eur"]["prompt"]
     )
 
 
@@ -1407,28 +1382,18 @@ def _clone_immowelt_from_propot(update: Update, context: CallbackContext) -> Non
     if not source or source.get("target") != "immowelt":
         query.answer()
         return
-    try:
-        payload = _request("POST", "/api/housing/filters", json={
-            "user_id": source["user_id"],
-            "title": source["title"],
-            "districts": source.get("districts") or [],
-            "min_price_eur": None,
-            "max_price_eur": None,
-            "min_rooms": source.get("min_rooms"),
-            "max_rooms": source.get("max_rooms"),
-            "min_area_m2": source.get("min_area_m2"),
-            "max_area_m2": source.get("max_area_m2"),
-        })
-    except Exception as exc:
-        logger.exception("Could not clone Immowelt filter from ProPotsdam")
-        query.answer("Не вдалося зберегти фільтр.", show_alert=True)
-        query.edit_message_text(f"⚠️ Не вдалося зберегти фільтр: {html.escape(str(exc))}")
-        return
-    query.answer("Фільтр Immowelt створено.")
+    context.user_data["housing_admin"] = {
+        "mode": "immowelt", "step": "clone_price_min",
+        "user_id": source["user_id"], "title": source["title"],
+        "districts_selected": list(source.get("districts") or []),
+        "min_rooms": source.get("min_rooms"), "max_rooms": source.get("max_rooms"),
+        "min_area_m2": source.get("min_area_m2"), "max_area_m2": source.get("max_area_m2"),
+    }
+    query.answer()
     query.edit_message_text(
-        f"✅ Фільтр житла додано.\nID: {payload.get('filter_id')}\nНазва: {html.escape(str(source['title']))}\n\n"
-        "Район, кімнати й площу перенесено з ProPotsdam-фільтра. Ціну не переносив — "
-        "ProPotsdam рахує повну оренду, Immowelt холодну; за потреби задайте її окремо через «Мої фільтри»."
+        "Район, кімнати й площу перенесено з ProPotsdam-фільтра. Лишилось уточнити оренду — "
+        "Immowelt рахує її як холодну (Kaltmiete), а ProPotsdam як повну (Gesamtmiete).\n\n"
+        + IMMOWELT_CRITERIA_BY_KEY["min_price_eur"]["prompt"]
     )
 
 
@@ -1515,14 +1480,10 @@ def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict,
         )
         return True
     if step == "preview":
-        update.message.reply_text("Натисніть «Зберегти фільтр» або «Скасувати».", reply_markup=_preview_keyboard())
+        update.message.reply_text("Натисніть «Зберегти фільтр», «Назад» або «Скасувати».", reply_markup=_preview_keyboard())
         return True
-    if step == "criteria":
-        update.message.reply_text(
-            "Оберіть умови кнопками нижче і натисніть «Далі».",
-            reply_markup=_immowelt_criteria_keyboard(state.get("criteria_selected")),
-        )
-        return True
+    if step == "clone_price_min" or step == "clone_price_max":
+        return _handle_immowelt_clone_price_step(update, context, state, step, text)
     if step in IMMOWELT_CRITERIA_BY_KEY:
         spec = IMMOWELT_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
@@ -1535,17 +1496,45 @@ def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict,
             )
             return True
         state[step] = value
-        queue = list(state.get("criteria_queue") or [])
-        if queue and queue[0] == step:
-            queue = queue[1:]
-        state["criteria_queue"] = queue
-        if queue:
-            state["step"] = queue[0]
-            update.message.reply_text(IMMOWELT_CRITERIA_BY_KEY[queue[0]]["prompt"])
+        index = IMMOWELT_CRITERIA_KEYS.index(step)
+        if index < len(IMMOWELT_CRITERIA_KEYS) - 1:
+            next_key = IMMOWELT_CRITERIA_KEYS[index + 1]
+            state["step"] = next_key
+            update.message.reply_text(IMMOWELT_CRITERIA_BY_KEY[next_key]["prompt"])
             return True
         _show_immowelt_preview(update.message, state)
         return True
     return False
+
+
+def _handle_immowelt_clone_price_step(
+    update: Update, context: CallbackContext, state: dict, step: str, text: str
+) -> bool:
+    """Два питання після клонування: район/кімнати/площу вже перенесено, лишилась ціна.
+
+    Immowelt рахує холодну оренду (Kaltmiete), а джерело клонування —
+    ProPotsdam — загальну (Gesamtmiete), тож перенести число напряму
+    означало б інакшу умову. Питаємо наново, окремо від звичайної
+    послідовності полів — вона пройшла б і кімнати з площею вдруге.
+    """
+    field = "min_price_eur" if step == "clone_price_min" else "max_price_eur"
+    spec = IMMOWELT_CRITERIA_BY_KEY[field]
+    value = _parse_single_number(text)
+    if value is _INVALID_NUMBER:
+        update.message.reply_text("Потрібне число або «-», щоб пропустити.\n\n" + spec["prompt"])
+        return True
+    if step == "clone_price_max" and _violates_sibling_bound(state, field, value):
+        update.message.reply_text(
+            "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+        )
+        return True
+    state[field] = value
+    if step == "clone_price_min":
+        state["step"] = "clone_price_max"
+        update.message.reply_text(IMMOWELT_CRITERIA_BY_KEY["max_price_eur"]["prompt"])
+        return True
+    _show_immowelt_preview(update.message, state)
+    return True
 
 
 def _toggle_immowelt_district(update: Update, context: CallbackContext, district: str) -> None:
@@ -1576,53 +1565,10 @@ def _finish_immowelt_districts(update: Update, context: CallbackContext, all_dis
         return
     if all_districts:
         state["districts_selected"] = []
-    state["step"] = "criteria"
+    first_key = IMMOWELT_CRITERIA_KEYS[0]
+    state["step"] = first_key
     query.answer()
-    query.edit_message_text(
-        _immowelt_criteria_text(state.get("criteria_selected")),
-        parse_mode="HTML",
-        reply_markup=_immowelt_criteria_keyboard(state.get("criteria_selected")),
-    )
-
-
-def _toggle_immowelt_criteria(update: Update, context: CallbackContext, key: str) -> None:
-    query = update.callback_query
-    state = context.user_data.get("housing_admin") or {}
-    if state.get("mode") != "immowelt" or state.get("step") != "criteria":
-        query.answer()
-        return
-    selected = list(state.get("criteria_selected") or [])
-    if key in selected:
-        selected.remove(key)
-    else:
-        selected.append(key)
-    state["criteria_selected"] = selected
-    query.answer()
-    query.edit_message_text(
-        _immowelt_criteria_text(selected),
-        parse_mode="HTML",
-        reply_markup=_immowelt_criteria_keyboard(selected),
-    )
-
-
-def _finish_immowelt_criteria(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    state = context.user_data.get("housing_admin") or {}
-    if state.get("mode") != "immowelt" or state.get("step") != "criteria":
-        query.answer()
-        return
-    selected = set(state.get("criteria_selected") or [])
-    # Канонічний порядок полів, а не порядок натискань — так «максимум» пари
-    # завжди питається після «мінімуму», і звірка meж у _violates_sibling_bound
-    # завжди має з чим звіряти.
-    queue = [key for key in IMMOWELT_CRITERIA_KEYS if key in selected]
-    query.answer()
-    if not queue:
-        _show_immowelt_preview(query.message, state)
-        return
-    state["criteria_queue"] = queue
-    state["step"] = queue[0]
-    query.edit_message_text(IMMOWELT_CRITERIA_BY_KEY[queue[0]]["prompt"])
+    query.edit_message_text(IMMOWELT_CRITERIA_BY_KEY[first_key]["prompt"])
 
 
 def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
@@ -1646,12 +1592,8 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
     if step == "districts":
         update.message.reply_text("Оберіть райони кнопками нижче і натисніть 'Готово'.", reply_markup=_district_keyboard(state.get("districts_selected")))
         return True
-    if step == "criteria":
-        update.message.reply_text(
-            "Оберіть умови кнопками нижче і натисніть «Далі».",
-            reply_markup=_propot_criteria_keyboard(state.get("criteria_selected")),
-        )
-        return True
+    if step == "clone_price_min" or step == "clone_price_max":
+        return _handle_propot_clone_price_step(update, context, state, step, text)
     if step in PROPOT_CRITERIA_BY_KEY:
         spec = PROPOT_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
@@ -1664,17 +1606,39 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
             )
             return True
         state[step] = value
-        queue = list(state.get("criteria_queue") or [])
-        if queue and queue[0] == step:
-            queue = queue[1:]
-        state["criteria_queue"] = queue
-        if queue:
-            state["step"] = queue[0]
-            update.message.reply_text(PROPOT_CRITERIA_BY_KEY[queue[0]]["prompt"])
+        index = PROPOT_CRITERIA_KEYS.index(step)
+        if index < len(PROPOT_CRITERIA_KEYS) - 1:
+            next_key = PROPOT_CRITERIA_KEYS[index + 1]
+            state["step"] = next_key
+            update.message.reply_text(PROPOT_CRITERIA_BY_KEY[next_key]["prompt"])
             return True
         _finalize_propot_filter(update.message, int(update.effective_user.id), context, state)
         return True
     return False
+
+
+def _handle_propot_clone_price_step(
+    update: Update, context: CallbackContext, state: dict, step: str, text: str
+) -> bool:
+    """Два питання після клонування — див. пояснення в _handle_immowelt_clone_price_step."""
+    field = "min_total_rent_eur" if step == "clone_price_min" else "max_total_rent_eur"
+    spec = PROPOT_CRITERIA_BY_KEY[field]
+    value = _parse_single_number(text)
+    if value is _INVALID_NUMBER:
+        update.message.reply_text("Потрібне число або «-», щоб пропустити.\n\n" + spec["prompt"])
+        return True
+    if step == "clone_price_max" and _violates_sibling_bound(state, field, value):
+        update.message.reply_text(
+            "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+        )
+        return True
+    state[field] = value
+    if step == "clone_price_min":
+        state["step"] = "clone_price_max"
+        update.message.reply_text(PROPOT_CRITERIA_BY_KEY["max_total_rent_eur"]["prompt"])
+        return True
+    _finalize_propot_filter(update.message, int(update.effective_user.id), context, state)
+    return True
 
 
 def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, state: dict) -> None:
@@ -1835,50 +1799,11 @@ def _finish_districts(update: Update, context: CallbackContext, all_districts: b
         return
     selected = [] if all_districts else list(state.get("districts_selected") or [])
     state["districts"] = propotsdam_store.normalize_districts(",".join(selected))
-    state["step"] = "criteria"
+    first_key = PROPOT_CRITERIA_KEYS[0]
+    state["step"] = first_key
     query.answer()
-    query.edit_message_text(
-        _propot_criteria_text(state.get("criteria_selected")),
-        parse_mode="HTML",
-        reply_markup=_propot_criteria_keyboard(state.get("criteria_selected")),
-    )
+    query.edit_message_text(PROPOT_CRITERIA_BY_KEY[first_key]["prompt"])
 
-
-def _toggle_propot_criteria(update: Update, context: CallbackContext, key: str) -> None:
-    query = update.callback_query
-    state = context.user_data.get("housing_admin") or {}
-    if state.get("mode") != "propotsdam" or state.get("step") != "criteria":
-        query.answer()
-        return
-    selected = list(state.get("criteria_selected") or [])
-    if key in selected:
-        selected.remove(key)
-    else:
-        selected.append(key)
-    state["criteria_selected"] = selected
-    query.answer()
-    query.edit_message_text(
-        _propot_criteria_text(selected),
-        parse_mode="HTML",
-        reply_markup=_propot_criteria_keyboard(selected),
-    )
-
-
-def _finish_propot_criteria(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    state = context.user_data.get("housing_admin") or {}
-    if state.get("mode") != "propotsdam" or state.get("step") != "criteria":
-        query.answer()
-        return
-    selected = set(state.get("criteria_selected") or [])
-    queue = [key for key in PROPOT_CRITERIA_KEYS if key in selected]
-    query.answer()
-    if not queue:
-        _finalize_propot_filter(query.message, int(update.effective_user.id), context, state)
-        return
-    state["criteria_queue"] = queue
-    state["step"] = queue[0]
-    query.edit_message_text(PROPOT_CRITERIA_BY_KEY[queue[0]]["prompt"])
 
 
 def handle_callback(update: Update, context: CallbackContext) -> None:
@@ -1915,30 +1840,30 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _finish_immowelt_districts(update, context)
     elif query.data == "housing:imm_district_all":
         _finish_immowelt_districts(update, context, all_districts=True)
-    elif query.data.startswith("housing:imm_crit:"):
-        _toggle_immowelt_criteria(update, context, query.data.split(":", 2)[2])
-    elif query.data == "housing:imm_crit_done":
-        _finish_immowelt_criteria(update, context)
     elif query.data == "housing:imm_save":
         _save_immowelt_filter(update, context)
+    elif query.data == "housing:imm_back":
+        _back_from_immowelt_preview(update, context)
     elif query.data == "housing:imm_cancel":
         context.user_data.pop("housing_admin", None)
         query.answer()
-        query.edit_message_text("Скасовано.")
+        query.edit_message_text(
+            "Скасовано.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]),
+        )
     elif query.data.startswith("housing:propot_district:"):
         _toggle_district(update, context, query.data.split(":", 2)[2])
     elif query.data == "housing:propot_district_done":
         _finish_districts(update, context)
     elif query.data == "housing:propot_district_all":
         _finish_districts(update, context, all_districts=True)
-    elif query.data.startswith("housing:propot_crit:"):
-        _toggle_propot_criteria(update, context, query.data.split(":", 2)[2])
-    elif query.data == "housing:propot_crit_done":
-        _finish_propot_criteria(update, context)
     elif query.data == "housing:propot_cancel":
         context.user_data.pop("housing_admin", None)
         query.answer()
-        query.edit_message_text("Скасовано.")
+        query.edit_message_text(
+            "Скасовано.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]),
+        )
     elif query.data == "housing:self_add":
         query.answer()
         start_self_add_flow(update, context, edit=True)
