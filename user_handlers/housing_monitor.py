@@ -942,43 +942,87 @@ def _item_source(item: Dict[str, object]) -> str:
     return "propotsdam" if "districts" in item else "immowelt"
 
 
-def _self_manage_keyboard(user_id: int) -> InlineKeyboardMarkup:
+SOURCE_ICON = {"immowelt": "🏠", "propotsdam": "🏢"}
+SOURCE_LABEL = {"immowelt": "Immowelt", "propotsdam": "ProPotsdam", "all": "усі джерела"}
+
+
+def _self_manage_keyboard(user_id: int, source: str = "all") -> InlineKeyboardMarkup:
     rows = []
-    for item in manageable_filters(user_id):
-        source = _item_source(item)
+    items = manageable_filters(user_id)
+    if source != "all":
+        items = [item for item in items if _item_source(item) == source]
+    for item in items:
+        item_source = _item_source(item)
+        icon = SOURCE_ICON.get(item_source, "")
         filter_id = int(item.get("filter_id"))
         active = bool(item.get("active", True))
         mark = "✅" if active else "⏸"
         title = str(item.get("title") or "Пошук житла")[:30]
         rows.append([InlineKeyboardButton(
-            f"{mark} {title}",
-            callback_data=f"housing:toggle:{source}:{filter_id}:{0 if active else 1}",
+            f"{mark} {icon} {title}",
+            callback_data=f"housing:toggle:{item_source}:{filter_id}:{0 if active else 1}",
         )])
         # Раніше тут можна було лише поставити фільтр на паузу: одруківся в
         # ціні — і йшли зі скаргою до адміна, бо змінити нічого не могли.
         actions = []
-        if source == "immowelt":
+        if item_source == "immowelt":
             actions.append(InlineKeyboardButton(
-                "✏️ Редагувати", callback_data=f"housing:edit:{source}:{filter_id}"
+                "✏️ Редагувати", callback_data=f"housing:edit:{item_source}:{filter_id}"
             ))
         actions.append(InlineKeyboardButton(
-            "🗑 Видалити", callback_data=f"housing:delete:{source}:{filter_id}"
+            "🗑 Видалити", callback_data=f"housing:delete:{item_source}:{filter_id}"
         ))
         rows.append(actions)
+    rows.append([InlineKeyboardButton("⬅ Інше джерело", callback_data="housing:self_manage")])
     rows.append([InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")])
     return InlineKeyboardMarkup(rows)
 
 
+def _self_manage_picker_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏠 Immowelt", callback_data="housing:self_manage_src:immowelt")],
+        [InlineKeyboardButton("🏢 ProPotsdam", callback_data="housing:self_manage_src:propotsdam")],
+        [InlineKeyboardButton("📋 Усі джерела", callback_data="housing:self_manage_src:all")],
+        [InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")],
+    ])
+
+
 def show_self_manage(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    """Питає, які фільтри показати — інакше в спільному списку не видно, який фільтр чий.
+
+    Immowelt і ProPotsdam ведуть окремі списки з однаковим виглядом кнопок,
+    тож без явного вибору джерела «Мої фільтри» показували все підряд і
+    незрозуміло було, який фільтр до якого порталу належить.
+    """
     user = update.effective_user
     if not user or not is_allowed(user.id):
         return
     filters = manageable_filters(user.id)
+    if filters:
+        text = "⚙️ <b>Мої фільтри</b>\n\nЯкі фільтри показати?"
+        keyboard = _self_manage_picker_keyboard()
+    else:
+        text = "⚙️ <b>Мої фільтри</b>\n\nУ вас ще немає фільтрів."
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]])
+    if edit and update.callback_query:
+        update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+
+def show_self_manage_filtered(update: Update, context: CallbackContext, source: str, edit: bool = True) -> None:
+    user = update.effective_user
+    if not user or not is_allowed(user.id):
+        return
+    items = manageable_filters(user.id)
+    if source != "all":
+        items = [item for item in items if _item_source(item) == source]
+    label = SOURCE_LABEL.get(source, source)
     text = (
-        "⚙️ <b>Мої фільтри</b>\n\nНатисніть фільтр, щоб увімкнути або призупинити його."
-        if filters else "⚙️ <b>Мої фільтри</b>\n\nУ вас ще немає фільтрів."
+        f"⚙️ <b>Мої фільтри — {label}</b>\n\nНатисніть фільтр, щоб увімкнути або призупинити його."
+        if items else f"⚙️ <b>Мої фільтри — {label}</b>\n\nТут поки що немає фільтрів."
     )
-    keyboard = _self_manage_keyboard(user.id)
+    keyboard = _self_manage_keyboard(user.id, source)
     if edit and update.callback_query:
         update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
     else:
@@ -1123,7 +1167,7 @@ def _toggle_owned_filter(update: Update, context: CallbackContext) -> None:
         query.answer("Не вдалося оновити фільтр.", show_alert=True)
         return
     query.answer("Фільтр оновлено.")
-    show_self_manage(update, context, edit=True)
+    show_self_manage_filtered(update, context, source, edit=True)
 
 
 def _delete_confirm_keyboard(source: str, filter_id: int) -> InlineKeyboardMarkup:
@@ -1131,7 +1175,7 @@ def _delete_confirm_keyboard(source: str, filter_id: int) -> InlineKeyboardMarku
         InlineKeyboardButton(
             "🗑 Так, видалити", callback_data=f"housing:delete_confirm:{source}:{filter_id}"
         ),
-        InlineKeyboardButton(BTN_CANCEL, callback_data="housing:self_manage"),
+        InlineKeyboardButton(BTN_CANCEL, callback_data=f"housing:self_manage_src:{source}"),
     ]])
 
 
@@ -1187,7 +1231,7 @@ def confirm_delete_filter(update: Update, context: CallbackContext, source: str,
         query.answer("Не вдалося видалити фільтр.", show_alert=True)
         return
     query.answer("Фільтр видалено.")
-    show_self_manage(update, context, edit=True)
+    show_self_manage_filtered(update, context, source, edit=True)
 
 
 def start_edit_flow(update: Update, context: CallbackContext, filter_id: int) -> None:
@@ -1855,6 +1899,9 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:self_manage":
         query.answer()
         show_self_manage(update, context, edit=True)
+    elif query.data.startswith("housing:self_manage_src:"):
+        query.answer()
+        show_self_manage_filtered(update, context, query.data.split(":", 2)[2], edit=True)
     elif query.data == "housing:notify_settings":
         query.answer()
         show_notify_settings(update, context, edit=True)

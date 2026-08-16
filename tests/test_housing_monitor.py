@@ -951,6 +951,111 @@ class HousingAdminFlowTests(unittest.TestCase):
         self.assertNotIn('housing:edit:propotsdam:2', callbacks)
         self.assertIn('housing:delete:propotsdam:2', callbacks)
 
+    def test_self_manage_keyboard_labels_show_which_source_a_filter_belongs_to(self):
+        """Раніше в спільному списку не було видно, який фільтр до якого порталу."""
+        immowelt = {'filter_id': 1, 'user_id': 544675510, 'title': 'Golm', 'source': 'immowelt', 'active': True}
+        propotsdam = {
+            'filter_id': 2, 'user_id': 544675510, 'title': 'Golm', 'source': 'propotsdam',
+            'districts': 'Golm', 'active': True,
+        }
+
+        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt, propotsdam]):
+            keyboard = housing_monitor._self_manage_keyboard(544675510)
+
+        labels = [button.text for row in keyboard.inline_keyboard for button in row]
+        self.assertTrue(any('🏠' in label and 'Golm' in label for label in labels))
+        self.assertTrue(any('🏢' in label and 'Golm' in label for label in labels))
+
+    def test_self_manage_keyboard_filters_by_source(self):
+        immowelt = {'filter_id': 1, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True}
+        propotsdam = {
+            'filter_id': 2, 'user_id': 544675510, 'title': 'ProPotsdam', 'source': 'propotsdam',
+            'districts': 'Drewitz', 'active': True,
+        }
+
+        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt, propotsdam]):
+            keyboard = housing_monitor._self_manage_keyboard(544675510, 'propotsdam')
+
+        callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
+        self.assertIn('housing:delete:propotsdam:2', callbacks)
+        self.assertNotIn('housing:delete:immowelt:1', callbacks)
+        self.assertNotIn('housing:edit:immowelt:1', callbacks)
+
+    def test_show_self_manage_offers_a_source_picker_when_filters_exist(self):
+        immowelt = {'filter_id': 1, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True}
+        query = SimpleNamespace(answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt]):
+            housing_monitor.show_self_manage(update, context, edit=True)
+
+        text = query.edit_message_text.call_args.args[0]
+        self.assertIn('Які фільтри показати', text)
+        callbacks = [
+            button.callback_data
+            for row in query.edit_message_text.call_args.kwargs['reply_markup'].inline_keyboard
+            for button in row
+        ]
+        self.assertIn('housing:self_manage_src:immowelt', callbacks)
+        self.assertIn('housing:self_manage_src:propotsdam', callbacks)
+        self.assertIn('housing:self_manage_src:all', callbacks)
+
+    def test_show_self_manage_skips_the_picker_when_there_are_no_filters_at_all(self):
+        query = SimpleNamespace(answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[]):
+            housing_monitor.show_self_manage(update, context, edit=True)
+
+        text = query.edit_message_text.call_args.args[0]
+        self.assertIn('немає фільтрів', text)
+        callbacks = [
+            button.callback_data
+            for row in query.edit_message_text.call_args.kwargs['reply_markup'].inline_keyboard
+            for button in row
+        ]
+        self.assertNotIn('housing:self_manage_src:immowelt', callbacks)
+
+    def test_show_self_manage_filtered_shows_only_the_chosen_source(self):
+        immowelt = {'filter_id': 1, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True}
+        propotsdam = {
+            'filter_id': 2, 'user_id': 544675510, 'title': 'ProPotsdam', 'source': 'propotsdam',
+            'districts': 'Drewitz', 'active': True,
+        }
+        query = SimpleNamespace(answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt, propotsdam]):
+            housing_monitor.show_self_manage_filtered(update, context, 'immowelt', edit=True)
+
+        text = query.edit_message_text.call_args.args[0]
+        self.assertIn('Immowelt', text)
+        callbacks = [
+            button.callback_data
+            for row in query.edit_message_text.call_args.kwargs['reply_markup'].inline_keyboard
+            for button in row
+        ]
+        self.assertIn('housing:delete:immowelt:1', callbacks)
+        self.assertNotIn('housing:delete:propotsdam:2', callbacks)
+
+    def test_callback_dispatch_routes_source_picker_choice(self):
+        query = SimpleNamespace(data='housing:self_manage_src:propotsdam', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[]):
+            housing_monitor.handle_callback(update, context)
+
+        text = query.edit_message_text.call_args.args[0]
+        self.assertIn('ProPotsdam', text)
+
     def test_immowelt_district_callback_toggles_checkbox_selection(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'immowelt', 'step': 'districts', 'districts_selected': [],
