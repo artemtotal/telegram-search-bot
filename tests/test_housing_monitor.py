@@ -593,6 +593,7 @@ class HousingAdminFlowTests(unittest.TestCase):
         self.assertIn('Gesamtmiete', prompt)
 
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
              mock.patch('user_handlers.housing_monitor.propotsdam_store.create_filter', return_value=42) as create_filter, \
              mock.patch.object(housing_monitor, '_sync_propot_filters') as sync:
             self.assertTrue(housing_monitor.handle_private_text(self._update('800', user_id=544675510), context))
@@ -2089,9 +2090,10 @@ class HousingWizardBackButtonTests(unittest.TestCase):
             'mode': 'immowelt', 'step': 'min_price_eur', 'user_id': 123456789,
             'districts_selected': ['Golm'],
         }})
-        update = self._update('800')
+        update = self._update('800', user_id=544675510)
 
-        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
             housing_monitor.handle_private_text(update, context)
 
         text, kwargs = update.message.replies[-1]
