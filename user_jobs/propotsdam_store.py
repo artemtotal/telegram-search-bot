@@ -283,6 +283,21 @@ def list_active_listings() -> List[Dict]:
         session.close()
 
 
+def list_active_listings_since(cutoff: datetime) -> List[Dict]:
+    """Active listings first observed at or after `cutoff` — powers the "show
+    me what appeared in the last hour/day" offer right after a filter is
+    created, which deliberately bypasses the create-time baseline that
+    otherwise hides everything already in the catalog."""
+    session = DBSession()
+    try:
+        rows = session.query(ProPotsdamListing).filter(
+            ProPotsdamListing.is_active.is_(True), ProPotsdamListing.first_seen_at >= cutoff
+        ).all()
+        return [listing_to_dict(row) for row in rows]
+    finally:
+        session.close()
+
+
 def delivered_pairs() -> Set[Tuple[int, str]]:
     session = DBSession()
     try:

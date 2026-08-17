@@ -48,8 +48,7 @@ class HousingAdminFlowTests(unittest.TestCase):
              mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
             labels = [button.text for row in housing_monitor._menu_keyboard(544675510).inline_keyboard for button in row]
 
-        self.assertIn('➕ Додати Immowelt', labels)
-        self.assertIn('🏢 Додати ProPotsdam', labels)
+        self.assertIn('➕ Додати фільтр', labels)
         self.assertIn('⚙️ Мої фільтри', labels)
         self.assertNotIn('⚙️ Адмінка житла', labels)
 
@@ -65,8 +64,7 @@ class HousingAdminFlowTests(unittest.TestCase):
                 for button in row
             ]
 
-        self.assertIn('➕ Додати Immowelt', labels)
-        self.assertIn('🏢 Додати ProPotsdam', labels)
+        self.assertIn('➕ Додати фільтр', labels)
         self.assertIn('⚙️ Мої фільтри', labels)
 
     def test_admin_can_add_housing_access_user(self):
@@ -79,7 +77,7 @@ class HousingAdminFlowTests(unittest.TestCase):
         self.assertIn('👤 Додати доступ користувачу', labels)
         self.assertIn('👥 Доступ до моніторингу', labels)
 
-        context = SimpleNamespace(user_data={})
+        context = SimpleNamespace(user_data={}, bot=mock.Mock())
         update = self._update('', user_id=312029534)
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
             housing_monitor.start_access_add_flow(update, context)
@@ -102,6 +100,104 @@ class HousingAdminFlowTests(unittest.TestCase):
         grant.assert_called_once_with(777, 'Новий користувач')
         self.assertNotIn('housing_access_admin', context.user_data)
         self.assertIn('Доступ до моніторингу житла надано', update.message.replies[-1][0])
+        # Раніше адмін вручну додавав доступ, а сама людина про це не дізнавалась —
+        # бачила відкритий пункт меню лише випадково.
+        context.bot.send_message.assert_called_once()
+        self.assertEqual(context.bot.send_message.call_args.kwargs['chat_id'], 777)
+        self.assertIn('відкрито', context.bot.send_message.call_args.kwargs['text'])
+
+    def test_access_list_shows_a_delete_button_per_user_and_can_revoke_access(self):
+        """Раніше цей екран був лише списком без жодної дії над записом —
+        прибрати чийсь доступ можна було тільки вручну в базі."""
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(
+                 housing_monitor.housing_access_store, 'list_users',
+                 return_value=[{'user_id': 777, 'display_name': 'Хтось', 'active': True}],
+             ):
+            buttons = [
+                button
+                for row in housing_monitor._access_users_keyboard().inline_keyboard
+                for button in row
+            ]
+        delete_button = next(b for b in buttons if b.callback_data == 'housing:access_delete:777')
+        self.assertIn('777', delete_button.text)
+
+        query = SimpleNamespace(
+            data='housing:access_delete:777', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=312029534))
+        context = SimpleNamespace(user_data={}, bot=mock.Mock())
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            housing_monitor.handle_callback(update, context)
+        confirm_callbacks = [
+            b.callback_data
+            for row in query.edit_message_text.call_args.kwargs['reply_markup'].inline_keyboard
+            for b in row
+        ]
+        self.assertIn('housing:access_delete_confirm:777', confirm_callbacks)
+
+        query = SimpleNamespace(
+            data='housing:access_delete_confirm:777', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=312029534))
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'revoke_access', return_value=True) as revoke, \
+             mock.patch.object(housing_monitor, '_delete_all_filters_for_user', return_value=3) as delete_filters:
+            housing_monitor.handle_callback(update, context)
+        revoke.assert_called_once_with(777)
+        delete_filters.assert_called_once_with(777)
+        self.assertIn('3', query.answer.call_args.args[0])
+        # Раніше видалення доступу проходило мовчки для самої людини —
+        # сповіщення бачив тільки адмін.
+        context.bot.send_message.assert_called_once()
+        self.assertEqual(context.bot.send_message.call_args.kwargs['chat_id'], 777)
+        self.assertIn('закінчився', context.bot.send_message.call_args.kwargs['text'])
+
+    def test_deleting_a_user_not_in_the_access_list_does_not_send_a_notification(self):
+        """Адмін міг натиснути видалення на записі, якого вже немає — тоді
+        нічого й не змінилось, і людину турбувати не варто."""
+        query = SimpleNamespace(
+            data='housing:access_delete_confirm:777', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=312029534))
+        context = SimpleNamespace(user_data={}, bot=mock.Mock())
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'revoke_access', return_value=False), \
+             mock.patch.object(housing_monitor, '_delete_all_filters_for_user', return_value=0):
+            housing_monitor.handle_callback(update, context)
+
+        context.bot.send_message.assert_not_called()
+
+    def test_deleting_access_removes_the_users_filters_on_every_source(self):
+        """Розсилка не звіряється зі списком доступу — саме лише видалення
+        доступу нічого не змінило б, старі фільтри й далі отримували б новини."""
+        immowelt = [
+            {'filter_id': 5, 'user_id': 777, 'title': 'Immowelt'},
+            {'filter_id': 6, 'user_id': 999, 'title': 'Not this one'},
+        ]
+        with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=immowelt), \
+             mock.patch.object(housing_monitor, '_request', return_value={'ok': True}) as request, \
+             mock.patch.object(housing_monitor, '_sync_propot_filters') as sync_propot, \
+             mock.patch.object(
+                 housing_monitor.propotsdam_store, 'list_filters',
+                 return_value=[{'filter_id': 1}],
+             ), \
+             mock.patch.object(housing_monitor.propotsdam_store, 'delete_filter', return_value=True), \
+             mock.patch.object(
+                 housing_monitor.schoba_store, 'list_filters',
+                 return_value=[{'filter_id': 2}],
+             ), \
+             mock.patch.object(housing_monitor.schoba_store, 'delete_filter', return_value=True), \
+             mock.patch.object(housing_monitor.semmelhaack_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.regiomakler_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.kleinanzeigen_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.locals_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]):
+            removed = housing_monitor._delete_all_filters_for_user(777)
+
+        request.assert_called_once_with('DELETE', '/api/housing/filters/5')
+        sync_propot.assert_called_once()
+        self.assertEqual(removed, 3)
 
     def test_allowed_user_add_flow_uses_own_telegram_id(self):
         context = SimpleNamespace(user_data={})
@@ -111,9 +207,9 @@ class HousingAdminFlowTests(unittest.TestCase):
             housing_monitor.start_self_add_flow(update, context)
 
         self.assertEqual(context.user_data['housing_admin'], {
-            'mode': 'immowelt',
-            'step': 'title',
+            'step': 'sources',
             'user_id': 544675510,
+            'sources_selected': [],
         })
 
     def test_allowed_user_can_toggle_only_own_filter(self):
@@ -162,6 +258,9 @@ class HousingAdminFlowTests(unittest.TestCase):
         query.answer.assert_called_with('Цей фільтр вам не належить.', show_alert=True)
 
     def test_user_filters_do_not_duplicate_synced_propotsdam_tasks(self):
+        """Усі джерела мокнуті явно — цей user_id використовується і живими
+        людьми в проді, тож реальні фільтри інших джерел інакше просочувались
+        би в підрахунок і ламали тест без жодної зміни коду."""
         immowelt = [
             {'filter_id': 2, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True},
         ]
@@ -169,47 +268,57 @@ class HousingAdminFlowTests(unittest.TestCase):
             {'filter_id': 2, 'user_id': 544675510, 'title': 'ProPotsdam', 'districts': 'Drewitz'},
         ]
         with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=immowelt), \
-             mock.patch.object(housing_monitor.propotsdam_store, 'list_filters', return_value=propotsdam):
+             mock.patch.object(housing_monitor.propotsdam_store, 'list_filters', return_value=propotsdam), \
+             mock.patch.object(housing_monitor.semmelhaack_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.schoba_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.regiomakler_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.kleinanzeigen_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.locals_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]):
             filters = housing_monitor.user_filters(544675510)
 
         self.assertEqual([item['title'] for item in filters], ['Immowelt', 'ProPotsdam'])
 
-    def test_admin_add_flow_collects_id_name_and_search_bounds(self):
-        """Майстер збирає умови, а не посилання.
-
-        Обхід Immowelt ходить своєю адресою й посилання фільтра не відкриває, а
-        відбір іде за умовами в самому записі. Фільтр без умов збігається з
-        будь-якою квартирою, тож людина з «до 800 €» отримувала весь Потсдам.
-        """
+    def test_admin_add_flow_asks_target_user_then_reuses_the_shared_source_wizard(self):
+        """Раніше додавання йшло двома різними майстрами — окремо для Immowelt і
+        окремо для ProPotsdam, з двома різними кнопками в адмінці. Тепер один
+        вхід «➕ Додати користувача» питає лише «для кого», а далі веде той
+        самий майстер вибору порталів, що й самообслуговування для себе."""
         context = SimpleNamespace(user_data={})
-        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
-             mock.patch.object(housing_monitor, '_preview_criteria', return_value={}):
-            housing_monitor.start_add_flow(self._update(housing_monitor.BTN_ADMIN_ADD), context)
-            self.assertEqual(context.user_data['housing_admin']['step'], 'user_id')
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            housing_monitor.start_admin_add_flow(self._update(housing_monitor.BTN_ADMIN_ADD), context)
+            self.assertEqual(context.user_data['housing_admin']['step'], 'admin_target_user_id')
 
-            housing_monitor.handle_private_text(self._update('123456789'), context)
-            self.assertEqual(context.user_data['housing_admin']['step'], 'title')
-
-            housing_monitor.handle_private_text(self._update('Іван'), context)
-            self.assertEqual(context.user_data['housing_admin']['step'], 'districts')
-
+            housing_monitor.handle_private_text(self._update('987654321'), context)
             state = context.user_data['housing_admin']
-            state['districts_selected'] = ['Golm']
-            housing_monitor._finish_immowelt_districts(self._cb_update(), context)
-            self.assertEqual(state['step'], 'min_price_eur')
+            self.assertEqual(state['step'], 'sources')
+            self.assertEqual(state['user_id'], 987654321)
 
-            # Шість питань підряд: число або «-», щоб пропустити.
-            for text in ['800', '-', '2', '-', '-', '-']:
-                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+            housing_monitor._toggle_source(self._cb_update(), context, 'schoba')
+            housing_monitor._finish_sources(self._cb_update(), context)
+            # SCHOBA не знає районів — крок вибору району тут пропускається.
+            self.assertEqual(state['step'], 'min_rooms')
+
+            with mock.patch('user_handlers.housing_monitor.schoba_store.create_filter', return_value=42) as create_filter:
+                for text in ['2', '-', '-', '-', '-', '-']:
+                    self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        self.assertNotIn('housing_admin', context.user_data)
+        create_filter.assert_called_once_with(
+            user_id=987654321, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=None, max_price_eur=None,
+        )
+
+    def test_admin_add_flow_rejects_a_non_numeric_target_id(self):
+        context = SimpleNamespace(user_data={})
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            housing_monitor.start_admin_add_flow(self._update(housing_monitor.BTN_ADMIN_ADD), context)
+            self.assertTrue(housing_monitor.handle_private_text(self._update('not a number'), context))
 
         state = context.user_data['housing_admin']
-        self.assertEqual(state['step'], 'preview')
-        self.assertEqual(state['min_price_eur'], 800)
-        self.assertIsNone(state['max_price_eur'])
-        self.assertEqual(state['min_rooms'], 2)
-        self.assertIsNone(state['max_rooms'])
-        self.assertIsNone(state['min_area_m2'])
-        self.assertIsNone(state['max_area_m2'])
+        self.assertEqual(state['step'], 'admin_target_user_id')
+        self.assertNotIn('user_id', state)
 
     def test_dash_skips_a_field_and_moves_to_the_next_one(self):
         context = SimpleNamespace(user_data={'housing_admin': {
@@ -251,7 +360,7 @@ class HousingAdminFlowTests(unittest.TestCase):
             self.assertTrue(housing_monitor.handle_private_text(update, context))
 
         self.assertEqual(context.user_data['housing_admin']['step'], 'min_rooms')
-        self.assertIn('Потрібне число', update.message.replies[-1][0])
+        self.assertIn('Незрозуміле значення', update.message.replies[-1][0])
 
     def test_sibling_bound_violation_is_rejected_and_keeps_asking_the_same_field(self):
         context = SimpleNamespace(user_data={'housing_admin': {
@@ -491,7 +600,7 @@ class HousingAdminFlowTests(unittest.TestCase):
             self.assertTrue(housing_monitor.handle_private_text(self._update('1200', user_id=544675510), context))
 
         create_filter.assert_called_once_with(
-            user_id=544675510, title='Катя', districts='Golm,Waldstadt 1',
+            user_id=544675510, title=mock.ANY, districts='Golm,Waldstadt 1',
             min_rooms=2.0, max_rooms=None, min_area_m2=50.0, max_area_m2=None,
             min_total_rent_eur=800.0, max_total_rent_eur=1200.0,
         )
@@ -545,7 +654,6 @@ class HousingAdminFlowTests(unittest.TestCase):
     def test_preview_reports_what_matches_right_now(self):
         """Перший обхід мовчки збирає базову лінію, тож людині потрібен доказ."""
         text = housing_monitor._preview_text(
-            'Іван',
             {'districts': ['Golm'], 'max_price_eur': 800},
             {'catalog_size': 120, 'match_count': 3, 'matches': [
                 {'url': 'https://www.immowelt.de/expose/abc', 'title': 'Wohnung',
@@ -558,7 +666,7 @@ class HousingAdminFlowTests(unittest.TestCase):
 
     def test_preview_warns_when_nothing_matches(self):
         text = housing_monitor._preview_text(
-            'Іван', {'districts': [], 'max_price_eur': 100},
+            {'districts': [], 'max_price_eur': 100},
             {'catalog_size': 120, 'match_count': 0, 'matches': []},
         )
 
@@ -577,13 +685,24 @@ class HousingAdminFlowTests(unittest.TestCase):
         self.assertIn('від 50 м²', description)
 
     def test_admin_panel_pages_a_long_filter_list(self):
-        """Перелік друкувався цілком і впирався б у ліміт Telegram у 4096 знаків."""
+        """Перелік друкувався цілком і впирався б у ліміт Telegram у 4096 знаків.
+
+        Усі джерела мокнуті явно (не лише ProPotsdam) — інакше кількість
+        реальних фільтрів живих користувачів бота міняється з часом і тихо
+        зсуває підрахунок сторінок, ламаючи тест без жодної зміни коду.
+        """
         immowelt = [
             {'filter_id': index, 'user_id': 500 + index, 'title': f'Фільтр {index}', 'active': True}
             for index in range(1, 51)
         ]
         with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=immowelt), \
-             mock.patch.object(housing_monitor.propotsdam_store, 'list_filters', return_value=[]):
+             mock.patch.object(housing_monitor.propotsdam_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.semmelhaack_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.schoba_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.regiomakler_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.kleinanzeigen_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.locals_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]):
             first = housing_monitor._render_admin(0)
             second = housing_monitor._render_admin(1)
             beyond = housing_monitor._render_admin(99)
@@ -597,26 +716,31 @@ class HousingAdminFlowTests(unittest.TestCase):
         self.assertIn('сторінка 3 з 3', beyond)
 
     def test_anonymous_private_text_delegates_active_housing_admin_flow(self):
-        context = SimpleNamespace(user_data={'housing_admin': {'step': 'user_id'}})
+        context = SimpleNamespace(user_data={'housing_admin': {'step': 'admin_target_user_id'}})
         update = self._update('123456789')
 
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
             anonymous_posts.handle_private_text(update, context)
 
         self.assertEqual(context.user_data['housing_admin']['user_id'], 123456789)
-        self.assertEqual(context.user_data['housing_admin']['step'], 'title')
+        self.assertEqual(context.user_data['housing_admin']['step'], 'sources')
 
-    def test_admin_add_propot_flow_collects_filter_bounds(self):
+    def test_admin_add_flow_can_create_a_propotsdam_filter_for_the_target_user(self):
+        """Той самий уніфікований вхід має покривати й district-aware джерела
+        (ProPotsdam), не лише ті, що районів не знають."""
         context = SimpleNamespace(user_data={})
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, '_request', return_value={'ok': True}), \
              mock.patch('user_handlers.housing_monitor.propotsdam_store.create_filter', return_value=77) as create_filter:
-            housing_monitor.start_propot_add_flow(self._update(housing_monitor.BTN_ADMIN_ADD_PROPOT), context)
-            for text in ['123456789', 'Pro Potsdam Ivan']:
-                update = self._update(text)
-                self.assertTrue(housing_monitor.handle_private_text(update, context))
-            self.assertEqual(context.user_data['housing_admin']['step'], 'districts')
+            housing_monitor.start_admin_add_flow(self._update(housing_monitor.BTN_ADMIN_ADD), context)
+            housing_monitor.handle_private_text(self._update('123456789'), context)
             state = context.user_data['housing_admin']
-            housing_monitor._finish_districts(self._cb_update(), context, all_districts=True)
+            self.assertEqual(state['step'], 'sources')
+
+            housing_monitor._toggle_source(self._cb_update(), context, 'propotsdam')
+            housing_monitor._finish_sources(self._cb_update(), context)
+            self.assertEqual(state['step'], 'districts')
+            housing_monitor._finish_multi_districts(self._cb_update(), context, all_districts=True)
             self.assertEqual(state['step'], 'min_rooms')
 
             for text in ['2', '3', '50', '80', '800', '1000']:
@@ -625,7 +749,7 @@ class HousingAdminFlowTests(unittest.TestCase):
 
         create_filter.assert_called_once_with(
             user_id=123456789,
-            title='Pro Potsdam Ivan',
+            title=mock.ANY,
             districts='',
             min_rooms=2.0,
             max_rooms=3.0,
@@ -634,6 +758,7 @@ class HousingAdminFlowTests(unittest.TestCase):
             min_total_rent_eur=800.0,
             max_total_rent_eur=1000.0,
         )
+        self.assertIn('ProPotsdam', create_filter.call_args.kwargs['title'])
         self.assertNotIn('housing_admin', context.user_data)
         self.assertIn('ProPotsdam', update.message.replies[-1][0])
 
@@ -653,7 +778,7 @@ class HousingAdminFlowTests(unittest.TestCase):
 
         create_filter.assert_called_once_with(
             user_id=123456789,
-            title='Ivan',
+            title=mock.ANY,
             districts='',
             min_rooms=2.0,
             max_rooms=None,
@@ -841,7 +966,6 @@ class HousingAdminFlowTests(unittest.TestCase):
 
         state = context.user_data['housing_admin']
         self.assertEqual(state['edit_filter_id'], 2)
-        self.assertEqual(state['title'], 'Пошук Каті')
         self.assertEqual(state['districts_selected'], ['Golm'])
         self.assertEqual(state['max_price_eur'], 800.0)
         self.assertEqual(state['step'], 'districts')
@@ -990,7 +1114,10 @@ class HousingAdminFlowTests(unittest.TestCase):
 
     def test_self_manage_keyboard_groups_filters_under_source_headers(self):
         """Раніше однакові на вигляд кнопки в одному списку не казали, чий фільтр який."""
-        immowelt = {'filter_id': 1, 'user_id': 544675510, 'title': 'Golm', 'source': 'immowelt', 'active': True}
+        immowelt = {
+            'filter_id': 1, 'user_id': 544675510, 'title': 'Golm', 'source': 'immowelt',
+            'active': True, 'districts': ('Golm',),
+        }
         propotsdam = {
             'filter_id': 2, 'user_id': 544675510, 'title': 'Golm', 'source': 'propotsdam',
             'districts': 'Golm', 'active': True,
@@ -1063,7 +1190,7 @@ class HousingAdminFlowTests(unittest.TestCase):
                 self.assertTrue(housing_monitor.handle_private_text(update, context))
 
         update_filter.assert_called_once_with(
-            filter_id=2, user_id=544675510, title='Пошук Каті', districts='Golm',
+            filter_id=2, user_id=544675510, title=mock.ANY, districts='Golm',
             min_rooms=3.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
             min_total_rent_eur=None, max_total_rent_eur=None,
         )
@@ -1085,6 +1212,1029 @@ class HousingAdminFlowTests(unittest.TestCase):
         housing_monitor.handle_callback(update, context)
 
         self.assertEqual(context.user_data['housing_admin']['districts_selected'], ['Golm'])
+
+
+class HousingMultiSourceWizardTests(unittest.TestCase):
+    """Один вхід «Додати фільтр» веде по всіх обраних порталах одразу.
+
+    Раніше Immowelt і ProPotsdam заводились двома окремими кнопками й майстрами,
+    хоча користувач хотів «1 фільтр для всіх сервісів» — тепер спершу питає,
+    де шукати (галочками, портали з часом поповнюватимуться), а вже потім веде
+    спільними районом/кімнатами/площею і окремою оренду під кожен обраний портал.
+    """
+
+    def _update(self, text, user_id=544675510):
+        message = FakeMessage(text=text, user_id=user_id)
+        return SimpleNamespace(message=message, effective_message=message, effective_user=SimpleNamespace(id=user_id))
+
+    def _cb_update(self, user_id=544675510):
+        query = SimpleNamespace(answer=mock.Mock(), edit_message_text=mock.Mock())
+        return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
+
+    def test_toggling_a_source_updates_selection(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'step': 'sources', 'user_id': 544675510, 'sources_selected': [],
+        }})
+        query = SimpleNamespace(data='housing:src:immowelt', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+
+        housing_monitor.handle_callback(update, context)
+
+        self.assertEqual(context.user_data['housing_admin']['sources_selected'], ['immowelt'])
+
+    def test_finishing_with_no_source_selected_shows_an_alert(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'step': 'sources', 'user_id': 544675510, 'sources_selected': [],
+        }})
+        query = SimpleNamespace(data='housing:src_done', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+
+        housing_monitor.handle_callback(update, context)
+
+        query.answer.assert_called_once_with('Оберіть хоча б один портал.', show_alert=True)
+        self.assertEqual(context.user_data['housing_admin']['step'], 'sources')
+
+    def test_finishing_sources_with_only_propotsdam_shows_its_own_district_list(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'step': 'sources', 'user_id': 544675510, 'sources_selected': ['propotsdam'],
+        }})
+        query = SimpleNamespace(data='housing:src_done', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+
+        housing_monitor.handle_callback(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['mode'], 'multi')
+        self.assertEqual(state['step'], 'districts')
+        keyboard = query.edit_message_text.call_args.kwargs['reply_markup']
+        labels = [button.text for row in keyboard.inline_keyboard for button in row]
+        # ProPotsdam-специфічний район, якого нема в словнику Immowelt.
+        self.assertTrue(any('Babelsberg Nord' in label for label in labels))
+
+    def test_multi_cancel_returns_to_the_menu(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'districts', 'sources_selected': ['immowelt'],
+        }})
+        query = SimpleNamespace(data='housing:multi_cancel', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+
+        housing_monitor.handle_callback(update, context)
+
+        self.assertNotIn('housing_admin', context.user_data)
+        callbacks = [b.callback_data for row in query.edit_message_text.call_args.kwargs['reply_markup'].inline_keyboard for b in row]
+        self.assertIn('housing:menu', callbacks)
+
+    def test_both_sources_selected_creates_two_filters_with_separate_rent_answers(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['immowelt', 'propotsdam'],
+            'districts_selected': ['Waldstadt I', 'Golm'],
+        }})
+        state = context.user_data['housing_admin']
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 11}) as request, \
+             mock.patch('user_handlers.housing_monitor.propotsdam_store.create_filter', return_value=22) as create_filter, \
+             mock.patch.object(housing_monitor, '_sync_propot_filters') as sync:
+            for text in ['2', '-', '-', '-', '800', '1200', '900', '1400']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        self.assertNotIn('housing_admin', context.user_data)
+        request.assert_called_once_with(
+            'POST', '/api/housing/filters',
+            json={
+                'user_id': 544675510, 'title': mock.ANY,
+                'districts': ['Waldstadt I', 'Golm'],
+                'min_price_eur': 800.0, 'max_price_eur': 1200.0,
+                'min_rooms': 2.0, 'max_rooms': None,
+                'min_area_m2': None, 'max_area_m2': None,
+            },
+        )
+        create_filter.assert_called_once_with(
+            user_id=544675510, title=mock.ANY,
+            districts='Waldstadt 1,Golm',
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_total_rent_eur=900.0, max_total_rent_eur=1400.0,
+        )
+        sync.assert_called_once()
+
+    def test_only_propotsdam_selected_skips_immowelt_entirely(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['propotsdam'],
+            'districts_selected': ['Babelsberg Nord'],
+        }})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, '_request') as request, \
+             mock.patch('user_handlers.housing_monitor.propotsdam_store.create_filter', return_value=5) as create_filter, \
+             mock.patch.object(housing_monitor, '_sync_propot_filters'):
+            for text in ['-', '-', '-', '-', '700', '-']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        request.assert_not_called()
+        create_filter.assert_called_once_with(
+            user_id=544675510, title=mock.ANY,
+            districts='Babelsberg Nord',
+            min_rooms=None, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_total_rent_eur=700.0, max_total_rent_eur=None,
+        )
+        self.assertNotIn('housing_admin', context.user_data)
+
+    def test_semmelhaack_has_no_districts_so_the_district_step_is_skipped(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'step': 'sources', 'user_id': 544675510, 'sources_selected': ['semmelhaack'],
+        }})
+        query = SimpleNamespace(data='housing:src_done', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+
+        housing_monitor.handle_callback(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['mode'], 'multi')
+        self.assertEqual(state['step'], 'min_rooms')
+        prompt = query.edit_message_text.call_args.args[0]
+        self.assertIn('кімнат', prompt)
+
+    def test_immowelt_and_semmelhaack_together_ask_kaltmiete_only_once(self):
+        """Обидва джерела рахують ту саму холодну оренду — не варто питати двічі поспіль."""
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['immowelt', 'semmelhaack'],
+            'districts_selected': ['Golm'],
+        }})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 11}) as request, \
+             mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter', return_value=33) as create_filter:
+            # 4 shared fields (rooms/area) + exactly 2 price answers, not 4 —
+            # confirms the Kaltmiete question was not repeated for the second source.
+            for text in ['2', '-', '-', '-', '800', '1200']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        self.assertNotIn('housing_admin', context.user_data)
+        request.assert_called_once_with(
+            'POST', '/api/housing/filters',
+            json={
+                'user_id': 544675510, 'title': mock.ANY, 'districts': ['Golm'],
+                'min_price_eur': 800.0, 'max_price_eur': 1200.0,
+                'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
+            },
+        )
+        create_filter.assert_called_once_with(
+            user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=800.0, max_price_eur=1200.0,
+        )
+
+    def test_semmelhaack_edit_flow_prefills_current_bounds_and_skips_straight_to_rooms(self):
+        own_filter = {
+            'filter_id': 3, 'user_id': 544675510, 'title': 'SEMMELHAACK: 4 кімн.', 'source': 'semmelhaack',
+            'active': True, 'min_rooms': 3.0, 'max_price_eur': 1900.0,
+        }
+        query = SimpleNamespace(
+            data='housing:edit:semmelhaack:3', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]):
+            housing_monitor.handle_callback(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['mode'], 'semmelhaack')
+        self.assertEqual(state['edit_filter_id'], 3)
+        self.assertEqual(state['min_rooms'], 3.0)
+        self.assertEqual(state['max_price_eur'], 1900.0)
+        self.assertEqual(state['step'], 'min_rooms')
+
+    def test_saving_a_semmelhaack_edit_updates_instead_of_creating(self):
+        state = {
+            'mode': 'semmelhaack', 'step': 'min_rooms', 'user_id': 544675510, 'edit_filter_id': 4,
+        }
+        context = SimpleNamespace(user_data={'housing_admin': state})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.semmelhaack_store.update_filter', return_value=True) as update_filter, \
+             mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter') as create_filter:
+            for text in ['3', '-', '-', '-', '-', '-']:
+                update = self._update(text, user_id=544675510)
+                self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        update_filter.assert_called_once_with(
+            filter_id=4, user_id=544675510, title=mock.ANY,
+            min_rooms=3.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=None, max_price_eur=None,
+        )
+        create_filter.assert_not_called()
+        self.assertIn('оновлено', update.message.replies[-1][0])
+        self.assertNotIn('housing_admin', context.user_data)
+
+    def test_toggle_and_delete_dispatch_to_the_semmelhaack_store(self):
+        own_filter = {
+            'filter_id': 5, 'user_id': 544675510, 'title': 'SEMMELHAACK', 'source': 'semmelhaack', 'active': True,
+        }
+        toggle_query = SimpleNamespace(
+            data='housing:toggle:semmelhaack:5:0', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=toggle_query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.semmelhaack_store.set_filter_active', return_value=True) as set_active:
+            housing_monitor.handle_callback(update, context)
+        set_active.assert_called_once_with(5, False, user_id=544675510)
+
+        delete_query = SimpleNamespace(
+            data='housing:delete_confirm:semmelhaack:5', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=delete_query, effective_user=SimpleNamespace(id=544675510))
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.semmelhaack_store.delete_filter', return_value=True) as delete_filter:
+            housing_monitor.handle_callback(update, context)
+        delete_filter.assert_called_once_with(5, user_id=544675510)
+
+
+class HousingSchobaWizardTests(unittest.TestCase):
+    def _update(self, text, user_id=544675510):
+        message = FakeMessage(text=text, user_id=user_id)
+        return SimpleNamespace(message=message, effective_message=message, effective_user=SimpleNamespace(id=user_id))
+
+    def _cb_update(self, user_id=544675510):
+        query = SimpleNamespace(answer=mock.Mock(), edit_message_text=mock.Mock())
+        return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
+
+    def test_available_sources_include_schoba(self):
+        self.assertIn('schoba', housing_monitor.AVAILABLE_SOURCE_KEYS)
+
+    def test_immowelt_semmelhaack_and_schoba_together_ask_kaltmiete_only_once(self):
+        """Всі три джерела рахують ту саму холодну оренду — питання одне на всіх."""
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['immowelt', 'semmelhaack', 'schoba'],
+            'districts_selected': ['Golm'],
+        }})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 11}), \
+             mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter', return_value=22), \
+             mock.patch('user_handlers.housing_monitor.schoba_store.create_filter', return_value=33) as create_filter:
+            for text in ['2', '-', '-', '-', '800', '1200']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        self.assertNotIn('housing_admin', context.user_data)
+        create_filter.assert_called_once_with(
+            user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=800.0, max_price_eur=1200.0,
+        )
+
+    def test_schoba_edit_flow_prefills_current_bounds_and_skips_straight_to_rooms(self):
+        own_filter = {
+            'filter_id': 6, 'user_id': 544675510, 'title': 'SCHOBA', 'source': 'schoba',
+            'active': True, 'min_rooms': 3.0, 'max_price_eur': 900.0,
+        }
+        query = SimpleNamespace(
+            data='housing:edit:schoba:6', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]):
+            housing_monitor.handle_callback(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['mode'], 'schoba')
+        self.assertEqual(state['edit_filter_id'], 6)
+        self.assertEqual(state['min_rooms'], 3.0)
+        self.assertEqual(state['step'], 'min_rooms')
+        self.assertNotIn('reply_markup', query.edit_message_text.call_args.kwargs)
+
+    def test_saving_a_schoba_edit_updates_instead_of_creating(self):
+        state = {'mode': 'schoba', 'step': 'min_rooms', 'user_id': 544675510, 'edit_filter_id': 7}
+        context = SimpleNamespace(user_data={'housing_admin': state})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.schoba_store.update_filter', return_value=True) as update_filter, \
+             mock.patch('user_handlers.housing_monitor.schoba_store.create_filter') as create_filter:
+            for text in ['3', '-', '-', '-', '-', '-']:
+                update = self._update(text)
+                self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        update_filter.assert_called_once_with(
+            filter_id=7, user_id=544675510, title=mock.ANY,
+            min_rooms=3.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=None, max_price_eur=None,
+        )
+        create_filter.assert_not_called()
+        self.assertIn('оновлено', update.message.replies[-1][0])
+
+    def test_toggle_and_delete_dispatch_to_the_schoba_store(self):
+        own_filter = {'filter_id': 8, 'user_id': 544675510, 'source': 'schoba', 'active': True}
+        toggle_query = SimpleNamespace(
+            data='housing:toggle:schoba:8:0', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=toggle_query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.schoba_store.set_filter_active', return_value=True) as set_active:
+            housing_monitor.handle_callback(update, context)
+        set_active.assert_called_once_with(8, False, user_id=544675510)
+
+        delete_query = SimpleNamespace(
+            data='housing:delete_confirm:schoba:8', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=delete_query, effective_user=SimpleNamespace(id=544675510))
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.schoba_store.delete_filter', return_value=True) as delete_filter:
+            housing_monitor.handle_callback(update, context)
+        delete_filter.assert_called_once_with(8, user_id=544675510)
+
+    def test_back_from_second_schoba_field_recaps_the_first(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'schoba', 'step': 'max_rooms', 'user_id': 544675510, 'min_rooms': 3.0,
+        }})
+        update = self._cb_update()
+
+        housing_monitor._step_back(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'min_rooms')
+
+
+class HousingRegiomaklerWizardTests(unittest.TestCase):
+    def _update(self, text, user_id=544675510):
+        message = FakeMessage(text=text, user_id=user_id)
+        return SimpleNamespace(message=message, effective_message=message, effective_user=SimpleNamespace(id=user_id))
+
+    def test_available_sources_include_regiomakler(self):
+        self.assertIn('regiomakler', housing_monitor.AVAILABLE_SOURCE_KEYS)
+
+    def test_regiomakler_joins_the_shared_kaltmiete_question(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['schoba', 'regiomakler'],
+            'districts_selected': [],
+        }})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.schoba_store.create_filter', return_value=1), \
+             mock.patch('user_handlers.housing_monitor.regiomakler_store.create_filter', return_value=2) as create_filter:
+            for text in ['2', '-', '-', '-', '800', '1200']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        self.assertNotIn('housing_admin', context.user_data)
+        create_filter.assert_called_once_with(
+            user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=800.0, max_price_eur=1200.0,
+        )
+
+    def test_regiomakler_edit_flow_prefills_current_bounds(self):
+        own_filter = {
+            'filter_id': 9, 'user_id': 544675510, 'title': 'ImmoTeam/alpha', 'source': 'regiomakler',
+            'active': True, 'min_rooms': 2.0, 'max_price_eur': 1500.0,
+        }
+        query = SimpleNamespace(
+            data='housing:edit:regiomakler:9', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]):
+            housing_monitor.handle_callback(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['mode'], 'regiomakler')
+        self.assertEqual(state['edit_filter_id'], 9)
+        self.assertEqual(state['min_rooms'], 2.0)
+        self.assertEqual(state['step'], 'min_rooms')
+
+    def test_saving_a_regiomakler_edit_updates_instead_of_creating(self):
+        state = {'mode': 'regiomakler', 'step': 'min_rooms', 'user_id': 544675510, 'edit_filter_id': 11}
+        context = SimpleNamespace(user_data={'housing_admin': state})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.regiomakler_store.update_filter', return_value=True) as update_filter, \
+             mock.patch('user_handlers.housing_monitor.regiomakler_store.create_filter') as create_filter:
+            for text in ['2', '-', '-', '-', '-', '-']:
+                update = self._update(text)
+                self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        update_filter.assert_called_once_with(
+            filter_id=11, user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=None, max_price_eur=None,
+        )
+        create_filter.assert_not_called()
+        self.assertIn('оновлено', update.message.replies[-1][0])
+
+    def test_toggle_and_delete_dispatch_to_the_regiomakler_store(self):
+        own_filter = {'filter_id': 12, 'user_id': 544675510, 'source': 'regiomakler', 'active': True}
+        toggle_query = SimpleNamespace(
+            data='housing:toggle:regiomakler:12:0', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=toggle_query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.regiomakler_store.set_filter_active', return_value=True) as set_active:
+            housing_monitor.handle_callback(update, context)
+        set_active.assert_called_once_with(12, False, user_id=544675510)
+
+        delete_query = SimpleNamespace(
+            data='housing:delete_confirm:regiomakler:12', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=delete_query, effective_user=SimpleNamespace(id=544675510))
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.regiomakler_store.delete_filter', return_value=True) as delete_filter:
+            housing_monitor.handle_callback(update, context)
+        delete_filter.assert_called_once_with(12, user_id=544675510)
+
+
+class HousingKleinanzeigenWizardTests(unittest.TestCase):
+    def _update(self, text, user_id=544675510):
+        message = FakeMessage(text=text, user_id=user_id)
+        return SimpleNamespace(message=message, effective_message=message, effective_user=SimpleNamespace(id=user_id))
+
+    def test_available_sources_include_kleinanzeigen(self):
+        self.assertIn('kleinanzeigen', housing_monitor.AVAILABLE_SOURCE_KEYS)
+
+    def test_kleinanzeigen_price_is_asked_separately_even_alongside_a_kaltmiete_source(self):
+        """Kleinanzeigen's price has no reliable Kalt/Warm label — it must NOT
+        share Immowelt/SEMMELHAACK/SCHOBA/regiomakler's Kaltmiete question."""
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['immowelt', 'kleinanzeigen'],
+            'districts_selected': ['Golm'],
+        }})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 1}) as request, \
+             mock.patch('user_handlers.housing_monitor.kleinanzeigen_store.create_filter', return_value=2) as create_filter:
+            # 4 shared fields, then Immowelt's Kaltmiete (2), then Kleinanzeigen's own price (2) = 8 answers.
+            for text in ['2', '-', '-', '-', '800', '1200', '500', '900']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        self.assertNotIn('housing_admin', context.user_data)
+        self.assertEqual(request.call_args.kwargs['json']['min_price_eur'], 800.0)
+        self.assertEqual(request.call_args.kwargs['json']['max_price_eur'], 1200.0)
+        create_filter.assert_called_once_with(
+            user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=500.0, max_price_eur=900.0,
+        )
+
+    def test_kleinanzeigen_edit_flow_prefills_current_bounds(self):
+        own_filter = {
+            'filter_id': 14, 'user_id': 544675510, 'title': 'Kleinanzeigen', 'source': 'kleinanzeigen',
+            'active': True, 'min_rooms': 3.0, 'max_price_eur': 900.0,
+        }
+        query = SimpleNamespace(
+            data='housing:edit:kleinanzeigen:14', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]):
+            housing_monitor.handle_callback(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['mode'], 'kleinanzeigen')
+        self.assertEqual(state['edit_filter_id'], 14)
+        self.assertEqual(state['min_rooms'], 3.0)
+        self.assertEqual(state['step'], 'min_rooms')
+
+    def test_saving_a_kleinanzeigen_edit_updates_instead_of_creating(self):
+        state = {'mode': 'kleinanzeigen', 'step': 'min_rooms', 'user_id': 544675510, 'edit_filter_id': 15}
+        context = SimpleNamespace(user_data={'housing_admin': state})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.kleinanzeigen_store.update_filter', return_value=True) as update_filter, \
+             mock.patch('user_handlers.housing_monitor.kleinanzeigen_store.create_filter') as create_filter:
+            for text in ['2', '-', '-', '-', '-', '-']:
+                update = self._update(text)
+                self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        update_filter.assert_called_once_with(
+            filter_id=15, user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=None, max_price_eur=None,
+        )
+        create_filter.assert_not_called()
+        self.assertIn('оновлено', update.message.replies[-1][0])
+
+    def test_toggle_and_delete_dispatch_to_the_kleinanzeigen_store(self):
+        own_filter = {'filter_id': 16, 'user_id': 544675510, 'source': 'kleinanzeigen', 'active': True}
+        toggle_query = SimpleNamespace(
+            data='housing:toggle:kleinanzeigen:16:0', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=toggle_query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.kleinanzeigen_store.set_filter_active', return_value=True) as set_active:
+            housing_monitor.handle_callback(update, context)
+        set_active.assert_called_once_with(16, False, user_id=544675510)
+
+        delete_query = SimpleNamespace(
+            data='housing:delete_confirm:kleinanzeigen:16', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=delete_query, effective_user=SimpleNamespace(id=544675510))
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.kleinanzeigen_store.delete_filter', return_value=True) as delete_filter:
+            housing_monitor.handle_callback(update, context)
+        delete_filter.assert_called_once_with(16, user_id=544675510)
+
+
+class HousingKarlmarxWizardTests(unittest.TestCase):
+    def _update(self, text, user_id=544675510):
+        message = FakeMessage(text=text, user_id=user_id)
+        return SimpleNamespace(message=message, effective_message=message, effective_user=SimpleNamespace(id=user_id))
+
+    def test_available_sources_include_karlmarx(self):
+        self.assertIn('karlmarx', housing_monitor.AVAILABLE_SOURCE_KEYS)
+
+    def test_karlmarx_price_is_asked_separately_even_alongside_a_kaltmiete_source(self):
+        """Karl Marx counts Warmmiete, not Kaltmiete — it must NOT share
+        Immowelt/SEMMELHAACK/SCHOBA/regiomakler/locals's Kaltmiete question."""
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['immowelt', 'karlmarx'],
+            'districts_selected': ['Golm'],
+        }})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 1}) as request, \
+             mock.patch('user_handlers.housing_monitor.karlmarx_store.create_filter', return_value=2) as create_filter:
+            # 4 shared fields, then Immowelt's Kaltmiete (2), then Karl Marx's own price (2) = 8 answers.
+            for text in ['2', '-', '-', '-', '800', '1200', '500', '900']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        self.assertNotIn('housing_admin', context.user_data)
+        self.assertEqual(request.call_args.kwargs['json']['min_price_eur'], 800.0)
+        self.assertEqual(request.call_args.kwargs['json']['max_price_eur'], 1200.0)
+        create_filter.assert_called_once_with(
+            user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=500.0, max_price_eur=900.0,
+        )
+
+    def test_karlmarx_edit_flow_prefills_current_bounds(self):
+        own_filter = {
+            'filter_id': 20, 'user_id': 544675510, 'title': 'Karl Marx', 'source': 'karlmarx',
+            'active': True, 'min_rooms': 3.0, 'max_price_eur': 3000.0,
+        }
+        query = SimpleNamespace(
+            data='housing:edit:karlmarx:20', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]):
+            housing_monitor.handle_callback(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['mode'], 'karlmarx')
+        self.assertEqual(state['edit_filter_id'], 20)
+        self.assertEqual(state['min_rooms'], 3.0)
+        self.assertEqual(state['step'], 'min_rooms')
+
+    def test_saving_a_karlmarx_edit_updates_instead_of_creating(self):
+        state = {'mode': 'karlmarx', 'step': 'min_rooms', 'user_id': 544675510, 'edit_filter_id': 21}
+        context = SimpleNamespace(user_data={'housing_admin': state})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.karlmarx_store.update_filter', return_value=True) as update_filter, \
+             mock.patch('user_handlers.housing_monitor.karlmarx_store.create_filter') as create_filter:
+            for text in ['2', '-', '-', '-', '-', '-']:
+                update = self._update(text)
+                self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        update_filter.assert_called_once_with(
+            filter_id=21, user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=None, max_price_eur=None,
+        )
+        create_filter.assert_not_called()
+        self.assertIn('оновлено', update.message.replies[-1][0])
+
+    def test_toggle_and_delete_dispatch_to_the_karlmarx_store(self):
+        own_filter = {'filter_id': 22, 'user_id': 544675510, 'source': 'karlmarx', 'active': True}
+        toggle_query = SimpleNamespace(
+            data='housing:toggle:karlmarx:22:0', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=toggle_query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.karlmarx_store.set_filter_active', return_value=True) as set_active:
+            housing_monitor.handle_callback(update, context)
+        set_active.assert_called_once_with(22, False, user_id=544675510)
+
+        delete_query = SimpleNamespace(
+            data='housing:delete_confirm:karlmarx:22', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=delete_query, effective_user=SimpleNamespace(id=544675510))
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.karlmarx_store.delete_filter', return_value=True) as delete_filter:
+            housing_monitor.handle_callback(update, context)
+        delete_filter.assert_called_once_with(22, user_id=544675510)
+
+
+class HousingRecentMatchesOfferTests(unittest.TestCase):
+    """After a filter is created, two buttons offer to search listings first
+    seen in the last hour/day — bypassing the create-time baseline that
+    otherwise hides everything already in the catalog at that moment."""
+
+    def _update(self, text, user_id=544675510):
+        message = FakeMessage(text=text, user_id=user_id)
+        return SimpleNamespace(message=message, effective_message=message, effective_user=SimpleNamespace(id=user_id))
+
+    def _cb_update(self, data, user_id=544675510):
+        query = SimpleNamespace(
+            data=data, answer=mock.Mock(), edit_message_text=mock.Mock(), edit_message_reply_markup=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
+        context = SimpleNamespace(user_data={}, bot=mock.Mock())
+        return update, context
+
+    def test_creating_a_single_source_filter_offers_the_recent_buttons(self):
+        state = {'mode': 'schoba', 'step': 'min_rooms', 'user_id': 544675510}
+        context = SimpleNamespace(user_data={'housing_admin': state})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.schoba_store.create_filter', return_value=30):
+            for text in ['2', '-', '-', '-', '-', '-']:
+                update = self._update(text)
+                self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        self.assertEqual(context.user_data['recent_offer_filters'], [('schoba', 30)])
+        reply_text, reply_kwargs = update.message.replies[-1]
+        callbacks = [
+            b.callback_data for row in reply_kwargs['reply_markup'].inline_keyboard for b in row
+        ]
+        self.assertIn('housing:recent:1', callbacks)
+        self.assertIn('housing:recent:24', callbacks)
+
+    def test_editing_a_filter_does_not_offer_the_recent_buttons(self):
+        state = {'mode': 'schoba', 'step': 'min_rooms', 'user_id': 544675510, 'edit_filter_id': 31}
+        context = SimpleNamespace(user_data={'housing_admin': state})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.schoba_store.update_filter', return_value=True):
+            for text in ['2', '-', '-', '-', '-', '-']:
+                update = self._update(text)
+                self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        self.assertNotIn('recent_offer_filters', context.user_data)
+        reply_text, reply_kwargs = update.message.replies[-1]
+        self.assertIsNone(reply_kwargs.get('reply_markup'))
+
+    def test_multi_source_creation_stashes_every_created_filter(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['schoba', 'locals'],
+            'districts_selected': [],
+        }})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.schoba_store.create_filter', return_value=40), \
+             mock.patch('user_handlers.housing_monitor.locals_store.create_filter', return_value=41):
+            for text in ['2', '-', '-', '-', '800', '1200']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        self.assertEqual(
+            sorted(context.user_data['recent_offer_filters']),
+            [('locals', 41), ('schoba', 40)],
+        )
+
+    def test_clicking_a_window_sends_matches_first_seen_since_the_cutoff_to_the_filter_owner(self):
+        update, context = self._cb_update('housing:recent:1')
+        context.user_data['recent_offer_filters'] = [('schoba', 30)]
+
+        filt = {'filter_id': 30, 'user_id': 544675510, 'min_rooms': 2.0}
+        recent_listing = {'listing_key': 'fresh', 'rooms': 2.0, 'title': 'Свіже'}
+
+        with mock.patch('user_handlers.housing_monitor.schoba_store.list_filters', return_value=[filt]), \
+             mock.patch(
+                 'user_handlers.housing_monitor.schoba_store.list_active_listings_since',
+                 return_value=[recent_listing],
+             ) as list_since, \
+             mock.patch('user_handlers.housing_monitor.schoba_store.mark_delivered') as mark_delivered:
+            housing_monitor._send_recent_matches(update, context, 1)
+
+        list_since.assert_called_once()
+        cutoff = list_since.call_args.args[0]
+        self.assertLess(abs((datetime.utcnow() - cutoff).total_seconds() - 3600), 5)
+        context.bot.send_message.assert_called_once()
+        self.assertEqual(context.bot.send_message.call_args.kwargs['chat_id'], 544675510)
+        mark_delivered.assert_called_once_with(30, 'fresh')
+        self.assertNotIn('recent_offer_filters', context.user_data)
+
+    def test_no_recent_matches_tells_the_clicking_user_nothing_was_found(self):
+        update, context = self._cb_update('housing:recent:24', user_id=999)
+        context.user_data['recent_offer_filters'] = [('schoba', 30)]
+        filt = {'filter_id': 30, 'user_id': 544675510, 'min_rooms': 2.0}
+
+        with mock.patch('user_handlers.housing_monitor.schoba_store.list_filters', return_value=[filt]), \
+             mock.patch('user_handlers.housing_monitor.schoba_store.list_active_listings_since', return_value=[]):
+            housing_monitor._send_recent_matches(update, context, 24)
+
+        context.bot.send_message.assert_called_once_with(chat_id=999, text=mock.ANY)
+
+    def test_skip_clears_the_stash_without_sending_anything(self):
+        update, context = self._cb_update('housing:recent_skip')
+        context.user_data['recent_offer_filters'] = [('schoba', 30)]
+
+        housing_monitor.handle_callback(update, context)
+
+        self.assertNotIn('recent_offer_filters', context.user_data)
+        context.bot.send_message.assert_not_called()
+
+
+class HousingLocalsWizardTests(unittest.TestCase):
+    def _update(self, text, user_id=544675510):
+        message = FakeMessage(text=text, user_id=user_id)
+        return SimpleNamespace(message=message, effective_message=message, effective_user=SimpleNamespace(id=user_id))
+
+    def test_available_sources_include_locals(self):
+        self.assertIn('locals', housing_monitor.AVAILABLE_SOURCE_KEYS)
+
+    def test_locals_joins_the_shared_kaltmiete_question(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['schoba', 'locals'],
+            'districts_selected': [],
+        }})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.schoba_store.create_filter', return_value=1), \
+             mock.patch('user_handlers.housing_monitor.locals_store.create_filter', return_value=2) as create_filter:
+            for text in ['2', '-', '-', '-', '800', '1200']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        self.assertNotIn('housing_admin', context.user_data)
+        create_filter.assert_called_once_with(
+            user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=800.0, max_price_eur=1200.0,
+        )
+
+    def test_locals_edit_flow_prefills_current_bounds(self):
+        own_filter = {
+            'filter_id': 17, 'user_id': 544675510, 'title': 'locals®', 'source': 'locals',
+            'active': True, 'min_rooms': 2.0, 'max_price_eur': 1500.0,
+        }
+        query = SimpleNamespace(
+            data='housing:edit:locals:17', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]):
+            housing_monitor.handle_callback(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['mode'], 'locals')
+        self.assertEqual(state['edit_filter_id'], 17)
+        self.assertEqual(state['min_rooms'], 2.0)
+        self.assertEqual(state['step'], 'min_rooms')
+
+    def test_saving_a_locals_edit_updates_instead_of_creating(self):
+        state = {'mode': 'locals', 'step': 'min_rooms', 'user_id': 544675510, 'edit_filter_id': 18}
+        context = SimpleNamespace(user_data={'housing_admin': state})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.locals_store.update_filter', return_value=True) as update_filter, \
+             mock.patch('user_handlers.housing_monitor.locals_store.create_filter') as create_filter:
+            for text in ['2', '-', '-', '-', '-', '-']:
+                update = self._update(text)
+                self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        update_filter.assert_called_once_with(
+            filter_id=18, user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=None, max_price_eur=None,
+        )
+        create_filter.assert_not_called()
+        self.assertIn('оновлено', update.message.replies[-1][0])
+
+    def test_toggle_and_delete_dispatch_to_the_locals_store(self):
+        own_filter = {'filter_id': 19, 'user_id': 544675510, 'source': 'locals', 'active': True}
+        toggle_query = SimpleNamespace(
+            data='housing:toggle:locals:19:0', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=toggle_query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.locals_store.set_filter_active', return_value=True) as set_active:
+            housing_monitor.handle_callback(update, context)
+        set_active.assert_called_once_with(19, False, user_id=544675510)
+
+        delete_query = SimpleNamespace(
+            data='housing:delete_confirm:locals:19', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=delete_query, effective_user=SimpleNamespace(id=544675510))
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.locals_store.delete_filter', return_value=True) as delete_filter:
+            housing_monitor.handle_callback(update, context)
+        delete_filter.assert_called_once_with(19, user_id=544675510)
+
+
+class HousingWizardBackButtonTests(unittest.TestCase):
+    """Люди намагалися виправити відповідь, редагуючи своє старе повідомлення —
+    бот такі редагування не бачить. Recap показує вже введене, а «⬅ Назад»
+    дозволяє переправити конкретне поле, не заводячи фільтр наново."""
+
+    def _update(self, text, user_id=544675510):
+        message = FakeMessage(text=text, user_id=user_id)
+        return SimpleNamespace(message=message, effective_message=message, effective_user=SimpleNamespace(id=user_id))
+
+    def _cb_update(self, user_id=544675510):
+        query = SimpleNamespace(answer=mock.Mock(), edit_message_text=mock.Mock())
+        return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
+
+    def test_second_field_prompt_actually_contains_the_recap_line(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'immowelt', 'step': 'min_price_eur', 'user_id': 123456789,
+            'districts_selected': ['Golm'],
+        }})
+        update = self._update('800')
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            housing_monitor.handle_private_text(update, context)
+
+        text, kwargs = update.message.replies[-1]
+        self.assertIn('Ціна: мінімум (від): 800', text)
+        callbacks = [b.callback_data for row in kwargs['reply_markup'].inline_keyboard for b in row]
+        self.assertIn(housing_monitor.BACK_CALLBACK, callbacks)
+
+    def test_back_from_second_immowelt_field_returns_to_the_first_with_its_value_intact(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'immowelt', 'step': 'max_price_eur', 'user_id': 123456789,
+            'districts_selected': ['Golm'], 'min_price_eur': 800.0,
+        }})
+        update = self._cb_update()
+
+        housing_monitor._step_back(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'min_price_eur')
+        self.assertEqual(state['min_price_eur'], 800.0)
+        prompt = update.callback_query.edit_message_text.call_args.args[0]
+        self.assertNotIn('мінімум (від): 800', prompt)  # editing the field itself doesn't recap itself
+
+    def test_back_from_the_first_immowelt_field_returns_to_district_picker(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'immowelt', 'step': 'min_price_eur', 'user_id': 123456789,
+            'districts_selected': ['Golm'],
+        }})
+        update = self._cb_update()
+
+        housing_monitor._step_back(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'districts')
+        callbacks = [
+            b.callback_data
+            for row in update.callback_query.edit_message_text.call_args.kwargs['reply_markup'].inline_keyboard
+            for b in row
+        ]
+        self.assertIn('housing:imm_district_done', callbacks)
+
+    def test_back_from_the_first_propotsdam_field_returns_to_district_picker(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'propotsdam', 'step': 'min_rooms', 'user_id': 123456789,
+            'districts_selected': ['Golm'],
+        }})
+        update = self._cb_update()
+
+        housing_monitor._step_back(update, context)
+
+        self.assertEqual(context.user_data['housing_admin']['step'], 'districts')
+
+    def test_semmelhaack_first_field_has_no_back_button(self):
+        query = SimpleNamespace(answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(
+            callback_query=query, effective_user=SimpleNamespace(id=544675510),
+        )
+        own_filter = {'filter_id': 3, 'user_id': 544675510, 'source': 'semmelhaack', 'active': True}
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]):
+            housing_monitor.start_semmelhaack_edit_flow(update, context, 3)
+
+        call_kwargs = query.edit_message_text.call_args.kwargs
+        self.assertNotIn('reply_markup', call_kwargs)
+
+    def test_semmelhaack_second_field_offers_back_and_recaps_the_first(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'semmelhaack', 'step': 'min_rooms', 'user_id': 544675510,
+        }})
+        update = self._update('3', user_id=544675510)
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            housing_monitor.handle_private_text(update, context)
+
+        text, kwargs = update.message.replies[-1]
+        self.assertIn('Кімнати: мінімум (від): 3', text)
+        callbacks = [b.callback_data for row in kwargs['reply_markup'].inline_keyboard for b in row]
+        self.assertIn(housing_monitor.BACK_CALLBACK, callbacks)
+
+    def test_back_from_first_shared_multi_field_returns_to_districts_when_district_aware_source_picked(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['immowelt'], 'districts_selected': ['Golm'],
+        }})
+        update = self._cb_update()
+
+        housing_monitor._step_back(update, context)
+
+        self.assertEqual(context.user_data['housing_admin']['step'], 'districts')
+
+    def test_back_from_first_shared_multi_field_returns_to_sources_when_only_semmelhaack_picked(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['semmelhaack'], 'districts_selected': [],
+        }})
+        update = self._cb_update()
+
+        housing_monitor._step_back(update, context)
+
+        self.assertEqual(context.user_data['housing_admin']['step'], 'sources')
+
+    def test_back_from_first_price_step_returns_to_last_shared_field(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_price_eur', 'user_id': 544675510,
+            'sources_selected': ['immowelt'], 'districts_selected': ['Golm'],
+            '_price_steps': ['min_price_eur', 'max_price_eur'],
+            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': 80.0,
+        }})
+        update = self._cb_update()
+
+        housing_monitor._step_back(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'max_area_m2')
+        prompt = update.callback_query.edit_message_text.call_args.args[0]
+        self.assertIn('Кімнати: мінімум (від): 2', prompt)
+
+    def test_back_from_second_price_step_recaps_the_first_price_answer(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'max_price_eur', 'user_id': 544675510,
+            'sources_selected': ['immowelt'], 'districts_selected': ['Golm'],
+            '_price_steps': ['min_price_eur', 'max_price_eur'],
+            'min_rooms': None, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
+            'min_price_eur': 800.0,
+        }})
+        update = self._cb_update()
+
+        housing_monitor._step_back(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'min_price_eur')
+
+    def test_back_from_multi_districts_returns_to_sources(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'districts', 'user_id': 544675510,
+            'sources_selected': ['immowelt', 'propotsdam'], 'districts_selected': [],
+        }})
+        update = self._cb_update()
+
+        housing_monitor._step_back(update, context)
+
+        self.assertEqual(context.user_data['housing_admin']['step'], 'sources')
 
 
 class HousingNotificationSettingsTests(unittest.TestCase):

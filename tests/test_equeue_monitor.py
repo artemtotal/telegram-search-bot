@@ -46,10 +46,29 @@ class EqueueMonitorTest(unittest.TestCase):
         self.assertFalse(_looks_like_cloudflare_challenge("Just a moment... cf_chl", 200))
 
     def test_latest_status_uses_newest_browser_check_globally(self):
+        """`_latest_status_text` prefers the live `EqueueStatus` singleton row
+        (kept fresh by this same container's real scheduled browser check) and
+        only falls back to `EqueueSubscription` rows when that singleton has
+        no timestamp yet. The real row is neutralized for the duration of the
+        test (not deleted) and always restored, since it reflects genuine
+        production monitoring state that other code and users rely on.
+        """
         import user_handlers.equeue_monitor as monitor
 
         session = monitor.DBSession()
         user_ids = [900000001, 900000002]
+        status_row = session.query(monitor.EqueueStatus).filter(
+            monitor.EqueueStatus.service == monitor.SERVICE_KEY
+        ).first()
+        original_status = None
+        if status_row is not None:
+            original_status = {
+                "last_checked_at": status_row.last_checked_at,
+                "last_status": status_row.last_status,
+                "last_reason": status_row.last_reason,
+            }
+            status_row.last_checked_at = None
+            session.commit()
         try:
             session.query(monitor.EqueueSubscription).filter(
                 monitor.EqueueSubscription.user_id.in_(user_ids)
@@ -86,6 +105,10 @@ class EqueueMonitorTest(unittest.TestCase):
             session.query(monitor.EqueueSubscription).filter(
                 monitor.EqueueSubscription.user_id.in_(user_ids)
             ).delete(synchronize_session=False)
+            if status_row is not None:
+                status_row.last_checked_at = original_status["last_checked_at"]
+                status_row.last_status = original_status["last_status"]
+                status_row.last_reason = original_status["last_reason"]
             session.commit()
             session.close()
 

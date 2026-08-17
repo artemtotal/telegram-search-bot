@@ -42,6 +42,17 @@ class HousingAccessStoreTests(unittest.TestCase):
         self.assertTrue(housing_access_store.is_allowed(777))
         self.assertEqual(housing_access_store.list_users()[0]['display_name'], 'Нове імʼя')
 
+    def test_revoke_access_removes_the_user_entirely(self):
+        housing_access_store.grant_access(777, 'Хтось')
+
+        self.assertTrue(housing_access_store.revoke_access(777))
+
+        self.assertFalse(housing_access_store.is_allowed(777))
+        self.assertEqual(housing_access_store.list_users(), [])
+
+    def test_revoke_access_on_an_unknown_user_reports_no_row_removed(self):
+        self.assertFalse(housing_access_store.revoke_access(999))
+
 
 if __name__ == '__main__':
     unittest.main()

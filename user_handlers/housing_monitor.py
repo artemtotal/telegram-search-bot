@@ -12,7 +12,23 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
 from telegram.error import BadRequest
 
-from user_jobs import housing_access_store, propotsdam_store
+from user_jobs import (
+    housing_access_store,
+    karlmarx_matching,
+    karlmarx_store,
+    kleinanzeigen_matching,
+    kleinanzeigen_store,
+    locals_matching,
+    locals_store,
+    propotsdam_matching,
+    propotsdam_store,
+    regiomakler_matching,
+    regiomakler_store,
+    schoba_matching,
+    schoba_store,
+    semmelhaack_matching,
+    semmelhaack_store,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,18 +46,18 @@ TIMEOUT = int(os.getenv("HOUSING_MONITOR_TIMEOUT", "20") or 20)
 # Перевірка доступу стоїть на шляху промальовування меню, тож чекати на приймач
 # стільки ж, скільки на збереження фільтра, там не можна.
 ALLOW_CHECK_TIMEOUT = int(os.getenv("HOUSING_ALLOW_CHECK_TIMEOUT", "3") or 3)
-BTN_ADMIN_ADD = "➕ Додати Immowelt користувача"
-BTN_ADMIN_ADD_PROPOT = "🏢 Додати ProPotsdam користувача"
-BTN_ADMIN_LIST = "📋 Користувачі житла"
+BTN_ADMIN_ADD = "➕ Додати користувача"
 BTN_ADMIN_ACCESS_ADD = "👤 Додати доступ користувачу"
 BTN_ADMIN_ACCESS_LIST = "👥 Доступ до моніторингу"
 BTN_CANCEL = "✖ Скасувати"
-BTN_SELF_ADD = "➕ Додати Immowelt"
-BTN_SELF_ADD_PROPOT = "🏢 Додати ProPotsdam"
+BTN_SELF_ADD = "➕ Додати фільтр"
 BTN_SELF_MANAGE = "⚙️ Мої фільтри"
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 IMMOWELT_STALE_AFTER = timedelta(minutes=30)
 PROPOTSDAM_STALE_AFTER = timedelta(minutes=45)
+# Kleinanzeigen опитується раз на годину, а не раз на 30 хв, як решта джерел —
+# з тим самим порогом свіжості він завжди показував би 🔴 одразу після успіху.
+KLEINANZEIGEN_STALE_AFTER = timedelta(minutes=90)
 PROPOT_DISTRICTS = [
     "Babelsberg",
     "Babelsberg Nord",
@@ -106,30 +122,225 @@ def _translate_districts(districts, mapping: Dict[str, str], valid_targets) -> l
 # цьому самому списку й питає кожну умову окремим числом. Довгий майстер із
 # шести запитань поспіль люди кидають на середині — але тут ніхто не бачить
 # запитань про те, що сам не обрав, тож зайвих кроків просто немає.
+# Додається до кожного запитання майстра — інакше людина не здогадається, що
+# поле можна пропустити, поки не введе щось нечислове й не отримає помилку.
+SKIP_HINT = " Або «-», щоб пропустити."
 IMMOWELT_CRITERIA_FIELDS = [
-    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна холодна оренда (Kaltmiete) в євро:"},
-    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна холодна оренда (Kaltmiete) в євро:"},
-    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:"},
-    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:"},
-    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:"},
-    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:"},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
 ]
 IMMOWELT_CRITERIA_KEYS = [spec["key"] for spec in IMMOWELT_CRITERIA_FIELDS]
 IMMOWELT_CRITERIA_BY_KEY = {spec["key"]: spec for spec in IMMOWELT_CRITERIA_FIELDS}
 ADMIN_PAGE_SIZE = 20
 PROPOT_CRITERIA_FIELDS = [
-    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:"},
-    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:"},
-    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:"},
-    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:"},
-    {"key": "min_total_rent_eur", "label": "Оренда: мінімум (від)", "prompt": "Мінімальна загальна оренда (Gesamtmiete) в євро:"},
-    {"key": "max_total_rent_eur", "label": "Оренда: максимум (до)", "prompt": "Максимальна загальна оренда (Gesamtmiete) в євро:"},
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
+    {"key": "min_total_rent_eur", "label": "Оренда: мінімум (від)", "prompt": "Мінімальна загальна оренда (Gesamtmiete) в євро:" + SKIP_HINT},
+    {"key": "max_total_rent_eur", "label": "Оренда: максимум (до)", "prompt": "Максимальна загальна оренда (Gesamtmiete) в євро:" + SKIP_HINT},
 ]
 PROPOT_CRITERIA_KEYS = [spec["key"] for spec in PROPOT_CRITERIA_FIELDS]
 PROPOT_CRITERIA_BY_KEY = {spec["key"]: spec for spec in PROPOT_CRITERIA_FIELDS}
-PROPOT_PROMPTS = {
-    "title": "Надішліть імʼя або назву фільтра.",
+# SEMMELHAACK не показує райони взагалі — фільтр тут лише кімнати/площа/ціна,
+# і ціна там теж холодна оренда (Kaltmiete), як у Immowelt.
+SEMM_CRITERIA_FIELDS = [
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
+]
+SEMM_CRITERIA_KEYS = [spec["key"] for spec in SEMM_CRITERIA_FIELDS]
+SEMM_CRITERIA_BY_KEY = {spec["key"]: spec for spec in SEMM_CRITERIA_FIELDS}
+# SCHOBA теж не показує райони надійно — фільтр лише кімнати/площа/ціна.
+# Nettokaltmiete — та сама холодна оренда, що й у Immowelt/SEMMELHAACK.
+SCHOBA_CRITERIA_FIELDS = [
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна холодна оренда (Nettokaltmiete) в євро:" + SKIP_HINT},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна холодна оренда (Nettokaltmiete) в євро:" + SKIP_HINT},
+]
+SCHOBA_CRITERIA_KEYS = [spec["key"] for spec in SCHOBA_CRITERIA_FIELDS]
+SCHOBA_CRITERIA_BY_KEY = {spec["key"]: spec for spec in SCHOBA_CRITERIA_FIELDS}
+# ImmoTeam Potsdam і alpha Immobilien публікують одну спільну стрічку (плагін
+# immomakler) — теж без надійного словника районів, теж Kaltmiete.
+REGIOMAKLER_CRITERIA_FIELDS = [
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
+]
+REGIOMAKLER_CRITERIA_KEYS = [spec["key"] for spec in REGIOMAKLER_CRITERIA_FIELDS]
+REGIOMAKLER_CRITERIA_BY_KEY = {spec["key"]: spec for spec in REGIOMAKLER_CRITERIA_FIELDS}
+# Kleinanzeigen — оголошення від приватних осіб і дрібних агентств упереміш,
+# без надійної мітки Kalt/Warm на ціні, тож у спільне запитання Kaltmiete не
+# приєднується — питає ціну окремо, як ProPotsdam.
+KLEINANZEIGEN_CRITERIA_FIELDS = [
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна ціна в євро:" + SKIP_HINT},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна ціна в євро:" + SKIP_HINT},
+]
+KLEINANZEIGEN_CRITERIA_KEYS = [spec["key"] for spec in KLEINANZEIGEN_CRITERIA_FIELDS]
+KLEINANZEIGEN_CRITERIA_BY_KEY = {spec["key"]: spec for spec in KLEINANZEIGEN_CRITERIA_FIELDS}
+# locals® теж без районів; ціна — Kaltmiete, як у Immowelt/SEMMELHAACK/SCHOBA/regiomakler.
+LOCALS_CRITERIA_FIELDS = [
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
+]
+LOCALS_CRITERIA_KEYS = [spec["key"] for spec in LOCALS_CRITERIA_FIELDS]
+LOCALS_CRITERIA_BY_KEY = {spec["key"]: spec for spec in LOCALS_CRITERIA_FIELDS}
+# Karl Marx теж без районів; ціна — Warmmiete (тепла оренда), не Kaltmiete,
+# тож у спільне запитання Kaltmiete не приєднується — питає ціну окремо, як
+# Kleinanzeigen/ProPotsdam.
+KARLMARX_CRITERIA_FIELDS = [
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна тепла оренда (Warmmiete) в євро:" + SKIP_HINT},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна тепла оренда (Warmmiete) в євро:" + SKIP_HINT},
+]
+KARLMARX_CRITERIA_KEYS = [spec["key"] for spec in KARLMARX_CRITERIA_FIELDS]
+KARLMARX_CRITERIA_BY_KEY = {spec["key"]: spec for spec in KARLMARX_CRITERIA_FIELDS}
+
+# Портали, серед яких можна обирати одразу при створенні фільтра. Список коротко —
+# додавати нове джерело буде такий самий однорядковий запис, а не окремий майстер.
+AVAILABLE_SOURCES = [
+    {"key": "immowelt", "icon": "🏠", "label": "Immowelt"},
+    {"key": "propotsdam", "icon": "🏢", "label": "ProPotsdam"},
+    {"key": "semmelhaack", "icon": "🏘", "label": "SEMMELHAACK"},
+    {"key": "schoba", "icon": "🏡", "label": "SCHOBA"},
+    {"key": "regiomakler", "icon": "🤝", "label": "ImmoTeam/alpha"},
+    {"key": "kleinanzeigen", "icon": "📋", "label": "Kleinanzeigen"},
+    {"key": "locals", "icon": "🔑", "label": "locals®"},
+    {"key": "karlmarx", "icon": "🧱", "label": "Karl Marx"},
+]
+AVAILABLE_SOURCE_KEYS = [spec["key"] for spec in AVAILABLE_SOURCES]
+# Immowelt і ProPotsdam мають райони (Stadtteil); SEMMELHAACK — ні. Спільний крок
+# вибору району в майстрі показуємо, лише якщо серед обраних джерел є хоч одне звідси.
+DISTRICT_AWARE_SOURCES = {"immowelt", "propotsdam"}
+
+# Район, кімнати й площу той самий фільтр питає лише раз — і Immowelt, і ProPotsdam
+# розуміють ці умови однаково. Ціну натомість питає окремо для кожного обраного
+# джерела: Immowelt рахує холодну оренду (Kaltmiete), ProPotsdam — повну (Gesamtmiete).
+SHARED_CRITERIA_FIELDS = [
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
+]
+SHARED_CRITERIA_KEYS = [spec["key"] for spec in SHARED_CRITERIA_FIELDS]
+SHARED_CRITERIA_BY_KEY = {spec["key"]: spec for spec in SHARED_CRITERIA_FIELDS}
+PRICE_STEP_FIELDS = {
+    "min_price_eur": IMMOWELT_CRITERIA_BY_KEY["min_price_eur"],
+    "max_price_eur": IMMOWELT_CRITERIA_BY_KEY["max_price_eur"],
+    "min_total_rent_eur": PROPOT_CRITERIA_BY_KEY["min_total_rent_eur"],
+    "max_total_rent_eur": PROPOT_CRITERIA_BY_KEY["max_total_rent_eur"],
+    # Kleinanzeigen дістає власні ключі стану (не "min_price_eur") — його ціна
+    # не той самий Kaltmiete, що в Immowelt/SEMMELHAACK/SCHOBA/regiomakler, і
+    # об'єднувати їх у спільне запитання було б помилково.
+    "min_ka_price_eur": {
+        "key": "min_ka_price_eur", "label": "Ціна: мінімум (від)",
+        "prompt": "Мінімальна ціна в євро:" + SKIP_HINT,
+    },
+    "max_ka_price_eur": {
+        "key": "max_ka_price_eur", "label": "Ціна: максимум (до)",
+        "prompt": "Максимальна ціна в євро:" + SKIP_HINT,
+    },
+    # Karl Marx рахує теплу оренду (Warmmiete), а не Kaltmiete — теж окремі
+    # ключі стану, щоб не змішувати з холодною орендою інших джерел.
+    "min_km_price_eur": {
+        "key": "min_km_price_eur", "label": "Ціна: мінімум (від)",
+        "prompt": "Мінімальна тепла оренда (Warmmiete) в євро:" + SKIP_HINT,
+    },
+    "max_km_price_eur": {
+        "key": "max_km_price_eur", "label": "Ціна: максимум (до)",
+        "prompt": "Максимальна тепла оренда (Warmmiete) в євро:" + SKIP_HINT,
+    },
 }
+PRICE_STEP_PROMPTS = {key: spec["prompt"] for key, spec in PRICE_STEP_FIELDS.items()}
+# Одна кнопка на всі майстри: куди саме веде «Назад» вирішує сам обробник,
+# дивлячись на `mode`/`step` у стані — окремий callback на кожен крок був би
+# зайвим, бо крок завжди один: попереднє поле того самого списку.
+BACK_CALLBACK = "housing:field_back"
+
+
+def _field_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Назад", callback_data=BACK_CALLBACK)]])
+
+
+def _format_answer(value) -> str:
+    if value is None:
+        return "—"
+    if isinstance(value, (int, float)):
+        return f"{value:g}"
+    return str(value)
+
+
+def _fields_recap(state: dict, fields: list, exclude_key: Optional[str] = None) -> str:
+    """Показує вже введені відповіді над наступним запитанням.
+
+    Люди намагалися виправити помилку, редагуючи своє старе повідомлення в
+    Telegram — бот такі редагування не бачить, тож правка тихо нікуди не
+    діла. Коли перед очима видно «Мінімум кімнат: 3», людина хоча б розуміє,
+    що саме вже зафіксовано, і може виправити це кнопкою «Назад» замість
+    марної спроби відредагувати старий текст.
+    """
+    lines = []
+    for spec in fields:
+        key = spec["key"]
+        if key == exclude_key or key not in state:
+            continue
+        lines.append(f"✅ {spec.get('label', key)}: {_format_answer(state[key])}")
+    return "\n".join(lines)
+
+
+def _field_prompt(state: dict, fields: list, next_key: str) -> str:
+    recap = _fields_recap(state, fields, exclude_key=next_key)
+    prompt = next(spec["prompt"] for spec in fields if spec["key"] == next_key)
+    return f"{recap}\n\n{prompt}" if recap else prompt
+
+
+KALTMIETE_SOURCES = {"immowelt", "semmelhaack", "schoba", "regiomakler", "locals"}
+
+
+def _price_steps_for(sources_selected) -> list:
+    steps = []
+    # Immowelt, SEMMELHAACK і SCHOBA всі рахують холодну оренду (Kaltmiete/
+    # Nettokaltmiete) — те саме число підходить для всіх трьох, тож питання
+    # одне на всіх, а не окремо для кожного джерела.
+    if any(source in KALTMIETE_SOURCES for source in sources_selected):
+        steps += ["min_price_eur", "max_price_eur"]
+    if "propotsdam" in sources_selected:
+        steps += ["min_total_rent_eur", "max_total_rent_eur"]
+    if "kleinanzeigen" in sources_selected:
+        steps += ["min_ka_price_eur", "max_ka_price_eur"]
+    if "karlmarx" in sources_selected:
+        steps += ["min_km_price_eur", "max_km_price_eur"]
+    return steps
+
+
+def _canonical_districts(sources_selected) -> list:
+    """Список районів для спільного кроку вибору: словник Immowelt, якщо він
+    серед обраних джерел (є переклад в ProPotsdam), інакше — власний ProPotsdam."""
+    return IMMOWELT_DISTRICTS if "immowelt" in (sources_selected or []) else PROPOT_DISTRICTS
 
 
 def _request(method: str, path: str, timeout: Optional[int] = None, **kwargs) -> Dict[str, object]:
@@ -266,11 +477,102 @@ def _describe_criteria(criteria: Dict[str, object]) -> str:
     return html.escape(" · ".join(parts))
 
 
+def _auto_title(source: str, criteria: Dict[str, object]) -> str:
+    """Назва фільтра тепер сама — умови й так видно всюди в списку, тож окреме
+    питання «як назвати фільтр» було зайвим кроком майстра."""
+    summary = html.unescape(_describe_criteria(criteria))
+    label = SOURCE_LABEL.get(source, source)
+    return (f"{label}: {summary}" if summary else label)[:120]
+
+
 def _sync_propot_filters() -> None:
     try:
         _request("POST", "/api/propotsdam/filters", json={"filters": propotsdam_store.list_filters()})
     except Exception:
         logger.exception("Could not sync ProPotsdam filters to shared browser receiver")
+
+
+# Джерела з власним сховищем у цьому боті — Immowelt керується окремим
+# check-Wohnung приймачем без API для «нещодавніх» вибірок, тож пропозиція
+# «показати за годину/добу» після створення фільтра охоплює лише ці сім.
+_LOCAL_SOURCE_MODULES = {
+    "propotsdam": (propotsdam_store, propotsdam_matching),
+    "semmelhaack": (semmelhaack_store, semmelhaack_matching),
+    "schoba": (schoba_store, schoba_matching),
+    "regiomakler": (regiomakler_store, regiomakler_matching),
+    "kleinanzeigen": (kleinanzeigen_store, kleinanzeigen_matching),
+    "locals": (locals_store, locals_matching),
+    "karlmarx": (karlmarx_store, karlmarx_matching),
+}
+RECENT_WINDOWS = [("останню годину", 1), ("останню добу", 24)]
+
+
+def _recent_offer_keyboard() -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(f"🕐 Показати за {label}", callback_data=f"housing:recent:{hours}")]
+        for label, hours in RECENT_WINDOWS
+    ]
+    rows.append([InlineKeyboardButton("Не треба", callback_data="housing:recent_skip")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _offer_recent_matches(context: CallbackContext, created) -> None:
+    """Stashes just-created (source, filter_id) pairs for the two follow-up
+    buttons ('за годину'/'за добу') to search, instead of embedding them in
+    callback_data — Telegram's 64-byte limit makes that unsafe once more than
+    a couple of sources are created together in the multi-source wizard."""
+    context.user_data["recent_offer_filters"] = list(created)
+
+
+def _clear_recent_offer_keyboard(query) -> None:
+    try:
+        query.edit_message_reply_markup(reply_markup=None)
+    except BadRequest as exc:
+        if "Message is not modified" not in str(exc):
+            raise
+    except Exception:
+        pass
+
+
+def _send_recent_matches(update: Update, context: CallbackContext, hours: int) -> None:
+    """Searches the just-created filter(s) against listings first seen within
+    the chosen window, bypassing the create-time baseline that otherwise
+    hides everything already in the catalog at filter-creation time — this is
+    an explicit one-off request, not the regular scheduled delivery path."""
+    query = update.callback_query
+    if not query:
+        return
+    created = context.user_data.pop("recent_offer_filters", None) or []
+    query.answer()
+    _clear_recent_offer_keyboard(query)
+    if not created:
+        return
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    sent_any = False
+    for source, filter_id in created:
+        modules = _LOCAL_SOURCE_MODULES.get(source)
+        if not modules:
+            continue
+        store, matching = modules
+        filt = next(
+            (f for f in store.list_filters() if int(f["filter_id"]) == int(filter_id)), None,
+        )
+        if not filt:
+            continue
+        owner_id = int(filt["user_id"])
+        for listing in store.list_active_listings_since(cutoff):
+            if not matching.matches_filter(listing, filt):
+                continue
+            text = matching.format_notification(listing)
+            context.bot.send_message(
+                chat_id=owner_id, text=text, parse_mode="HTML", disable_web_page_preview=False,
+            )
+            store.mark_delivered(int(filter_id), str(listing["listing_key"]))
+            sent_any = True
+    if not sent_any and update.effective_user:
+        context.bot.send_message(
+            chat_id=int(update.effective_user.id), text="За цей період підходящих оголошень немає.",
+        )
 
 
 def user_filters(user_id: Optional[int]) -> list:
@@ -282,7 +584,27 @@ def user_filters(user_id: Optional[int]) -> list:
         if int(item.get("user_id") or 0) == int(user_id) and item.get("active")
     ]
     propot = propotsdam_store.list_filters(user_id=int(user_id), active_only=True)
-    return immowelt + propot
+    for item in propot:
+        item.setdefault("source", "propotsdam")
+    semm = semmelhaack_store.list_filters(user_id=int(user_id), active_only=True)
+    for item in semm:
+        item.setdefault("source", "semmelhaack")
+    schoba = schoba_store.list_filters(user_id=int(user_id), active_only=True)
+    for item in schoba:
+        item.setdefault("source", "schoba")
+    regio = regiomakler_store.list_filters(user_id=int(user_id), active_only=True)
+    for item in regio:
+        item.setdefault("source", "regiomakler")
+    kanz = kleinanzeigen_store.list_filters(user_id=int(user_id), active_only=True)
+    for item in kanz:
+        item.setdefault("source", "kleinanzeigen")
+    loc = locals_store.list_filters(user_id=int(user_id), active_only=True)
+    for item in loc:
+        item.setdefault("source", "locals")
+    km = karlmarx_store.list_filters(user_id=int(user_id), active_only=True)
+    for item in km:
+        item.setdefault("source", "karlmarx")
+    return immowelt + propot + semm + schoba + regio + kanz + loc + km
 
 
 def manageable_filters(user_id: Optional[int]) -> list:
@@ -295,7 +617,25 @@ def manageable_filters(user_id: Optional[int]) -> list:
     propot = propotsdam_store.list_filters(user_id=int(user_id))
     for item in propot:
         item.setdefault("source", "propotsdam")
-    return immowelt + propot
+    semm = semmelhaack_store.list_filters(user_id=int(user_id))
+    for item in semm:
+        item.setdefault("source", "semmelhaack")
+    schoba = schoba_store.list_filters(user_id=int(user_id))
+    for item in schoba:
+        item.setdefault("source", "schoba")
+    regio = regiomakler_store.list_filters(user_id=int(user_id))
+    for item in regio:
+        item.setdefault("source", "regiomakler")
+    kanz = kleinanzeigen_store.list_filters(user_id=int(user_id))
+    for item in kanz:
+        item.setdefault("source", "kleinanzeigen")
+    loc = locals_store.list_filters(user_id=int(user_id))
+    for item in loc:
+        item.setdefault("source", "locals")
+    km = karlmarx_store.list_filters(user_id=int(user_id))
+    for item in km:
+        item.setdefault("source", "karlmarx")
+    return immowelt + propot + semm + schoba + regio + kanz + loc + km
 
 
 def _has_grandfathered_filter(user_id: int) -> bool:
@@ -339,9 +679,8 @@ def _menu_keyboard(user_id: Optional[int] = None) -> InlineKeyboardMarkup:
         rows.insert(1, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
     elif is_allowed(user_id):
         rows.insert(0, [InlineKeyboardButton(BTN_SELF_ADD, callback_data="housing:self_add")])
-        rows.insert(1, [InlineKeyboardButton(BTN_SELF_ADD_PROPOT, callback_data="housing:self_propot_add")])
-        rows.insert(2, [InlineKeyboardButton(BTN_SELF_MANAGE, callback_data="housing:self_manage")])
-        rows.insert(3, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
+        rows.insert(1, [InlineKeyboardButton(BTN_SELF_MANAGE, callback_data="housing:self_manage")])
+        rows.insert(2, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
     rows.append([InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
 
@@ -359,8 +698,6 @@ def _admin_keyboard(page: int = 0) -> InlineKeyboardMarkup:
         rows.append(nav)
     rows.extend([
         [InlineKeyboardButton(BTN_ADMIN_ADD, callback_data="housing:add")],
-        [InlineKeyboardButton(BTN_ADMIN_ADD_PROPOT, callback_data="housing:propot_add")],
-        [InlineKeyboardButton(BTN_ADMIN_LIST, callback_data="housing:list:0")],
         [InlineKeyboardButton(BTN_ADMIN_ACCESS_ADD, callback_data="housing:access_add")],
         [InlineKeyboardButton(BTN_ADMIN_ACCESS_LIST, callback_data="housing:access_list")],
         [InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")],
@@ -497,6 +834,84 @@ def _status_lines() -> list:
             lines.append(f"Остання помилка ProPotsdam: {html.escape(str(status.get('last_error')))}")
     else:
         lines.append("🔴 ProPotsdam: перевірка ще не запускалась.")
+
+    semm_status = semmelhaack_store.latest_status()
+    if semm_status:
+        light = _traffic_light(semm_status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER)
+        count = semm_status.get("listings_count") or 0
+        lines.append(
+            f"{light} SEMMELHAACK: перевірка {_relative_time(semm_status.get('last_checked_at'))}, "
+            f"квартир у Потсдамі: {count}."
+        )
+        if semm_status.get("last_error"):
+            lines.append(f"Остання помилка SEMMELHAACK: {html.escape(str(semm_status.get('last_error')))}")
+    else:
+        lines.append("🔴 SEMMELHAACK: перевірка ще не запускалась.")
+
+    schoba_status = schoba_store.latest_status()
+    if schoba_status:
+        light = _traffic_light(schoba_status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER)
+        count = schoba_status.get("listings_count") or 0
+        lines.append(
+            f"{light} SCHOBA: перевірка {_relative_time(schoba_status.get('last_checked_at'))}, "
+            f"квартир: {count}."
+        )
+        if schoba_status.get("last_error"):
+            lines.append(f"Остання помилка SCHOBA: {html.escape(str(schoba_status.get('last_error')))}")
+    else:
+        lines.append("🔴 SCHOBA: перевірка ще не запускалась.")
+
+    regio_status = regiomakler_store.latest_status()
+    if regio_status:
+        light = _traffic_light(regio_status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER)
+        count = regio_status.get("listings_count") or 0
+        lines.append(
+            f"{light} ImmoTeam/alpha: перевірка {_relative_time(regio_status.get('last_checked_at'))}, "
+            f"квартир: {count}."
+        )
+        if regio_status.get("last_error"):
+            lines.append(f"Остання помилка ImmoTeam/alpha: {html.escape(str(regio_status.get('last_error')))}")
+    else:
+        lines.append("🔴 ImmoTeam/alpha: перевірка ще не запускалась.")
+
+    kanz_status = kleinanzeigen_store.latest_status()
+    if kanz_status:
+        light = _traffic_light(kanz_status.get("last_checked_at"), KLEINANZEIGEN_STALE_AFTER)
+        count = kanz_status.get("listings_count") or 0
+        lines.append(
+            f"{light} Kleinanzeigen: перевірка {_relative_time(kanz_status.get('last_checked_at'))}, "
+            f"квартир: {count}."
+        )
+        if kanz_status.get("last_error"):
+            lines.append(f"Остання помилка Kleinanzeigen: {html.escape(str(kanz_status.get('last_error')))}")
+    else:
+        lines.append("🔴 Kleinanzeigen: перевірка ще не запускалась.")
+
+    locals_status = locals_store.latest_status()
+    if locals_status:
+        light = _traffic_light(locals_status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER)
+        count = locals_status.get("listings_count") or 0
+        lines.append(
+            f"{light} locals®: перевірка {_relative_time(locals_status.get('last_checked_at'))}, "
+            f"квартир: {count}."
+        )
+        if locals_status.get("last_error"):
+            lines.append(f"Остання помилка locals®: {html.escape(str(locals_status.get('last_error')))}")
+    else:
+        lines.append("🔴 locals®: перевірка ще не запускалась.")
+
+    karlmarx_status = karlmarx_store.latest_status()
+    if karlmarx_status:
+        light = _traffic_light(karlmarx_status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER)
+        count = karlmarx_status.get("listings_count") or 0
+        lines.append(
+            f"{light} Karl Marx: перевірка {_relative_time(karlmarx_status.get('last_checked_at'))}, "
+            f"квартир: {count}."
+        )
+        if karlmarx_status.get("last_error"):
+            lines.append(f"Остання помилка Karl Marx: {html.escape(str(karlmarx_status.get('last_error')))}")
+    else:
+        lines.append("🔴 Karl Marx: перевірка ще не запускалась.")
     return lines
 
 
@@ -505,7 +920,7 @@ def _render_menu(user_id: int) -> str:
     lines = [
         "🏠 <b>Моніторинг житла</b>",
         "",
-        "Бот перевіряє Immowelt та ProPotsdam і надсилає нові оголошення за вашими фільтрами.",
+        "Бот перевіряє Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® та Karl Marx і надсилає нові оголошення за вашими фільтрами.",
         "",
         "Статус перевірки:",
         *_status_lines(),
@@ -515,8 +930,12 @@ def _render_menu(user_id: int) -> str:
         lines.append("Для вашого Telegram ID поки немає активних фільтрів.")
     else:
         lines.append("Ваші фільтри:")
+        prefixes = {
+            "immowelt": "", "propotsdam": "P", "semmelhaack": "S", "schoba": "C",
+            "regiomakler": "R", "kleinanzeigen": "K", "locals": "L", "karlmarx": "M",
+        }
         for item in filters:
-            prefix = "P" if "districts" in item else ""
+            prefix = prefixes.get(_item_source(item), "")
             title = html.escape(str(item.get('title') or 'Пошук житла'))
             lines.append(f"• #{prefix}{int(item.get('filter_id'))}: {title}")
     return "\n".join(lines)
@@ -536,7 +955,7 @@ def show_menu(update: Update, context: CallbackContext, edit: bool = False) -> N
         # не було чим про нього попросити.
         text = (
             "🏠 <b>Моніторинг житла</b>\n\n"
-            "Бот стежить за Immowelt і ProPotsdam та надсилає нові оголошення "
+            "Бот стежить за Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® і Karl Marx та надсилає нові оголошення "
             "за вашими фільтрами.\n\n"
             "Доступ поки не відкрито. Натисніть кнопку — адміністратор побачить запит."
         )
@@ -570,6 +989,24 @@ def _admin_rows() -> list:
     for item in propotsdam_store.list_filters():
         title = html.escape(str(item.get("title") or "ProPotsdam"))
         rows.append(f"• P#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+    for item in semmelhaack_store.list_filters():
+        title = html.escape(str(item.get("title") or "SEMMELHAACK"))
+        rows.append(f"• S#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+    for item in schoba_store.list_filters():
+        title = html.escape(str(item.get("title") or "SCHOBA"))
+        rows.append(f"• C#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+    for item in regiomakler_store.list_filters():
+        title = html.escape(str(item.get("title") or "ImmoTeam/alpha"))
+        rows.append(f"• R#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+    for item in kleinanzeigen_store.list_filters():
+        title = html.escape(str(item.get("title") or "Kleinanzeigen"))
+        rows.append(f"• K#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+    for item in locals_store.list_filters():
+        title = html.escape(str(item.get("title") or "locals®"))
+        rows.append(f"• L#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+    for item in karlmarx_store.list_filters():
+        title = html.escape(str(item.get("title") or "Karl Marx"))
+        rows.append(f"• M#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
     return rows
 
 
@@ -664,6 +1101,33 @@ def request_access(update: Update, context: CallbackContext) -> None:
     )
 
 
+def _notify_user_access_granted(bot, user_id: int) -> None:
+    try:
+        bot.send_message(
+            chat_id=user_id,
+            text=(
+                "✅ Доступ до моніторингу житла відкрито. Натисніть «🏠 Моніторинг житла», "
+                "щоб додати фільтр."
+            ),
+        )
+    except Exception:
+        # Людина могла заблокувати бота — рішення адміна від цього не залежить.
+        logger.exception("Could not notify user %s about granted housing access", user_id)
+
+
+def _notify_user_access_revoked(bot, user_id: int) -> None:
+    try:
+        bot.send_message(
+            chat_id=user_id,
+            text=(
+                "⛔ Доступ до моніторингу житла закінчився. Якщо він знадобиться знову — "
+                "натисніть «🏠 Моніторинг житла» і запросіть доступ ще раз."
+            ),
+        )
+    except Exception:
+        logger.exception("Could not notify user %s about revoked housing access", user_id)
+
+
 def _resolve_access_request(update: Update, context: CallbackContext, grant: bool) -> None:
     query = update.callback_query
     user = update.effective_user
@@ -684,19 +1148,16 @@ def _resolve_access_request(update: Update, context: CallbackContext, grant: boo
         f"Telegram ID: <code>{target_id}</code>",
         parse_mode="HTML",
     )
-    try:
-        context.bot.send_message(
-            chat_id=target_id,
-            text=(
-                "✅ Доступ до моніторингу житла відкрито. Натисніть «🏠 Моніторинг житла», "
-                "щоб додати фільтр."
-                if grant else
-                "На жаль, доступ до моніторингу житла зараз не відкрито."
-            ),
-        )
-    except Exception:
-        # Людина могла заблокувати бота; рішення адміна від цього не залежить.
-        logger.exception("Could not notify user %s about the housing access decision", target_id)
+    if grant:
+        _notify_user_access_granted(context.bot, target_id)
+    else:
+        try:
+            context.bot.send_message(
+                chat_id=target_id,
+                text="На жаль, доступ до моніторингу житла зараз не відкрито.",
+            )
+        except Exception:
+            logger.exception("Could not notify user %s about the housing access denial", target_id)
 
 
 def start_access_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
@@ -723,30 +1184,123 @@ def _render_access_users() -> str:
     return "\n".join(lines)
 
 
+def _access_users_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка 🗑 на кожного користувача — раніше цей екран був лише списком
+    без жодної дії над записом, і прибрати чийсь доступ можна було тільки
+    вручну в базі."""
+    rows = []
+    for item in housing_access_store.list_users():
+        target_id = int(item["user_id"])
+        name = str(item.get("display_name") or "без назви")[:30]
+        rows.append([InlineKeyboardButton(
+            f"🗑 {target_id} · {name}", callback_data=f"housing:access_delete:{target_id}",
+        )])
+    rows.append([InlineKeyboardButton(BTN_ADMIN_ACCESS_ADD, callback_data="housing:access_add")])
+    rows.append([InlineKeyboardButton("⬅ До адмінки", callback_data="housing:admin")])
+    return InlineKeyboardMarkup(rows)
+
+
 def show_access_users(update: Update, context: CallbackContext, edit: bool = False) -> None:
     user = update.effective_user
     if not user or int(user.id) != ADMIN_ID:
         return
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(BTN_ADMIN_ACCESS_ADD, callback_data="housing:access_add")],
-        [InlineKeyboardButton("⬅ До адмінки", callback_data="housing:admin")],
-    ])
+    keyboard = _access_users_keyboard()
     if edit and update.callback_query:
-        update.callback_query.edit_message_text(
-            _render_access_users(), parse_mode="HTML", reply_markup=keyboard
-        )
+        try:
+            update.callback_query.edit_message_text(
+                _render_access_users(), parse_mode="HTML", reply_markup=keyboard
+            )
+        except BadRequest as exc:
+            if "Message is not modified" not in str(exc):
+                raise
     else:
         update.effective_message.reply_text(
             _render_access_users(), parse_mode="HTML", reply_markup=keyboard
         )
 
 
-def start_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
+def start_access_delete_flow(update: Update, context: CallbackContext, target_id: int) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or int(user.id) != ADMIN_ID:
+        return
+    query.answer()
+    query.edit_message_text(
+        f"🗑 Прибрати доступ для Telegram ID <code>{target_id}</code>?\n\n"
+        "Разом із доступом видаляться і всі його фільтри по всіх джерелах — "
+        "інакше сповіщення й далі надходили б за старими фільтрами. "
+        "Це не можна скасувати.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🗑 Так, прибрати", callback_data=f"housing:access_delete_confirm:{target_id}"),
+            InlineKeyboardButton(BTN_CANCEL, callback_data="housing:access_list"),
+        ]]),
+    )
+
+
+def _delete_all_filters_for_user(user_id: int) -> int:
+    """Прибирає геть усі фільтри людини по кожному джерелу.
+
+    Розсилка сповіщень (`check_job` кожного джерела) не звіряється зі списком
+    доступу — вона просто бере всі активні фільтри й шле по них. Тож саме
+    лише видалення з `housing_access_store` нічого не змінило б: старі
+    фільтри лишались би активними, і повідомлення й далі надходили б.
+    """
+    removed = 0
+    for item in _all_immowelt_filters():
+        if int(item.get("user_id") or 0) != int(user_id):
+            continue
+        filter_id = _filter_id(item)
+        if filter_id is None:
+            continue
+        try:
+            _request("DELETE", f"/api/housing/filters/{filter_id}")
+            removed += 1
+        except Exception:
+            logger.exception("Could not delete Immowelt filter %s while revoking access", filter_id)
+
+    propot_filters = propotsdam_store.list_filters(user_id=user_id)
+    for filt in propot_filters:
+        if propotsdam_store.delete_filter(int(filt["filter_id"]), user_id=user_id):
+            removed += 1
+    if propot_filters:
+        _sync_propot_filters()
+
+    for store in (semmelhaack_store, schoba_store, regiomakler_store, kleinanzeigen_store, locals_store, karlmarx_store):
+        for filt in store.list_filters(user_id=user_id):
+            if store.delete_filter(int(filt["filter_id"]), user_id=user_id):
+                removed += 1
+    return removed
+
+
+def confirm_access_delete(update: Update, context: CallbackContext, target_id: int) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or int(user.id) != ADMIN_ID:
+        return
+    ok = housing_access_store.revoke_access(target_id)
+    removed = _delete_all_filters_for_user(target_id)
+    if ok or removed:
+        suffix = f" Видалено фільтрів: {removed}." if removed else ""
+        query.answer(f"Доступ прибрано.{suffix}")
+        _notify_user_access_revoked(context.bot, target_id)
+    else:
+        query.answer("Користувача вже немає в списку.")
+    show_access_users(update, context, edit=True)
+
+
+def start_admin_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    """Єдиний вхід для адміна: раніше Immowelt і ProPotsdam додавались двома
+    різними кнопками з двома різними майстрами — тепер один майстер, той
+    самий, що й самообслуговування, лише перший крок питає «для кого», а не
+    «для себе»."""
     user = update.effective_user
     if not user or int(user.id) != ADMIN_ID:
         return
-    context.user_data["housing_admin"] = {"mode": "immowelt", "step": "user_id"}
-    text = "➕ <b>Додати Immowelt користувача</b>\n\nНадішліть Telegram ID користувача."
+    context.user_data["housing_admin"] = {
+        "mode": "multi", "step": "admin_target_user_id", "sources_selected": [],
+    }
+    text = "➕ <b>Додати користувача</b>\n\nНадішліть Telegram ID користувача."
     if edit and update.callback_query:
         update.callback_query.edit_message_text(text, parse_mode="HTML")
     else:
@@ -777,11 +1331,10 @@ def _immowelt_district_text(selected=None) -> str:
 
 
 
-def _preview_text(title: str, criteria: Dict[str, object], preview: Dict[str, object]) -> str:
+def _preview_text(criteria: Dict[str, object], preview: Dict[str, object]) -> str:
     lines = [
         "🔍 <b>Перевірка фільтра</b>",
         "",
-        f"Назва: {html.escape(str(title))}",
         f"Умови: {_describe_criteria(criteria)}",
         "",
     ]
@@ -842,45 +1395,46 @@ def _district_text(selected=None) -> str:
 
 
 
-def start_propot_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
-    user = update.effective_user
-    if not user or int(user.id) != ADMIN_ID:
-        return
-    context.user_data["housing_admin"] = {"mode": "propotsdam", "step": "user_id", "districts_selected": []}
-    text = "🏢 <b>Додати ProPotsdam користувача</b>\n\nНадішліть Telegram ID користувача."
-    if edit and update.callback_query:
-        update.callback_query.edit_message_text(text, parse_mode="HTML")
-    else:
-        update.effective_message.reply_text(text, parse_mode="HTML")
+
+def _sources_keyboard(selected) -> InlineKeyboardMarkup:
+    selected = set(selected or [])
+    rows = []
+    for spec in AVAILABLE_SOURCES:
+        mark = "✅" if spec["key"] in selected else "☐"
+        rows.append([InlineKeyboardButton(
+            f"{mark} {spec['icon']} {spec['label']}", callback_data=f"housing:src:{spec['key']}"
+        )])
+    rows.append([InlineKeyboardButton("➡ Далі", callback_data="housing:src_done")])
+    rows.append([InlineKeyboardButton(BTN_CANCEL, callback_data="housing:src_cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _sources_text(selected) -> str:
+    selected = selected or []
+    names = ", ".join(SOURCE_LABEL.get(key, key) for key in selected) if selected else "не обрано"
+    return (
+        "🔎 <b>Новий фільтр</b>\n\nОберіть, де шукати — можна кілька порталів одразу. "
+        "Список порталів згодом поповнюватиметься.\n"
+        f"Поточний вибір: {html.escape(names)}"
+    )
 
 
 def start_self_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    """Один вхід для всіх порталів: спершу питає ГДЕ шукати, а не заводить окремий
+    майстер на кожне джерело — раніше Immowelt і ProPotsdam треба було додавати
+    двома різними кнопками, не підозрюючи навіть, що це той самий пошук."""
     user = update.effective_user
     if not user or not is_allowed(user.id):
         return
     context.user_data["housing_admin"] = {
-        "mode": "immowelt", "step": "title", "user_id": int(user.id)
+        "step": "sources", "user_id": int(user.id), "sources_selected": [],
     }
-    text = "➕ <b>Додати Immowelt</b>\n\nНадішліть назву фільтра."
+    text = _sources_text([])
+    keyboard = _sources_keyboard([])
     if edit and update.callback_query:
-        update.callback_query.edit_message_text(text, parse_mode="HTML")
+        update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
     else:
-        update.effective_message.reply_text(text, parse_mode="HTML")
-
-
-def start_self_propot_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
-    user = update.effective_user
-    if not user or not is_allowed(user.id):
-        return
-    context.user_data["housing_admin"] = {
-        "mode": "propotsdam", "step": "title", "user_id": int(user.id),
-        "districts_selected": [],
-    }
-    text = "🏢 <b>Додати ProPotsdam</b>\n\nНадішліть назву фільтра."
-    if edit and update.callback_query:
-        update.callback_query.edit_message_text(text, parse_mode="HTML")
-    else:
-        update.effective_message.reply_text(text, parse_mode="HTML")
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
 def _item_source(item: Dict[str, object]) -> str:
@@ -897,8 +1451,16 @@ def _item_source(item: Dict[str, object]) -> str:
     return "propotsdam" if "districts" in item else "immowelt"
 
 
-SOURCE_ICON = {"immowelt": "🏠", "propotsdam": "🏢"}
-SOURCE_LABEL = {"immowelt": "Immowelt", "propotsdam": "ProPotsdam", "all": "усі джерела"}
+SOURCE_ICON = {
+    "immowelt": "🏠", "propotsdam": "🏢", "semmelhaack": "🏘", "schoba": "🏡",
+    "regiomakler": "🤝", "kleinanzeigen": "📋", "locals": "🔑", "karlmarx": "🧱",
+}
+SOURCE_LABEL = {
+    "immowelt": "Immowelt", "propotsdam": "ProPotsdam", "semmelhaack": "SEMMELHAACK",
+    "schoba": "SCHOBA", "regiomakler": "ImmoTeam/alpha", "kleinanzeigen": "Kleinanzeigen",
+    "locals": "locals®", "karlmarx": "Karl Marx",
+    "all": "усі джерела",
+}
 
 
 def _item_criteria_summary(item: Dict[str, object], source: str) -> str:
@@ -942,7 +1504,7 @@ def _self_manage_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """
     rows = []
     items = manageable_filters(user_id)
-    for source in ("immowelt", "propotsdam"):
+    for source in ("immowelt", "propotsdam", "semmelhaack", "schoba", "regiomakler", "kleinanzeigen", "locals", "karlmarx"):
         group = [item for item in items if _item_source(item) == source]
         if not group:
             continue
@@ -953,10 +1515,9 @@ def _self_manage_keyboard(user_id: int) -> InlineKeyboardMarkup:
             filter_id = int(item.get("filter_id"))
             active = bool(item.get("active", True))
             mark = "✅" if active else "⏸"
-            title = str(item.get("title") or "Пошук житла")[:30]
             summary = _item_criteria_summary(item, source)
             rows.append([InlineKeyboardButton(
-                f"{mark} {title} — {summary}",
+                f"{mark} {summary}",
                 callback_data=f"housing:toggle:{source}:{filter_id}:{0 if active else 1}",
             )])
             # Раніше ProPotsdam-фільтр можна було лише поставити на паузу чи
@@ -1112,6 +1673,18 @@ def _toggle_owned_filter(update: Update, context: CallbackContext) -> None:
         ok = propotsdam_store.set_filter_active(filter_id, active, user_id=user.id)
         if ok:
             _sync_propot_filters()
+    elif source == "semmelhaack":
+        ok = semmelhaack_store.set_filter_active(filter_id, active, user_id=user.id)
+    elif source == "schoba":
+        ok = schoba_store.set_filter_active(filter_id, active, user_id=user.id)
+    elif source == "regiomakler":
+        ok = regiomakler_store.set_filter_active(filter_id, active, user_id=user.id)
+    elif source == "kleinanzeigen":
+        ok = kleinanzeigen_store.set_filter_active(filter_id, active, user_id=user.id)
+    elif source == "locals":
+        ok = locals_store.set_filter_active(filter_id, active, user_id=user.id)
+    elif source == "karlmarx":
+        ok = karlmarx_store.set_filter_active(filter_id, active, user_id=user.id)
     else:
         try:
             _request("PATCH", f"/api/housing/filters/{filter_id}/active", json={"active": active})
@@ -1176,6 +1749,18 @@ def confirm_delete_filter(update: Update, context: CallbackContext, source: str,
         ok = propotsdam_store.delete_filter(filter_id, user_id=user.id)
         if ok:
             _sync_propot_filters()
+    elif source == "semmelhaack":
+        ok = semmelhaack_store.delete_filter(filter_id, user_id=user.id)
+    elif source == "schoba":
+        ok = schoba_store.delete_filter(filter_id, user_id=user.id)
+    elif source == "regiomakler":
+        ok = regiomakler_store.delete_filter(filter_id, user_id=user.id)
+    elif source == "kleinanzeigen":
+        ok = kleinanzeigen_store.delete_filter(filter_id, user_id=user.id)
+    elif source == "locals":
+        ok = locals_store.delete_filter(filter_id, user_id=user.id)
+    elif source == "karlmarx":
+        ok = karlmarx_store.delete_filter(filter_id, user_id=user.id)
     else:
         try:
             _request("DELETE", f"/api/housing/filters/{filter_id}")
@@ -1208,7 +1793,6 @@ def start_edit_flow(update: Update, context: CallbackContext, filter_id: int) ->
     districts_selected = list(item.get("districts") or [])
     context.user_data["housing_admin"] = {
         "mode": "immowelt", "step": "districts", "user_id": int(user.id),
-        "title": str(item.get("title") or "Пошук житла"),
         "districts_selected": districts_selected,
         "min_price_eur": item.get("min_price_eur"),
         "max_price_eur": item.get("max_price_eur"),
@@ -1243,7 +1827,6 @@ def start_propot_edit_flow(update: Update, context: CallbackContext, filter_id: 
     districts_selected = [d for d in str(item.get("districts") or "").split(",") if d]
     context.user_data["housing_admin"] = {
         "mode": "propotsdam", "step": "districts", "user_id": int(user.id),
-        "title": str(item.get("title") or "Пошук житла"),
         "districts_selected": districts_selected,
         "min_rooms": item.get("min_rooms"),
         "max_rooms": item.get("max_rooms"),
@@ -1261,11 +1844,559 @@ def start_propot_edit_flow(update: Update, context: CallbackContext, filter_id: 
     )
 
 
+def start_semmelhaack_edit_flow(update: Update, context: CallbackContext, filter_id: int) -> None:
+    """Той самий підхід, що й у `start_propot_edit_flow`, але без районів — їх
+    у SEMMELHAACK немає, тож майстер одразу починає з кімнат."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    item = _own_filter(int(user.id), "semmelhaack", filter_id)
+    if not item:
+        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        return
+    first_key = SEMM_CRITERIA_KEYS[0]
+    context.user_data["housing_admin"] = {
+        "mode": "semmelhaack", "step": first_key, "user_id": int(user.id),
+        "min_rooms": item.get("min_rooms"),
+        "max_rooms": item.get("max_rooms"),
+        "min_area_m2": item.get("min_area_m2"),
+        "max_area_m2": item.get("max_area_m2"),
+        "min_price_eur": item.get("min_price_eur"),
+        "max_price_eur": item.get("max_price_eur"),
+        "edit_filter_id": filter_id,
+    }
+    query.answer()
+    query.edit_message_text(SEMM_CRITERIA_BY_KEY[first_key]["prompt"])
+
+
+def _finalize_semmelhaack_filter(message, context: CallbackContext, state: dict) -> None:
+    """Той самий майстер веде і редагування — відрізняє лише `edit_filter_id`."""
+    edit_filter_id = state.get("edit_filter_id")
+    criteria = {
+        "min_price_eur": state.get("min_price_eur"),
+        "max_price_eur": state.get("max_price_eur"),
+        "min_rooms": state.get("min_rooms"),
+        "max_rooms": state.get("max_rooms"),
+        "min_area_m2": state.get("min_area_m2"),
+        "max_area_m2": state.get("max_area_m2"),
+    }
+    title = _auto_title("semmelhaack", criteria)
+    common = dict(
+        title=title,
+        min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+        min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+        min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+    )
+    if edit_filter_id:
+        ok = semmelhaack_store.update_filter(
+            filter_id=int(edit_filter_id), user_id=int(state["user_id"]), **common
+        )
+        filter_id = int(edit_filter_id)
+    else:
+        filter_id = semmelhaack_store.create_filter(user_id=state["user_id"], **common)
+        ok = True
+    context.user_data.pop("housing_admin", None)
+    if not ok:
+        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        return
+    heading = "Фільтр SEMMELHAACK оновлено" if edit_filter_id else "Фільтр SEMMELHAACK додано"
+    if not edit_filter_id:
+        _offer_recent_matches(context, [("semmelhaack", filter_id)])
+    message.reply_text(
+        f"✅ {heading}.\nID: S{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
+        reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
+    )
+
+
+def _handle_semmelhaack_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
+    step = state.get("step")
+    if step in SEMM_CRITERIA_BY_KEY:
+        spec = SEMM_CRITERIA_BY_KEY[step]
+        value = _parse_single_number(text)
+        if value is _INVALID_NUMBER:
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            return True
+        if _violates_sibling_bound(state, step, value):
+            update.message.reply_text(
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+            )
+            return True
+        state[step] = value
+        index = SEMM_CRITERIA_KEYS.index(step)
+        if index < len(SEMM_CRITERIA_KEYS) - 1:
+            next_key = SEMM_CRITERIA_KEYS[index + 1]
+            state["step"] = next_key
+            update.message.reply_text(
+                _field_prompt(state, SEMM_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
+            )
+            return True
+        _finalize_semmelhaack_filter(update.message, context, state)
+        return True
+    return False
+
+
+def start_schoba_edit_flow(update: Update, context: CallbackContext, filter_id: int) -> None:
+    """Той самий підхід, що й у `start_semmelhaack_edit_flow` — без районів."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    item = _own_filter(int(user.id), "schoba", filter_id)
+    if not item:
+        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        return
+    first_key = SCHOBA_CRITERIA_KEYS[0]
+    context.user_data["housing_admin"] = {
+        "mode": "schoba", "step": first_key, "user_id": int(user.id),
+        "min_rooms": item.get("min_rooms"),
+        "max_rooms": item.get("max_rooms"),
+        "min_area_m2": item.get("min_area_m2"),
+        "max_area_m2": item.get("max_area_m2"),
+        "min_price_eur": item.get("min_price_eur"),
+        "max_price_eur": item.get("max_price_eur"),
+        "edit_filter_id": filter_id,
+    }
+    query.answer()
+    query.edit_message_text(SCHOBA_CRITERIA_BY_KEY[first_key]["prompt"])
+
+
+def _finalize_schoba_filter(message, context: CallbackContext, state: dict) -> None:
+    """Той самий майстер веде і редагування — відрізняє лише `edit_filter_id`."""
+    edit_filter_id = state.get("edit_filter_id")
+    criteria = {
+        "min_price_eur": state.get("min_price_eur"),
+        "max_price_eur": state.get("max_price_eur"),
+        "min_rooms": state.get("min_rooms"),
+        "max_rooms": state.get("max_rooms"),
+        "min_area_m2": state.get("min_area_m2"),
+        "max_area_m2": state.get("max_area_m2"),
+    }
+    title = _auto_title("schoba", criteria)
+    common = dict(
+        title=title,
+        min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+        min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+        min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+    )
+    if edit_filter_id:
+        ok = schoba_store.update_filter(
+            filter_id=int(edit_filter_id), user_id=int(state["user_id"]), **common
+        )
+        filter_id = int(edit_filter_id)
+    else:
+        filter_id = schoba_store.create_filter(user_id=state["user_id"], **common)
+        ok = True
+    context.user_data.pop("housing_admin", None)
+    if not ok:
+        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        return
+    heading = "Фільтр SCHOBA оновлено" if edit_filter_id else "Фільтр SCHOBA додано"
+    if not edit_filter_id:
+        _offer_recent_matches(context, [("schoba", filter_id)])
+    message.reply_text(
+        f"✅ {heading}.\nID: C{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
+        reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
+    )
+
+
+def _handle_schoba_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
+    step = state.get("step")
+    if step in SCHOBA_CRITERIA_BY_KEY:
+        spec = SCHOBA_CRITERIA_BY_KEY[step]
+        value = _parse_single_number(text)
+        if value is _INVALID_NUMBER:
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            return True
+        if _violates_sibling_bound(state, step, value):
+            update.message.reply_text(
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+            )
+            return True
+        state[step] = value
+        index = SCHOBA_CRITERIA_KEYS.index(step)
+        if index < len(SCHOBA_CRITERIA_KEYS) - 1:
+            next_key = SCHOBA_CRITERIA_KEYS[index + 1]
+            state["step"] = next_key
+            update.message.reply_text(
+                _field_prompt(state, SCHOBA_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
+            )
+            return True
+        _finalize_schoba_filter(update.message, context, state)
+        return True
+    return False
+
+
+def start_regiomakler_edit_flow(update: Update, context: CallbackContext, filter_id: int) -> None:
+    """Той самий підхід, що й у `start_schoba_edit_flow` — без районів."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    item = _own_filter(int(user.id), "regiomakler", filter_id)
+    if not item:
+        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        return
+    first_key = REGIOMAKLER_CRITERIA_KEYS[0]
+    context.user_data["housing_admin"] = {
+        "mode": "regiomakler", "step": first_key, "user_id": int(user.id),
+        "min_rooms": item.get("min_rooms"),
+        "max_rooms": item.get("max_rooms"),
+        "min_area_m2": item.get("min_area_m2"),
+        "max_area_m2": item.get("max_area_m2"),
+        "min_price_eur": item.get("min_price_eur"),
+        "max_price_eur": item.get("max_price_eur"),
+        "edit_filter_id": filter_id,
+    }
+    query.answer()
+    query.edit_message_text(REGIOMAKLER_CRITERIA_BY_KEY[first_key]["prompt"])
+
+
+def _finalize_regiomakler_filter(message, context: CallbackContext, state: dict) -> None:
+    """Той самий майстер веде і редагування — відрізняє лише `edit_filter_id`."""
+    edit_filter_id = state.get("edit_filter_id")
+    criteria = {
+        "min_price_eur": state.get("min_price_eur"),
+        "max_price_eur": state.get("max_price_eur"),
+        "min_rooms": state.get("min_rooms"),
+        "max_rooms": state.get("max_rooms"),
+        "min_area_m2": state.get("min_area_m2"),
+        "max_area_m2": state.get("max_area_m2"),
+    }
+    title = _auto_title("regiomakler", criteria)
+    common = dict(
+        title=title,
+        min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+        min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+        min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+    )
+    if edit_filter_id:
+        ok = regiomakler_store.update_filter(
+            filter_id=int(edit_filter_id), user_id=int(state["user_id"]), **common
+        )
+        filter_id = int(edit_filter_id)
+    else:
+        filter_id = regiomakler_store.create_filter(user_id=state["user_id"], **common)
+        ok = True
+    context.user_data.pop("housing_admin", None)
+    if not ok:
+        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        return
+    heading = "Фільтр ImmoTeam/alpha оновлено" if edit_filter_id else "Фільтр ImmoTeam/alpha додано"
+    if not edit_filter_id:
+        _offer_recent_matches(context, [("regiomakler", filter_id)])
+    message.reply_text(
+        f"✅ {heading}.\nID: R{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
+        reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
+    )
+
+
+def _handle_regiomakler_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
+    step = state.get("step")
+    if step in REGIOMAKLER_CRITERIA_BY_KEY:
+        spec = REGIOMAKLER_CRITERIA_BY_KEY[step]
+        value = _parse_single_number(text)
+        if value is _INVALID_NUMBER:
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            return True
+        if _violates_sibling_bound(state, step, value):
+            update.message.reply_text(
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+            )
+            return True
+        state[step] = value
+        index = REGIOMAKLER_CRITERIA_KEYS.index(step)
+        if index < len(REGIOMAKLER_CRITERIA_KEYS) - 1:
+            next_key = REGIOMAKLER_CRITERIA_KEYS[index + 1]
+            state["step"] = next_key
+            update.message.reply_text(
+                _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
+            )
+            return True
+        _finalize_regiomakler_filter(update.message, context, state)
+        return True
+    return False
+
+
+def start_kleinanzeigen_edit_flow(update: Update, context: CallbackContext, filter_id: int) -> None:
+    """Той самий підхід, що й у `start_regiomakler_edit_flow` — без районів."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    item = _own_filter(int(user.id), "kleinanzeigen", filter_id)
+    if not item:
+        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        return
+    first_key = KLEINANZEIGEN_CRITERIA_KEYS[0]
+    context.user_data["housing_admin"] = {
+        "mode": "kleinanzeigen", "step": first_key, "user_id": int(user.id),
+        "min_rooms": item.get("min_rooms"),
+        "max_rooms": item.get("max_rooms"),
+        "min_area_m2": item.get("min_area_m2"),
+        "max_area_m2": item.get("max_area_m2"),
+        "min_price_eur": item.get("min_price_eur"),
+        "max_price_eur": item.get("max_price_eur"),
+        "edit_filter_id": filter_id,
+    }
+    query.answer()
+    query.edit_message_text(KLEINANZEIGEN_CRITERIA_BY_KEY[first_key]["prompt"])
+
+
+def _finalize_kleinanzeigen_filter(message, context: CallbackContext, state: dict) -> None:
+    """Той самий майстер веде і редагування — відрізняє лише `edit_filter_id`."""
+    edit_filter_id = state.get("edit_filter_id")
+    criteria = {
+        "min_price_eur": state.get("min_price_eur"),
+        "max_price_eur": state.get("max_price_eur"),
+        "min_rooms": state.get("min_rooms"),
+        "max_rooms": state.get("max_rooms"),
+        "min_area_m2": state.get("min_area_m2"),
+        "max_area_m2": state.get("max_area_m2"),
+    }
+    title = _auto_title("kleinanzeigen", criteria)
+    common = dict(
+        title=title,
+        min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+        min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+        min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+    )
+    if edit_filter_id:
+        ok = kleinanzeigen_store.update_filter(
+            filter_id=int(edit_filter_id), user_id=int(state["user_id"]), **common
+        )
+        filter_id = int(edit_filter_id)
+    else:
+        filter_id = kleinanzeigen_store.create_filter(user_id=state["user_id"], **common)
+        ok = True
+    context.user_data.pop("housing_admin", None)
+    if not ok:
+        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        return
+    heading = "Фільтр Kleinanzeigen оновлено" if edit_filter_id else "Фільтр Kleinanzeigen додано"
+    if not edit_filter_id:
+        _offer_recent_matches(context, [("kleinanzeigen", filter_id)])
+    message.reply_text(
+        f"✅ {heading}.\nID: K{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
+        reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
+    )
+
+
+def _handle_kleinanzeigen_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
+    step = state.get("step")
+    if step in KLEINANZEIGEN_CRITERIA_BY_KEY:
+        spec = KLEINANZEIGEN_CRITERIA_BY_KEY[step]
+        value = _parse_single_number(text)
+        if value is _INVALID_NUMBER:
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            return True
+        if _violates_sibling_bound(state, step, value):
+            update.message.reply_text(
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+            )
+            return True
+        state[step] = value
+        index = KLEINANZEIGEN_CRITERIA_KEYS.index(step)
+        if index < len(KLEINANZEIGEN_CRITERIA_KEYS) - 1:
+            next_key = KLEINANZEIGEN_CRITERIA_KEYS[index + 1]
+            state["step"] = next_key
+            update.message.reply_text(
+                _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
+            )
+            return True
+        _finalize_kleinanzeigen_filter(update.message, context, state)
+        return True
+    return False
+
+
+def start_locals_edit_flow(update: Update, context: CallbackContext, filter_id: int) -> None:
+    """Той самий підхід, що й у `start_schoba_edit_flow` — без районів."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    item = _own_filter(int(user.id), "locals", filter_id)
+    if not item:
+        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        return
+    first_key = LOCALS_CRITERIA_KEYS[0]
+    context.user_data["housing_admin"] = {
+        "mode": "locals", "step": first_key, "user_id": int(user.id),
+        "min_rooms": item.get("min_rooms"),
+        "max_rooms": item.get("max_rooms"),
+        "min_area_m2": item.get("min_area_m2"),
+        "max_area_m2": item.get("max_area_m2"),
+        "min_price_eur": item.get("min_price_eur"),
+        "max_price_eur": item.get("max_price_eur"),
+        "edit_filter_id": filter_id,
+    }
+    query.answer()
+    query.edit_message_text(LOCALS_CRITERIA_BY_KEY[first_key]["prompt"])
+
+
+def _finalize_locals_filter(message, context: CallbackContext, state: dict) -> None:
+    """Той самий майстер веде і редагування — відрізняє лише `edit_filter_id`."""
+    edit_filter_id = state.get("edit_filter_id")
+    criteria = {
+        "min_price_eur": state.get("min_price_eur"),
+        "max_price_eur": state.get("max_price_eur"),
+        "min_rooms": state.get("min_rooms"),
+        "max_rooms": state.get("max_rooms"),
+        "min_area_m2": state.get("min_area_m2"),
+        "max_area_m2": state.get("max_area_m2"),
+    }
+    title = _auto_title("locals", criteria)
+    common = dict(
+        title=title,
+        min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+        min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+        min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+    )
+    if edit_filter_id:
+        ok = locals_store.update_filter(
+            filter_id=int(edit_filter_id), user_id=int(state["user_id"]), **common
+        )
+        filter_id = int(edit_filter_id)
+    else:
+        filter_id = locals_store.create_filter(user_id=state["user_id"], **common)
+        ok = True
+    context.user_data.pop("housing_admin", None)
+    if not ok:
+        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        return
+    heading = "Фільтр locals® оновлено" if edit_filter_id else "Фільтр locals® додано"
+    if not edit_filter_id:
+        _offer_recent_matches(context, [("locals", filter_id)])
+    message.reply_text(
+        f"✅ {heading}.\nID: L{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
+        reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
+    )
+
+
+def _handle_locals_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
+    step = state.get("step")
+    if step in LOCALS_CRITERIA_BY_KEY:
+        spec = LOCALS_CRITERIA_BY_KEY[step]
+        value = _parse_single_number(text)
+        if value is _INVALID_NUMBER:
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            return True
+        if _violates_sibling_bound(state, step, value):
+            update.message.reply_text(
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+            )
+            return True
+        state[step] = value
+        index = LOCALS_CRITERIA_KEYS.index(step)
+        if index < len(LOCALS_CRITERIA_KEYS) - 1:
+            next_key = LOCALS_CRITERIA_KEYS[index + 1]
+            state["step"] = next_key
+            update.message.reply_text(
+                _field_prompt(state, LOCALS_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
+            )
+            return True
+        _finalize_locals_filter(update.message, context, state)
+        return True
+    return False
+
+
+def start_karlmarx_edit_flow(update: Update, context: CallbackContext, filter_id: int) -> None:
+    """Той самий підхід, що й у `start_schoba_edit_flow` — без районів."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    item = _own_filter(int(user.id), "karlmarx", filter_id)
+    if not item:
+        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        return
+    first_key = KARLMARX_CRITERIA_KEYS[0]
+    context.user_data["housing_admin"] = {
+        "mode": "karlmarx", "step": first_key, "user_id": int(user.id),
+        "min_rooms": item.get("min_rooms"),
+        "max_rooms": item.get("max_rooms"),
+        "min_area_m2": item.get("min_area_m2"),
+        "max_area_m2": item.get("max_area_m2"),
+        "min_price_eur": item.get("min_price_eur"),
+        "max_price_eur": item.get("max_price_eur"),
+        "edit_filter_id": filter_id,
+    }
+    query.answer()
+    query.edit_message_text(KARLMARX_CRITERIA_BY_KEY[first_key]["prompt"])
+
+
+def _finalize_karlmarx_filter(message, context: CallbackContext, state: dict) -> None:
+    """Той самий майстер веде і редагування — відрізняє лише `edit_filter_id`."""
+    edit_filter_id = state.get("edit_filter_id")
+    criteria = {
+        "min_price_eur": state.get("min_price_eur"),
+        "max_price_eur": state.get("max_price_eur"),
+        "min_rooms": state.get("min_rooms"),
+        "max_rooms": state.get("max_rooms"),
+        "min_area_m2": state.get("min_area_m2"),
+        "max_area_m2": state.get("max_area_m2"),
+    }
+    title = _auto_title("karlmarx", criteria)
+    common = dict(
+        title=title,
+        min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+        min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+        min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+    )
+    if edit_filter_id:
+        ok = karlmarx_store.update_filter(
+            filter_id=int(edit_filter_id), user_id=int(state["user_id"]), **common
+        )
+        filter_id = int(edit_filter_id)
+    else:
+        filter_id = karlmarx_store.create_filter(user_id=state["user_id"], **common)
+        ok = True
+    context.user_data.pop("housing_admin", None)
+    if not ok:
+        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        return
+    heading = "Фільтр Karl Marx оновлено" if edit_filter_id else "Фільтр Karl Marx додано"
+    if not edit_filter_id:
+        _offer_recent_matches(context, [("karlmarx", filter_id)])
+    message.reply_text(
+        f"✅ {heading}.\nID: M{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
+        reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
+    )
+
+
+def _handle_karlmarx_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
+    step = state.get("step")
+    if step in KARLMARX_CRITERIA_BY_KEY:
+        spec = KARLMARX_CRITERIA_BY_KEY[step]
+        value = _parse_single_number(text)
+        if value is _INVALID_NUMBER:
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            return True
+        if _violates_sibling_bound(state, step, value):
+            update.message.reply_text(
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+            )
+            return True
+        state[step] = value
+        index = KARLMARX_CRITERIA_KEYS.index(step)
+        if index < len(KARLMARX_CRITERIA_KEYS) - 1:
+            next_key = KARLMARX_CRITERIA_KEYS[index + 1]
+            state["step"] = next_key
+            update.message.reply_text(
+                _field_prompt(state, KARLMARX_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
+            )
+            return True
+        _finalize_karlmarx_filter(update.message, context, state)
+        return True
+    return False
+
+
 def _show_immowelt_preview(message, state: dict) -> None:
     criteria = _criteria_from_state(state)
+    state["title"] = _auto_title("immowelt", criteria)
     state["step"] = "preview"
     message.reply_text(
-        _preview_text(str(state.get("title") or ""), criteria, _preview_criteria(criteria)),
+        _preview_text(criteria, _preview_criteria(criteria)),
         parse_mode="HTML",
         reply_markup=_preview_keyboard(),
         disable_web_page_preview=True,
@@ -1435,7 +2566,6 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
     text_out = (
         f"✅ <b>{heading}</b>\n\n"
         f"ID: {filter_id}\n"
-        f"Назва: {html.escape(str(state['title']))}\n"
         f"Умови: {_describe_criteria(criteria)}"
     )
     rows = [[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]
@@ -1452,27 +2582,6 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
 
 def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
     step = state.get("step")
-    if step == "user_id":
-        if not text.lstrip("-").isdigit():
-            update.message.reply_text("Telegram ID має бути числом. Надішліть ID ще раз.")
-            return True
-        state["user_id"] = int(text)
-        state["step"] = "title"
-        update.message.reply_text("Тепер надішліть імʼя або назву фільтра для цього користувача.")
-        return True
-    if step == "title":
-        if not text:
-            update.message.reply_text("Імʼя не може бути порожнім. Надішліть імʼя ще раз.")
-            return True
-        state["title"] = text[:120]
-        state["step"] = "districts"
-        state.setdefault("districts_selected", [])
-        update.message.reply_text(
-            _immowelt_district_text(state["districts_selected"]),
-            parse_mode="HTML",
-            reply_markup=_immowelt_district_keyboard(state["districts_selected"]),
-        )
-        return True
     if step == "districts":
         update.message.reply_text(
             "Оберіть райони кнопками нижче і натисніть «Готово».",
@@ -1488,7 +2597,7 @@ def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict,
         spec = IMMOWELT_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Потрібне число або «-», щоб пропустити.\n\n" + spec["prompt"])
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
             return True
         if _violates_sibling_bound(state, step, value):
             update.message.reply_text(
@@ -1500,7 +2609,9 @@ def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict,
         if index < len(IMMOWELT_CRITERIA_KEYS) - 1:
             next_key = IMMOWELT_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            update.message.reply_text(IMMOWELT_CRITERIA_BY_KEY[next_key]["prompt"])
+            update.message.reply_text(
+                _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
+            )
             return True
         _show_immowelt_preview(update.message, state)
         return True
@@ -1521,7 +2632,7 @@ def _handle_immowelt_clone_price_step(
     spec = IMMOWELT_CRITERIA_BY_KEY[field]
     value = _parse_single_number(text)
     if value is _INVALID_NUMBER:
-        update.message.reply_text("Потрібне число або «-», щоб пропустити.\n\n" + spec["prompt"])
+        update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
         return True
     if step == "clone_price_max" and _violates_sibling_bound(state, field, value):
         update.message.reply_text(
@@ -1531,7 +2642,10 @@ def _handle_immowelt_clone_price_step(
     state[field] = value
     if step == "clone_price_min":
         state["step"] = "clone_price_max"
-        update.message.reply_text(IMMOWELT_CRITERIA_BY_KEY["max_price_eur"]["prompt"])
+        price_fields = [IMMOWELT_CRITERIA_BY_KEY["min_price_eur"], IMMOWELT_CRITERIA_BY_KEY["max_price_eur"]]
+        update.message.reply_text(
+            _field_prompt(state, price_fields, "max_price_eur"), reply_markup=_field_keyboard()
+        )
         return True
     _show_immowelt_preview(update.message, state)
     return True
@@ -1568,27 +2682,11 @@ def _finish_immowelt_districts(update: Update, context: CallbackContext, all_dis
     first_key = IMMOWELT_CRITERIA_KEYS[0]
     state["step"] = first_key
     query.answer()
-    query.edit_message_text(IMMOWELT_CRITERIA_BY_KEY[first_key]["prompt"])
+    query.edit_message_text(IMMOWELT_CRITERIA_BY_KEY[first_key]["prompt"], reply_markup=_field_keyboard())
 
 
 def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
     step = state.get("step")
-    if step == "user_id":
-        if not text.lstrip("-").isdigit():
-            update.message.reply_text("Telegram ID має бути числом. Надішліть ID ще раз.")
-            return True
-        state["user_id"] = int(text)
-        state["step"] = "title"
-        update.message.reply_text(PROPOT_PROMPTS["title"])
-        return True
-    if step == "title":
-        if not text:
-            update.message.reply_text("Назва не може бути порожньою. Надішліть назву ще раз.")
-            return True
-        state["title"] = text[:120]
-        state["step"] = "districts"
-        update.message.reply_text(_district_text(state.get("districts_selected")), parse_mode="HTML", reply_markup=_district_keyboard(state.get("districts_selected")))
-        return True
     if step == "districts":
         update.message.reply_text("Оберіть райони кнопками нижче і натисніть 'Готово'.", reply_markup=_district_keyboard(state.get("districts_selected")))
         return True
@@ -1598,7 +2696,7 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
         spec = PROPOT_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Потрібне число або «-», щоб пропустити.\n\n" + spec["prompt"])
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
             return True
         if _violates_sibling_bound(state, step, value):
             update.message.reply_text(
@@ -1610,7 +2708,9 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
         if index < len(PROPOT_CRITERIA_KEYS) - 1:
             next_key = PROPOT_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            update.message.reply_text(PROPOT_CRITERIA_BY_KEY[next_key]["prompt"])
+            update.message.reply_text(
+                _field_prompt(state, PROPOT_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
+            )
             return True
         _finalize_propot_filter(update.message, int(update.effective_user.id), context, state)
         return True
@@ -1625,7 +2725,7 @@ def _handle_propot_clone_price_step(
     spec = PROPOT_CRITERIA_BY_KEY[field]
     value = _parse_single_number(text)
     if value is _INVALID_NUMBER:
-        update.message.reply_text("Потрібне число або «-», щоб пропустити.\n\n" + spec["prompt"])
+        update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
         return True
     if step == "clone_price_max" and _violates_sibling_bound(state, field, value):
         update.message.reply_text(
@@ -1635,7 +2735,10 @@ def _handle_propot_clone_price_step(
     state[field] = value
     if step == "clone_price_min":
         state["step"] = "clone_price_max"
-        update.message.reply_text(PROPOT_CRITERIA_BY_KEY["max_total_rent_eur"]["prompt"])
+        rent_fields = [PROPOT_CRITERIA_BY_KEY["min_total_rent_eur"], PROPOT_CRITERIA_BY_KEY["max_total_rent_eur"]]
+        update.message.reply_text(
+            _field_prompt(state, rent_fields, "max_total_rent_eur"), reply_markup=_field_keyboard()
+        )
         return True
     _finalize_propot_filter(update.message, int(update.effective_user.id), context, state)
     return True
@@ -1644,6 +2747,15 @@ def _handle_propot_clone_price_step(
 def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, state: dict) -> None:
     """Той самий майстер веде і редагування — відрізняє лише `edit_filter_id`."""
     edit_filter_id = state.get("edit_filter_id")
+    state["title"] = _auto_title("propotsdam", {
+        "districts": [d for d in str(state.get("districts") or "").split(",") if d],
+        "min_price_eur": state.get("min_total_rent_eur"),
+        "max_price_eur": state.get("max_total_rent_eur"),
+        "min_rooms": state.get("min_rooms"),
+        "max_rooms": state.get("max_rooms"),
+        "min_area_m2": state.get("min_area_m2"),
+        "max_area_m2": state.get("max_area_m2"),
+    })
     common = dict(
         title=state["title"],
         districts=state.get("districts", ""),
@@ -1670,7 +2782,7 @@ def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, 
     heading = "Фільтр ProPotsdam оновлено" if edit_filter_id else "Фільтр ProPotsdam додано"
     text_out = (
         f"✅ {heading}.\nID: P{filter_id}\n"
-        f"Користувач: {state['user_id']}\nНазва: {html.escape(str(state['title']))}"
+        f"Користувач: {state['user_id']}"
     )
     if edit_filter_id:
         message.reply_text(text_out)
@@ -1686,13 +2798,12 @@ def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, 
             "max_area_m2": state.get("max_area_m2"),
         },
     )
-    if suggestion is None:
-        message.reply_text(text_out)
-    else:
-        message.reply_text(
-            text_out + "\n\n💡 У вас ще немає фільтра Immowelt — можна завести такий самий.",
-            reply_markup=InlineKeyboardMarkup([[suggestion]]),
-        )
+    _offer_recent_matches(context, [("propotsdam", filter_id)])
+    rows = list(_recent_offer_keyboard().inline_keyboard)
+    if suggestion is not None:
+        text_out += "\n\n💡 У вас ще немає фільтра Immowelt — можна завести такий самий."
+        rows.insert(0, [suggestion])
+    message.reply_text(text_out, reply_markup=InlineKeyboardMarkup(rows))
 
 
 def handle_private_text(update: Update, context: CallbackContext) -> bool:
@@ -1706,26 +2817,13 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
         if text == BTN_SELF_ADD:
             start_self_add_flow(update, context)
             return True
-        if text == BTN_SELF_ADD_PROPOT:
-            start_self_propot_add_flow(update, context)
-            return True
         if text == BTN_SELF_MANAGE:
             show_self_manage(update, context)
             return True
     if text == BTN_ADMIN_ADD:
         if user_id != ADMIN_ID:
             return False
-        start_add_flow(update, context)
-        return True
-    if text == BTN_ADMIN_ADD_PROPOT:
-        if user_id != ADMIN_ID:
-            return False
-        start_propot_add_flow(update, context)
-        return True
-    if text == BTN_ADMIN_LIST:
-        if user_id != ADMIN_ID:
-            return False
-        show_admin(update, context)
+        start_admin_add_flow(update, context)
         return True
     if text == BTN_ADMIN_ACCESS_ADD:
         if user_id != ADMIN_ID:
@@ -1758,6 +2856,7 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
             housing_access_store.grant_access(access_state["user_id"], text[:120])
             granted_id = access_state["user_id"]
             context.user_data.pop("housing_access_admin", None)
+            _notify_user_access_granted(context.bot, granted_id)
             update.message.reply_text(
                 f"✅ Доступ до моніторингу житла надано.\n"
                 f"Користувач: {granted_id}\nІмʼя: {html.escape(text[:120])}"
@@ -1770,8 +2869,38 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
         context.user_data.pop("housing_admin", None)
         update.message.reply_text("Скасовано.")
         return True
+    if state.get("step") == "admin_target_user_id":
+        if not text.lstrip("-").isdigit():
+            update.message.reply_text("Telegram ID має бути числом. Надішліть ID ще раз.")
+            return True
+        state["user_id"] = int(text)
+        state["step"] = "sources"
+        update.message.reply_text(
+            _sources_text([]), parse_mode="HTML", reply_markup=_sources_keyboard([]),
+        )
+        return True
+    if state.get("step") == "sources":
+        update.message.reply_text(
+            "Оберіть портали кнопками нижче і натисніть «Далі».",
+            reply_markup=_sources_keyboard(state.get("sources_selected")),
+        )
+        return True
     if state.get("mode") == "propotsdam":
         return _handle_propot_flow(update, context, state, text)
+    if state.get("mode") == "semmelhaack":
+        return _handle_semmelhaack_flow(update, context, state, text)
+    if state.get("mode") == "schoba":
+        return _handle_schoba_flow(update, context, state, text)
+    if state.get("mode") == "regiomakler":
+        return _handle_regiomakler_flow(update, context, state, text)
+    if state.get("mode") == "kleinanzeigen":
+        return _handle_kleinanzeigen_flow(update, context, state, text)
+    if state.get("mode") == "locals":
+        return _handle_locals_flow(update, context, state, text)
+    if state.get("mode") == "karlmarx":
+        return _handle_karlmarx_flow(update, context, state, text)
+    if state.get("mode") == "multi":
+        return _handle_multi_flow(update, context, state, text)
     return _handle_immowelt_flow(update, context, state, text)
 
 
@@ -1802,8 +2931,519 @@ def _finish_districts(update: Update, context: CallbackContext, all_districts: b
     first_key = PROPOT_CRITERIA_KEYS[0]
     state["step"] = first_key
     query.answer()
-    query.edit_message_text(PROPOT_CRITERIA_BY_KEY[first_key]["prompt"])
+    query.edit_message_text(PROPOT_CRITERIA_BY_KEY[first_key]["prompt"], reply_markup=_field_keyboard())
 
+
+def _toggle_source(update: Update, context: CallbackContext, source_key: str) -> None:
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    if state.get("step") != "sources" or source_key not in AVAILABLE_SOURCE_KEYS:
+        query.answer()
+        return
+    selected = list(state.get("sources_selected") or [])
+    if source_key in selected:
+        selected.remove(source_key)
+    else:
+        selected.append(source_key)
+    state["sources_selected"] = selected
+    query.answer()
+    query.edit_message_text(_sources_text(selected), parse_mode="HTML", reply_markup=_sources_keyboard(selected))
+
+
+def _multi_district_keyboard(state: dict, selected) -> InlineKeyboardMarkup:
+    selected = set(selected or [])
+    districts = _canonical_districts(state.get("sources_selected") or [])
+    rows = []
+    for district in districts:
+        mark = "✅" if district in selected else "☐"
+        rows.append([InlineKeyboardButton(f"{mark} {district}", callback_data=f"housing:multi_district:{district}")])
+    rows.append([InlineKeyboardButton("✅ Готово", callback_data="housing:multi_district_done")])
+    rows.append([InlineKeyboardButton("🌍 Усі райони", callback_data="housing:multi_district_all")])
+    rows.append([InlineKeyboardButton(BTN_CANCEL, callback_data="housing:multi_cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _multi_district_text(selected) -> str:
+    selected = selected or []
+    suffix = ", ".join(selected) if selected else "усі райони"
+    return f"🏙 <b>Райони</b>\n\nОберіть райони галочками.\nПоточний вибір: {html.escape(suffix)}"
+
+
+def _finish_sources(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    if state.get("step") != "sources":
+        query.answer()
+        return
+    selected = list(state.get("sources_selected") or [])
+    if not selected:
+        query.answer("Оберіть хоча б один портал.", show_alert=True)
+        return
+    state["mode"] = "multi"
+    state["districts_selected"] = []
+    query.answer()
+    if any(source in DISTRICT_AWARE_SOURCES for source in selected):
+        state["step"] = "districts"
+        query.edit_message_text(
+            _multi_district_text([]), parse_mode="HTML", reply_markup=_multi_district_keyboard(state, [])
+        )
+        return
+    # Жодне обране джерело не знає районів (лише SEMMELHAACK) — крок вибору
+    # району тут нема сенсу показувати, він однаково нічого не відфільтрує.
+    first_key = SHARED_CRITERIA_KEYS[0]
+    state["step"] = first_key
+    query.edit_message_text(SHARED_CRITERIA_BY_KEY[first_key]["prompt"], reply_markup=_field_keyboard())
+
+
+def _toggle_multi_district(update: Update, context: CallbackContext, district: str) -> None:
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    if state.get("mode") != "multi" or state.get("step") != "districts":
+        query.answer()
+        return
+    selected = list(state.get("districts_selected") or [])
+    if district in selected:
+        selected.remove(district)
+    else:
+        selected.append(district)
+    state["districts_selected"] = selected
+    query.answer()
+    query.edit_message_text(
+        _multi_district_text(selected), parse_mode="HTML", reply_markup=_multi_district_keyboard(state, selected)
+    )
+
+
+def _finish_multi_districts(update: Update, context: CallbackContext, all_districts: bool = False) -> None:
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    if state.get("mode") != "multi" or state.get("step") != "districts":
+        query.answer()
+        return
+    if all_districts:
+        state["districts_selected"] = []
+    state["step"] = SHARED_CRITERIA_KEYS[0]
+    query.answer()
+    query.edit_message_text(
+        SHARED_CRITERIA_BY_KEY[SHARED_CRITERIA_KEYS[0]]["prompt"], reply_markup=_field_keyboard()
+    )
+
+
+def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> None:
+    """Зберігає фільтр одразу в усіх обраних джерелах — окремим записом у кожному.
+
+    Immowelt і ProPotsdam зберігають фільтри у різних сховищах (перший — через
+    HTTP-приймач check-Wohnung, другий — у власній таблиці бота), тож єдиного
+    «мультипортального» запису нема: район/кімнати/площу користувач ввів раз,
+    а зберігаємо це двома незалежними фільтрами, кожен зі своєю оренду.
+    """
+    sources = state.get("sources_selected") or []
+    districts = list(state.get("districts_selected") or [])
+    results = []
+    if "immowelt" in sources:
+        criteria = {
+            "districts": districts,
+            "min_price_eur": state.get("min_price_eur"),
+            "max_price_eur": state.get("max_price_eur"),
+            "min_rooms": state.get("min_rooms"),
+            "max_rooms": state.get("max_rooms"),
+            "min_area_m2": state.get("min_area_m2"),
+            "max_area_m2": state.get("max_area_m2"),
+        }
+        title = _auto_title("immowelt", criteria)
+        try:
+            payload = _request("POST", "/api/housing/filters", json={
+                "user_id": state["user_id"], "title": title, **criteria,
+            })
+            results.append(("immowelt", payload.get("filter_id"), criteria, None))
+        except Exception as exc:
+            logger.exception("Could not save Immowelt filter from the multi-source wizard")
+            results.append(("immowelt", None, criteria, str(exc)))
+    if "propotsdam" in sources:
+        propot_districts = (
+            _translate_districts(districts, IMMOWELT_TO_PROPOT_DISTRICT, set(PROPOT_DISTRICTS))
+            if "immowelt" in sources else districts
+        )
+        criteria = {
+            "districts": propot_districts,
+            "min_price_eur": state.get("min_total_rent_eur"),
+            "max_price_eur": state.get("max_total_rent_eur"),
+            "min_rooms": state.get("min_rooms"),
+            "max_rooms": state.get("max_rooms"),
+            "min_area_m2": state.get("min_area_m2"),
+            "max_area_m2": state.get("max_area_m2"),
+        }
+        title = _auto_title("propotsdam", criteria)
+        filter_id = propotsdam_store.create_filter(
+            user_id=state["user_id"], title=title,
+            districts=propotsdam_store.normalize_districts(",".join(propot_districts)),
+            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+            min_total_rent_eur=state.get("min_total_rent_eur"), max_total_rent_eur=state.get("max_total_rent_eur"),
+        )
+        _sync_propot_filters()
+        results.append(("propotsdam", filter_id, criteria, None))
+    if "semmelhaack" in sources:
+        # Без районів — фільтр тут лише кімнати/площа/ціна, яку могли вже
+        # запитати спільно з Immowelt (обидва рахують Kaltmiete).
+        criteria = {
+            "min_price_eur": state.get("min_price_eur"),
+            "max_price_eur": state.get("max_price_eur"),
+            "min_rooms": state.get("min_rooms"),
+            "max_rooms": state.get("max_rooms"),
+            "min_area_m2": state.get("min_area_m2"),
+            "max_area_m2": state.get("max_area_m2"),
+        }
+        title = _auto_title("semmelhaack", criteria)
+        filter_id = semmelhaack_store.create_filter(
+            user_id=state["user_id"], title=title,
+            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+        )
+        results.append(("semmelhaack", filter_id, criteria, None))
+    if "schoba" in sources:
+        # Так само без районів; ціна теж холодна оренда — могла піти в те
+        # саме спільне запитання, що й Immowelt/SEMMELHAACK.
+        criteria = {
+            "min_price_eur": state.get("min_price_eur"),
+            "max_price_eur": state.get("max_price_eur"),
+            "min_rooms": state.get("min_rooms"),
+            "max_rooms": state.get("max_rooms"),
+            "min_area_m2": state.get("min_area_m2"),
+            "max_area_m2": state.get("max_area_m2"),
+        }
+        title = _auto_title("schoba", criteria)
+        filter_id = schoba_store.create_filter(
+            user_id=state["user_id"], title=title,
+            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+        )
+        results.append(("schoba", filter_id, criteria, None))
+    if "regiomakler" in sources:
+        # Так само без районів; ціна теж холодна оренда (Kaltmiete).
+        criteria = {
+            "min_price_eur": state.get("min_price_eur"),
+            "max_price_eur": state.get("max_price_eur"),
+            "min_rooms": state.get("min_rooms"),
+            "max_rooms": state.get("max_rooms"),
+            "min_area_m2": state.get("min_area_m2"),
+            "max_area_m2": state.get("max_area_m2"),
+        }
+        title = _auto_title("regiomakler", criteria)
+        filter_id = regiomakler_store.create_filter(
+            user_id=state["user_id"], title=title,
+            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+        )
+        results.append(("regiomakler", filter_id, criteria, None))
+    if "locals" in sources:
+        # Так само без районів; ціна теж холодна оренда (Kaltmiete).
+        criteria = {
+            "min_price_eur": state.get("min_price_eur"),
+            "max_price_eur": state.get("max_price_eur"),
+            "min_rooms": state.get("min_rooms"),
+            "max_rooms": state.get("max_rooms"),
+            "min_area_m2": state.get("min_area_m2"),
+            "max_area_m2": state.get("max_area_m2"),
+        }
+        title = _auto_title("locals", criteria)
+        filter_id = locals_store.create_filter(
+            user_id=state["user_id"], title=title,
+            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+        )
+        results.append(("locals", filter_id, criteria, None))
+    if "kleinanzeigen" in sources:
+        # Власні ключі ціни (min_ka_price_eur), не спільне запитання Kaltmiete.
+        criteria = {
+            "min_price_eur": state.get("min_ka_price_eur"),
+            "max_price_eur": state.get("max_ka_price_eur"),
+            "min_rooms": state.get("min_rooms"),
+            "max_rooms": state.get("max_rooms"),
+            "min_area_m2": state.get("min_area_m2"),
+            "max_area_m2": state.get("max_area_m2"),
+        }
+        title = _auto_title("kleinanzeigen", criteria)
+        filter_id = kleinanzeigen_store.create_filter(
+            user_id=state["user_id"], title=title,
+            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+            min_price_eur=state.get("min_ka_price_eur"), max_price_eur=state.get("max_ka_price_eur"),
+        )
+        results.append(("kleinanzeigen", filter_id, criteria, None))
+    if "karlmarx" in sources:
+        # Власні ключі ціни (min_km_price_eur) — Warmmiete, не Kaltmiete.
+        criteria = {
+            "min_price_eur": state.get("min_km_price_eur"),
+            "max_price_eur": state.get("max_km_price_eur"),
+            "min_rooms": state.get("min_rooms"),
+            "max_rooms": state.get("max_rooms"),
+            "min_area_m2": state.get("min_area_m2"),
+            "max_area_m2": state.get("max_area_m2"),
+        }
+        title = _auto_title("karlmarx", criteria)
+        filter_id = karlmarx_store.create_filter(
+            user_id=state["user_id"], title=title,
+            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+            min_price_eur=state.get("min_km_price_eur"), max_price_eur=state.get("max_km_price_eur"),
+        )
+        results.append(("karlmarx", filter_id, criteria, None))
+    context.user_data.pop("housing_admin", None)
+    lines = ["✅ <b>Фільтр додано</b>", ""]
+    for source, filter_id, criteria, error in results:
+        icon = SOURCE_ICON[source]
+        label = SOURCE_LABEL[source]
+        if error:
+            lines.append(f"{icon} {label}: ⚠️ не вдалося зберегти ({html.escape(error)})")
+        else:
+            lines.append(f"{icon} {label} (ID {filter_id}): {_describe_criteria(criteria)}")
+    created = [
+        (source, filter_id) for source, filter_id, _criteria, error in results
+        if not error and source in _LOCAL_SOURCE_MODULES
+    ]
+    rows = [[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]
+    if created:
+        _offer_recent_matches(context, created)
+        rows = list(_recent_offer_keyboard().inline_keyboard) + rows
+    message.reply_text(
+        "\n".join(lines), parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
+
+
+def _step_back(update: Update, context: CallbackContext) -> None:
+    """Одна кнопка «⬅ Назад» на всі майстри числових питань.
+
+    Куди саме веде «назад» — вирішує сам обробник, а не сам callback: крок
+    завжди один і той самий (попереднє поле того самого списку, або, для
+    першого поля списку, попередній екран — райони чи портали).
+    """
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    mode = state.get("mode")
+    step = state.get("step")
+    query.answer()
+
+    if mode == "immowelt" and step in IMMOWELT_CRITERIA_KEYS:
+        idx = IMMOWELT_CRITERIA_KEYS.index(step)
+        if idx == 0:
+            state["step"] = "districts"
+            query.edit_message_text(
+                _immowelt_district_text(state.get("districts_selected")), parse_mode="HTML",
+                reply_markup=_immowelt_district_keyboard(state.get("districts_selected")),
+            )
+            return
+        prev_key = IMMOWELT_CRITERIA_KEYS[idx - 1]
+        state["step"] = prev_key
+        query.edit_message_text(
+            _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
+        )
+        return
+    if mode == "propotsdam" and step in PROPOT_CRITERIA_KEYS:
+        idx = PROPOT_CRITERIA_KEYS.index(step)
+        if idx == 0:
+            state["step"] = "districts"
+            query.edit_message_text(
+                _district_text(state.get("districts_selected")), parse_mode="HTML",
+                reply_markup=_district_keyboard(state.get("districts_selected")),
+            )
+            return
+        prev_key = PROPOT_CRITERIA_KEYS[idx - 1]
+        state["step"] = prev_key
+        query.edit_message_text(
+            _field_prompt(state, PROPOT_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
+        )
+        return
+    if mode == "semmelhaack" and step in SEMM_CRITERIA_KEYS:
+        idx = SEMM_CRITERIA_KEYS.index(step)
+        if idx == 0:
+            # Перше поле цього майстра — редагування вже відкрите на
+            # конкретному фільтрі, повертатись до вибору джерел нема куди.
+            return
+        prev_key = SEMM_CRITERIA_KEYS[idx - 1]
+        state["step"] = prev_key
+        query.edit_message_text(
+            _field_prompt(state, SEMM_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
+        )
+        return
+    if mode == "schoba" and step in SCHOBA_CRITERIA_KEYS:
+        idx = SCHOBA_CRITERIA_KEYS.index(step)
+        if idx == 0:
+            return
+        prev_key = SCHOBA_CRITERIA_KEYS[idx - 1]
+        state["step"] = prev_key
+        query.edit_message_text(
+            _field_prompt(state, SCHOBA_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
+        )
+        return
+    if mode == "regiomakler" and step in REGIOMAKLER_CRITERIA_KEYS:
+        idx = REGIOMAKLER_CRITERIA_KEYS.index(step)
+        if idx == 0:
+            return
+        prev_key = REGIOMAKLER_CRITERIA_KEYS[idx - 1]
+        state["step"] = prev_key
+        query.edit_message_text(
+            _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
+        )
+        return
+    if mode == "kleinanzeigen" and step in KLEINANZEIGEN_CRITERIA_KEYS:
+        idx = KLEINANZEIGEN_CRITERIA_KEYS.index(step)
+        if idx == 0:
+            return
+        prev_key = KLEINANZEIGEN_CRITERIA_KEYS[idx - 1]
+        state["step"] = prev_key
+        query.edit_message_text(
+            _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
+        )
+        return
+    if mode == "locals" and step in LOCALS_CRITERIA_KEYS:
+        idx = LOCALS_CRITERIA_KEYS.index(step)
+        if idx == 0:
+            return
+        prev_key = LOCALS_CRITERIA_KEYS[idx - 1]
+        state["step"] = prev_key
+        query.edit_message_text(
+            _field_prompt(state, LOCALS_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
+        )
+        return
+    if mode == "karlmarx" and step in KARLMARX_CRITERIA_KEYS:
+        idx = KARLMARX_CRITERIA_KEYS.index(step)
+        if idx == 0:
+            return
+        prev_key = KARLMARX_CRITERIA_KEYS[idx - 1]
+        state["step"] = prev_key
+        query.edit_message_text(
+            _field_prompt(state, KARLMARX_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
+        )
+        return
+    if mode in ("immowelt", "propotsdam") and step in ("clone_price_min", "clone_price_max"):
+        # Клон переносить район/кімнати/площу без питань — до них нема куди
+        # повертатись, лишились тільки самі два питання про оренду.
+        if step == "clone_price_max":
+            state["step"] = "clone_price_min"
+            fields = (
+                [IMMOWELT_CRITERIA_BY_KEY["min_price_eur"]] if mode == "immowelt"
+                else [PROPOT_CRITERIA_BY_KEY["min_total_rent_eur"]]
+            )
+            query.edit_message_text(_field_prompt(state, fields, fields[0]["key"]))
+        return
+    if mode == "multi":
+        if step in SHARED_CRITERIA_KEYS:
+            idx = SHARED_CRITERIA_KEYS.index(step)
+            if idx == 0:
+                sources = state.get("sources_selected") or []
+                if any(source in DISTRICT_AWARE_SOURCES for source in sources):
+                    state["step"] = "districts"
+                    query.edit_message_text(
+                        _multi_district_text(state.get("districts_selected")), parse_mode="HTML",
+                        reply_markup=_multi_district_keyboard(state, state.get("districts_selected")),
+                    )
+                else:
+                    state["step"] = "sources"
+                    query.edit_message_text(
+                        _sources_text(state.get("sources_selected")), parse_mode="HTML",
+                        reply_markup=_sources_keyboard(state.get("sources_selected")),
+                    )
+                return
+            prev_key = SHARED_CRITERIA_KEYS[idx - 1]
+            state["step"] = prev_key
+            query.edit_message_text(
+                _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
+            )
+            return
+        if step in PRICE_STEP_PROMPTS:
+            price_steps = state.get("_price_steps") or []
+            idx = price_steps.index(step) if step in price_steps else 0
+            price_fields = SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_steps]
+            if idx == 0:
+                prev_key = SHARED_CRITERIA_KEYS[-1]
+                state["step"] = prev_key
+                query.edit_message_text(
+                    _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
+                )
+                return
+            prev_key = price_steps[idx - 1]
+            state["step"] = prev_key
+            query.edit_message_text(
+                _field_prompt(state, price_fields, prev_key), reply_markup=_field_keyboard()
+            )
+            return
+        if step == "districts":
+            state["step"] = "sources"
+            query.edit_message_text(
+                _sources_text(state.get("sources_selected")), parse_mode="HTML",
+                reply_markup=_sources_keyboard(state.get("sources_selected")),
+            )
+            return
+
+
+def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
+    step = state.get("step")
+    if step == "districts":
+        update.message.reply_text(
+            "Оберіть райони кнопками нижче і натисніть «Готово».",
+            reply_markup=_multi_district_keyboard(state, state.get("districts_selected")),
+        )
+        return True
+    if step in SHARED_CRITERIA_BY_KEY:
+        spec = SHARED_CRITERIA_BY_KEY[step]
+        value = _parse_single_number(text)
+        if value is _INVALID_NUMBER:
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            return True
+        if _violates_sibling_bound(state, step, value):
+            update.message.reply_text(
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+            )
+            return True
+        state[step] = value
+        index = SHARED_CRITERIA_KEYS.index(step)
+        if index < len(SHARED_CRITERIA_KEYS) - 1:
+            next_key = SHARED_CRITERIA_KEYS[index + 1]
+            state["step"] = next_key
+            update.message.reply_text(
+                _field_prompt(state, SHARED_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
+            )
+            return True
+        price_steps = _price_steps_for(state.get("sources_selected") or [])
+        if not price_steps:
+            _finalize_multi_filter(update.message, context, state)
+            return True
+        state["_price_steps"] = price_steps
+        state["step"] = price_steps[0]
+        price_fields = SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_steps]
+        update.message.reply_text(
+            _field_prompt(state, price_fields, price_steps[0]), reply_markup=_field_keyboard()
+        )
+        return True
+    if step in PRICE_STEP_PROMPTS:
+        value = _parse_single_number(text)
+        if value is _INVALID_NUMBER:
+            update.message.reply_text("Незрозуміле значення.\n\n" + PRICE_STEP_PROMPTS[step])
+            return True
+        if _violates_sibling_bound(state, step, value):
+            update.message.reply_text(
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + PRICE_STEP_PROMPTS[step]
+            )
+            return True
+        state[step] = value
+        price_steps = state.get("_price_steps") or []
+        idx = price_steps.index(step)
+        if idx < len(price_steps) - 1:
+            next_step = price_steps[idx + 1]
+            state["step"] = next_step
+            price_fields = SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_steps]
+            update.message.reply_text(
+                _field_prompt(state, price_fields, next_step), reply_markup=_field_keyboard()
+            )
+            return True
+        _finalize_multi_filter(update.message, context, state)
+        return True
+    return False
 
 
 def handle_callback(update: Update, context: CallbackContext) -> None:
@@ -1818,10 +3458,7 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         show_admin(update, context, edit=True)
     elif query.data == "housing:add":
         query.answer()
-        start_add_flow(update, context, edit=True)
-    elif query.data == "housing:propot_add":
-        query.answer()
-        start_propot_add_flow(update, context, edit=True)
+        start_admin_add_flow(update, context, edit=True)
     elif query.data == "housing:access_request":
         request_access(update, context)
     elif query.data.startswith("housing:access_grant:"):
@@ -1834,6 +3471,22 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:access_list":
         query.answer()
         show_access_users(update, context, edit=True)
+    elif query.data.startswith("housing:access_delete_confirm:"):
+        target_id = int(query.data.split(":")[2])
+        confirm_access_delete(update, context, target_id)
+    elif query.data.startswith("housing:access_delete:"):
+        target_id = int(query.data.split(":")[2])
+        start_access_delete_flow(update, context, target_id)
+    elif query.data.startswith("housing:recent:"):
+        raw_hours = query.data.split(":", 2)[2]
+        if raw_hours.isdigit():
+            _send_recent_matches(update, context, int(raw_hours))
+        else:
+            query.answer()
+    elif query.data == "housing:recent_skip":
+        query.answer()
+        context.user_data.pop("recent_offer_filters", None)
+        _clear_recent_offer_keyboard(query)
     elif query.data.startswith("housing:imm_district:"):
         _toggle_immowelt_district(update, context, query.data.split(":", 2)[2])
     elif query.data == "housing:imm_district_done":
@@ -1864,12 +3517,35 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
             "Скасовано.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]),
         )
+    elif query.data == BACK_CALLBACK:
+        _step_back(update, context)
     elif query.data == "housing:self_add":
         query.answer()
         start_self_add_flow(update, context, edit=True)
-    elif query.data == "housing:self_propot_add":
+    elif query.data.startswith("housing:src:"):
+        _toggle_source(update, context, query.data.split(":", 2)[2])
+    elif query.data == "housing:src_done":
+        _finish_sources(update, context)
+    elif query.data == "housing:src_cancel":
+        context.user_data.pop("housing_admin", None)
         query.answer()
-        start_self_propot_add_flow(update, context, edit=True)
+        query.edit_message_text(
+            "Скасовано.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]),
+        )
+    elif query.data.startswith("housing:multi_district:"):
+        _toggle_multi_district(update, context, query.data.split(":", 2)[2])
+    elif query.data == "housing:multi_district_done":
+        _finish_multi_districts(update, context)
+    elif query.data == "housing:multi_district_all":
+        _finish_multi_districts(update, context, all_districts=True)
+    elif query.data == "housing:multi_cancel":
+        context.user_data.pop("housing_admin", None)
+        query.answer()
+        query.edit_message_text(
+            "Скасовано.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]),
+        )
     elif query.data == "housing:clone_propot":
         _clone_propot_from_immowelt(update, context)
     elif query.data == "housing:clone_immo":
@@ -1898,6 +3574,18 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
             start_edit_flow(update, context, int(raw_id))
         elif source == "propotsdam":
             start_propot_edit_flow(update, context, int(raw_id))
+        elif source == "semmelhaack":
+            start_semmelhaack_edit_flow(update, context, int(raw_id))
+        elif source == "schoba":
+            start_schoba_edit_flow(update, context, int(raw_id))
+        elif source == "regiomakler":
+            start_regiomakler_edit_flow(update, context, int(raw_id))
+        elif source == "kleinanzeigen":
+            start_kleinanzeigen_edit_flow(update, context, int(raw_id))
+        elif source == "locals":
+            start_locals_edit_flow(update, context, int(raw_id))
+        elif source == "karlmarx":
+            start_karlmarx_edit_flow(update, context, int(raw_id))
         else:
             query.answer()
     elif query.data.startswith("housing:delete_confirm:"):

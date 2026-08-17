@@ -25,6 +25,13 @@ from user_handlers import (
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
 from user_jobs import propotsdam_monitor
+from user_jobs import semmelhaack_monitor
+from user_jobs import schoba_monitor
+from user_jobs import regiomakler_monitor
+from user_jobs import kleinanzeigen_monitor
+from user_jobs import locals_monitor
+from user_jobs import coop_watchdog
+from user_jobs import karlmarx_monitor
 
 
 from userbot import run_telethon
@@ -102,6 +109,48 @@ if os.getenv("PROPOTSDAM_CHECK_ENABLED", "0") == "1":
         propotsdam_monitor.check_job,
         interval=propotsdam_monitor.CHECK_INTERVAL_SECONDS,
         first=120,
+    )
+if semmelhaack_monitor.CHECK_ENABLED:
+    job.run_repeating(
+        semmelhaack_monitor.check_job,
+        interval=semmelhaack_monitor.CHECK_INTERVAL_SECONDS,
+        first=150,
+    )
+if schoba_monitor.CHECK_ENABLED:
+    job.run_repeating(
+        schoba_monitor.check_job,
+        interval=schoba_monitor.CHECK_INTERVAL_SECONDS,
+        first=180,
+    )
+if regiomakler_monitor.CHECK_ENABLED:
+    job.run_repeating(
+        regiomakler_monitor.check_job,
+        interval=regiomakler_monitor.CHECK_INTERVAL_SECONDS,
+        first=210,
+    )
+if kleinanzeigen_monitor.CHECK_ENABLED:
+    job.run_repeating(
+        kleinanzeigen_monitor.check_job,
+        interval=kleinanzeigen_monitor.CHECK_INTERVAL_SECONDS,
+        first=240,
+    )
+if locals_monitor.CHECK_ENABLED:
+    job.run_repeating(
+        locals_monitor.check_job,
+        interval=locals_monitor.CHECK_INTERVAL_SECONDS,
+        first=270,
+    )
+if coop_watchdog.CHECK_ENABLED:
+    job.run_repeating(
+        coop_watchdog.check_job,
+        interval=coop_watchdog.CHECK_INTERVAL_SECONDS,
+        first=300,
+    )
+if karlmarx_monitor.CHECK_ENABLED:
+    job.run_repeating(
+        karlmarx_monitor.check_job,
+        interval=karlmarx_monitor.CHECK_INTERVAL_SECONDS,
+        first=330,
     )
 
 

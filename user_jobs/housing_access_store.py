@@ -55,6 +55,19 @@ def set_active(user_id: int, active: bool) -> bool:
         session.close()
 
 
+def revoke_access(user_id: int) -> bool:
+    session = DBSession()
+    try:
+        row = session.query(HousingAccessUser).get(int(user_id))
+        if row is None:
+            return False
+        session.delete(row)
+        session.commit()
+        return True
+    finally:
+        session.close()
+
+
 def list_users(active_only: bool = False) -> list:
     session = DBSession()
     try:

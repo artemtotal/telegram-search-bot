@@ -216,6 +216,356 @@ class ProPotsdamDelivery(Base):
     sent_at = Column(DATETIME, nullable=False)
 
 
+class SemmelhaackListing(Base):
+    """SEMMELHAACK-квартири в Потсдамі: без районів — сайт цього не показує."""
+
+    __tablename__ = 'semmelhaack_listing'
+
+    listing_key = Column(TEXT, primary_key=True)
+    title = Column(TEXT, nullable=False)
+    address = Column(TEXT)
+    rooms = Column(FLOAT)
+    area_m2 = Column(FLOAT)
+    price_eur = Column(FLOAT)
+    detail_url = Column(TEXT)
+    image_url = Column(TEXT)
+    first_seen_at = Column(DATETIME, nullable=False)
+    last_seen_at = Column(DATETIME, nullable=False)
+    is_active = Column(BOOLEAN, nullable=False, default=True)
+
+
+class SemmelhaackFilter(Base):
+    __tablename__ = 'semmelhaack_filter'
+
+    filter_id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    title = Column(TEXT, nullable=False)
+    min_rooms = Column(FLOAT)
+    max_rooms = Column(FLOAT)
+    min_area_m2 = Column(FLOAT)
+    max_area_m2 = Column(FLOAT)
+    min_price_eur = Column(FLOAT)
+    max_price_eur = Column(FLOAT)
+    active = Column(BOOLEAN, nullable=False, default=True)
+    created_at = Column(DATETIME, nullable=False)
+
+
+class SemmelhaackStatus(Base):
+    __tablename__ = 'semmelhaack_status'
+
+    key = Column(TEXT, primary_key=True)
+    last_checked_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_error = Column(TEXT)
+    listings_count = Column(INTEGER)
+
+
+class SemmelhaackDelivery(Base):
+    __tablename__ = 'semmelhaack_delivery'
+    __table_args__ = (
+        UniqueConstraint('filter_id', 'listing_key', name='uq_semmelhaack_delivery_filter_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    filter_id = Column(INTEGER, nullable=False, index=True)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    sent_at = Column(DATETIME, nullable=False)
+
+
+class SchobaListing(Base):
+    """SCHOBA-квартири в Потсдамі: без надійного словника районів, як і SEMMELHAACK."""
+
+    __tablename__ = 'schoba_listing'
+
+    listing_key = Column(TEXT, primary_key=True)
+    title = Column(TEXT, nullable=False)
+    address = Column(TEXT)
+    rooms = Column(FLOAT)
+    area_m2 = Column(FLOAT)
+    price_eur = Column(FLOAT)
+    detail_url = Column(TEXT)
+    first_seen_at = Column(DATETIME, nullable=False)
+    last_seen_at = Column(DATETIME, nullable=False)
+    is_active = Column(BOOLEAN, nullable=False, default=True)
+
+
+class SchobaFilter(Base):
+    __tablename__ = 'schoba_filter'
+
+    filter_id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    title = Column(TEXT, nullable=False)
+    min_rooms = Column(FLOAT)
+    max_rooms = Column(FLOAT)
+    min_area_m2 = Column(FLOAT)
+    max_area_m2 = Column(FLOAT)
+    min_price_eur = Column(FLOAT)
+    max_price_eur = Column(FLOAT)
+    active = Column(BOOLEAN, nullable=False, default=True)
+    created_at = Column(DATETIME, nullable=False)
+
+
+class SchobaStatus(Base):
+    __tablename__ = 'schoba_status'
+
+    key = Column(TEXT, primary_key=True)
+    last_checked_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_error = Column(TEXT)
+    listings_count = Column(INTEGER)
+
+
+class SchobaDelivery(Base):
+    __tablename__ = 'schoba_delivery'
+    __table_args__ = (
+        UniqueConstraint('filter_id', 'listing_key', name='uq_schoba_delivery_filter_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    filter_id = Column(INTEGER, nullable=False, index=True)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    sent_at = Column(DATETIME, nullable=False)
+
+
+class RegiomaklerListing(Base):
+    """Спільна стрічка ImmoTeam Potsdam + alpha Immobilien (плагін immomakler) —
+    один і той самий Objekt-ID зустрічається на обох сайтах, тож зберігаємо
+    по одному запису на listing_key, а не окремо для кожного сайту."""
+
+    __tablename__ = 'regiomakler_listing'
+
+    listing_key = Column(TEXT, primary_key=True)
+    title = Column(TEXT, nullable=False)
+    address = Column(TEXT)
+    rooms = Column(FLOAT)
+    area_m2 = Column(FLOAT)
+    price_eur = Column(FLOAT)
+    detail_url = Column(TEXT)
+    source = Column(TEXT)
+    first_seen_at = Column(DATETIME, nullable=False)
+    last_seen_at = Column(DATETIME, nullable=False)
+    is_active = Column(BOOLEAN, nullable=False, default=True)
+
+
+class RegiomaklerFilter(Base):
+    __tablename__ = 'regiomakler_filter'
+
+    filter_id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    title = Column(TEXT, nullable=False)
+    min_rooms = Column(FLOAT)
+    max_rooms = Column(FLOAT)
+    min_area_m2 = Column(FLOAT)
+    max_area_m2 = Column(FLOAT)
+    min_price_eur = Column(FLOAT)
+    max_price_eur = Column(FLOAT)
+    active = Column(BOOLEAN, nullable=False, default=True)
+    created_at = Column(DATETIME, nullable=False)
+
+
+class RegiomaklerStatus(Base):
+    __tablename__ = 'regiomakler_status'
+
+    key = Column(TEXT, primary_key=True)
+    last_checked_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_error = Column(TEXT)
+    listings_count = Column(INTEGER)
+
+
+class RegiomaklerDelivery(Base):
+    __tablename__ = 'regiomakler_delivery'
+    __table_args__ = (
+        UniqueConstraint('filter_id', 'listing_key', name='uq_regiomakler_delivery_filter_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    filter_id = Column(INTEGER, nullable=False, index=True)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    sent_at = Column(DATETIME, nullable=False)
+
+
+class KleinanzeigenListing(Base):
+    """Kleinanzeigen-оголошення в Потсдамі: без районів, без Kalt/Warm-мітки на ціні."""
+
+    __tablename__ = 'kleinanzeigen_listing'
+
+    listing_key = Column(TEXT, primary_key=True)
+    title = Column(TEXT, nullable=False)
+    address = Column(TEXT)
+    rooms = Column(FLOAT)
+    area_m2 = Column(FLOAT)
+    price_eur = Column(FLOAT)
+    detail_url = Column(TEXT)
+    first_seen_at = Column(DATETIME, nullable=False)
+    last_seen_at = Column(DATETIME, nullable=False)
+    is_active = Column(BOOLEAN, nullable=False, default=True)
+
+
+class KleinanzeigenFilter(Base):
+    __tablename__ = 'kleinanzeigen_filter'
+
+    filter_id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    title = Column(TEXT, nullable=False)
+    min_rooms = Column(FLOAT)
+    max_rooms = Column(FLOAT)
+    min_area_m2 = Column(FLOAT)
+    max_area_m2 = Column(FLOAT)
+    min_price_eur = Column(FLOAT)
+    max_price_eur = Column(FLOAT)
+    active = Column(BOOLEAN, nullable=False, default=True)
+    created_at = Column(DATETIME, nullable=False)
+
+
+class KleinanzeigenStatus(Base):
+    __tablename__ = 'kleinanzeigen_status'
+
+    key = Column(TEXT, primary_key=True)
+    last_checked_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_error = Column(TEXT)
+    listings_count = Column(INTEGER)
+
+
+class KleinanzeigenDelivery(Base):
+    __tablename__ = 'kleinanzeigen_delivery'
+    __table_args__ = (
+        UniqueConstraint('filter_id', 'listing_key', name='uq_kleinanzeigen_delivery_filter_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    filter_id = Column(INTEGER, nullable=False, index=True)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    sent_at = Column(DATETIME, nullable=False)
+
+
+class LocalsListing(Base):
+    """locals®-квартири в Потсдамі: без районів, ціна — Kaltmiete."""
+
+    __tablename__ = 'locals_listing'
+
+    listing_key = Column(TEXT, primary_key=True)
+    title = Column(TEXT, nullable=False)
+    address = Column(TEXT)
+    rooms = Column(FLOAT)
+    area_m2 = Column(FLOAT)
+    price_eur = Column(FLOAT)
+    detail_url = Column(TEXT)
+    first_seen_at = Column(DATETIME, nullable=False)
+    last_seen_at = Column(DATETIME, nullable=False)
+    is_active = Column(BOOLEAN, nullable=False, default=True)
+
+
+class LocalsFilter(Base):
+    __tablename__ = 'locals_filter'
+
+    filter_id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    title = Column(TEXT, nullable=False)
+    min_rooms = Column(FLOAT)
+    max_rooms = Column(FLOAT)
+    min_area_m2 = Column(FLOAT)
+    max_area_m2 = Column(FLOAT)
+    min_price_eur = Column(FLOAT)
+    max_price_eur = Column(FLOAT)
+    active = Column(BOOLEAN, nullable=False, default=True)
+    created_at = Column(DATETIME, nullable=False)
+
+
+class LocalsStatus(Base):
+    __tablename__ = 'locals_status'
+
+    key = Column(TEXT, primary_key=True)
+    last_checked_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_error = Column(TEXT)
+    listings_count = Column(INTEGER)
+
+
+class LocalsDelivery(Base):
+    __tablename__ = 'locals_delivery'
+    __table_args__ = (
+        UniqueConstraint('filter_id', 'listing_key', name='uq_locals_delivery_filter_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    filter_id = Column(INTEGER, nullable=False, index=True)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    sent_at = Column(DATETIME, nullable=False)
+
+
+class CoopWatchdogStatus(Base):
+    """Житлові кооперативи без жодного оголошення для парсингу (Gewoba, WBG 1903):
+    замість повного скрейпера — лише стеження за текстом "немає вільного житла" на
+    їхніх сторінках. `was_empty` фіксує попередній стан, щоб сповіщати адміна лише
+    на переході "було порожньо → стало не порожньо", а не на кожному скані."""
+
+    __tablename__ = 'coop_watchdog_status'
+
+    key = Column(TEXT, primary_key=True)
+    was_empty = Column(BOOLEAN)
+    last_checked_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_error = Column(TEXT)
+
+
+class KarlmarxListing(Base):
+    """Wohnungsgenossenschaft "Karl Marx": без районів, ціна — Warmmiete
+    (тепла оренда), а не Kaltmiete, як у решти маклерів."""
+
+    __tablename__ = 'karlmarx_listing'
+
+    listing_key = Column(TEXT, primary_key=True)
+    title = Column(TEXT, nullable=False)
+    address = Column(TEXT)
+    rooms = Column(FLOAT)
+    area_m2 = Column(FLOAT)
+    price_eur = Column(FLOAT)
+    detail_url = Column(TEXT)
+    first_seen_at = Column(DATETIME, nullable=False)
+    last_seen_at = Column(DATETIME, nullable=False)
+    is_active = Column(BOOLEAN, nullable=False, default=True)
+
+
+class KarlmarxFilter(Base):
+    __tablename__ = 'karlmarx_filter'
+
+    filter_id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    title = Column(TEXT, nullable=False)
+    min_rooms = Column(FLOAT)
+    max_rooms = Column(FLOAT)
+    min_area_m2 = Column(FLOAT)
+    max_area_m2 = Column(FLOAT)
+    min_price_eur = Column(FLOAT)
+    max_price_eur = Column(FLOAT)
+    active = Column(BOOLEAN, nullable=False, default=True)
+    created_at = Column(DATETIME, nullable=False)
+
+
+class KarlmarxStatus(Base):
+    __tablename__ = 'karlmarx_status'
+
+    key = Column(TEXT, primary_key=True)
+    last_checked_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_error = Column(TEXT)
+    listings_count = Column(INTEGER)
+
+
+class KarlmarxDelivery(Base):
+    __tablename__ = 'karlmarx_delivery'
+    __table_args__ = (
+        UniqueConstraint('filter_id', 'listing_key', name='uq_karlmarx_delivery_filter_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    filter_id = Column(INTEGER, nullable=False, index=True)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    sent_at = Column(DATETIME, nullable=False)
+
+
 class HousingDelivery(Base):
     """Immowelt-объявления, уже отправленные конкретному человеку.
 

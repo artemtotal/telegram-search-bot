@@ -169,15 +169,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global _last_result
-        if self.path != "/api/propotsdam/scan":
+        if self.path == "/api/propotsdam/scan":
+            try:
+                _last_result = scan()
+            except Exception as exc:
+                logger.exception("scan failed")
+                _last_result = {"ok": False, "error": str(exc), "listings": []}
+            self._json(200 if _last_result.get("ok") else 500, _last_result)
+        else:
             self._json(404, {"ok": False, "error": "not found"})
-            return
-        try:
-            _last_result = scan()
-        except Exception as exc:
-            logger.exception("scan failed")
-            _last_result = {"ok": False, "error": str(exc), "listings": []}
-        self._json(200 if _last_result.get("ok") else 500, _last_result)
 
 
 def main():
