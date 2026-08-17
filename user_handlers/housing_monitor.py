@@ -122,63 +122,73 @@ def _translate_districts(districts, mapping: Dict[str, str], valid_targets) -> l
 # цьому самому списку й питає кожну умову окремим числом. Довгий майстер із
 # шести запитань поспіль люди кидають на середині — але тут ніхто не бачить
 # запитань про те, що сам не обрав, тож зайвих кроків просто немає.
-# Додається до кожного запитання майстра — інакше людина не здогадається, що
-# поле можна пропустити, поки не введе щось нечислове й не отримає помилку.
-SKIP_HINT = " Або «-», щоб пропустити."
+def _numeric_prompt(question: str, example: str) -> str:
+    """Formats a wizard numeric question in a consistent, hand-holding way —
+    people were skimming past the terse one-liner ("Мінімальна кількість
+    кімнат: Або «-», щоб пропустити.") and not noticing they could just type
+    a number and hit send, or skip with a dash."""
+    return (
+        f"🔢 <b>{question}</b>\n\n"
+        f"Напишіть <b>одну цифру</b> внизу в чаті й натисніть «Надіслати» "
+        f"(наприклад, <code>{example}</code>).\n\n"
+        "Не хочете обмежувати цей показник — просто надішліть «-»."
+    )
+
+
 IMMOWELT_CRITERIA_FIELDS = [
-    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
-    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
-    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
-    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
-    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
-    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": _numeric_prompt("Мінімальна холодна оренда (Kaltmiete), €", "600")},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": _numeric_prompt("Максимальна холодна оренда (Kaltmiete), €", "1200")},
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": _numeric_prompt("Мінімальна кількість кімнат", "2")},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": _numeric_prompt("Максимальна кількість кімнат", "4")},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": _numeric_prompt("Мінімальна площа, м²", "50")},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": _numeric_prompt("Максимальна площа, м²", "90")},
 ]
 IMMOWELT_CRITERIA_KEYS = [spec["key"] for spec in IMMOWELT_CRITERIA_FIELDS]
 IMMOWELT_CRITERIA_BY_KEY = {spec["key"]: spec for spec in IMMOWELT_CRITERIA_FIELDS}
 ADMIN_PAGE_SIZE = 20
 PROPOT_CRITERIA_FIELDS = [
-    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
-    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
-    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
-    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
-    {"key": "min_total_rent_eur", "label": "Оренда: мінімум (від)", "prompt": "Мінімальна загальна оренда (Gesamtmiete) в євро:" + SKIP_HINT},
-    {"key": "max_total_rent_eur", "label": "Оренда: максимум (до)", "prompt": "Максимальна загальна оренда (Gesamtmiete) в євро:" + SKIP_HINT},
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": _numeric_prompt("Мінімальна кількість кімнат", "2")},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": _numeric_prompt("Максимальна кількість кімнат", "4")},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": _numeric_prompt("Мінімальна площа, м²", "50")},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": _numeric_prompt("Максимальна площа, м²", "90")},
+    {"key": "min_total_rent_eur", "label": "Оренда: мінімум (від)", "prompt": _numeric_prompt("Мінімальна загальна оренда (Gesamtmiete), €", "700")},
+    {"key": "max_total_rent_eur", "label": "Оренда: максимум (до)", "prompt": _numeric_prompt("Максимальна загальна оренда (Gesamtmiete), €", "1400")},
 ]
 PROPOT_CRITERIA_KEYS = [spec["key"] for spec in PROPOT_CRITERIA_FIELDS]
 PROPOT_CRITERIA_BY_KEY = {spec["key"]: spec for spec in PROPOT_CRITERIA_FIELDS}
 # SEMMELHAACK не показує райони взагалі — фільтр тут лише кімнати/площа/ціна,
 # і ціна там теж холодна оренда (Kaltmiete), як у Immowelt.
 SEMM_CRITERIA_FIELDS = [
-    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
-    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
-    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
-    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
-    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
-    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": _numeric_prompt("Мінімальна кількість кімнат", "2")},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": _numeric_prompt("Максимальна кількість кімнат", "4")},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": _numeric_prompt("Мінімальна площа, м²", "50")},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": _numeric_prompt("Максимальна площа, м²", "90")},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": _numeric_prompt("Мінімальна холодна оренда (Kaltmiete), €", "600")},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": _numeric_prompt("Максимальна холодна оренда (Kaltmiete), €", "1200")},
 ]
 SEMM_CRITERIA_KEYS = [spec["key"] for spec in SEMM_CRITERIA_FIELDS]
 SEMM_CRITERIA_BY_KEY = {spec["key"]: spec for spec in SEMM_CRITERIA_FIELDS}
 # SCHOBA теж не показує райони надійно — фільтр лише кімнати/площа/ціна.
 # Nettokaltmiete — та сама холодна оренда, що й у Immowelt/SEMMELHAACK.
 SCHOBA_CRITERIA_FIELDS = [
-    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
-    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
-    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
-    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
-    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна холодна оренда (Nettokaltmiete) в євро:" + SKIP_HINT},
-    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна холодна оренда (Nettokaltmiete) в євро:" + SKIP_HINT},
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": _numeric_prompt("Мінімальна кількість кімнат", "2")},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": _numeric_prompt("Максимальна кількість кімнат", "4")},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": _numeric_prompt("Мінімальна площа, м²", "50")},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": _numeric_prompt("Максимальна площа, м²", "90")},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": _numeric_prompt("Мінімальна холодна оренда (Nettokaltmiete), €", "600")},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": _numeric_prompt("Максимальна холодна оренда (Nettokaltmiete), €", "1200")},
 ]
 SCHOBA_CRITERIA_KEYS = [spec["key"] for spec in SCHOBA_CRITERIA_FIELDS]
 SCHOBA_CRITERIA_BY_KEY = {spec["key"]: spec for spec in SCHOBA_CRITERIA_FIELDS}
 # ImmoTeam Potsdam і alpha Immobilien публікують одну спільну стрічку (плагін
 # immomakler) — теж без надійного словника районів, теж Kaltmiete.
 REGIOMAKLER_CRITERIA_FIELDS = [
-    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
-    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
-    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
-    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
-    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
-    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": _numeric_prompt("Мінімальна кількість кімнат", "2")},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": _numeric_prompt("Максимальна кількість кімнат", "4")},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": _numeric_prompt("Мінімальна площа, м²", "50")},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": _numeric_prompt("Максимальна площа, м²", "90")},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": _numeric_prompt("Мінімальна холодна оренда (Kaltmiete), €", "600")},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": _numeric_prompt("Максимальна холодна оренда (Kaltmiete), €", "1200")},
 ]
 REGIOMAKLER_CRITERIA_KEYS = [spec["key"] for spec in REGIOMAKLER_CRITERIA_FIELDS]
 REGIOMAKLER_CRITERIA_BY_KEY = {spec["key"]: spec for spec in REGIOMAKLER_CRITERIA_FIELDS}
@@ -186,23 +196,23 @@ REGIOMAKLER_CRITERIA_BY_KEY = {spec["key"]: spec for spec in REGIOMAKLER_CRITERI
 # без надійної мітки Kalt/Warm на ціні, тож у спільне запитання Kaltmiete не
 # приєднується — питає ціну окремо, як ProPotsdam.
 KLEINANZEIGEN_CRITERIA_FIELDS = [
-    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
-    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
-    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
-    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
-    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна ціна в євро:" + SKIP_HINT},
-    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна ціна в євро:" + SKIP_HINT},
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": _numeric_prompt("Мінімальна кількість кімнат", "2")},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": _numeric_prompt("Максимальна кількість кімнат", "4")},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": _numeric_prompt("Мінімальна площа, м²", "50")},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": _numeric_prompt("Максимальна площа, м²", "90")},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": _numeric_prompt("Мінімальна ціна, €", "600")},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": _numeric_prompt("Максимальна ціна, €", "1200")},
 ]
 KLEINANZEIGEN_CRITERIA_KEYS = [spec["key"] for spec in KLEINANZEIGEN_CRITERIA_FIELDS]
 KLEINANZEIGEN_CRITERIA_BY_KEY = {spec["key"]: spec for spec in KLEINANZEIGEN_CRITERIA_FIELDS}
 # locals® теж без районів; ціна — Kaltmiete, як у Immowelt/SEMMELHAACK/SCHOBA/regiomakler.
 LOCALS_CRITERIA_FIELDS = [
-    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
-    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
-    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
-    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
-    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
-    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна холодна оренда (Kaltmiete) в євро:" + SKIP_HINT},
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": _numeric_prompt("Мінімальна кількість кімнат", "2")},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": _numeric_prompt("Максимальна кількість кімнат", "4")},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": _numeric_prompt("Мінімальна площа, м²", "50")},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": _numeric_prompt("Максимальна площа, м²", "90")},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": _numeric_prompt("Мінімальна холодна оренда (Kaltmiete), €", "600")},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": _numeric_prompt("Максимальна холодна оренда (Kaltmiete), €", "1200")},
 ]
 LOCALS_CRITERIA_KEYS = [spec["key"] for spec in LOCALS_CRITERIA_FIELDS]
 LOCALS_CRITERIA_BY_KEY = {spec["key"]: spec for spec in LOCALS_CRITERIA_FIELDS}
@@ -210,12 +220,12 @@ LOCALS_CRITERIA_BY_KEY = {spec["key"]: spec for spec in LOCALS_CRITERIA_FIELDS}
 # тож у спільне запитання Kaltmiete не приєднується — питає ціну окремо, як
 # Kleinanzeigen/ProPotsdam.
 KARLMARX_CRITERIA_FIELDS = [
-    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
-    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
-    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
-    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
-    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": "Мінімальна тепла оренда (Warmmiete) в євро:" + SKIP_HINT},
-    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": "Максимальна тепла оренда (Warmmiete) в євро:" + SKIP_HINT},
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": _numeric_prompt("Мінімальна кількість кімнат", "2")},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": _numeric_prompt("Максимальна кількість кімнат", "4")},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": _numeric_prompt("Мінімальна площа, м²", "50")},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": _numeric_prompt("Максимальна площа, м²", "90")},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": _numeric_prompt("Мінімальна тепла оренда (Warmmiete), €", "700")},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": _numeric_prompt("Максимальна тепла оренда (Warmmiete), €", "1400")},
 ]
 KARLMARX_CRITERIA_KEYS = [spec["key"] for spec in KARLMARX_CRITERIA_FIELDS]
 KARLMARX_CRITERIA_BY_KEY = {spec["key"]: spec for spec in KARLMARX_CRITERIA_FIELDS}
@@ -241,10 +251,10 @@ DISTRICT_AWARE_SOURCES = {"immowelt", "propotsdam"}
 # розуміють ці умови однаково. Ціну натомість питає окремо для кожного обраного
 # джерела: Immowelt рахує холодну оренду (Kaltmiete), ProPotsdam — повну (Gesamtmiete).
 SHARED_CRITERIA_FIELDS = [
-    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": "Мінімальна кількість кімнат:" + SKIP_HINT},
-    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": "Максимальна кількість кімнат:" + SKIP_HINT},
-    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": "Мінімальна площа в м²:" + SKIP_HINT},
-    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": "Максимальна площа в м²:" + SKIP_HINT},
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": _numeric_prompt("Мінімальна кількість кімнат", "2")},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": _numeric_prompt("Максимальна кількість кімнат", "4")},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": _numeric_prompt("Мінімальна площа, м²", "50")},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": _numeric_prompt("Максимальна площа, м²", "90")},
 ]
 SHARED_CRITERIA_KEYS = [spec["key"] for spec in SHARED_CRITERIA_FIELDS]
 SHARED_CRITERIA_BY_KEY = {spec["key"]: spec for spec in SHARED_CRITERIA_FIELDS}
@@ -258,21 +268,21 @@ PRICE_STEP_FIELDS = {
     # об'єднувати їх у спільне запитання було б помилково.
     "min_ka_price_eur": {
         "key": "min_ka_price_eur", "label": "Ціна: мінімум (від)",
-        "prompt": "Мінімальна ціна в євро:" + SKIP_HINT,
+        "prompt": _numeric_prompt("Мінімальна ціна, €", "600"),
     },
     "max_ka_price_eur": {
         "key": "max_ka_price_eur", "label": "Ціна: максимум (до)",
-        "prompt": "Максимальна ціна в євро:" + SKIP_HINT,
+        "prompt": _numeric_prompt("Максимальна ціна, €", "1200"),
     },
     # Karl Marx рахує теплу оренду (Warmmiete), а не Kaltmiete — теж окремі
     # ключі стану, щоб не змішувати з холодною орендою інших джерел.
     "min_km_price_eur": {
         "key": "min_km_price_eur", "label": "Ціна: мінімум (від)",
-        "prompt": "Мінімальна тепла оренда (Warmmiete) в євро:" + SKIP_HINT,
+        "prompt": _numeric_prompt("Мінімальна тепла оренда (Warmmiete), €", "700"),
     },
     "max_km_price_eur": {
         "key": "max_km_price_eur", "label": "Ціна: максимум (до)",
-        "prompt": "Максимальна тепла оренда (Warmmiete) в євро:" + SKIP_HINT,
+        "prompt": _numeric_prompt("Максимальна тепла оренда (Warmmiete), €", "1400"),
     },
 }
 PRICE_STEP_PROMPTS = {key: spec["prompt"] for key, spec in PRICE_STEP_FIELDS.items()}
@@ -283,7 +293,20 @@ BACK_CALLBACK = "housing:field_back"
 
 
 def _field_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Назад", callback_data=BACK_CALLBACK)]])
+    # Просто «⬅ Назад» губилося серед тексту питання — люди не помічали, що
+    # можна виправити попередню відповідь, і кидали майстер на середині.
+    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад — виправити відповідь", callback_data=BACK_CALLBACK)]])
+
+
+def _reply_field_prompt(message, text: str) -> None:
+    """All wizard field prompts go through here — otherwise the bold/code
+    formatting in `_numeric_prompt` shows up as literal `<b>` tags instead of
+    rendering, since `reply_text` defaults to no parse mode."""
+    message.reply_text(text, parse_mode="HTML", reply_markup=_field_keyboard())
+
+
+def _edit_field_prompt(query, text: str) -> None:
+    query.edit_message_text(text, parse_mode="HTML", reply_markup=_field_keyboard())
 
 
 def _format_answer(value) -> str:
@@ -673,7 +696,10 @@ def private_home_rows(user_id: Optional[int]) -> Iterable[list]:
 
 
 def _menu_keyboard(user_id: Optional[int] = None) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton("🔄 Оновити статус", callback_data="housing:menu")]]
+    rows = [
+        [InlineKeyboardButton("🔄 Оновити статус", callback_data="housing:menu")],
+        [InlineKeyboardButton("❓ Довідка / Часті питання", callback_data="housing:faq")],
+    ]
     if user_id and int(user_id) == ADMIN_ID:
         rows.insert(0, [InlineKeyboardButton("⚙️ Адмінка житла", callback_data="housing:admin")])
         rows.insert(1, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
@@ -683,6 +709,50 @@ def _menu_keyboard(user_id: Optional[int] = None) -> InlineKeyboardMarkup:
         rows.insert(2, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
     rows.append([InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
+
+
+FAQ_TEXT = (
+    "❓ <b>Довідка та часті питання</b>\n\n"
+    "<b>Що робить цей розділ?</b>\n"
+    "Стежить одразу за 8 порталами оренди житла в Потсдамі (Immowelt, ProPotsdam, "
+    "SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals®, Karl Marx) і надсилає "
+    "вам повідомлення, щойно з'являється квартира під ваші умови — самому нічого "
+    "перевіряти не треба.\n\n"
+    "<b>Як працює фільтр?</b>\n"
+    "Ви задаєте кімнати, площу і ціну (де можна — ще й район). Бот шукає за цими "
+    "умовами на всіх обраних порталах одночасно. Можна створити кілька фільтрів з "
+    "різними умовами — наприклад, один вужчий і один запасний, ширший.\n\n"
+    "<b>Чому іноді питає ціну двічі?</b>\n"
+    "Портали рахують орендну плату по-різному: більшість показує <b>Kaltmiete</b> "
+    "(холодну оренду, без комунальних) — це одне спільне питання. ProPotsdam показує "
+    "повну <b>Gesamtmiete</b>, Karl Marx — <b>Warmmiete</b> (з комунальними), а на "
+    "Kleinanzeigen ціна взагалі без чіткої мітки. Це різні числа за суттю, тож питання "
+    "теж окремі — так фільтр рахує правильно для кожного порталу.\n\n"
+    "<b>Що таке кнопки «за останню годину/добу» після створення фільтра?</b>\n"
+    "Одразу після створення фільтра бот запам'ятовує вже наявні квартири мовчки, щоб "
+    "не завалити вас усім архівом одразу. Якщо хочете все ж побачити, що зʼявилось "
+    "нещодавно — саме для цього ці дві кнопки.\n\n"
+    "<b>Як змінити або вимкнути фільтр?</b>\n"
+    f"«{BTN_SELF_MANAGE}» у головному меню — там можна поставити фільтр на паузу, "
+    "відредагувати умови або видалити зовсім.\n\n"
+    "<b>Скільки це коштує і як отримати доступ?</b>\n"
+    "10 €/місяць, відкриває адміністратор особисто після запиту через кнопку "
+    "«📩 Запросити доступ».\n\n"
+    "<b>Щось не працює або є питання?</b>\n"
+    "Напишіть про це прямо адміністратору."
+)
+
+
+def show_faq(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]])
+    if edit and update.callback_query:
+        try:
+            update.callback_query.edit_message_text(FAQ_TEXT, parse_mode="HTML", reply_markup=keyboard)
+        except BadRequest as exc:
+            if "Message is not modified" not in str(exc):
+                raise
+    else:
+        update.effective_message.reply_text(FAQ_TEXT, parse_mode="HTML", reply_markup=keyboard)
 
 
 def _admin_keyboard(page: int = 0) -> InlineKeyboardMarkup:
@@ -920,7 +990,9 @@ def _render_menu(user_id: int) -> str:
     lines = [
         "🏠 <b>Моніторинг житла</b>",
         "",
-        "Бот перевіряє Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® та Karl Marx і надсилає нові оголошення за вашими фільтрами.",
+        "Один фільтр працює одразу на <b>8 порталах</b>: Immowelt, ProPotsdam, "
+        "SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® та Karl Marx. "
+        "Нова квартира під ваші умови — і ви одразу отримаєте повідомлення.",
         "",
         "Статус перевірки:",
         *_status_lines(),
@@ -944,6 +1016,7 @@ def _render_menu(user_id: int) -> str:
 def _locked_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📩 Запросити доступ", callback_data="housing:access_request")],
+        [InlineKeyboardButton("❓ Довідка / Часті питання", callback_data="housing:faq")],
         [InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")],
     ])
 
@@ -954,10 +1027,14 @@ def show_menu(update: Update, context: CallbackContext, edit: bool = False) -> N
         # Доступ видавався лише тим, що адмін вручну вбивав Telegram ID, і людині
         # не було чим про нього попросити.
         text = (
-            "🏠 <b>Моніторинг житла</b>\n\n"
-            "Бот стежить за Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® і Karl Marx та надсилає нові оголошення "
-            "за вашими фільтрами.\n\n"
-            "Доступ поки не відкрито. Натисніть кнопку — адміністратор побачить запит."
+            "🏠 <b>Моніторинг житла в Потсдамі</b>\n\n"
+            "Один фільтр — і бот одразу стежить за <b>8 порталами водночас</b>: "
+            "Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, "
+            "locals® та Karl Marx. Щойно десь з'являється квартира під ваші умови — "
+            "миттєве повідомлення в Telegram, замість того щоб перевіряти кожен сайт "
+            "вручну по кілька разів на день.\n\n"
+            "💶 Доступ — <b>10 €/місяць</b>, відкриває адміністратор особисто.\n\n"
+            "Натисніть кнопку нижче — і ми зв'яжемось."
         )
         if edit and update.callback_query:
             update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_locked_keyboard())
@@ -1326,7 +1403,7 @@ def _immowelt_district_text(selected=None) -> str:
     suffix = ", ".join(selected) if selected else "усі райони"
     return (
         "🏙 <b>Райони Immowelt</b>\n\nОберіть райони галочками.\n"
-        f"Поточний вибір: {html.escape(suffix)}"
+        f"Поточний вибір: <b>{html.escape(suffix)}</b>"
     )
 
 
@@ -1371,7 +1448,7 @@ def _preview_text(criteria: Dict[str, object], preview: Dict[str, object]) -> st
 def _preview_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Зберегти фільтр", callback_data="housing:imm_save")],
-        [InlineKeyboardButton("⬅ Назад", callback_data="housing:imm_back")],
+        [InlineKeyboardButton("⬅️ Назад — виправити умови", callback_data="housing:imm_back")],
         [InlineKeyboardButton(BTN_CANCEL, callback_data="housing:imm_cancel")],
     ])
 
@@ -1391,7 +1468,7 @@ def _district_keyboard(selected=None) -> InlineKeyboardMarkup:
 def _district_text(selected=None) -> str:
     selected = selected or []
     suffix = ", ".join(selected) if selected else "усі райони"
-    return f"🏢 <b>Райони ProPotsdam</b>\n\nОберіть райони галочками.\nПоточний вибір: {html.escape(suffix)}"
+    return f"🏢 <b>Райони ProPotsdam</b>\n\nОберіть райони галочками.\nПоточний вибір: <b>{html.escape(suffix)}</b>"
 
 
 
@@ -1415,7 +1492,7 @@ def _sources_text(selected) -> str:
     return (
         "🔎 <b>Новий фільтр</b>\n\nОберіть, де шукати — можна кілька порталів одразу. "
         "Список порталів згодом поповнюватиметься.\n"
-        f"Поточний вибір: {html.escape(names)}"
+        f"Поточний вибір: <b>{html.escape(names)}</b>"
     )
 
 
@@ -1536,8 +1613,9 @@ def show_self_manage(update: Update, context: CallbackContext, edit: bool = Fals
         return
     filters = manageable_filters(user.id)
     text = (
-        "⚙️ <b>Мої фільтри</b>\n\nНатисніть фільтр, щоб увімкнути або призупинити його."
-        if filters else "⚙️ <b>Мої фільтри</b>\n\nУ вас ще немає фільтрів."
+        "⚙️ <b>Мої фільтри</b>\n\nНатисніть фільтр, щоб призупинити/увімкнути, "
+        "а «✏️ Редагувати»/«🗑 Видалити» поруч — щоб змінити умови або прибрати зовсім."
+        if filters else "⚙️ <b>Мої фільтри</b>\n\nУ вас ще немає фільтрів. Натисніть «➕ Додати фільтр» у меню."
     )
     keyboard = _self_manage_keyboard(user.id)
     if edit and update.callback_query:
@@ -1867,7 +1945,7 @@ def start_semmelhaack_edit_flow(update: Update, context: CallbackContext, filter
         "edit_filter_id": filter_id,
     }
     query.answer()
-    query.edit_message_text(SEMM_CRITERIA_BY_KEY[first_key]["prompt"])
+    query.edit_message_text(SEMM_CRITERIA_BY_KEY[first_key]["prompt"], parse_mode="HTML")
 
 
 def _finalize_semmelhaack_filter(message, context: CallbackContext, state: dict) -> None:
@@ -1915,11 +1993,11 @@ def _handle_semmelhaack_flow(update: Update, context: CallbackContext, state: di
         spec = SEMM_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
             update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
             )
             return True
         state[step] = value
@@ -1927,9 +2005,7 @@ def _handle_semmelhaack_flow(update: Update, context: CallbackContext, state: di
         if index < len(SEMM_CRITERIA_KEYS) - 1:
             next_key = SEMM_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            update.message.reply_text(
-                _field_prompt(state, SEMM_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
-            )
+            _reply_field_prompt(update.message, _field_prompt(state, SEMM_CRITERIA_FIELDS, next_key))
             return True
         _finalize_semmelhaack_filter(update.message, context, state)
         return True
@@ -1958,7 +2034,7 @@ def start_schoba_edit_flow(update: Update, context: CallbackContext, filter_id: 
         "edit_filter_id": filter_id,
     }
     query.answer()
-    query.edit_message_text(SCHOBA_CRITERIA_BY_KEY[first_key]["prompt"])
+    query.edit_message_text(SCHOBA_CRITERIA_BY_KEY[first_key]["prompt"], parse_mode="HTML")
 
 
 def _finalize_schoba_filter(message, context: CallbackContext, state: dict) -> None:
@@ -2006,11 +2082,11 @@ def _handle_schoba_flow(update: Update, context: CallbackContext, state: dict, t
         spec = SCHOBA_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
             update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
             )
             return True
         state[step] = value
@@ -2018,9 +2094,7 @@ def _handle_schoba_flow(update: Update, context: CallbackContext, state: dict, t
         if index < len(SCHOBA_CRITERIA_KEYS) - 1:
             next_key = SCHOBA_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            update.message.reply_text(
-                _field_prompt(state, SCHOBA_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
-            )
+            _reply_field_prompt(update.message, _field_prompt(state, SCHOBA_CRITERIA_FIELDS, next_key))
             return True
         _finalize_schoba_filter(update.message, context, state)
         return True
@@ -2049,7 +2123,7 @@ def start_regiomakler_edit_flow(update: Update, context: CallbackContext, filter
         "edit_filter_id": filter_id,
     }
     query.answer()
-    query.edit_message_text(REGIOMAKLER_CRITERIA_BY_KEY[first_key]["prompt"])
+    query.edit_message_text(REGIOMAKLER_CRITERIA_BY_KEY[first_key]["prompt"], parse_mode="HTML")
 
 
 def _finalize_regiomakler_filter(message, context: CallbackContext, state: dict) -> None:
@@ -2097,11 +2171,11 @@ def _handle_regiomakler_flow(update: Update, context: CallbackContext, state: di
         spec = REGIOMAKLER_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
             update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
             )
             return True
         state[step] = value
@@ -2109,9 +2183,7 @@ def _handle_regiomakler_flow(update: Update, context: CallbackContext, state: di
         if index < len(REGIOMAKLER_CRITERIA_KEYS) - 1:
             next_key = REGIOMAKLER_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            update.message.reply_text(
-                _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
-            )
+            _reply_field_prompt(update.message, _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, next_key))
             return True
         _finalize_regiomakler_filter(update.message, context, state)
         return True
@@ -2140,7 +2212,7 @@ def start_kleinanzeigen_edit_flow(update: Update, context: CallbackContext, filt
         "edit_filter_id": filter_id,
     }
     query.answer()
-    query.edit_message_text(KLEINANZEIGEN_CRITERIA_BY_KEY[first_key]["prompt"])
+    query.edit_message_text(KLEINANZEIGEN_CRITERIA_BY_KEY[first_key]["prompt"], parse_mode="HTML")
 
 
 def _finalize_kleinanzeigen_filter(message, context: CallbackContext, state: dict) -> None:
@@ -2188,11 +2260,11 @@ def _handle_kleinanzeigen_flow(update: Update, context: CallbackContext, state: 
         spec = KLEINANZEIGEN_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
             update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
             )
             return True
         state[step] = value
@@ -2200,9 +2272,7 @@ def _handle_kleinanzeigen_flow(update: Update, context: CallbackContext, state: 
         if index < len(KLEINANZEIGEN_CRITERIA_KEYS) - 1:
             next_key = KLEINANZEIGEN_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            update.message.reply_text(
-                _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
-            )
+            _reply_field_prompt(update.message, _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, next_key))
             return True
         _finalize_kleinanzeigen_filter(update.message, context, state)
         return True
@@ -2231,7 +2301,7 @@ def start_locals_edit_flow(update: Update, context: CallbackContext, filter_id: 
         "edit_filter_id": filter_id,
     }
     query.answer()
-    query.edit_message_text(LOCALS_CRITERIA_BY_KEY[first_key]["prompt"])
+    query.edit_message_text(LOCALS_CRITERIA_BY_KEY[first_key]["prompt"], parse_mode="HTML")
 
 
 def _finalize_locals_filter(message, context: CallbackContext, state: dict) -> None:
@@ -2279,11 +2349,11 @@ def _handle_locals_flow(update: Update, context: CallbackContext, state: dict, t
         spec = LOCALS_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
             update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
             )
             return True
         state[step] = value
@@ -2291,9 +2361,7 @@ def _handle_locals_flow(update: Update, context: CallbackContext, state: dict, t
         if index < len(LOCALS_CRITERIA_KEYS) - 1:
             next_key = LOCALS_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            update.message.reply_text(
-                _field_prompt(state, LOCALS_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
-            )
+            _reply_field_prompt(update.message, _field_prompt(state, LOCALS_CRITERIA_FIELDS, next_key))
             return True
         _finalize_locals_filter(update.message, context, state)
         return True
@@ -2322,7 +2390,7 @@ def start_karlmarx_edit_flow(update: Update, context: CallbackContext, filter_id
         "edit_filter_id": filter_id,
     }
     query.answer()
-    query.edit_message_text(KARLMARX_CRITERIA_BY_KEY[first_key]["prompt"])
+    query.edit_message_text(KARLMARX_CRITERIA_BY_KEY[first_key]["prompt"], parse_mode="HTML")
 
 
 def _finalize_karlmarx_filter(message, context: CallbackContext, state: dict) -> None:
@@ -2370,11 +2438,11 @@ def _handle_karlmarx_flow(update: Update, context: CallbackContext, state: dict,
         spec = KARLMARX_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
             update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
             )
             return True
         state[step] = value
@@ -2382,9 +2450,7 @@ def _handle_karlmarx_flow(update: Update, context: CallbackContext, state: dict,
         if index < len(KARLMARX_CRITERIA_KEYS) - 1:
             next_key = KARLMARX_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            update.message.reply_text(
-                _field_prompt(state, KARLMARX_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
-            )
+            _reply_field_prompt(update.message, _field_prompt(state, KARLMARX_CRITERIA_FIELDS, next_key))
             return True
         _finalize_karlmarx_filter(update.message, context, state)
         return True
@@ -2503,7 +2569,8 @@ def _clone_propot_from_immowelt(update: Update, context: CallbackContext) -> Non
     query.edit_message_text(
         "Район, кімнати й площу перенесено з Immowelt-фільтра. Лишилось уточнити оренду — "
         "ProPotsdam рахує її як повну (Gesamtmiete), а Immowelt як холодну (Kaltmiete).\n\n"
-        + PROPOT_CRITERIA_BY_KEY["min_total_rent_eur"]["prompt"]
+        + PROPOT_CRITERIA_BY_KEY["min_total_rent_eur"]["prompt"],
+        parse_mode="HTML",
     )
 
 
@@ -2524,7 +2591,8 @@ def _clone_immowelt_from_propot(update: Update, context: CallbackContext) -> Non
     query.edit_message_text(
         "Район, кімнати й площу перенесено з ProPotsdam-фільтра. Лишилось уточнити оренду — "
         "Immowelt рахує її як холодну (Kaltmiete), а ProPotsdam як повну (Gesamtmiete).\n\n"
-        + IMMOWELT_CRITERIA_BY_KEY["min_price_eur"]["prompt"]
+        + IMMOWELT_CRITERIA_BY_KEY["min_price_eur"]["prompt"],
+        parse_mode="HTML",
     )
 
 
@@ -2597,11 +2665,11 @@ def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict,
         spec = IMMOWELT_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
             update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
             )
             return True
         state[step] = value
@@ -2609,9 +2677,7 @@ def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict,
         if index < len(IMMOWELT_CRITERIA_KEYS) - 1:
             next_key = IMMOWELT_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            update.message.reply_text(
-                _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
-            )
+            _reply_field_prompt(update.message, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, next_key))
             return True
         _show_immowelt_preview(update.message, state)
         return True
@@ -2632,20 +2698,18 @@ def _handle_immowelt_clone_price_step(
     spec = IMMOWELT_CRITERIA_BY_KEY[field]
     value = _parse_single_number(text)
     if value is _INVALID_NUMBER:
-        update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+        update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
         return True
     if step == "clone_price_max" and _violates_sibling_bound(state, field, value):
         update.message.reply_text(
-            "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+            "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
         )
         return True
     state[field] = value
     if step == "clone_price_min":
         state["step"] = "clone_price_max"
         price_fields = [IMMOWELT_CRITERIA_BY_KEY["min_price_eur"], IMMOWELT_CRITERIA_BY_KEY["max_price_eur"]]
-        update.message.reply_text(
-            _field_prompt(state, price_fields, "max_price_eur"), reply_markup=_field_keyboard()
-        )
+        _reply_field_prompt(update.message, _field_prompt(state, price_fields, "max_price_eur"))
         return True
     _show_immowelt_preview(update.message, state)
     return True
@@ -2682,7 +2746,7 @@ def _finish_immowelt_districts(update: Update, context: CallbackContext, all_dis
     first_key = IMMOWELT_CRITERIA_KEYS[0]
     state["step"] = first_key
     query.answer()
-    query.edit_message_text(IMMOWELT_CRITERIA_BY_KEY[first_key]["prompt"], reply_markup=_field_keyboard())
+    _edit_field_prompt(query, IMMOWELT_CRITERIA_BY_KEY[first_key]["prompt"])
 
 
 def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
@@ -2696,11 +2760,11 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
         spec = PROPOT_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
             update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
             )
             return True
         state[step] = value
@@ -2708,9 +2772,7 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
         if index < len(PROPOT_CRITERIA_KEYS) - 1:
             next_key = PROPOT_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            update.message.reply_text(
-                _field_prompt(state, PROPOT_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
-            )
+            _reply_field_prompt(update.message, _field_prompt(state, PROPOT_CRITERIA_FIELDS, next_key))
             return True
         _finalize_propot_filter(update.message, int(update.effective_user.id), context, state)
         return True
@@ -2725,20 +2787,18 @@ def _handle_propot_clone_price_step(
     spec = PROPOT_CRITERIA_BY_KEY[field]
     value = _parse_single_number(text)
     if value is _INVALID_NUMBER:
-        update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+        update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
         return True
     if step == "clone_price_max" and _violates_sibling_bound(state, field, value):
         update.message.reply_text(
-            "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+            "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
         )
         return True
     state[field] = value
     if step == "clone_price_min":
         state["step"] = "clone_price_max"
         rent_fields = [PROPOT_CRITERIA_BY_KEY["min_total_rent_eur"], PROPOT_CRITERIA_BY_KEY["max_total_rent_eur"]]
-        update.message.reply_text(
-            _field_prompt(state, rent_fields, "max_total_rent_eur"), reply_markup=_field_keyboard()
-        )
+        _reply_field_prompt(update.message, _field_prompt(state, rent_fields, "max_total_rent_eur"))
         return True
     _finalize_propot_filter(update.message, int(update.effective_user.id), context, state)
     return True
@@ -2931,7 +2991,7 @@ def _finish_districts(update: Update, context: CallbackContext, all_districts: b
     first_key = PROPOT_CRITERIA_KEYS[0]
     state["step"] = first_key
     query.answer()
-    query.edit_message_text(PROPOT_CRITERIA_BY_KEY[first_key]["prompt"], reply_markup=_field_keyboard())
+    _edit_field_prompt(query, PROPOT_CRITERIA_BY_KEY[first_key]["prompt"])
 
 
 def _toggle_source(update: Update, context: CallbackContext, source_key: str) -> None:
@@ -2966,7 +3026,7 @@ def _multi_district_keyboard(state: dict, selected) -> InlineKeyboardMarkup:
 def _multi_district_text(selected) -> str:
     selected = selected or []
     suffix = ", ".join(selected) if selected else "усі райони"
-    return f"🏙 <b>Райони</b>\n\nОберіть райони галочками.\nПоточний вибір: {html.escape(suffix)}"
+    return f"🏙 <b>Райони</b>\n\nОберіть райони галочками.\nПоточний вибір: <b>{html.escape(suffix)}</b>"
 
 
 def _finish_sources(update: Update, context: CallbackContext) -> None:
@@ -2992,7 +3052,7 @@ def _finish_sources(update: Update, context: CallbackContext) -> None:
     # району тут нема сенсу показувати, він однаково нічого не відфільтрує.
     first_key = SHARED_CRITERIA_KEYS[0]
     state["step"] = first_key
-    query.edit_message_text(SHARED_CRITERIA_BY_KEY[first_key]["prompt"], reply_markup=_field_keyboard())
+    _edit_field_prompt(query, SHARED_CRITERIA_BY_KEY[first_key]["prompt"])
 
 
 def _toggle_multi_district(update: Update, context: CallbackContext, district: str) -> None:
@@ -3023,9 +3083,7 @@ def _finish_multi_districts(update: Update, context: CallbackContext, all_distri
         state["districts_selected"] = []
     state["step"] = SHARED_CRITERIA_KEYS[0]
     query.answer()
-    query.edit_message_text(
-        SHARED_CRITERIA_BY_KEY[SHARED_CRITERIA_KEYS[0]]["prompt"], reply_markup=_field_keyboard()
-    )
+    _edit_field_prompt(query, SHARED_CRITERIA_BY_KEY[SHARED_CRITERIA_KEYS[0]]["prompt"])
 
 
 def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> None:
@@ -3239,9 +3297,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = IMMOWELT_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        query.edit_message_text(
-            _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
-        )
+        _edit_field_prompt(query, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, prev_key))
         return
     if mode == "propotsdam" and step in PROPOT_CRITERIA_KEYS:
         idx = PROPOT_CRITERIA_KEYS.index(step)
@@ -3254,9 +3310,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = PROPOT_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        query.edit_message_text(
-            _field_prompt(state, PROPOT_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
-        )
+        _edit_field_prompt(query, _field_prompt(state, PROPOT_CRITERIA_FIELDS, prev_key))
         return
     if mode == "semmelhaack" and step in SEMM_CRITERIA_KEYS:
         idx = SEMM_CRITERIA_KEYS.index(step)
@@ -3266,9 +3320,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = SEMM_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        query.edit_message_text(
-            _field_prompt(state, SEMM_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
-        )
+        _edit_field_prompt(query, _field_prompt(state, SEMM_CRITERIA_FIELDS, prev_key))
         return
     if mode == "schoba" and step in SCHOBA_CRITERIA_KEYS:
         idx = SCHOBA_CRITERIA_KEYS.index(step)
@@ -3276,9 +3328,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = SCHOBA_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        query.edit_message_text(
-            _field_prompt(state, SCHOBA_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
-        )
+        _edit_field_prompt(query, _field_prompt(state, SCHOBA_CRITERIA_FIELDS, prev_key))
         return
     if mode == "regiomakler" and step in REGIOMAKLER_CRITERIA_KEYS:
         idx = REGIOMAKLER_CRITERIA_KEYS.index(step)
@@ -3286,9 +3336,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = REGIOMAKLER_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        query.edit_message_text(
-            _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
-        )
+        _edit_field_prompt(query, _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, prev_key))
         return
     if mode == "kleinanzeigen" and step in KLEINANZEIGEN_CRITERIA_KEYS:
         idx = KLEINANZEIGEN_CRITERIA_KEYS.index(step)
@@ -3296,9 +3344,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = KLEINANZEIGEN_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        query.edit_message_text(
-            _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
-        )
+        _edit_field_prompt(query, _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, prev_key))
         return
     if mode == "locals" and step in LOCALS_CRITERIA_KEYS:
         idx = LOCALS_CRITERIA_KEYS.index(step)
@@ -3306,9 +3352,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = LOCALS_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        query.edit_message_text(
-            _field_prompt(state, LOCALS_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
-        )
+        _edit_field_prompt(query, _field_prompt(state, LOCALS_CRITERIA_FIELDS, prev_key))
         return
     if mode == "karlmarx" and step in KARLMARX_CRITERIA_KEYS:
         idx = KARLMARX_CRITERIA_KEYS.index(step)
@@ -3316,9 +3360,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = KARLMARX_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        query.edit_message_text(
-            _field_prompt(state, KARLMARX_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
-        )
+        _edit_field_prompt(query, _field_prompt(state, KARLMARX_CRITERIA_FIELDS, prev_key))
         return
     if mode in ("immowelt", "propotsdam") and step in ("clone_price_min", "clone_price_max"):
         # Клон переносить район/кімнати/площу без питань — до них нема куди
@@ -3329,7 +3371,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
                 [IMMOWELT_CRITERIA_BY_KEY["min_price_eur"]] if mode == "immowelt"
                 else [PROPOT_CRITERIA_BY_KEY["min_total_rent_eur"]]
             )
-            query.edit_message_text(_field_prompt(state, fields, fields[0]["key"]))
+            query.edit_message_text(_field_prompt(state, fields, fields[0]["key"]), parse_mode="HTML")
         return
     if mode == "multi":
         if step in SHARED_CRITERIA_KEYS:
@@ -3351,9 +3393,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
                 return
             prev_key = SHARED_CRITERIA_KEYS[idx - 1]
             state["step"] = prev_key
-            query.edit_message_text(
-                _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
-            )
+            _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key))
             return
         if step in PRICE_STEP_PROMPTS:
             price_steps = state.get("_price_steps") or []
@@ -3362,15 +3402,11 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             if idx == 0:
                 prev_key = SHARED_CRITERIA_KEYS[-1]
                 state["step"] = prev_key
-                query.edit_message_text(
-                    _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key), reply_markup=_field_keyboard()
-                )
+                _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key))
                 return
             prev_key = price_steps[idx - 1]
             state["step"] = prev_key
-            query.edit_message_text(
-                _field_prompt(state, price_fields, prev_key), reply_markup=_field_keyboard()
-            )
+            _edit_field_prompt(query, _field_prompt(state, price_fields, prev_key))
             return
         if step == "districts":
             state["step"] = "sources"
@@ -3393,11 +3429,11 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
         spec = SHARED_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"])
+            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
             update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"]
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
             )
             return True
         state[step] = value
@@ -3405,9 +3441,7 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
         if index < len(SHARED_CRITERIA_KEYS) - 1:
             next_key = SHARED_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            update.message.reply_text(
-                _field_prompt(state, SHARED_CRITERIA_FIELDS, next_key), reply_markup=_field_keyboard()
-            )
+            _reply_field_prompt(update.message, _field_prompt(state, SHARED_CRITERIA_FIELDS, next_key))
             return True
         price_steps = _price_steps_for(state.get("sources_selected") or [])
         if not price_steps:
@@ -3416,18 +3450,16 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
         state["_price_steps"] = price_steps
         state["step"] = price_steps[0]
         price_fields = SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_steps]
-        update.message.reply_text(
-            _field_prompt(state, price_fields, price_steps[0]), reply_markup=_field_keyboard()
-        )
+        _reply_field_prompt(update.message, _field_prompt(state, price_fields, price_steps[0]))
         return True
     if step in PRICE_STEP_PROMPTS:
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + PRICE_STEP_PROMPTS[step])
+            update.message.reply_text("Незрозуміле значення.\n\n" + PRICE_STEP_PROMPTS[step], parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
             update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + PRICE_STEP_PROMPTS[step]
+                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + PRICE_STEP_PROMPTS[step], parse_mode="HTML"
             )
             return True
         state[step] = value
@@ -3437,9 +3469,7 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
             next_step = price_steps[idx + 1]
             state["step"] = next_step
             price_fields = SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_steps]
-            update.message.reply_text(
-                _field_prompt(state, price_fields, next_step), reply_markup=_field_keyboard()
-            )
+            _reply_field_prompt(update.message, _field_prompt(state, price_fields, next_step))
             return True
         _finalize_multi_filter(update.message, context, state)
         return True
@@ -3459,6 +3489,9 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:add":
         query.answer()
         start_admin_add_flow(update, context, edit=True)
+    elif query.data == "housing:faq":
+        query.answer()
+        show_faq(update, context, edit=True)
     elif query.data == "housing:access_request":
         request_access(update, context)
     elif query.data.startswith("housing:access_grant:"):

@@ -2099,6 +2099,29 @@ class HousingWizardBackButtonTests(unittest.TestCase):
         callbacks = [b.callback_data for row in kwargs['reply_markup'].inline_keyboard for b in row]
         self.assertIn(housing_monitor.BACK_CALLBACK, callbacks)
 
+    def test_numeric_prompts_are_hand_holding_and_actually_render_as_html(self):
+        """The old one-liner ("Мінімальна кількість кімнат: Або «-», щоб
+        пропустити.") was too easy to skim past — people didn't realize they
+        could just type a number and hit send. The new prompt spells that
+        out and uses <b>/<code> markup, which only renders if the message is
+        actually sent with parse_mode="HTML" (otherwise Telegram shows the
+        literal tags)."""
+        context = SimpleNamespace(user_data={})
+        finish_update = self._cb_update(user_id=544675510)
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            housing_monitor.start_self_add_flow(self._update(''), context)
+            housing_monitor._toggle_source(self._cb_update(user_id=544675510), context, 'schoba')
+            housing_monitor._finish_sources(finish_update, context)
+
+        query = finish_update.callback_query
+        query.edit_message_text.assert_called_once()
+        text = query.edit_message_text.call_args.args[0]
+        kwargs = query.edit_message_text.call_args.kwargs
+        self.assertIn('Напишіть', text)
+        self.assertIn('Надіслати', text)
+        self.assertIn('<b>', text)
+        self.assertEqual(kwargs.get('parse_mode'), 'HTML')
+
     def test_back_from_second_immowelt_field_returns_to_the_first_with_its_value_intact(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'immowelt', 'step': 'max_price_eur', 'user_id': 123456789,
@@ -2346,6 +2369,68 @@ class HousingAccessRequestTests(unittest.TestCase):
             ]
 
         self.assertIn('📩 Запросити доступ', labels)
+
+    def test_locked_menu_also_offers_the_faq(self):
+        """People without access yet should still be able to read what the
+        feature does and how much it costs before requesting it."""
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=False):
+            labels = [
+                button.text
+                for row in housing_monitor._locked_keyboard().inline_keyboard
+                for button in row
+            ]
+
+        self.assertIn('❓ Довідка / Часті питання', labels)
+
+    def test_allowed_menu_offers_the_faq(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            labels = [
+                button.text
+                for row in housing_monitor._menu_keyboard(544675510).inline_keyboard
+                for button in row
+            ]
+
+        self.assertIn('❓ Довідка / Часті питання', labels)
+
+    def test_faq_screen_mentions_the_price_and_returns_to_the_menu(self):
+        query = SimpleNamespace(data='housing:faq', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        housing_monitor.handle_callback(update, context)
+
+        query.answer.assert_called_once()
+        text, kwargs = query.edit_message_text.call_args.args[0], query.edit_message_text.call_args.kwargs
+        self.assertIn('10 €', text)
+        callbacks = [b.callback_data for row in kwargs['reply_markup'].inline_keyboard for b in row]
+        self.assertIn('housing:menu', callbacks)
+
+    def test_locked_screen_explains_the_value_and_the_price(self):
+        context = SimpleNamespace()
+        update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=999),
+            effective_message=SimpleNamespace(reply_text=mock.Mock()),
+            callback_query=None,
+        )
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=False):
+            housing_monitor.show_menu(update, context)
+
+        text = update.effective_message.reply_text.call_args.args[0]
+        self.assertIn('8 порталами', text)
+        self.assertIn('10 €', text)
+
+    def test_district_pickers_bold_the_current_selection(self):
+        # Раніше вибрані райони губилися серед звичайного тексту — людина не
+        # одразу бачила, що вже позначила.
+        self.assertIn('<b>Golm</b>', housing_monitor._immowelt_district_text(['Golm']))
+        self.assertIn('<b>Golm</b>', housing_monitor._district_text(['Golm']))
+        self.assertIn('<b>Golm</b>', housing_monitor._multi_district_text(['Golm']))
+
+    def test_back_button_text_explains_what_it_does(self):
+        callback = housing_monitor._field_keyboard().inline_keyboard[0][0]
+        self.assertEqual(callback.callback_data, housing_monitor.BACK_CALLBACK)
+        self.assertIn('виправити', callback.text)
 
     def test_housing_button_is_visible_without_access(self):
         # Без кнопки людина без доступу не могла навіть попросити про нього.
