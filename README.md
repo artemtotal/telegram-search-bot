@@ -1,28 +1,21 @@
-# Telegram Search Bot — Artem Fork (based on Taosky)
+# Telegram Search Bot
 
-Self-hosted Telegram bot that records messages from enabled chats and provides inline search.  
-This repository is a fork of `Taosky/telegram-search-bot` with an upgraded inline search handler and a deployment setup optimized for SQLite performance on Docker Desktop (Windows/WSL2).
+Self-hosted Telegram bot that records messages from enabled chats and provides inline search.
+Includes an upgraded inline search handler, anonymous Q&A forum tools, e-queue tracking, housing monitor integrations, and a deployment setup optimized for SQLite performance on Docker Desktop (Windows/WSL2).
 
-## Why this fork (vs upstream)
+## Key Search & Performance Features
 
-This fork modifies the message search handler and provides a deployment pattern that is more practical for large, busy chats.
-
-- Reactions-based ranking: results are sorted by `reactions_total` (DESC, NULL treated as 0) and then by message date (DESC).  
-  Upstream sorts only by date.
+- Reactions-based ranking: results are sorted by `reactions_total` (DESC, NULL treated as 0) and then by message date (DESC).
 - Reactions filter in query: supports `r:<N>`, `likes:<N>`, or `reactions>=<N>` to show only messages with at least N reactions.
-- Username-first queries: supports `@username keywords` where `@username` is the first token.  
-  User resolution is performed via `User.username` (case-insensitive `ilike`) rather than full name.
+- Username-first queries: supports `@username keywords` where `@username` is the first token. User resolution is performed via `User.username` (case-insensitive `ilike`) rather than full name.
 - Cleaner result cards: inline result description includes reactions + metadata; the posted content includes message text and a clickable link.
 - Compatibility fallback: if your DB schema does not contain `reactions_total`, the bot automatically falls back to date-only sorting.
-- Performance (SQLite on Windows): the recommended Compose setup stores `/app/config` (including `bot.db`) inside Docker’s Linux filesystem via a named volume, instead of a bind mount to an NTFS path.  
-  For SQLite workloads this is typically **dramatically faster** on Docker Desktop/WSL2 compared to running the database on an NTFS-mounted host directory.
+- Performance (SQLite on Windows): the recommended Compose setup stores `/app/config` (including `bot.db`) inside Docker’s Linux filesystem via a named volume, instead of a bind mount to an NTFS path. For SQLite workloads this is typically **dramatically faster** on Docker Desktop/WSL2 compared to running the database on an NTFS-mounted host directory.
 
-### Important behavioral difference (access control)
+### Access control
 
-Upstream checks whether the inline querying user is a member of each enabled chat (via `get_chat_member`) and filters results accordingly.
-This fork currently searches across all chats where `Chat.enable == 1` and does not run membership checks in bot mode.
-
-If you need upstream-style access filtering, restore the membership check or enforce restrictions via `.config.json` / admin rules.
+The bot searches across all chats where `Chat.enable == 1` and does not run chat membership checks in bot mode.
+If you need access filtering, enforce restrictions via `.config.json` / admin rules or custom chat permission settings.
 
 ## Features
 
@@ -140,8 +133,6 @@ Sorting:
 
 - Advanced usage:  
   https://github.com/artemtotal/telegram-search-bot/blob/master/docs/en/advanced-use.md
-
-
 
 ## Data persistence
 
