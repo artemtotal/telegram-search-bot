@@ -603,6 +603,15 @@ def _ensure_column(table_name: str, column_name: str, column_type: str) -> None:
 
 _ensure_column('propotsdam_filter', 'min_total_rent_eur', 'FLOAT')
 
+# Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword
+# `text_lower LIKE '%word%'` queries per user message, each filtered by
+# from_chat and sorted by date. Without this index SQLite full-scans the
+# whole message table and materializes a temp B-tree for every one of
+# those queries, which under concurrent scheduler load was hanging the
+# whole process (query pipeline and cron jobs share one StaticPool
+# connection) for minutes at a time.
+engine.execute('CREATE INDEX IF NOT EXISTS idx_message_chat_date ON message(from_chat, date)')
+
 
 
 def _migrate_text_lower(retries=5, delay=1):
