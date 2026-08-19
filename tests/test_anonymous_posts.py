@@ -84,6 +84,36 @@ class AnonymousPostValidationTests(unittest.TestCase):
 
         self.assertIn(anonymous_posts.BTN_HOUSING, flattened)
 
+    def test_housing_button_is_shown_even_without_access(self):
+        # The bottom keyboard used to hide this button until access was
+        # granted, leaving it reachable only from the top inline menu.
+        # housing_monitor.show_menu() already renders its own locked
+        # screen (pricing + request-access button) for people without
+        # access, so there's no reason to hide the shortcut too.
+        with mock.patch("user_handlers.anonymous_posts.housing_monitor.is_allowed", return_value=False):
+            keyboard = anonymous_posts.reply_menu_keyboard(user_id=123).to_dict()["keyboard"]
+        flattened = [button["text"] for row in keyboard for button in row]
+
+        self.assertIn(anonymous_posts.BTN_HOUSING, flattened)
+
+    def test_housing_button_opens_the_menu_even_without_access(self):
+        # Same reasoning as the keyboard test above: the text dispatcher
+        # used to gate this on is_allowed() too, so tapping the (now always
+        # visible) button silently fell through to the home screen instead
+        # of housing_monitor's own locked/request-access screen.
+        message = SimpleNamespace(text=anonymous_posts.BTN_HOUSING, chat=SimpleNamespace(type="private"))
+        update = SimpleNamespace(
+            message=message, effective_message=message, callback_query=None,
+            effective_user=SimpleNamespace(id=999),
+        )
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch("user_handlers.anonymous_posts.housing_monitor.is_allowed", return_value=False), \
+             mock.patch("user_handlers.anonymous_posts.housing_monitor.show_menu") as show_menu:
+            anonymous_posts.handle_private_text(update, context)
+
+        show_menu.assert_called_once_with(update, context)
+
     def test_feedback_button_is_shown_to_everyone(self):
         keyboard = anonymous_posts.reply_menu_keyboard(user_id=123).to_dict()["keyboard"]
         flattened = [button["text"] for row in keyboard for button in row]

@@ -66,8 +66,10 @@ def reply_menu_keyboard(user_id=None) -> ReplyKeyboardMarkup:
     rows = [[BTN_HOME, BTN_ANON], [BTN_MY_POSTS]]
     if equeue_monitor.is_allowed(user_id):
         rows[1].append(BTN_EQUEUE)
-    if housing_monitor.is_allowed(user_id):
-        rows.append([BTN_HOUSING])
+    # Shown to everyone, allowed or not: housing_monitor.show_menu() renders
+    # its own locked screen (pricing + "request access") for people without
+    # access yet, same as the top inline menu already does.
+    rows.append([BTN_HOUSING])
     rows.append([BTN_FEEDBACK])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
@@ -402,7 +404,7 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
         if text == BTN_EQUEUE and equeue_monitor.is_allowed(update.effective_user.id if update.effective_user else None):
             equeue_monitor.show_menu(update, context)
             return
-        if text == BTN_HOUSING and housing_monitor.is_allowed(update.effective_user.id if update.effective_user else None):
+        if text == BTN_HOUSING:
             housing_monitor.show_menu(update, context)
             return
         if housing_monitor.handle_private_text(update, context):
