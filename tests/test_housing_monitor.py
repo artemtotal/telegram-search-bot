@@ -2628,24 +2628,24 @@ class HousingAccessExpiryTests(unittest.TestCase):
 
         context.bot.send_message.assert_not_called()
 
-    def test_stop_button_closes_access_and_says_goodbye(self):
+    def test_stop_button_leaves_access_open_until_the_paid_period_actually_ends(self):
+        # Clicking "не продовжувати" must NOT cut the person off early - they
+        # already paid through the expiry date. It only turns off the
+        # question; the actual close happens later via check_access_expiry's
+        # list_expired() pass (see the tests below), exactly as if they'd
+        # never answered the warning at all.
         update = self._query_update('housing:access_stop:777', user_id=777)
         context = SimpleNamespace(bot_data={}, bot=mock.Mock())
 
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
              mock.patch.object(housing_monitor.housing_access_store, 'revoke_access') as revoke, \
-             mock.patch.object(housing_monitor, '_delete_all_filters_for_user', return_value=2) as delete_filters:
+             mock.patch.object(housing_monitor, '_delete_all_filters_for_user') as delete_filters:
             housing_monitor.handle_callback(update, context)
 
-        revoke.assert_called_once_with(777)
-        delete_filters.assert_called_once_with(777)
-        self.assertIn('Дякуємо', update.callback_query.edit_message_text.call_args.args[0])
-        # No duplicate goodbye DM - the edited message above already showed it.
-        goodbye_dms = [
-            call for call in context.bot.send_message.call_args_list
-            if call.kwargs.get('chat_id') == 777
-        ]
-        self.assertEqual(goodbye_dms, [])
+        revoke.assert_not_called()
+        delete_filters.assert_not_called()
+        self.assertIn('автоматично закрито', update.callback_query.edit_message_text.call_args.args[0])
+        context.bot.send_message.assert_not_called()
 
     def test_check_access_expiry_warns_the_user_and_the_admin_once(self):
         expires_at = datetime.utcnow() + timedelta(days=2)

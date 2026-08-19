@@ -1318,17 +1318,16 @@ GOODBYE_TEXT = (
 )
 
 
-def _close_access(bot, user_id: int, notify_admin: bool = True, send_goodbye: bool = True) -> None:
+def _close_access(bot, user_id: int, notify_admin: bool = True) -> None:
     """Revokes access and deletes the person's filters (see
     `_delete_all_filters_for_user` for why deletion, not just deactivation,
     is required to actually stop notifications), then says goodbye."""
     housing_access_store.revoke_access(user_id)
     removed = _delete_all_filters_for_user(user_id)
-    if send_goodbye:
-        try:
-            bot.send_message(chat_id=user_id, text=GOODBYE_TEXT)
-        except Exception:
-            logger.exception("Could not send the goodbye message to user %s", user_id)
+    try:
+        bot.send_message(chat_id=user_id, text=GOODBYE_TEXT)
+    except Exception:
+        logger.exception("Could not send the goodbye message to user %s", user_id)
     if notify_admin and ADMIN_ID:
         try:
             bot.send_message(
@@ -1605,7 +1604,14 @@ def _handle_access_continue(update: Update, context: CallbackContext) -> None:
 
 
 def _handle_access_stop(update: Update, context: CallbackContext) -> None:
-    """The user tapped "❌ Не продовжувати" on the 3-day expiry warning."""
+    """The user tapped "❌ Не продовжувати" on the 3-day expiry warning.
+
+    Access is NOT closed here - it stays open for the remaining days the
+    person already paid for and closes itself automatically on the actual
+    expiry date, same as if they'd never answered the warning at all (see
+    check_access_expiry's list_expired() pass). This just turns off the
+    "do you want to continue" question and confirms what's coming.
+    """
     query = update.callback_query
     user = update.effective_user
     if not query or not user:
@@ -1619,10 +1625,9 @@ def _handle_access_stop(update: Update, context: CallbackContext) -> None:
         query.answer()
         return
     query.answer()
-    query.edit_message_text(GOODBYE_TEXT)
-    # The goodbye was already shown above by editing this message - no need
-    # for _close_access to send it again as a separate DM.
-    _close_access(context.bot, target_id, send_goodbye=False)
+    query.edit_message_text(
+        "Гаразд. Через 3 дні підписку та доступ до моніторингу житла буде автоматично закрито."
+    )
 
 
 def check_access_expiry(context) -> None:
