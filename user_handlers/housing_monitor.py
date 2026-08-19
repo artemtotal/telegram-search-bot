@@ -1148,9 +1148,15 @@ def request_access(update: Update, context: CallbackContext) -> None:
     if not ADMIN_ID:
         query.answer("Адміністратора не налаштовано.", show_alert=True)
         return
-    if context.user_data.get("housing_access_requested"):
-        query.answer("Запит уже надіслано, зачекайте на відповідь.", show_alert=True)
+    # Pending state lives in bot_data (keyed by user id), not user_data:
+    # the admin's grant/deny click runs in the ADMIN's own context, which
+    # can't reach into the requester's separate user_data to clear it there.
+    # That mismatch was why a denied user stayed stuck until the container
+    # restarted and wiped the in-memory user_data store.
+    if context.bot_data.get("housing_access_pending", {}).get(int(user.id)):
+        query.answer("Запит вже надіслано, зачекайте на відповідь.", show_alert=True)
         return
+
     name = _display_name(user)
     try:
         context.bot.send_message(
@@ -1164,13 +1170,14 @@ def request_access(update: Update, context: CallbackContext) -> None:
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("✅ Дозволити", callback_data=f"housing:access_grant:{int(user.id)}"),
                 InlineKeyboardButton("✖ Відмовити", callback_data=f"housing:access_deny:{int(user.id)}"),
+                InlineKeyboardButton("💌 Написати в ЛС", url=f"tg://user?id={int(user.id)}"),
             ]]),
         )
     except Exception:
         logger.exception("Could not deliver housing access request to the admin")
         query.answer("Не вдалося надіслати запит. Спробуйте пізніше.", show_alert=True)
         return
-    context.user_data["housing_access_requested"] = True
+    context.bot_data.setdefault("housing_access_pending", {})[int(user.id)] = True
     context.bot_data.setdefault("housing_access_names", {})[int(user.id)] = name
     query.answer("Запит надіслано.")
     query.edit_message_text(
@@ -1215,7 +1222,11 @@ def _resolve_access_request(update: Update, context: CallbackContext, grant: boo
     except (IndexError, ValueError):
         query.answer("Некоректна команда.", show_alert=True)
         return
-    name = str(context.bot_data.get("housing_access_names", {}).get(target_id, ""))
+    # Clear the pending flag for THIS user so they can submit a new request
+    # after this decision (see the comment in request_access for why this
+    # has to be bot_data, keyed by user id, rather than user_data).
+    context.bot_data.get("housing_access_pending", {}).pop(target_id, None)
+    name = str(context.bot_data.get("housing_access_names", {}).pop(target_id, ""))
     if grant:
         housing_access_store.grant_access(target_id, name)
     verdict = "✅ Доступ надано" if grant else "✖ У доступі відмовлено"

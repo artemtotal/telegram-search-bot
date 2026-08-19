@@ -2463,7 +2463,7 @@ class HousingAccessRequestTests(unittest.TestCase):
 
     def test_second_request_is_not_forwarded_again(self):
         context = SimpleNamespace(
-            user_data={'housing_access_requested': True}, bot_data={}, bot=mock.Mock()
+            user_data={}, bot_data={'housing_access_pending': {777: True}}, bot=mock.Mock()
         )
 
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
@@ -2471,6 +2471,35 @@ class HousingAccessRequestTests(unittest.TestCase):
             housing_monitor.handle_callback(self._update(), context)
 
         context.bot.send_message.assert_not_called()
+
+    def test_denial_clears_the_pending_flag_so_the_user_can_ask_again(self):
+        # Regression: the pending flag used to live in the ADMIN's own
+        # user_data (set via the requester's context, cleared - incorrectly -
+        # via the admin's), so it never actually cleared and the requester
+        # stayed locked out until the container restarted.
+        context = SimpleNamespace(
+            user_data={},
+            bot_data={
+                'housing_access_pending': {777: True},
+                'housing_access_names': {777: 'Іван (@ivan)'},
+            },
+            bot=mock.Mock(),
+        )
+        deny_update = self._update(user_id=312029534, data='housing:access_deny:777')
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'grant_access') as grant:
+            housing_monitor.handle_callback(deny_update, context)
+
+        grant.assert_not_called()
+        self.assertNotIn(777, context.bot_data.get('housing_access_pending', {}))
+
+        context.bot.send_message.reset_mock()
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'is_allowed', return_value=False):
+            housing_monitor.handle_callback(self._update(), context)
+
+        context.bot.send_message.assert_called_once()
 
     def test_admin_approval_grants_access_and_tells_the_user(self):
         context = SimpleNamespace(
