@@ -153,6 +153,10 @@ if karlmarx_monitor.CHECK_ENABLED:
         first=330,
     )
 
+# Housing access subscriptions: daily check for 3-day expiry warnings and
+# auto-closing access once the paid period actually runs out.
+job.run_repeating(housing_monitor.check_access_expiry, interval=86400, first=360)
+
 
 dispatcher.add_handler(msg_ai.handler)
 dispatcher.add_handler(faq_admin.handler)

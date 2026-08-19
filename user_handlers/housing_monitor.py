@@ -1,5 +1,6 @@
 """Private housing monitoring menu backed by local housing receivers."""
 
+import calendar
 import html
 import logging
 import os
@@ -52,6 +53,8 @@ BTN_ADMIN_ACCESS_LIST = "👥 Доступ до моніторингу"
 BTN_CANCEL = "✖ Скасувати"
 BTN_SELF_ADD = "➕ Додати фільтр"
 BTN_SELF_MANAGE = "⚙️ Мої фільтри"
+ACCESS_MONTH_OPTIONS = [1, 3, 6, 12]
+EXPIRY_WARNING_DAYS = 3
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 IMMOWELT_STALE_AFTER = timedelta(minutes=30)
 PROPOTSDAM_STALE_AFTER = timedelta(minutes=45)
@@ -1209,6 +1212,27 @@ def _display_name(user) -> str:
     return name[:120] or str(user.id)
 
 
+def _add_months(dt: datetime, months: int) -> datetime:
+    """Calendar-accurate `dt + N months` (no external dependency needed).
+
+    Clamps to the last day of the target month, so granting on Jan 31 for
+    one month lands on Feb 28/29 instead of raising on an invalid date.
+    """
+    month_index = dt.month - 1 + months
+    year = dt.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
+
+
+def _access_months_keyboard(target_id: int) -> InlineKeyboardMarkup:
+    row = [
+        InlineKeyboardButton(f"{months} міс.", callback_data=f"housing:access_months:{target_id}:{months}")
+        for months in ACCESS_MONTH_OPTIONS
+    ]
+    return InlineKeyboardMarkup([row])
+
+
 def request_access(update: Update, context: CallbackContext) -> None:
     """Надсилає адміну запит на доступ до моніторингу житла."""
     query = update.callback_query
@@ -1259,12 +1283,13 @@ def request_access(update: Update, context: CallbackContext) -> None:
     )
 
 
-def _notify_user_access_granted(bot, user_id: int) -> None:
+def _notify_user_access_granted(bot, user_id: int, expires_at: Optional[datetime] = None) -> None:
+    until = f" до {expires_at.strftime('%d.%m.%Y')}" if expires_at else ""
     try:
         bot.send_message(
             chat_id=user_id,
             text=(
-                "✅ Доступ до моніторингу житла відкрито. Натисніть «🏠 Моніторинг житла», "
+                f"✅ Доступ до моніторингу житла відкрито{until}. Натисніть «🏠 Моніторинг житла», "
                 "щоб додати фільтр."
             ),
         )
@@ -1286,6 +1311,34 @@ def _notify_user_access_revoked(bot, user_id: int) -> None:
         logger.exception("Could not notify user %s about revoked housing access", user_id)
 
 
+GOODBYE_TEXT = (
+    "Дякуємо, що були з нами! 🙏\n\n"
+    "У майбутньому завжди можете написати @artemtotal, якщо моніторинг житла "
+    "знадобиться знову. Сподіваємось, ви вже знайшли житло. 🏡"
+)
+
+
+def _close_access(bot, user_id: int, notify_admin: bool = True, send_goodbye: bool = True) -> None:
+    """Revokes access and deletes the person's filters (see
+    `_delete_all_filters_for_user` for why deletion, not just deactivation,
+    is required to actually stop notifications), then says goodbye."""
+    housing_access_store.revoke_access(user_id)
+    removed = _delete_all_filters_for_user(user_id)
+    if send_goodbye:
+        try:
+            bot.send_message(chat_id=user_id, text=GOODBYE_TEXT)
+        except Exception:
+            logger.exception("Could not send the goodbye message to user %s", user_id)
+    if notify_admin and ADMIN_ID:
+        try:
+            bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"⛔ Доступ користувача {user_id} закрито (фільтрів прибрано: {removed}).",
+            )
+        except Exception:
+            logger.exception("Could not notify admin about closing access for user %s", user_id)
+
+
 def _resolve_access_request(update: Update, context: CallbackContext, grant: bool) -> None:
     query = update.callback_query
     user = update.effective_user
@@ -1296,30 +1349,66 @@ def _resolve_access_request(update: Update, context: CallbackContext, grant: boo
     except (IndexError, ValueError):
         query.answer("Некоректна команда.", show_alert=True)
         return
+    if grant:
+        # Duration is picked on the next step (see _finalize_access_grant) -
+        # the request stays "pending" in bot_data until then.
+        query.answer()
+        name = str(context.bot_data.get("housing_access_names", {}).get(target_id, ""))
+        query.edit_message_text(
+            f"На скільки місяців відкрити доступ?\n\nКористувач: {html.escape(name or str(target_id))}\n"
+            f"Telegram ID: <code>{target_id}</code>",
+            parse_mode="HTML",
+            reply_markup=_access_months_keyboard(target_id),
+        )
+        return
     # Clear the pending flag for THIS user so they can submit a new request
     # after this decision (see the comment in request_access for why this
     # has to be bot_data, keyed by user id, rather than user_data).
     context.bot_data.get("housing_access_pending", {}).pop(target_id, None)
     name = str(context.bot_data.get("housing_access_names", {}).pop(target_id, ""))
-    if grant:
-        housing_access_store.grant_access(target_id, name)
-    verdict = "✅ Доступ надано" if grant else "✖ У доступі відмовлено"
-    query.answer(verdict)
+    query.answer("✖ У доступі відмовлено")
     query.edit_message_text(
-        f"{verdict}\n\nКористувач: {html.escape(name or str(target_id))}\n"
+        f"✖ У доступі відмовлено\n\nКористувач: {html.escape(name or str(target_id))}\n"
         f"Telegram ID: <code>{target_id}</code>",
         parse_mode="HTML",
     )
-    if grant:
-        _notify_user_access_granted(context.bot, target_id)
-    else:
-        try:
-            context.bot.send_message(
-                chat_id=target_id,
-                text="На жаль, доступ до моніторингу житла зараз не відкрито.",
-            )
-        except Exception:
-            logger.exception("Could not notify user %s about the housing access denial", target_id)
+    try:
+        context.bot.send_message(
+            chat_id=target_id,
+            text="На жаль, доступ до моніторингу житла зараз не відкрито.",
+        )
+    except Exception:
+        logger.exception("Could not notify user %s about the housing access denial", target_id)
+
+
+def _finalize_access_grant(update: Update, context: CallbackContext) -> None:
+    """Handles the `housing:access_months:{user_id}:{months}` tap from either
+    a fresh request (_resolve_access_request) or a manual/renewal grant
+    (start_access_add_flow's name step, or the renew shortcut)."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or int(user.id) != ADMIN_ID:
+        return
+    try:
+        parts = query.data.split(":")
+        target_id = int(parts[2])
+        months = int(parts[3])
+    except (IndexError, ValueError):
+        query.answer("Некоректна команда.", show_alert=True)
+        return
+    context.bot_data.get("housing_access_pending", {}).pop(target_id, None)
+    name = str(context.bot_data.get("housing_access_names", {}).pop(target_id, ""))
+    expires_at = _add_months(datetime.utcnow(), months)
+    housing_access_store.grant_access(target_id, name, expires_at=expires_at)
+    expires_str = expires_at.strftime("%d.%m.%Y")
+    query.answer("✅ Доступ надано")
+    query.edit_message_text(
+        f"✅ Доступ надано на {months} міс. (до {expires_str})\n\n"
+        f"Користувач: {html.escape(name or str(target_id))}\n"
+        f"Telegram ID: <code>{target_id}</code>",
+        parse_mode="HTML",
+    )
+    _notify_user_access_granted(context.bot, target_id, expires_at)
 
 
 def start_access_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
@@ -1449,6 +1538,132 @@ def confirm_access_delete(update: Update, context: CallbackContext, target_id: i
     else:
         query.answer("Користувача вже немає в списку.")
     show_access_users(update, context, edit=True)
+
+
+def _start_access_renewal(update: Update, context: CallbackContext) -> None:
+    """Admin-side shortcut from the "user wants to renew" notice - skips
+    retyping the Telegram ID and straight into the months picker."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or int(user.id) != ADMIN_ID:
+        return
+    try:
+        target_id = int(query.data.split(":")[2])
+    except (IndexError, ValueError):
+        query.answer("Некоректна команда.", show_alert=True)
+        return
+    query.answer()
+    existing_name = ""
+    for row in housing_access_store.list_users():
+        if int(row["user_id"]) == target_id:
+            existing_name = str(row.get("display_name") or "")
+            break
+    context.bot_data.setdefault("housing_access_names", {})[target_id] = existing_name
+    query.edit_message_text(
+        f"На скільки місяців продовжити доступ?\n\nКористувач: {html.escape(existing_name or str(target_id))}\n"
+        f"Telegram ID: <code>{target_id}</code>",
+        parse_mode="HTML",
+        reply_markup=_access_months_keyboard(target_id),
+    )
+
+
+def _handle_access_continue(update: Update, context: CallbackContext) -> None:
+    """The user tapped "✅ Продовжити підписку" on the 3-day expiry warning."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user:
+        return
+    try:
+        target_id = int(query.data.split(":")[2])
+    except (IndexError, ValueError):
+        query.answer("Некоректна команда.", show_alert=True)
+        return
+    if int(user.id) != target_id:
+        query.answer()
+        return
+    query.answer("Дякуємо!")
+    query.edit_message_text("Дякуємо! Ми повідомили адміністратора — він зв'яжеться з вами щодо продовження.")
+    if not ADMIN_ID:
+        return
+    name = _display_name(user)
+    context.bot_data.setdefault("housing_access_names", {})[target_id] = name
+    try:
+        context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                "🔄 <b>Користувач хоче продовжити підписку</b>\n\n"
+                f"Користувач: {html.escape(name)}\n"
+                f"Telegram ID: <code>{target_id}</code>"
+            ),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔄 Продовжити зараз", callback_data=f"housing:access_renew:{target_id}"),
+            ]]),
+        )
+    except Exception:
+        logger.exception("Could not notify admin about a renewal request from user %s", target_id)
+
+
+def _handle_access_stop(update: Update, context: CallbackContext) -> None:
+    """The user tapped "❌ Не продовжувати" on the 3-day expiry warning."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user:
+        return
+    try:
+        target_id = int(query.data.split(":")[2])
+    except (IndexError, ValueError):
+        query.answer("Некоректна команда.", show_alert=True)
+        return
+    if int(user.id) != target_id:
+        query.answer()
+        return
+    query.answer()
+    query.edit_message_text(GOODBYE_TEXT)
+    # The goodbye was already shown above by editing this message - no need
+    # for _close_access to send it again as a separate DM.
+    _close_access(context.bot, target_id, send_goodbye=False)
+
+
+def check_access_expiry(context) -> None:
+    """Daily job: warns 3 days before expiry, then auto-closes access once
+    the date actually passes (whether or not anyone answered the warning)."""
+    bot = context.bot
+    for row in housing_access_store.list_expiring_soon(within_days=EXPIRY_WARNING_DAYS):
+        target_id = int(row["user_id"])
+        name = str(row.get("display_name") or "")
+        expires_at = row.get("expires_at")
+        expires_str = expires_at.strftime("%d.%m.%Y") if expires_at else "?"
+        try:
+            bot.send_message(
+                chat_id=target_id,
+                text=(
+                    "⏳ Через 3 дні закінчується ваша підписка на моніторинг житла "
+                    "в Потсдамі. Бажаєте продовжити?"
+                ),
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("✅ Продовжити підписку", callback_data=f"housing:access_continue:{target_id}"),
+                    InlineKeyboardButton("❌ Не продовжувати", callback_data=f"housing:access_stop:{target_id}"),
+                ]]),
+            )
+        except Exception:
+            logger.exception("Could not send the expiry warning to user %s", target_id)
+        if ADMIN_ID:
+            try:
+                bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=(
+                        f"⏳ У користувача {html.escape(name) or target_id} ({target_id}) "
+                        f"через 3 дні закінчується доступ до моніторингу житла (до {expires_str})."
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                logger.exception("Could not notify admin about expiring access for user %s", target_id)
+        housing_access_store.mark_notice_sent(target_id)
+
+    for row in housing_access_store.list_expired():
+        _close_access(bot, int(row["user_id"]))
 
 
 def start_admin_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
@@ -2998,13 +3213,15 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
             if not text:
                 update.message.reply_text("Імʼя не може бути порожнім.")
                 return True
-            housing_access_store.grant_access(access_state["user_id"], text[:120])
-            granted_id = access_state["user_id"]
+            target_id = access_state["user_id"]
+            display_name = text[:120]
             context.user_data.pop("housing_access_admin", None)
-            _notify_user_access_granted(context.bot, granted_id)
+            context.bot_data.setdefault("housing_access_names", {})[target_id] = display_name
             update.message.reply_text(
-                f"✅ Доступ до моніторингу житла надано.\n"
-                f"Користувач: {granted_id}\nІмʼя: {html.escape(text[:120])}"
+                f"На скільки місяців відкрити доступ?\n\nКористувач: {html.escape(display_name)}\n"
+                f"Telegram ID: <code>{target_id}</code>",
+                parse_mode="HTML",
+                reply_markup=_access_months_keyboard(target_id),
             )
             return True
     state = context.user_data.get("housing_admin")
@@ -3595,6 +3812,14 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data.startswith("housing:access_delete:"):
         target_id = int(query.data.split(":")[2])
         start_access_delete_flow(update, context, target_id)
+    elif query.data.startswith("housing:access_months:"):
+        _finalize_access_grant(update, context)
+    elif query.data.startswith("housing:access_renew:"):
+        _start_access_renewal(update, context)
+    elif query.data.startswith("housing:access_continue:"):
+        _handle_access_continue(update, context)
+    elif query.data.startswith("housing:access_stop:"):
+        _handle_access_stop(update, context)
     elif query.data.startswith("housing:recent:"):
         raw_hours = query.data.split(":", 2)[2]
         if raw_hours.isdigit():

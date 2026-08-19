@@ -77,7 +77,7 @@ class HousingAdminFlowTests(unittest.TestCase):
         self.assertIn('👤 Додати доступ користувачу', labels)
         self.assertIn('👥 Доступ до моніторингу', labels)
 
-        context = SimpleNamespace(user_data={}, bot=mock.Mock())
+        context = SimpleNamespace(user_data={}, bot_data={}, bot=mock.Mock())
         update = self._update('', user_id=312029534)
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
             housing_monitor.start_access_add_flow(update, context)
@@ -97,9 +97,30 @@ class HousingAdminFlowTests(unittest.TestCase):
              mock.patch.object(housing_monitor.housing_access_store, 'grant_access') as grant:
             self.assertTrue(housing_monitor.handle_private_text(update, context))
 
-        grant.assert_called_once_with(777, 'Новий користувач')
+        # The name step no longer grants immediately - it asks for a duration
+        # first (see HousingAccessExpiryTests for the months picker itself).
+        grant.assert_not_called()
         self.assertNotIn('housing_access_admin', context.user_data)
-        self.assertIn('Доступ до моніторингу житла надано', update.message.replies[-1][0])
+        months_callbacks = [
+            b.callback_data
+            for row in update.message.replies[-1][1]['reply_markup'].inline_keyboard
+            for b in row
+        ]
+        self.assertIn('housing:access_months:777:1', months_callbacks)
+
+        # Picking a duration is what actually grants access and tells the user.
+        query = SimpleNamespace(
+            data='housing:access_months:777:1', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        finalize_update = SimpleNamespace(
+            callback_query=query, effective_user=SimpleNamespace(id=312029534),
+        )
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'grant_access') as grant:
+            housing_monitor.handle_callback(finalize_update, context)
+
+        grant.assert_called_once()
+        self.assertEqual(grant.call_args.args[:2], (777, 'Новий користувач'))
         # Раніше адмін вручну додавав доступ, а сама людина про це не дізнавалась —
         # бачила відкритий пункт меню лише випадково.
         context.bot.send_message.assert_called_once()
@@ -2501,7 +2522,7 @@ class HousingAccessRequestTests(unittest.TestCase):
 
         context.bot.send_message.assert_called_once()
 
-    def test_admin_approval_grants_access_and_tells_the_user(self):
+    def test_admin_approval_asks_how_many_months_before_granting_anything(self):
         context = SimpleNamespace(
             user_data={}, bot_data={'housing_access_names': {777: 'Іван (@ivan)'}}, bot=mock.Mock()
         )
@@ -2511,8 +2532,40 @@ class HousingAccessRequestTests(unittest.TestCase):
              mock.patch.object(housing_monitor.housing_access_store, 'grant_access') as grant:
             housing_monitor.handle_callback(update, context)
 
-        grant.assert_called_once_with(777, 'Іван (@ivan)')
+        grant.assert_not_called()
+        context.bot.send_message.assert_not_called()
+        months_callbacks = [
+            b.callback_data
+            for row in update.callback_query.edit_message_text.call_args.kwargs['reply_markup'].inline_keyboard
+            for b in row
+        ]
+        self.assertIn('housing:access_months:777:1', months_callbacks)
+        self.assertIn('housing:access_months:777:12', months_callbacks)
+
+    def test_picking_months_grants_access_with_an_expiry_and_tells_the_user(self):
+        context = SimpleNamespace(
+            user_data={}, bot_data={'housing_access_names': {777: 'Іван (@ivan)'}}, bot=mock.Mock()
+        )
+        update = self._update(user_id=312029534, data='housing:access_months:777:3')
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'grant_access') as grant:
+            housing_monitor.handle_callback(update, context)
+
+        grant.assert_called_once()
+        args = grant.call_args.args
+        self.assertEqual(args[0], 777)
+        self.assertEqual(args[1], 'Іван (@ivan)')
+        expires_at = grant.call_args.kwargs['expires_at']
+        # Calendar-accurate months, not a flat 30*N days (see _add_months).
+        self.assertAlmostEqual(
+            expires_at, housing_monitor._add_months(datetime.utcnow(), 3), delta=timedelta(minutes=1),
+        )
         self.assertEqual(context.bot.send_message.call_args.kwargs['chat_id'], 777)
+        # The pending flag and stashed name are for THIS user - a second
+        # grant attempt for someone else must not be blocked by leftovers.
+        self.assertNotIn(777, context.bot_data.get('housing_access_pending', {}))
+        self.assertNotIn(777, context.bot_data.get('housing_access_names', {}))
 
     def test_denial_does_not_grant_anything(self):
         context = SimpleNamespace(user_data={}, bot_data={}, bot=mock.Mock())
@@ -2534,6 +2587,109 @@ class HousingAccessRequestTests(unittest.TestCase):
 
         grant.assert_not_called()
         context.bot.send_message.assert_not_called()
+
+
+class HousingAccessExpiryTests(unittest.TestCase):
+    """На скільки місяців дати доступ, попередження за 3 дні, автозакриття."""
+
+    def _query_update(self, data, user_id):
+        query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_text=mock.Mock())
+        return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(
+            id=user_id, first_name='Іван', last_name='', username='ivan',
+        ))
+
+    def test_add_months_clamps_to_the_end_of_a_shorter_month(self):
+        # Jan 31 + 1 month must not explode trying to build Feb 31.
+        start = datetime(2026, 1, 31, 12, 0)
+        self.assertEqual(housing_monitor._add_months(start, 1), datetime(2026, 2, 28, 12, 0))
+        self.assertEqual(housing_monitor._add_months(start, 12), datetime(2027, 1, 31, 12, 0))
+
+    def test_continue_button_notifies_the_admin_with_a_renew_shortcut(self):
+        update = self._query_update('housing:access_continue:777', user_id=777)
+        context = SimpleNamespace(bot_data={}, bot=mock.Mock())
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            housing_monitor.handle_callback(update, context)
+
+        kwargs = context.bot.send_message.call_args.kwargs
+        self.assertEqual(kwargs['chat_id'], 312029534)
+        self.assertIn('777', kwargs['text'])
+        callbacks = [b.callback_data for row in kwargs['reply_markup'].inline_keyboard for b in row]
+        self.assertIn('housing:access_renew:777', callbacks)
+
+    def test_continue_button_is_a_no_op_for_someone_elses_notice(self):
+        # Buttons are only ever delivered to the person's own chat, but the
+        # handler still shouldn't trust the callback data blindly.
+        update = self._query_update('housing:access_continue:777', user_id=999)
+        context = SimpleNamespace(bot_data={}, bot=mock.Mock())
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            housing_monitor.handle_callback(update, context)
+
+        context.bot.send_message.assert_not_called()
+
+    def test_stop_button_closes_access_and_says_goodbye(self):
+        update = self._query_update('housing:access_stop:777', user_id=777)
+        context = SimpleNamespace(bot_data={}, bot=mock.Mock())
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'revoke_access') as revoke, \
+             mock.patch.object(housing_monitor, '_delete_all_filters_for_user', return_value=2) as delete_filters:
+            housing_monitor.handle_callback(update, context)
+
+        revoke.assert_called_once_with(777)
+        delete_filters.assert_called_once_with(777)
+        self.assertIn('Дякуємо', update.callback_query.edit_message_text.call_args.args[0])
+        # No duplicate goodbye DM - the edited message above already showed it.
+        goodbye_dms = [
+            call for call in context.bot.send_message.call_args_list
+            if call.kwargs.get('chat_id') == 777
+        ]
+        self.assertEqual(goodbye_dms, [])
+
+    def test_check_access_expiry_warns_the_user_and_the_admin_once(self):
+        expires_at = datetime.utcnow() + timedelta(days=2)
+        context = SimpleNamespace(bot=mock.Mock())
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(
+                 housing_monitor.housing_access_store, 'list_expiring_soon',
+                 return_value=[{'user_id': 777, 'display_name': 'Іван', 'expires_at': expires_at}],
+             ), \
+             mock.patch.object(housing_monitor.housing_access_store, 'list_expired', return_value=[]), \
+             mock.patch.object(housing_monitor.housing_access_store, 'mark_notice_sent') as mark_sent:
+            housing_monitor.check_access_expiry(context)
+
+        calls = {call.kwargs['chat_id']: call for call in context.bot.send_message.call_args_list}
+        self.assertIn(777, calls)
+        user_callbacks = [
+            b.callback_data for row in calls[777].kwargs['reply_markup'].inline_keyboard for b in row
+        ]
+        self.assertIn('housing:access_continue:777', user_callbacks)
+        self.assertIn('housing:access_stop:777', user_callbacks)
+        self.assertIn(312029534, calls)
+        mark_sent.assert_called_once_with(777)
+
+    def test_check_access_expiry_closes_access_once_the_date_has_passed(self):
+        context = SimpleNamespace(bot=mock.Mock())
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'list_expiring_soon', return_value=[]), \
+             mock.patch.object(
+                 housing_monitor.housing_access_store, 'list_expired',
+                 return_value=[{'user_id': 888, 'display_name': 'Стара підписка', 'expires_at': datetime.utcnow()}],
+             ), \
+             mock.patch.object(housing_monitor.housing_access_store, 'revoke_access') as revoke, \
+             mock.patch.object(housing_monitor, '_delete_all_filters_for_user', return_value=0):
+            housing_monitor.check_access_expiry(context)
+
+        revoke.assert_called_once_with(888)
+        goodbye_calls = [
+            call for call in context.bot.send_message.call_args_list
+            if call.kwargs.get('chat_id') == 888
+        ]
+        self.assertEqual(len(goodbye_calls), 1)
+        self.assertIn('Дякуємо', goodbye_calls[0].kwargs['text'])
 
 
 if __name__ == '__main__':

@@ -154,6 +154,8 @@ class HousingAccessUser(Base):
     user_id = Column(INTEGER, primary_key=True)
     display_name = Column(TEXT, nullable=False, default='')
     active = Column(BOOLEAN, nullable=False, default=True)
+    expires_at = Column(DATETIME)
+    expiry_notice_sent = Column(BOOLEAN, nullable=False, default=False)
     created_at = Column(DATETIME, nullable=False)
     updated_at = Column(DATETIME, nullable=False)
 
@@ -602,6 +604,8 @@ def _ensure_column(table_name: str, column_name: str, column_type: str) -> None:
 
 
 _ensure_column('propotsdam_filter', 'min_total_rent_eur', 'FLOAT')
+_ensure_column('housing_access_user', 'expires_at', 'DATETIME')
+_ensure_column('housing_access_user', 'expiry_notice_sent', 'BOOLEAN')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword
 # `text_lower LIKE '%word%'` queries per user message, each filtered by
