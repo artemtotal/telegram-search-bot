@@ -1053,7 +1053,7 @@ def show_menu(update: Update, context: CallbackContext, edit: bool = False) -> N
 
 
 def _admin_rows() -> list:
-    """Один плаский перелік фільтрів для посторінкового показу."""
+    """Плаский перелік фільтрів (один запис на фільтр), готовий для групування за user_id."""
     # Раніше сюди йшов `_tasks()`, а зведене завдання браузера не має
     # `filter_id`: `int(None)` валив колбек, і адмінка просто не відкривалась.
     rows = []
@@ -1061,53 +1061,127 @@ def _admin_rows() -> list:
         filter_id = _filter_id(item)
         label = f"#{filter_id}" if filter_id is not None else "#?"
         title = html.escape(str(item.get("title") or "Пошук житла"))
-        suffix = "" if item.get("active") else " · вимкнено"
-        rows.append(f"• {label} · {int(item.get('user_id') or 0)} · {title}{suffix}")
+        if not item.get("active"):
+            title += " · вимкнено"
+        rows.append({"user_id": int(item.get("user_id") or 0), "label": label, "title": title})
     for item in propotsdam_store.list_filters():
-        title = html.escape(str(item.get("title") or "ProPotsdam"))
-        rows.append(f"• P#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+        rows.append({
+            "user_id": int(item.get("user_id")), "label": f"P#{int(item.get('filter_id'))}",
+            "title": html.escape(str(item.get("title") or "ProPotsdam")),
+        })
     for item in semmelhaack_store.list_filters():
-        title = html.escape(str(item.get("title") or "SEMMELHAACK"))
-        rows.append(f"• S#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+        rows.append({
+            "user_id": int(item.get("user_id")), "label": f"S#{int(item.get('filter_id'))}",
+            "title": html.escape(str(item.get("title") or "SEMMELHAACK")),
+        })
     for item in schoba_store.list_filters():
-        title = html.escape(str(item.get("title") or "SCHOBA"))
-        rows.append(f"• C#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+        rows.append({
+            "user_id": int(item.get("user_id")), "label": f"C#{int(item.get('filter_id'))}",
+            "title": html.escape(str(item.get("title") or "SCHOBA")),
+        })
     for item in regiomakler_store.list_filters():
-        title = html.escape(str(item.get("title") or "ImmoTeam/alpha"))
-        rows.append(f"• R#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+        rows.append({
+            "user_id": int(item.get("user_id")), "label": f"R#{int(item.get('filter_id'))}",
+            "title": html.escape(str(item.get("title") or "ImmoTeam/alpha")),
+        })
     for item in kleinanzeigen_store.list_filters():
-        title = html.escape(str(item.get("title") or "Kleinanzeigen"))
-        rows.append(f"• K#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+        rows.append({
+            "user_id": int(item.get("user_id")), "label": f"K#{int(item.get('filter_id'))}",
+            "title": html.escape(str(item.get("title") or "Kleinanzeigen")),
+        })
     for item in locals_store.list_filters():
-        title = html.escape(str(item.get("title") or "locals®"))
-        rows.append(f"• L#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+        rows.append({
+            "user_id": int(item.get("user_id")), "label": f"L#{int(item.get('filter_id'))}",
+            "title": html.escape(str(item.get("title") or "locals®")),
+        })
     for item in karlmarx_store.list_filters():
-        title = html.escape(str(item.get("title") or "Karl Marx"))
-        rows.append(f"• M#{int(item.get('filter_id'))} · {int(item.get('user_id'))} · {title}")
+        rows.append({
+            "user_id": int(item.get("user_id")), "label": f"M#{int(item.get('filter_id'))}",
+            "title": html.escape(str(item.get("title") or "Karl Marx")),
+        })
     return rows
 
 
-def _render_admin(page: int = 0) -> str:
-    """Показує сторінку переліку фільтрів.
+def _group_admin_rows(rows: list) -> list:
+    """Групує плаский перелік фільтрів за user_id, зберігаючи порядок першої появи."""
+    groups: Dict[int, list] = {}
+    order: list = []
+    for row in rows:
+        uid = row["user_id"]
+        if uid not in groups:
+            groups[uid] = []
+            order.append(uid)
+        groups[uid].append(row)
+    return [(uid, groups[uid]) for uid in order]
 
-    Перелік друкувався цілком, а Telegram ріже повідомлення на 4096 символах:
-    приблизно з вісімдесятого фільтра адмінка перестала б відкриватися зовсім.
+
+def _paginate_admin_groups(groups: list, page_size: int = ADMIN_PAGE_SIZE) -> list:
+    """Пакує групи по сторінках, ніколи не розриваючи фільтри одного користувача навпіл."""
+    pages: list = []
+    current: list = []
+    current_size = 0
+    for uid, items in groups:
+        if current and current_size + len(items) > page_size:
+            pages.append(current)
+            current = []
+            current_size = 0
+        current.append((uid, items))
+        current_size += len(items)
+    if current:
+        pages.append(current)
+    return pages or [[]]
+
+
+def _admin_group_header(user_id: int, names: Dict[int, str]) -> str:
+    name = names.get(user_id)
+    if user_id == ADMIN_ID:
+        label = f"{user_id} · адмін"
+    elif name:
+        label = f"{user_id} · {html.escape(name)}"
+    else:
+        label = str(user_id)
+    return f"👤 <b>{label}</b>"
+
+
+def _render_admin(page: int = 0) -> str:
+    """Показує сторінку переліку фільтрів, згрупованих за користувачем.
+
+    Раніше перелік друкувався одним плоским списком без прив'язки фільтрів
+    один до одного — коли в людини їх набиралось вісім упереміш із чужими,
+    розібратись, що кому належить, було майже неможливо. Групування за
+    user_id це вирішує; пагінація й далі потрібна — Telegram усе одно ріже
+    повідомлення на 4096 символах.
     """
     rows = _admin_rows()
-    pages = max(1, (len(rows) + ADMIN_PAGE_SIZE - 1) // ADMIN_PAGE_SIZE)
-    page = max(0, min(int(page), pages - 1))
     lines = ["⚙️ <b>Адмінка житла</b>", ""]
     if not rows:
         lines.append("Фільтрів поки немає.")
         return "\n".join(lines)
-    lines.append(f"Усього фільтрів: {len(rows)} · сторінка {page + 1} з {pages}")
+    groups = _group_admin_rows(rows)
+    pages = _paginate_admin_groups(groups)
+    total_pages = max(1, len(pages))
+    page = max(0, min(int(page), total_pages - 1))
+    names = {
+        int(u["user_id"]): str(u["display_name"])
+        for u in housing_access_store.list_users()
+        if u.get("display_name")
+    }
+    lines.append(
+        f"Усього фільтрів: {len(rows)} · користувачів: {len(groups)} · "
+        f"сторінка {page + 1} з {total_pages}"
+    )
     lines.append("")
-    lines.extend(rows[page * ADMIN_PAGE_SIZE:(page + 1) * ADMIN_PAGE_SIZE])
-    return "\n".join(lines)
+    for uid, items in pages[page]:
+        lines.append(f"{_admin_group_header(uid, names)} · фільтрів: {len(items)}")
+        for item in items:
+            lines.append(f"   • {item['label']} · {item['title']}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
 
 
 def _admin_page_count() -> int:
-    return max(1, (len(_admin_rows()) + ADMIN_PAGE_SIZE - 1) // ADMIN_PAGE_SIZE)
+    groups = _group_admin_rows(_admin_rows())
+    return max(1, len(_paginate_admin_groups(groups)))
 
 
 def show_admin(update: Update, context: CallbackContext, edit: bool = False, page: int = 0) -> None:
