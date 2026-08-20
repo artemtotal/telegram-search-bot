@@ -1341,6 +1341,28 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
         )
         sync.assert_called_once()
 
+    def test_creating_two_sources_at_once_sends_the_first_filter_congrats_only_once(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['immowelt', 'propotsdam'],
+            'districts_selected': ['Waldstadt I', 'Golm'],
+        }}, bot_data={}, bot=mock.Mock())
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 11}), \
+             mock.patch('user_handlers.housing_monitor.propotsdam_store.create_filter', return_value=22), \
+             mock.patch.object(housing_monitor, '_sync_propot_filters'):
+            for text in ['2', '-', '-', '-', '800', '1200', '900', '1400']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        congrats_calls = [
+            call for call in context.bot.send_message.call_args_list
+            if 'молодець' in call.kwargs.get('text', '')
+        ]
+        self.assertEqual(len(congrats_calls), 1)
+        self.assertEqual(congrats_calls[0].kwargs['chat_id'], 544675510)
+
     def test_only_propotsdam_selected_skips_immowelt_entirely(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
@@ -2691,6 +2713,57 @@ class HousingAccessExpiryTests(unittest.TestCase):
         self.assertEqual(len(goodbye_calls), 1)
         self.assertIn('Дякуємо', goodbye_calls[0].kwargs['text'])
 
+
+class HousingFirstFilterCongratsTests(unittest.TestCase):
+    """Одноразове «ви впорались, молодець» після створення фільтра."""
+
+    def _state(self, user_id=544675510):
+        return {
+            'user_id': user_id, 'min_rooms': None, 'max_rooms': None,
+            'min_area_m2': None, 'max_area_m2': None,
+            'min_price_eur': None, 'max_price_eur': 800,
+        }
+
+    def _congrats_calls(self, bot):
+        return [
+            call for call in bot.send_message.call_args_list
+            if 'молодець' in call.kwargs.get('text', '')
+        ]
+
+    def test_first_filter_sends_the_congrats_message(self):
+        message = FakeMessage(text='', user_id=544675510)
+        context = SimpleNamespace(user_data={}, bot_data={}, bot=mock.Mock())
+
+        with mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter', return_value=1):
+            housing_monitor._finalize_semmelhaack_filter(message, context, self._state())
+
+        calls = self._congrats_calls(context.bot)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].kwargs['chat_id'], 544675510)
+
+    def test_a_second_filter_for_the_same_user_does_not_repeat_it(self):
+        message = FakeMessage(text='', user_id=544675510)
+        context = SimpleNamespace(user_data={}, bot_data={}, bot=mock.Mock())
+
+        with mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter', return_value=1):
+            housing_monitor._finalize_semmelhaack_filter(message, context, self._state())
+        context.bot.send_message.reset_mock()
+
+        with mock.patch('user_handlers.housing_monitor.schoba_store.create_filter', return_value=2):
+            housing_monitor._finalize_schoba_filter(message, context, self._state())
+
+        self.assertEqual(self._congrats_calls(context.bot), [])
+
+    def test_editing_a_filter_does_not_trigger_it(self):
+        message = FakeMessage(text='', user_id=544675510)
+        context = SimpleNamespace(user_data={}, bot_data={}, bot=mock.Mock())
+        state = self._state()
+        state['edit_filter_id'] = 7
+
+        with mock.patch('user_handlers.housing_monitor.semmelhaack_store.update_filter', return_value=True):
+            housing_monitor._finalize_semmelhaack_filter(message, context, state)
+
+        self.assertEqual(self._congrats_calls(context.bot), [])
 
 if __name__ == '__main__':
     unittest.main()

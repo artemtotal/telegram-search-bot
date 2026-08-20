@@ -550,6 +550,45 @@ def _offer_recent_matches(context: CallbackContext, created) -> None:
     context.user_data["recent_offer_filters"] = list(created)
 
 
+FIRST_FILTER_CONGRATS_TEXT = (
+    "🎉 Ви впорались, молодець!\n\n"
+    "Тепер усю рутину ми візьмемо на себе. Вам залишилось тільки чекати, "
+    "а ми будемо шукати квартири за вашими параметрами і, щойно знайдемо — "
+    "одразу пришлемо сюди. Терпіння! 🍀"
+)
+
+
+def _maybe_send_first_filter_congrats(context: CallbackContext, user_id: Optional[int]) -> None:
+    """One-time encouragement the first time someone creates a filter.
+
+    Tracked in bot_data rather than by asking "how many filters does this
+    person already have" (user_filters(), which goes through
+    _all_immowelt_filters()/_request()) - that extra call on every single
+    creation would collide with the exact call-count assertions the
+    filter-creation tests already make on those same mocks. bot_data
+    resets on a container restart, so in theory someone could see this
+    message again if they add a new filter shortly after one - a harmless
+    repeat for an encouraging one-liner, not worth that collision.
+    """
+    if not user_id:
+        return
+    bot_data = getattr(context, "bot_data", None)
+    if bot_data is None:
+        return
+    uid = int(user_id)
+    seen = bot_data.setdefault("housing_first_filter_congratulated", set())
+    if uid in seen:
+        return
+    seen.add(uid)
+    bot = getattr(context, "bot", None)
+    if bot is None:
+        return
+    try:
+        bot.send_message(chat_id=uid, text=FIRST_FILTER_CONGRATS_TEXT)
+    except Exception:
+        logger.exception("Could not send the first-filter congrats message to user %s", user_id)
+
+
 def _clear_recent_offer_keyboard(query) -> None:
     try:
         query.edit_message_reply_markup(reply_markup=None)
@@ -2286,6 +2325,7 @@ def _finalize_semmelhaack_filter(message, context: CallbackContext, state: dict)
     heading = "Фільтр SEMMELHAACK оновлено" if edit_filter_id else "Фільтр SEMMELHAACK додано"
     if not edit_filter_id:
         _offer_recent_matches(context, [("semmelhaack", filter_id)])
+        _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
         f"✅ {heading}.\nID: S{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
         reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
@@ -2375,6 +2415,7 @@ def _finalize_schoba_filter(message, context: CallbackContext, state: dict) -> N
     heading = "Фільтр SCHOBA оновлено" if edit_filter_id else "Фільтр SCHOBA додано"
     if not edit_filter_id:
         _offer_recent_matches(context, [("schoba", filter_id)])
+        _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
         f"✅ {heading}.\nID: C{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
         reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
@@ -2464,6 +2505,7 @@ def _finalize_regiomakler_filter(message, context: CallbackContext, state: dict)
     heading = "Фільтр ImmoTeam/alpha оновлено" if edit_filter_id else "Фільтр ImmoTeam/alpha додано"
     if not edit_filter_id:
         _offer_recent_matches(context, [("regiomakler", filter_id)])
+        _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
         f"✅ {heading}.\nID: R{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
         reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
@@ -2553,6 +2595,7 @@ def _finalize_kleinanzeigen_filter(message, context: CallbackContext, state: dic
     heading = "Фільтр Kleinanzeigen оновлено" if edit_filter_id else "Фільтр Kleinanzeigen додано"
     if not edit_filter_id:
         _offer_recent_matches(context, [("kleinanzeigen", filter_id)])
+        _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
         f"✅ {heading}.\nID: K{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
         reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
@@ -2642,6 +2685,7 @@ def _finalize_locals_filter(message, context: CallbackContext, state: dict) -> N
     heading = "Фільтр locals® оновлено" if edit_filter_id else "Фільтр locals® додано"
     if not edit_filter_id:
         _offer_recent_matches(context, [("locals", filter_id)])
+        _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
         f"✅ {heading}.\nID: L{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
         reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
@@ -2731,6 +2775,7 @@ def _finalize_karlmarx_filter(message, context: CallbackContext, state: dict) ->
     heading = "Фільтр Karl Marx оновлено" if edit_filter_id else "Фільтр Karl Marx додано"
     if not edit_filter_id:
         _offer_recent_matches(context, [("karlmarx", filter_id)])
+        _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
         f"✅ {heading}.\nID: M{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
         reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
@@ -2943,6 +2988,7 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
     )
     rows = [[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]
     if not edit_filter_id:
+        _maybe_send_first_filter_congrats(context, state.get("user_id"))
         suggestion = _cross_source_suggestion(
             context, int(update.effective_user.id), int(state["user_id"]), "immowelt",
             {**criteria, "title": state["title"]},
@@ -3164,6 +3210,7 @@ def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, 
         },
     )
     _offer_recent_matches(context, [("propotsdam", filter_id)])
+    _maybe_send_first_filter_congrats(context, state["user_id"])
     rows = list(_recent_offer_keyboard().inline_keyboard)
     if suggestion is not None:
         text_out += "\n\n💡 У вас ще немає фільтра Immowelt — можна завести такий самий."
@@ -3574,6 +3621,8 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
     if created:
         _offer_recent_matches(context, created)
         rows = list(_recent_offer_keyboard().inline_keyboard) + rows
+    if any(not error for _source, _filter_id, _criteria, error in results):
+        _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
         "\n".join(lines), parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(rows),
@@ -3984,6 +4033,7 @@ def add_filter(update: Update, context: CallbackContext) -> None:
         update.message.reply_text(f"⚠️ Не вдалося додати фільтр: {exc}")
         return
     update.message.reply_text(f"✅ Фільтр житла додано.\nID: {payload.get('filter_id')}\nКористувач: {user_id}\nНазва: {title}")
+    _maybe_send_first_filter_congrats(context, user_id)
 
 
 def list_filters(update: Update, context: CallbackContext) -> None:
