@@ -36,7 +36,18 @@ def parse_decimal(value: Any) -> float | None:
 
 
 def _stable_key(payload: dict[str, Any]) -> str:
-    explicit = clean_text(payload.get("id") or payload.get("listing_key") or payload.get("detail_url"))
+    # <originalId> from the easysquare XML feed is the real, stable object
+    # id. <id> looked like it should work instead, but it turned out to be
+    # re-generated on every poll for the exact same listing (same title,
+    # address, price, images, originalId — just a different <id> each
+    # time), which meant every scan treated the listing as brand new and
+    # re-sent the "new apartment" notification for it forever. Prefer
+    # originalId whenever the feed provides it; fall back to <id> for the
+    # DOM-scrape/manual paths that never had an originalId to begin with.
+    extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}
+    explicit = clean_text(
+        extra.get("originalId") or payload.get("id") or payload.get("listing_key") or payload.get("detail_url")
+    )
     if explicit:
         return explicit
     basis = "|".join(clean_text(payload.get(name)).lower() for name in (

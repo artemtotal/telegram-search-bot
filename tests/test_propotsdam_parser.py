@@ -55,7 +55,10 @@ class ProPotsdamParserTests(unittest.TestCase):
         listings = propotsdam_parser.parse_boxlist_xml(xml)
 
         self.assertEqual(len(listings), 1)
-        self.assertEqual(listings[0]['listing_key'], 'ABC')
+        # Not 'ABC' (the <id>) - see the _stable_key docstring-comment for
+        # why: <id> rotates on every poll for the same real listing, <originalId>
+        # doesn't, so the dedup key has to be built from the latter.
+        self.assertEqual(listings[0]['listing_key'], 'ORIG')
         self.assertEqual(listings[0]['district'], 'Drewitz')
         self.assertEqual(listings[0]['rooms'], 3.0)
         self.assertEqual(listings[0]['area_m2'], 61.0)
@@ -63,6 +66,45 @@ class ProPotsdamParserTests(unittest.TestCase):
         self.assertIn('IMG1', listings[0]['image_url'])
         self.assertEqual(listings[0]['extra']['originalId'], 'ORIG')
         self.assertTrue(listings[0]['listing_key'])
+
+    def test_the_same_listing_keeps_one_key_even_when_id_rotates(self):
+        """Reproduces the real duplicate-notification bug: ProPotsdam sends
+        a different <id> for the identical listing on every poll, while
+        <originalId>/everything else stays put."""
+
+        def xml_with_id(rotating_id: str) -> str:
+            return f'''<?xml version="1.0" encoding="utf-8"?>
+            <boxlist xmlns="http://www.openpromos.com/OPPC/XMLForms">
+              <section title="Immobilien">
+                <box boxid="ESQ_VM_REOBJ_ALL" title="Immobilien">
+                  <head>
+                    <id>{rotating_id}</id>
+                    <originalId>872F068F-FE11-BB52-C157-C3145E5825C8</originalId>
+                    <address city="Potsdam" postcode="14478" street="Saarmunder Str. 45"/>
+                    <title>Helle 3-Raum-Wohnung!</title>
+                    <details>
+                      <row title="Stadtteil">Waldstadt 2</row>
+                      <row title="Zimmer">3</row>
+                      <row title="Wohnfläche">54 m²</row>
+                      <row title="Gesamtmiete">650,40 EUR</row>
+                      <row title="Verfügbarkeit">ab sofort</row>
+                    </details>
+                    <image resourceId="A252DE53"/>
+                  </head>
+                </box>
+              </section>
+            </boxlist>'''
+
+        keys = {
+            propotsdam_parser.parse_boxlist_xml(xml_with_id(rotating_id))[0]['listing_key']
+            for rotating_id in (
+                '1D903B03-CA4F-9D7D-2F6B-4DD721ED0F16',
+                '0CA15BD0-02A5-D0A6-1685-72745683CD2E',
+                '1450418F-660A-B5A7-6AAC-9582BA8E26DB',
+                'B4563664-482D-223C-2845-24069DAA5C57',
+            )
+        }
+        self.assertEqual(keys, {'872F068F-FE11-BB52-C157-C3145E5825C8'})
 
     def test_format_all_listing_data_keeps_unknown_extra_fields(self):
         listing = propotsdam_parser.normalize_listing({
