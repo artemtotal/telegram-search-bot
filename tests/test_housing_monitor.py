@@ -3078,5 +3078,72 @@ class HousingLanguageSwitcherTests(unittest.TestCase):
         self.assertEqual(housing_monitor.user_settings_store.get_language(777), 'uk')
 
 
+class HousingTranslationSmokeTests(unittest.TestCase):
+    """Not a full duplicate of every uk-language assertion above - just enough
+    per converted screen to prove lang actually reaches the rendered text."""
+
+    def test_relative_time_in_russian_and_german(self):
+        base = datetime(2026, 8, 13, 12, 0, 0, tzinfo=housing_monitor.BERLIN_TZ)
+        with mock.patch.object(housing_monitor, '_now_berlin', return_value=base):
+            self.assertEqual(
+                housing_monitor._relative_time((base - timedelta(minutes=5)).isoformat(), lang='ru'),
+                '5 мин назад',
+            )
+            self.assertEqual(
+                housing_monitor._relative_time((base - timedelta(minutes=5)).isoformat(), lang='de'),
+                'vor 5 Min.',
+            )
+
+    def test_status_lines_in_russian_and_german(self):
+        with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.propotsdam_store, 'latest_status', return_value=None), \
+             mock.patch.object(housing_monitor.semmelhaack_store, 'latest_status', return_value=None), \
+             mock.patch.object(housing_monitor.schoba_store, 'latest_status', return_value=None), \
+             mock.patch.object(housing_monitor.regiomakler_store, 'latest_status', return_value=None), \
+             mock.patch.object(housing_monitor.kleinanzeigen_store, 'latest_status', return_value=None), \
+             mock.patch.object(housing_monitor.locals_store, 'latest_status', return_value=None), \
+             mock.patch.object(housing_monitor.karlmarx_store, 'latest_status', return_value=None), \
+             mock.patch.object(housing_monitor.coop_watchdog_store, 'get_status', return_value={}):
+            ru_lines = '\n'.join(housing_monitor._status_lines(lang='ru'))
+            de_lines = '\n'.join(housing_monitor._status_lines(lang='de'))
+
+        self.assertIn('проверка ещё не запускалась', ru_lines)
+        self.assertIn('noch nicht geprüft', de_lines)
+
+    def test_menu_screen_in_russian_and_german(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, '_status_lines', return_value=[]), \
+             mock.patch.object(housing_monitor, 'user_filters', return_value=[]):
+            ru_text = housing_monitor._render_menu(544675510, lang='ru')
+            de_text = housing_monitor._render_menu(544675510, lang='de')
+            ru_labels = [b.text for row in housing_monitor._menu_keyboard(544675510, lang='ru').inline_keyboard for b in row]
+            de_labels = [b.text for row in housing_monitor._menu_keyboard(544675510, lang='de').inline_keyboard for b in row]
+
+        self.assertIn('Мониторинг жилья', ru_text)
+        self.assertIn('Wohnungs-Monitoring', de_text)
+        self.assertIn('➕ Добавить фильтр', ru_labels)
+        self.assertIn('➕ Filter hinzufügen', de_labels)
+
+    def test_locked_screen_in_russian_and_german(self):
+        ru_text = housing_monitor.i18n.t('housing.locked.text', 'ru')
+        de_text = housing_monitor.i18n.t('housing.locked.text', 'de')
+
+        self.assertIn('Мониторинг жилья в Потсдаме', ru_text)
+        self.assertIn('Wohnungs-Monitoring in Potsdam', de_text)
+
+    def test_coops_screen_in_russian_and_german(self):
+        with mock.patch.object(housing_monitor, '_coop_subscription_state', return_value={}):
+            ru_text = housing_monitor._coops_text(544675510, lang='ru')
+            de_text = housing_monitor._coops_text(544675510, lang='de')
+            ru_labels = [
+                b.text for row in housing_monitor._coops_keyboard(544675510, lang='ru').inline_keyboard for b in row
+            ]
+
+        self.assertIn('Кооперативы (Gewoba/WBG)', ru_text)
+        self.assertIn('Genossenschaften (Gewoba/WBG)', de_text)
+        self.assertIn('⬅ К мониторингу', ru_labels)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,2 +1,47 @@
 {
+  "housing.time.never": "ще не було",
+  "housing.time.just_now": "щойно",
+  "housing.time.minutes_ago": "{n} хв тому",
+  "housing.time.hours_ago": "{n} год тому",
+  "housing.time.yesterday_at": "учора о {time}",
+
+  "housing.status.immowelt_no_filters": "⚪ Immowelt: активних фільтрів немає.",
+  "housing.status.never_checked": "🔴 {name}: перевірка ще не запускалась.",
+  "housing.status.immowelt_checking": "{light} Immowelt: перевірка {relative}, збережено: {count}.",
+  "housing.status.error": "Остання помилка {name}: {error}",
+  "housing.status.immowelt_skipped": "Перевірку Immowelt пропущено: {reason}",
+  "housing.status.propotsdam_checking": "{light} ProPotsdam: перевірка {relative}, статус {status}, квартир: {count}.",
+  "housing.status.checking": "{light} {name}: перевірка {relative}, квартир: {count}.",
+  "housing.status.checking_potsdam_count": "{light} {name}: перевірка {relative}, квартир у Потсдамі: {count}.",
+  "housing.status.coop_checking": "{light} {name}: перевірка {relative}, {state}.",
+  "housing.status.coop.available": "можливо є вільне житло!",
+  "housing.status.coop.empty": "вільного житла немає",
+  "housing.status.coop.first_check": "перевіряється вперше",
+
+  "housing.menu.title": "🏠 <b>Моніторинг житла</b>",
+  "housing.menu.intro": "Один фільтр працює одразу на <b>8 порталах</b>: Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® та Karl Marx. Нова квартира під ваші умови — і ви одразу отримаєте повідомлення.",
+  "housing.menu.coops_intro": "Плюс 3 житлових кооперативи (Gewoba, WBG 1903, WBG «Daheim») — там поки немає розбору за кімнатами/ціною, просто сповіщення, щойно на їхній сторінці зникає «вільного житла немає». Підписатись — кнопка «{btn}» нижче.",
+  "housing.menu.status_header": "Статус перевірки:",
+  "housing.menu.no_filters": "Для вашого Telegram ID поки немає активних фільтрів.",
+  "housing.menu.your_filters": "Ваші фільтри:",
+  "housing.filter.default_title": "Пошук житла",
+
+  "housing.btn.request_access": "📩 Запросити доступ",
+  "housing.btn.faq": "❓ Довідка / Часті питання",
+  "housing.btn.back_home": "⬅ Головне меню",
+  "housing.locked.text": "🏠 <b>Моніторинг житла в Потсдамі</b>\n\nОдин фільтр — і бот одразу стежить за <b>8 порталами водночас</b>: Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® та Karl Marx. Щойно десь з'являється квартира під ваші умови — миттєве повідомлення в Telegram, замість того щоб перевіряти кожен сайт вручну по кілька разів на день.\n\n💶 Доступ — <b>10 €/місяць</b>, відкриває адміністратор особисто.\n\nНатисніть кнопку нижче — і ми зв'яжемось.",
+
+  "housing.btn.refresh_status": "🔄 Оновити статус",
+  "housing.btn.admin": "⚙️ Адмінка житла",
+  "housing.btn.current_matches": "🔍 Квартири, що підходять",
+  "housing.btn.coops": "🏘 Кооперативи (Gewoba/WBG)",
+  "housing.btn.notify_settings": "🔔 Сповіщення",
+  "housing.btn.self_add": "➕ Додати фільтр",
+  "housing.btn.self_manage": "⚙️ Мої фільтри",
+  "housing.btn.back_to_monitor": "⬅ До моніторингу",
+
+  "housing.coops.title": "🏘 <b>Кооперативи (Gewoba/WBG)</b>\n",
+  "housing.coops.explain": "Ці три сайти не показують окремі оголошення — лише напис «вільного житла немає» на сторінці. Тому тут немає умов за кімнатами чи ціною: просто вмикаєте потрібний кооператив, і щойно напис зникне — ми напишемо вам сюди, а деталі доведеться подивитись на сайті самим.\n",
+  "housing.coops.on": "✅ стежимо",
+  "housing.coops.off": "⬜ вимкнено"
 }

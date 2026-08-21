@@ -874,24 +874,24 @@ def private_home_rows(user_id: Optional[int]) -> Iterable[list]:
     return [[InlineKeyboardButton("🏠 Моніторинг житла", callback_data="housing:menu")]]
 
 
-def _menu_keyboard(user_id: Optional[int] = None) -> InlineKeyboardMarkup:
+def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton("🔄 Оновити статус", callback_data="housing:menu")],
-        [InlineKeyboardButton("❓ Довідка / Часті питання", callback_data="housing:faq")],
+        [InlineKeyboardButton(i18n.t("housing.btn.refresh_status", lang), callback_data="housing:menu")],
+        [InlineKeyboardButton(i18n.t("housing.btn.faq", lang), callback_data="housing:faq")],
     ]
     if user_id and int(user_id) == ADMIN_ID:
-        rows.insert(0, [InlineKeyboardButton("⚙️ Адмінка житла", callback_data="housing:admin")])
-        rows.insert(1, [InlineKeyboardButton(BTN_CURRENT_MATCHES, callback_data="housing:current_matches")])
-        rows.insert(2, [InlineKeyboardButton(BTN_COOPS, callback_data="housing:coops")])
-        rows.insert(3, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
+        rows.insert(0, [InlineKeyboardButton(i18n.t("housing.btn.admin", lang), callback_data="housing:admin")])
+        rows.insert(1, [InlineKeyboardButton(i18n.t("housing.btn.current_matches", lang), callback_data="housing:current_matches")])
+        rows.insert(2, [InlineKeyboardButton(i18n.t("housing.btn.coops", lang), callback_data="housing:coops")])
+        rows.insert(3, [InlineKeyboardButton(i18n.t("housing.btn.notify_settings", lang), callback_data="housing:notify_settings")])
     elif is_allowed(user_id):
-        rows.insert(0, [InlineKeyboardButton(BTN_SELF_ADD, callback_data="housing:self_add")])
-        rows.insert(1, [InlineKeyboardButton(BTN_SELF_MANAGE, callback_data="housing:self_manage")])
-        rows.insert(2, [InlineKeyboardButton(BTN_CURRENT_MATCHES, callback_data="housing:current_matches")])
-        rows.insert(3, [InlineKeyboardButton(BTN_COOPS, callback_data="housing:coops")])
-        rows.insert(4, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
+        rows.insert(0, [InlineKeyboardButton(i18n.t("housing.btn.self_add", lang), callback_data="housing:self_add")])
+        rows.insert(1, [InlineKeyboardButton(i18n.t("housing.btn.self_manage", lang), callback_data="housing:self_manage")])
+        rows.insert(2, [InlineKeyboardButton(i18n.t("housing.btn.current_matches", lang), callback_data="housing:current_matches")])
+        rows.insert(3, [InlineKeyboardButton(i18n.t("housing.btn.coops", lang), callback_data="housing:coops")])
+        rows.insert(4, [InlineKeyboardButton(i18n.t("housing.btn.notify_settings", lang), callback_data="housing:notify_settings")])
     rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="housing:lang:menu")])
-    rows.append([InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.back_home", lang), callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -909,23 +909,20 @@ def _coop_subscription_state(user_id: int) -> Dict[str, bool]:
     return {row["coop_key"]: bool(row["active"]) for row in subs}
 
 
-def _coops_text(user_id: int) -> str:
+def _coops_text(user_id: int, lang: str = "uk") -> str:
     state = _coop_subscription_state(user_id)
     lines = [
-        "🏘 <b>Кооперативи (Gewoba/WBG)</b>\n",
-        "Ці три сайти не показують окремі оголошення — лише напис «вільного "
-        "житла немає» на сторінці. Тому тут немає умов за кімнатами чи ціною: "
-        "просто вмикаєте потрібний кооператив, і щойно напис зникне — ми "
-        "напишемо вам сюди, а деталі доведеться подивитись на сайті самим.\n",
+        i18n.t("housing.coops.title", lang),
+        i18n.t("housing.coops.explain", lang),
     ]
     for coop in coop_watchdog.COOPERATIVES:
         on = state.get(coop["key"], False)
-        mark = "✅ стежимо" if on else "⬜ вимкнено"
+        mark = i18n.t("housing.coops.on", lang) if on else i18n.t("housing.coops.off", lang)
         lines.append(f"{mark} — {html.escape(coop['label'])}")
     return "\n".join(lines)
 
 
-def _coops_keyboard(user_id: int) -> InlineKeyboardMarkup:
+def _coops_keyboard(user_id: int, lang: str = "uk") -> InlineKeyboardMarkup:
     state = _coop_subscription_state(user_id)
     rows = []
     for coop in coop_watchdog.COOPERATIVES:
@@ -934,7 +931,7 @@ def _coops_keyboard(user_id: int) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(
             f"{mark} {coop['label']}", callback_data=f"housing:coop_toggle:{coop['key']}",
         )])
-    rows.append([InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -944,8 +941,9 @@ def show_coop_subscriptions(update: Update, context: CallbackContext, edit: bool
         if update.callback_query:
             update.callback_query.answer()
         return
-    text = _coops_text(user.id)
-    keyboard = _coops_keyboard(user.id)
+    lang = i18n.get_lang(user.id)
+    text = _coops_text(user.id, lang)
+    keyboard = _coops_keyboard(user.id, lang)
     if edit and update.callback_query:
         try:
             update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
@@ -1077,7 +1075,7 @@ def _is_stale(value, max_age: timedelta) -> bool:
     return bool(checked_at and _now_berlin() - checked_at > max_age)
 
 
-def _relative_time(value) -> str:
+def _relative_time(value, lang: str = "uk") -> str:
     """Час словами замість дати-часу, яку людина йде перевіряти вручну.
 
     Технічна відмітка «13.08.2026 02:25» вимагає рахувати самому, скільки це
@@ -1085,19 +1083,19 @@ def _relative_time(value) -> str:
     """
     checked_at = _as_berlin_datetime(value)
     if checked_at is None:
-        return "ще не було"
+        return i18n.t("housing.time.never", lang)
     now = _now_berlin()
     seconds = max(0.0, (now - checked_at).total_seconds())
     if seconds < 60:
-        return "щойно"
+        return i18n.t("housing.time.just_now", lang)
     minutes = int(seconds // 60)
     if minutes < 60:
-        return f"{minutes} хв тому"
+        return i18n.t("housing.time.minutes_ago", lang, n=minutes)
     hours = int(minutes // 60)
     if hours < 24:
-        return f"{hours} год тому"
+        return i18n.t("housing.time.hours_ago", lang, n=hours)
     if checked_at.date() == (now - timedelta(days=1)).date():
-        return f"учора о {checked_at.strftime('%H:%M')}"
+        return i18n.t("housing.time.yesterday_at", lang, time=checked_at.strftime('%H:%M'))
     return checked_at.strftime("%d.%m.%Y %H:%M")
 
 
@@ -1118,7 +1116,7 @@ def _traffic_light(value, max_age: timedelta) -> str:
     return "🔴"
 
 
-def _immowelt_status_lines() -> list:
+def _immowelt_status_lines(lang: str = "uk") -> list:
     """Рядки про стан обходу Immowelt.
 
     Час беремо з `/api/status`: обхід один на всіх, тому власної відмітки у
@@ -1127,7 +1125,7 @@ def _immowelt_status_lines() -> list:
     """
     filters = [item for item in _all_immowelt_filters() if item.get("active")]
     if not filters:
-        return ["⚪ Immowelt: активних фільтрів немає."]
+        return [i18n.t("housing.status.immowelt_no_filters", lang)]
 
     status = _receiver_status()
     checked_at = str(status.get("immowelt_last_check_at") or "")
@@ -1139,22 +1137,38 @@ def _immowelt_status_lines() -> list:
 
     light = _traffic_light(checked_at, IMMOWELT_STALE_AFTER)
     if not checked_at:
-        lines = ["🔴 Immowelt: перевірка ще не запускалась."]
+        lines = [i18n.t("housing.status.never_checked", lang, name="Immowelt")]
     else:
-        lines = [f"{light} Immowelt: перевірка {_relative_time(checked_at)}, збережено: {seen_total}."]
+        lines = [i18n.t(
+            "housing.status.immowelt_checking", lang,
+            light=light, relative=_relative_time(checked_at, lang), count=seen_total,
+        )]
     # Мовчазна поломка виглядала як звичайна перевірка без новин, тож причину
     # показуємо окремим рядком, а не ховаємо за старою відміткою часу.
     if error:
-        lines.append(f"Остання помилка Immowelt: {html.escape(error)}")
+        lines.append(i18n.t("housing.status.error", lang, name="Immowelt", error=html.escape(error)))
     elif skip_reason:
-        lines.append(f"Перевірку Immowelt пропущено: {html.escape(skip_reason)}")
+        lines.append(i18n.t("housing.status.immowelt_skipped", lang, reason=html.escape(skip_reason)))
     return lines
 
 
-def _status_lines() -> list:
+# (store, display name, staleness threshold, count-phrase key) - SEMMELHAACK is
+# the one source that phrases its count as "у Потсдамі" instead of plain
+# "квартир", everything else here is byte-for-byte identical in shape.
+_GENERIC_STATUS_SOURCES = [
+    (semmelhaack_store, "SEMMELHAACK", PROPOTSDAM_STALE_AFTER, "housing.status.checking_potsdam_count"),
+    (schoba_store, "SCHOBA", PROPOTSDAM_STALE_AFTER, "housing.status.checking"),
+    (regiomakler_store, "ImmoTeam/alpha", PROPOTSDAM_STALE_AFTER, "housing.status.checking"),
+    (kleinanzeigen_store, "Kleinanzeigen", KLEINANZEIGEN_STALE_AFTER, "housing.status.checking"),
+    (locals_store, "locals®", PROPOTSDAM_STALE_AFTER, "housing.status.checking"),
+    (karlmarx_store, "Karl Marx", PROPOTSDAM_STALE_AFTER, "housing.status.checking"),
+]
+
+
+def _status_lines(lang: str = "uk") -> list:
     lines = []
     try:
-        lines.extend(_immowelt_status_lines())
+        lines.extend(_immowelt_status_lines(lang))
     except Exception:
         logger.exception("Could not load Immowelt status")
 
@@ -1163,92 +1177,32 @@ def _status_lines() -> list:
         light = _traffic_light(status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER)
         label = status.get("last_status") or "unknown"
         count = status.get("listings_count") or 0
-        lines.append(
-            f"{light} ProPotsdam: перевірка {_relative_time(status.get('last_checked_at'))}, "
-            f"статус {html.escape(str(label))}, квартир: {count}."
-        )
+        lines.append(i18n.t(
+            "housing.status.propotsdam_checking", lang,
+            light=light, relative=_relative_time(status.get("last_checked_at"), lang),
+            status=html.escape(str(label)), count=count,
+        ))
         if status.get("last_error"):
-            lines.append(f"Остання помилка ProPotsdam: {html.escape(str(status.get('last_error')))}")
+            lines.append(i18n.t("housing.status.error", lang, name="ProPotsdam", error=html.escape(str(status.get("last_error")))))
     else:
-        lines.append("🔴 ProPotsdam: перевірка ще не запускалась.")
+        lines.append(i18n.t("housing.status.never_checked", lang, name="ProPotsdam"))
 
-    semm_status = semmelhaack_store.latest_status()
-    if semm_status:
-        light = _traffic_light(semm_status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER)
-        count = semm_status.get("listings_count") or 0
-        lines.append(
-            f"{light} SEMMELHAACK: перевірка {_relative_time(semm_status.get('last_checked_at'))}, "
-            f"квартир у Потсдамі: {count}."
-        )
-        if semm_status.get("last_error"):
-            lines.append(f"Остання помилка SEMMELHAACK: {html.escape(str(semm_status.get('last_error')))}")
-    else:
-        lines.append("🔴 SEMMELHAACK: перевірка ще не запускалась.")
-
-    schoba_status = schoba_store.latest_status()
-    if schoba_status:
-        light = _traffic_light(schoba_status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER)
-        count = schoba_status.get("listings_count") or 0
-        lines.append(
-            f"{light} SCHOBA: перевірка {_relative_time(schoba_status.get('last_checked_at'))}, "
-            f"квартир: {count}."
-        )
-        if schoba_status.get("last_error"):
-            lines.append(f"Остання помилка SCHOBA: {html.escape(str(schoba_status.get('last_error')))}")
-    else:
-        lines.append("🔴 SCHOBA: перевірка ще не запускалась.")
-
-    regio_status = regiomakler_store.latest_status()
-    if regio_status:
-        light = _traffic_light(regio_status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER)
-        count = regio_status.get("listings_count") or 0
-        lines.append(
-            f"{light} ImmoTeam/alpha: перевірка {_relative_time(regio_status.get('last_checked_at'))}, "
-            f"квартир: {count}."
-        )
-        if regio_status.get("last_error"):
-            lines.append(f"Остання помилка ImmoTeam/alpha: {html.escape(str(regio_status.get('last_error')))}")
-    else:
-        lines.append("🔴 ImmoTeam/alpha: перевірка ще не запускалась.")
-
-    kanz_status = kleinanzeigen_store.latest_status()
-    if kanz_status:
-        light = _traffic_light(kanz_status.get("last_checked_at"), KLEINANZEIGEN_STALE_AFTER)
-        count = kanz_status.get("listings_count") or 0
-        lines.append(
-            f"{light} Kleinanzeigen: перевірка {_relative_time(kanz_status.get('last_checked_at'))}, "
-            f"квартир: {count}."
-        )
-        if kanz_status.get("last_error"):
-            lines.append(f"Остання помилка Kleinanzeigen: {html.escape(str(kanz_status.get('last_error')))}")
-    else:
-        lines.append("🔴 Kleinanzeigen: перевірка ще не запускалась.")
-
-    locals_status = locals_store.latest_status()
-    if locals_status:
-        light = _traffic_light(locals_status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER)
-        count = locals_status.get("listings_count") or 0
-        lines.append(
-            f"{light} locals®: перевірка {_relative_time(locals_status.get('last_checked_at'))}, "
-            f"квартир: {count}."
-        )
-        if locals_status.get("last_error"):
-            lines.append(f"Остання помилка locals®: {html.escape(str(locals_status.get('last_error')))}")
-    else:
-        lines.append("🔴 locals®: перевірка ще не запускалась.")
-
-    karlmarx_status = karlmarx_store.latest_status()
-    if karlmarx_status:
-        light = _traffic_light(karlmarx_status.get("last_checked_at"), PROPOTSDAM_STALE_AFTER)
-        count = karlmarx_status.get("listings_count") or 0
-        lines.append(
-            f"{light} Karl Marx: перевірка {_relative_time(karlmarx_status.get('last_checked_at'))}, "
-            f"квартир: {count}."
-        )
-        if karlmarx_status.get("last_error"):
-            lines.append(f"Остання помилка Karl Marx: {html.escape(str(karlmarx_status.get('last_error')))}")
-    else:
-        lines.append("🔴 Karl Marx: перевірка ще не запускалась.")
+    for store, name, stale_after, count_key in _GENERIC_STATUS_SOURCES:
+        source_status = store.latest_status()
+        if source_status:
+            light = _traffic_light(source_status.get("last_checked_at"), stale_after)
+            count = source_status.get("listings_count") or 0
+            lines.append(i18n.t(
+                count_key, lang, light=light, name=name,
+                relative=_relative_time(source_status.get("last_checked_at"), lang), count=count,
+            ))
+            if source_status.get("last_error"):
+                lines.append(i18n.t(
+                    "housing.status.error", lang, name=name,
+                    error=html.escape(str(source_status.get("last_error"))),
+                ))
+        else:
+            lines.append(i18n.t("housing.status.never_checked", lang, name=name))
 
     # Cooperatives have no per-listing scrape yet (see CoopWatchdogFilter's
     # docstring) - the light here reflects crawl freshness same as the rest,
@@ -1260,43 +1214,42 @@ def _status_lines() -> list:
             light = _traffic_light(coop_status.get("last_checked_at"), COOP_STALE_AFTER)
             was_empty = coop_status.get("was_empty")
             if was_empty is False:
-                state = "можливо є вільне житло!"
+                state = i18n.t("housing.status.coop.available", lang)
             elif was_empty is True:
-                state = "вільного житла немає"
+                state = i18n.t("housing.status.coop.empty", lang)
             else:
-                state = "перевіряється вперше"
-            lines.append(
-                f"{light} {label}: перевірка {_relative_time(coop_status.get('last_checked_at'))}, {state}."
-            )
+                state = i18n.t("housing.status.coop.first_check", lang)
+            lines.append(i18n.t(
+                "housing.status.coop_checking", lang, light=light, name=label,
+                relative=_relative_time(coop_status.get("last_checked_at"), lang), state=state,
+            ))
             if coop_status.get("last_error"):
-                lines.append(f"Остання помилка {label}: {html.escape(str(coop_status.get('last_error')))}")
+                lines.append(i18n.t(
+                    "housing.status.error", lang, name=label,
+                    error=html.escape(str(coop_status.get("last_error"))),
+                ))
         else:
-            lines.append(f"🔴 {label}: перевірка ще не запускалась.")
+            lines.append(i18n.t("housing.status.never_checked", lang, name=label))
     return lines
 
 
-def _render_menu(user_id: int) -> str:
+def _render_menu(user_id: int, lang: str = "uk") -> str:
     filters = user_filters(user_id)
     lines = [
-        "🏠 <b>Моніторинг житла</b>",
+        i18n.t("housing.menu.title", lang),
         "",
-        "Один фільтр працює одразу на <b>8 порталах</b>: Immowelt, ProPotsdam, "
-        "SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® та Karl Marx. "
-        "Нова квартира під ваші умови — і ви одразу отримаєте повідомлення.",
+        i18n.t("housing.menu.intro", lang),
         "",
-        "Плюс 3 житлових кооперативи (Gewoba, WBG 1903, WBG «Daheim») — там поки "
-        "немає розбору за кімнатами/ціною, просто сповіщення, щойно на їхній "
-        "сторінці зникає «вільного житла немає». Підписатись — кнопка "
-        f"«{BTN_COOPS}» нижче.",
+        i18n.t("housing.menu.coops_intro", lang, btn=i18n.t("housing.btn.coops", lang)),
         "",
-        "Статус перевірки:",
-        *_status_lines(),
+        i18n.t("housing.menu.status_header", lang),
+        *_status_lines(lang),
         "",
     ]
     if not filters:
-        lines.append("Для вашого Telegram ID поки немає активних фільтрів.")
+        lines.append(i18n.t("housing.menu.no_filters", lang))
     else:
-        lines.append("Ваші фільтри:")
+        lines.append(i18n.t("housing.menu.your_filters", lang))
         prefixes = {
             "immowelt": "", "propotsdam": "P", "semmelhaack": "S", "schoba": "C",
             "regiomakler": "R", "kleinanzeigen": "K", "locals": "L", "karlmarx": "M",
@@ -1304,16 +1257,16 @@ def _render_menu(user_id: int) -> str:
         }
         for item in filters:
             prefix = prefixes.get(_item_source(item), "")
-            title = html.escape(str(item.get('title') or 'Пошук житла'))
+            title = html.escape(str(item.get('title') or i18n.t("housing.filter.default_title", lang)))
             lines.append(f"• #{prefix}{int(item.get('filter_id'))}: {title}")
     return "\n".join(lines)
 
 
-def _locked_keyboard() -> InlineKeyboardMarkup:
+def _locked_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📩 Запросити доступ", callback_data="housing:access_request")],
-        [InlineKeyboardButton("❓ Довідка / Часті питання", callback_data="housing:faq")],
-        [InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")],
+        [InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request")],
+        [InlineKeyboardButton(i18n.t("housing.btn.faq", lang), callback_data="housing:faq")],
+        [InlineKeyboardButton(i18n.t("housing.btn.back_home", lang), callback_data="anon:home")],
     ])
 
 
@@ -1322,30 +1275,23 @@ def show_menu(update: Update, context: CallbackContext, edit: bool = False) -> N
     if not user or not is_allowed(user.id):
         # Доступ видавався лише тим, що адмін вручну вбивав Telegram ID, і людині
         # не було чим про нього попросити.
-        text = (
-            "🏠 <b>Моніторинг житла в Потсдамі</b>\n\n"
-            "Один фільтр — і бот одразу стежить за <b>8 порталами водночас</b>: "
-            "Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, "
-            "locals® та Karl Marx. Щойно десь з'являється квартира під ваші умови — "
-            "миттєве повідомлення в Telegram, замість того щоб перевіряти кожен сайт "
-            "вручну по кілька разів на день.\n\n"
-            "💶 Доступ — <b>10 €/місяць</b>, відкриває адміністратор особисто.\n\n"
-            "Натисніть кнопку нижче — і ми зв'яжемось."
-        )
+        lang = i18n.get_lang(user.id) if user else "uk"
+        text = i18n.t("housing.locked.text", lang)
         if edit and update.callback_query:
-            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_locked_keyboard())
+            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_locked_keyboard(lang))
         else:
-            update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_locked_keyboard())
+            update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_locked_keyboard(lang))
         return
-    text = _render_menu(user.id)
+    lang = i18n.get_lang(user.id)
+    text = _render_menu(user.id, lang)
     if edit and update.callback_query:
         try:
-            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(user.id))
+            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(user.id, lang))
         except BadRequest as exc:
             if "Message is not modified" not in str(exc):
                 raise
     else:
-        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(user.id))
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(user.id, lang))
 
 
 def _admin_rows() -> list:
@@ -3493,10 +3439,11 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
         return False
     text = update.message.text.strip()
     if user_id != ADMIN_ID:
-        if text == BTN_SELF_ADD:
+        lang = i18n.get_lang(user_id)
+        if text == i18n.t("housing.btn.self_add", lang):
             start_self_add_flow(update, context)
             return True
-        if text == BTN_SELF_MANAGE:
+        if text == i18n.t("housing.btn.self_manage", lang):
             show_self_manage(update, context)
             return True
     if text == BTN_ADMIN_ADD:

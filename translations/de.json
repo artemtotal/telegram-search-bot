@@ -1,2 +1,47 @@
 {
+  "housing.time.never": "noch nicht geprüft",
+  "housing.time.just_now": "gerade eben",
+  "housing.time.minutes_ago": "vor {n} Min.",
+  "housing.time.hours_ago": "vor {n} Std.",
+  "housing.time.yesterday_at": "gestern um {time}",
+
+  "housing.status.immowelt_no_filters": "⚪ Immowelt: keine aktiven Filter.",
+  "housing.status.never_checked": "🔴 {name}: noch nicht geprüft.",
+  "housing.status.immowelt_checking": "{light} Immowelt: Prüfung {relative}, gespeichert: {count}.",
+  "housing.status.error": "Letzter Fehler bei {name}: {error}",
+  "housing.status.immowelt_skipped": "Prüfung von Immowelt übersprungen: {reason}",
+  "housing.status.propotsdam_checking": "{light} ProPotsdam: Prüfung {relative}, Status {status}, Wohnungen: {count}.",
+  "housing.status.checking": "{light} {name}: Prüfung {relative}, Wohnungen: {count}.",
+  "housing.status.checking_potsdam_count": "{light} {name}: Prüfung {relative}, Wohnungen in Potsdam: {count}.",
+  "housing.status.coop_checking": "{light} {name}: Prüfung {relative}, {state}.",
+  "housing.status.coop.available": "möglicherweise freie Wohnungen!",
+  "housing.status.coop.empty": "keine freien Wohnungen",
+  "housing.status.coop.first_check": "wird erstmals geprüft",
+
+  "housing.menu.title": "🏠 <b>Wohnungs-Monitoring</b>",
+  "housing.menu.intro": "Ein Filter durchsucht sofort <b>8 Portale</b> gleichzeitig: Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® und Karl Marx. Eine neue Wohnung nach Ihren Kriterien — und Sie erhalten sofort eine Benachrichtigung.",
+  "housing.menu.coops_intro": "Dazu 3 Wohnungsgenossenschaften (Gewoba, WBG 1903, WBG „Daheim“) — dort gibt es noch keine Filterung nach Zimmern/Preis, nur eine Benachrichtigung, sobald auf ihrer Seite „keine freien Wohnungen“ verschwindet. Abonnieren — Schaltfläche „{btn}“ unten.",
+  "housing.menu.status_header": "Prüfstatus:",
+  "housing.menu.no_filters": "Für Ihre Telegram-ID gibt es noch keine aktiven Filter.",
+  "housing.menu.your_filters": "Ihre Filter:",
+  "housing.filter.default_title": "Wohnungssuche",
+
+  "housing.btn.request_access": "📩 Zugang anfragen",
+  "housing.btn.faq": "❓ Hilfe / Häufige Fragen",
+  "housing.btn.back_home": "⬅ Hauptmenü",
+  "housing.locked.text": "🏠 <b>Wohnungs-Monitoring in Potsdam</b>\n\nEin Filter — und der Bot überwacht sofort <b>8 Portale gleichzeitig</b>: Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® und Karl Marx. Sobald irgendwo eine Wohnung nach Ihren Kriterien erscheint — sofortige Benachrichtigung in Telegram, statt jede Seite mehrmals täglich manuell zu prüfen.\n\n💶 Zugang — <b>10 €/Monat</b>, wird persönlich vom Administrator freigeschaltet.\n\nDrücken Sie die Schaltfläche unten — wir melden uns.",
+
+  "housing.btn.refresh_status": "🔄 Status aktualisieren",
+  "housing.btn.admin": "⚙️ Wohnungs-Adminbereich",
+  "housing.btn.current_matches": "🔍 Passende Wohnungen",
+  "housing.btn.coops": "🏘 Genossenschaften (Gewoba/WBG)",
+  "housing.btn.notify_settings": "🔔 Benachrichtigungen",
+  "housing.btn.self_add": "➕ Filter hinzufügen",
+  "housing.btn.self_manage": "⚙️ Meine Filter",
+  "housing.btn.back_to_monitor": "⬅ Zum Monitoring",
+
+  "housing.coops.title": "🏘 <b>Genossenschaften (Gewoba/WBG)</b>\n",
+  "housing.coops.explain": "Diese drei Seiten zeigen keine einzelnen Angebote — nur den Hinweis „keine freien Wohnungen“ auf der Seite. Deshalb gibt es hier keine Kriterien nach Zimmern oder Preis: Sie aktivieren einfach die gewünschte Genossenschaft, und sobald der Hinweis verschwindet, schreiben wir Ihnen hier — Details müssen Sie dann selbst auf der Website prüfen.\n",
+  "housing.coops.on": "✅ wird beobachtet",
+  "housing.coops.off": "⬜ deaktiviert"
 }
