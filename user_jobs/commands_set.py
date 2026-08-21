@@ -18,7 +18,7 @@ def set_bot_commands(context: telegram.ext.CallbackContext):
         ('anonymous', 'поставити анонімне запитання'),
         ('dps_document', 'перевірка термінів ДП Документ'),
         ('housing', 'моніторинг житла'),
-        ('help', _('get search help')),
+        ('help', 'довідка про команди бота'),
         ('chat_id', _('get current chat id (group or user)')),
         ('stop', _('stop bot in current group (userbot mode need `stop <group_id>`)')),
         ('delete', _('delete saved messages if stopped  (userbot mode need `stop <group_id>`)')),
