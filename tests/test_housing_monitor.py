@@ -3172,6 +3172,35 @@ class HousingTranslationSmokeTests(unittest.TestCase):
         text = query.edit_message_text.call_args[0][0]
         self.assertIn('Mindestanzahl Zimmer', text)
 
+    def test_describe_criteria_in_russian_and_german(self):
+        criteria = {'districts': [], 'min_rooms': 2, 'max_rooms': 4, 'min_price_eur': 600, 'max_price_eur': 1200}
+
+        ru = housing_monitor._describe_criteria(criteria, lang='ru')
+        de = housing_monitor._describe_criteria(criteria, lang='de')
+
+        self.assertIn('все районы', ru)
+        self.assertIn('комн.', ru)
+        self.assertIn('alle Stadtteile', de)
+        self.assertIn('Zi.', de)
+
+    def test_finalize_semmelhaack_filter_in_german(self):
+        message = FakeMessage(user_id=777)
+        context = SimpleNamespace(user_data={}, bot_data={})
+        state = {
+            'user_id': 777, 'min_rooms': 2, 'max_rooms': 4,
+            'min_area_m2': 50, 'max_area_m2': 90, 'min_price_eur': 600, 'max_price_eur': 1200,
+        }
+
+        with mock.patch.object(housing_monitor.semmelhaack_store, 'create_filter', return_value=9), \
+             mock.patch.object(housing_monitor, '_offer_recent_matches'), \
+             mock.patch.object(housing_monitor, '_maybe_send_first_filter_congrats'), \
+             mock.patch.object(housing_monitor.user_settings_store, 'get_language', return_value='de'):
+            housing_monitor._finalize_semmelhaack_filter(message, context, state)
+
+        text = message.replies[-1][0]
+        self.assertIn('Filter SEMMELHAACK hinzugefügt', text)
+        self.assertIn('ID: S9', text)
+
 
 if __name__ == '__main__':
     unittest.main()

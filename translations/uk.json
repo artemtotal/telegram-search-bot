@@ -69,5 +69,23 @@
   "housing.field.label.rent_min": "Оренда: мінімум (від)",
   "housing.field.label.rent_max": "Оренда: максимум (до)",
 
-  "housing.field.numeric_prompt": "🔢 <b>{question}</b>\n\nНапишіть <b>одну цифру</b> внизу в чаті й натисніть «Надіслати» (наприклад, <code>{example}</code>).\n\nНе хочете обмежувати цей показник — просто надішліть «-»."
+  "housing.field.numeric_prompt": "🔢 <b>{question}</b>\n\nНапишіть <b>одну цифру</b> внизу в чаті й натисніть «Надіслати» (наприклад, <code>{example}</code>).\n\nНе хочете обмежувати цей показник — просто надішліть «-».",
+
+  "housing.describe.from": "від {value}",
+  "housing.describe.to": "до {value}",
+  "housing.describe.all_districts": "усі райони",
+  "housing.unit.eur": " €",
+  "housing.unit.rooms": " кімн.",
+  "housing.unit.m2": " м²",
+
+  "housing.finalize.updated": "Фільтр {source} оновлено",
+  "housing.finalize.added": "Фільтр {source} додано",
+  "housing.finalize.summary": "✅ {heading}.\nID: {id}\nУмови: {criteria}",
+  "housing.finalize.immowelt_updated": "Фільтр оновлено",
+  "housing.finalize.immowelt_added": "Фільтр житла додано",
+  "housing.finalize.summary_bold": "✅ <b>{heading}</b>\n\nID: {id}\nУмови: {criteria}",
+  "housing.finalize.propot_summary": "✅ {heading}.\nID: P{id}\nКористувач: {user_id}",
+  "housing.finalize.multi_title": "✅ <b>Фільтр додано</b>",
+  "housing.finalize.multi_line": "{icon} {label} (ID {id}): {criteria}",
+  "housing.finalize.multi_error": "{icon} {label}: ⚠️ не вдалося зберегти ({error})"
 }

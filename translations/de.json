@@ -69,5 +69,23 @@
   "housing.field.label.rent_min": "Miete: minimum (ab)",
   "housing.field.label.rent_max": "Miete: maximum (bis)",
 
-  "housing.field.numeric_prompt": "🔢 <b>{question}</b>\n\nSchreiben Sie unten im Chat <b>eine einzelne Zahl</b> und tippen Sie auf „Senden“ (zum Beispiel <code>{example}</code>).\n\nWenn Sie diesen Wert nicht einschränken möchten — schicken Sie einfach „-“."
+  "housing.field.numeric_prompt": "🔢 <b>{question}</b>\n\nSchreiben Sie unten im Chat <b>eine einzelne Zahl</b> und tippen Sie auf „Senden“ (zum Beispiel <code>{example}</code>).\n\nWenn Sie diesen Wert nicht einschränken möchten — schicken Sie einfach „-“.",
+
+  "housing.describe.from": "ab {value}",
+  "housing.describe.to": "bis {value}",
+  "housing.describe.all_districts": "alle Stadtteile",
+  "housing.unit.eur": " €",
+  "housing.unit.rooms": " Zi.",
+  "housing.unit.m2": " m²",
+
+  "housing.finalize.updated": "Filter {source} aktualisiert",
+  "housing.finalize.added": "Filter {source} hinzugefügt",
+  "housing.finalize.summary": "✅ {heading}.\nID: {id}\nKriterien: {criteria}",
+  "housing.finalize.immowelt_updated": "Filter aktualisiert",
+  "housing.finalize.immowelt_added": "Wohnungsfilter hinzugefügt",
+  "housing.finalize.summary_bold": "✅ <b>{heading}</b>\n\nID: {id}\nKriterien: {criteria}",
+  "housing.finalize.propot_summary": "✅ {heading}.\nID: P{id}\nNutzer: {user_id}",
+  "housing.finalize.multi_title": "✅ <b>Filter hinzugefügt</b>",
+  "housing.finalize.multi_line": "{icon} {label} (ID {id}): {criteria}",
+  "housing.finalize.multi_error": "{icon} {label}: ⚠️ Speichern fehlgeschlagen ({error})"
 }

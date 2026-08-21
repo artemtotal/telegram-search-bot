@@ -509,27 +509,37 @@ def _criteria_from_state(state: Dict[str, object]) -> Dict[str, object]:
     return criteria
 
 
-def _describe_range(min_val, max_val, *, unit: str, is_int: bool = False) -> Optional[str]:
+def _describe_range(min_val, max_val, *, unit: str, is_int: bool = False, lang: str = "uk") -> Optional[str]:
     if min_val is None and max_val is None:
         return None
     fmt = (lambda v: str(int(round(v)))) if is_int else (lambda v: f"{v:g}")
     if min_val is not None and max_val is not None:
         return f"{fmt(min_val)}–{fmt(max_val)}{unit}"
     if min_val is not None:
-        return f"від {fmt(min_val)}{unit}"
-    return f"до {fmt(max_val)}{unit}"
+        return i18n.t("housing.describe.from", lang, value=f"{fmt(min_val)}{unit}")
+    return i18n.t("housing.describe.to", lang, value=f"{fmt(max_val)}{unit}")
 
 
-def _describe_criteria(criteria: Dict[str, object]) -> str:
+def _describe_criteria(criteria: Dict[str, object], lang: str = "uk") -> str:
     districts = criteria.get("districts") or []
-    parts = [", ".join(str(item) for item in districts) if districts else "усі райони"]
-    price = _describe_range(criteria.get("min_price_eur"), criteria.get("max_price_eur"), unit=" €", is_int=True)
+    parts = [
+        ", ".join(str(item) for item in districts) if districts
+        else i18n.t("housing.describe.all_districts", lang)
+    ]
+    price = _describe_range(
+        criteria.get("min_price_eur"), criteria.get("max_price_eur"),
+        unit=i18n.t("housing.unit.eur", lang), is_int=True, lang=lang,
+    )
     if price:
         parts.append(price)
-    rooms = _describe_range(criteria.get("min_rooms"), criteria.get("max_rooms"), unit=" кімн.")
+    rooms = _describe_range(
+        criteria.get("min_rooms"), criteria.get("max_rooms"), unit=i18n.t("housing.unit.rooms", lang), lang=lang,
+    )
     if rooms:
         parts.append(rooms)
-    area = _describe_range(criteria.get("min_area_m2"), criteria.get("max_area_m2"), unit=" м²")
+    area = _describe_range(
+        criteria.get("min_area_m2"), criteria.get("max_area_m2"), unit=i18n.t("housing.unit.m2", lang), lang=lang,
+    )
     if area:
         parts.append(area)
     return html.escape(" · ".join(parts))
@@ -2552,15 +2562,20 @@ def _finalize_semmelhaack_filter(message, context: CallbackContext, state: dict)
         filter_id = semmelhaack_store.create_filter(user_id=state["user_id"], **common)
         ok = True
     context.user_data.pop("housing_admin", None)
+    lang = i18n.get_lang(int(state["user_id"]))
     if not ok:
         message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
         return
-    heading = "Фільтр SEMMELHAACK оновлено" if edit_filter_id else "Фільтр SEMMELHAACK додано"
+    heading = (
+        i18n.t("housing.finalize.updated", lang, source="SEMMELHAACK") if edit_filter_id
+        else i18n.t("housing.finalize.added", lang, source="SEMMELHAACK")
+    )
     if not edit_filter_id:
         _offer_recent_matches(context, [("semmelhaack", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        f"✅ {heading}.\nID: S{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"S{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        parse_mode="HTML",
         reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
     )
 
@@ -2642,15 +2657,20 @@ def _finalize_schoba_filter(message, context: CallbackContext, state: dict) -> N
         filter_id = schoba_store.create_filter(user_id=state["user_id"], **common)
         ok = True
     context.user_data.pop("housing_admin", None)
+    lang = i18n.get_lang(int(state["user_id"]))
     if not ok:
         message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
         return
-    heading = "Фільтр SCHOBA оновлено" if edit_filter_id else "Фільтр SCHOBA додано"
+    heading = (
+        i18n.t("housing.finalize.updated", lang, source="SCHOBA") if edit_filter_id
+        else i18n.t("housing.finalize.added", lang, source="SCHOBA")
+    )
     if not edit_filter_id:
         _offer_recent_matches(context, [("schoba", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        f"✅ {heading}.\nID: C{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"C{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        parse_mode="HTML",
         reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
     )
 
@@ -2732,15 +2752,20 @@ def _finalize_regiomakler_filter(message, context: CallbackContext, state: dict)
         filter_id = regiomakler_store.create_filter(user_id=state["user_id"], **common)
         ok = True
     context.user_data.pop("housing_admin", None)
+    lang = i18n.get_lang(int(state["user_id"]))
     if not ok:
         message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
         return
-    heading = "Фільтр ImmoTeam/alpha оновлено" if edit_filter_id else "Фільтр ImmoTeam/alpha додано"
+    heading = (
+        i18n.t("housing.finalize.updated", lang, source="ImmoTeam/alpha") if edit_filter_id
+        else i18n.t("housing.finalize.added", lang, source="ImmoTeam/alpha")
+    )
     if not edit_filter_id:
         _offer_recent_matches(context, [("regiomakler", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        f"✅ {heading}.\nID: R{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"R{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        parse_mode="HTML",
         reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
     )
 
@@ -2822,15 +2847,20 @@ def _finalize_kleinanzeigen_filter(message, context: CallbackContext, state: dic
         filter_id = kleinanzeigen_store.create_filter(user_id=state["user_id"], **common)
         ok = True
     context.user_data.pop("housing_admin", None)
+    lang = i18n.get_lang(int(state["user_id"]))
     if not ok:
         message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
         return
-    heading = "Фільтр Kleinanzeigen оновлено" if edit_filter_id else "Фільтр Kleinanzeigen додано"
+    heading = (
+        i18n.t("housing.finalize.updated", lang, source="Kleinanzeigen") if edit_filter_id
+        else i18n.t("housing.finalize.added", lang, source="Kleinanzeigen")
+    )
     if not edit_filter_id:
         _offer_recent_matches(context, [("kleinanzeigen", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        f"✅ {heading}.\nID: K{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"K{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        parse_mode="HTML",
         reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
     )
 
@@ -2912,15 +2942,20 @@ def _finalize_locals_filter(message, context: CallbackContext, state: dict) -> N
         filter_id = locals_store.create_filter(user_id=state["user_id"], **common)
         ok = True
     context.user_data.pop("housing_admin", None)
+    lang = i18n.get_lang(int(state["user_id"]))
     if not ok:
         message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
         return
-    heading = "Фільтр locals® оновлено" if edit_filter_id else "Фільтр locals® додано"
+    heading = (
+        i18n.t("housing.finalize.updated", lang, source="locals®") if edit_filter_id
+        else i18n.t("housing.finalize.added", lang, source="locals®")
+    )
     if not edit_filter_id:
         _offer_recent_matches(context, [("locals", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        f"✅ {heading}.\nID: L{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"L{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        parse_mode="HTML",
         reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
     )
 
@@ -3002,15 +3037,20 @@ def _finalize_karlmarx_filter(message, context: CallbackContext, state: dict) ->
         filter_id = karlmarx_store.create_filter(user_id=state["user_id"], **common)
         ok = True
     context.user_data.pop("housing_admin", None)
+    lang = i18n.get_lang(int(state["user_id"]))
     if not ok:
         message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
         return
-    heading = "Фільтр Karl Marx оновлено" if edit_filter_id else "Фільтр Karl Marx додано"
+    heading = (
+        i18n.t("housing.finalize.updated", lang, source="Karl Marx") if edit_filter_id
+        else i18n.t("housing.finalize.added", lang, source="Karl Marx")
+    )
     if not edit_filter_id:
         _offer_recent_matches(context, [("karlmarx", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        f"✅ {heading}.\nID: M{filter_id}\nУмови: {_describe_criteria(criteria)}", parse_mode="HTML",
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"M{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        parse_mode="HTML",
         reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
     )
 
@@ -3212,12 +3252,14 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
         context.user_data.pop("housing_admin", None)
         return
     context.user_data.pop("housing_admin", None)
-    heading = "Фільтр оновлено" if edit_filter_id else "Фільтр житла додано"
+    lang = i18n.get_lang(int(state["user_id"]))
+    heading = (
+        i18n.t("housing.finalize.immowelt_updated", lang) if edit_filter_id
+        else i18n.t("housing.finalize.immowelt_added", lang)
+    )
     query.answer("Фільтр оновлено." if edit_filter_id else "Фільтр збережено.")
-    text_out = (
-        f"✅ <b>{heading}</b>\n\n"
-        f"ID: {filter_id}\n"
-        f"Умови: {_describe_criteria(criteria)}"
+    text_out = i18n.t(
+        "housing.finalize.summary_bold", lang, heading=heading, id=filter_id, criteria=_describe_criteria(criteria, lang),
     )
     rows = [[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]
     if not edit_filter_id:
@@ -3420,14 +3462,15 @@ def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, 
         ok = True
     _sync_propot_filters()
     context.user_data.pop("housing_admin", None)
+    lang = i18n.get_lang(chatter_id)
     if not ok:
         message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
         return
-    heading = "Фільтр ProPotsdam оновлено" if edit_filter_id else "Фільтр ProPotsdam додано"
-    text_out = (
-        f"✅ {heading}.\nID: P{filter_id}\n"
-        f"Користувач: {state['user_id']}"
+    heading = (
+        i18n.t("housing.finalize.updated", lang, source="ProPotsdam") if edit_filter_id
+        else i18n.t("housing.finalize.added", lang, source="ProPotsdam")
     )
+    text_out = i18n.t("housing.finalize.propot_summary", lang, heading=heading, id=filter_id, user_id=state['user_id'])
     if edit_filter_id:
         message.reply_text(text_out)
         return
@@ -3839,14 +3882,18 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
         )
         results.append(("karlmarx", filter_id, criteria, None))
     context.user_data.pop("housing_admin", None)
-    lines = ["✅ <b>Фільтр додано</b>", ""]
+    lang = i18n.get_lang(int(state["user_id"]))
+    lines = [i18n.t("housing.finalize.multi_title", lang), ""]
     for source, filter_id, criteria, error in results:
         icon = SOURCE_ICON[source]
         label = SOURCE_LABEL[source]
         if error:
-            lines.append(f"{icon} {label}: ⚠️ не вдалося зберегти ({html.escape(error)})")
+            lines.append(i18n.t("housing.finalize.multi_error", lang, icon=icon, label=label, error=html.escape(error)))
         else:
-            lines.append(f"{icon} {label} (ID {filter_id}): {_describe_criteria(criteria)}")
+            lines.append(i18n.t(
+                "housing.finalize.multi_line", lang, icon=icon, label=label, id=filter_id,
+                criteria=_describe_criteria(criteria, lang),
+            ))
     created = [
         (source, filter_id) for source, filter_id, _criteria, error in results
         if not error and source in _LOCAL_SOURCE_MODULES
