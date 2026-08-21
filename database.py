@@ -534,6 +534,20 @@ class CoopWatchdogFilter(Base):
     created_at = Column(DATETIME, nullable=False)
 
 
+class UserSettings(Base):
+    """Per-user bot preferences. Currently just the chosen UI language
+    (uk/ru/de) — a dedicated table rather than reusing `User` (shared with
+    message-archival/search/AI, and only lazily created on observed group
+    messages) or `HousingAccessUser` (only exists for admin-granted housing
+    users), since the language switcher must work for any bot user."""
+
+    __tablename__ = 'user_settings'
+
+    user_id = Column(INTEGER, primary_key=True)
+    language = Column(TEXT, nullable=False, default='uk')
+    updated_at = Column(DATETIME, nullable=False)
+
+
 class KarlmarxListing(Base):
     """Wohnungsgenossenschaft "Karl Marx": без районів, ціна — Warmmiete
     (тепла оренда), а не Kaltmiete, як у решти маклерів."""
