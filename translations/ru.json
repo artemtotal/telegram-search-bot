@@ -105,5 +105,64 @@
   "housing.toast.filter_delete_failed": "Не удалось удалить фильтр.",
   "housing.toast.filter_deleted": "Фильтр удалён.",
   "housing.toast.filter_saved": "Фильтр сохранён.",
-  "housing.toast.pick_a_source": "Выберите хотя бы один портал."
+  "housing.toast.pick_a_source": "Выберите хотя бы один портал.",
+
+  "housing.notify.quiet_on": "✅ включена",
+  "housing.notify.quiet_off": "выключена",
+  "housing.notify.mode_daily": "раз в день",
+  "housing.notify.mode_instant": "сразу",
+  "housing.notify.cap_label": "5 объявлений",
+  "housing.notify.text": "🔔 <b>Уведомления</b>\n\n🌙 Тихая ночь ({quiet_hours}): {quiet}\n📬 Режим доставки: {mode}\n\nВ тихую ночь и в режиме «раз в день» объявления не пропадают — придут, как только ночь закончится или наступит время сводки. Больше {cap} в час тоже не приходит сразу: остальное — одним итоговым сообщением.",
+  "housing.notify.btn.quiet_on": "🌙 Тихая ночь: включена ✅",
+  "housing.notify.btn.quiet_off": "🌙 Тихая ночь: выключена",
+  "housing.notify.btn.instant": "📬 Сразу",
+  "housing.notify.btn.daily": "📮 Раз в день",
+
+  "housing.btn.home_monitor": "🏠 Мониторинг жилья",
+
+  "housing.access.already_open": "Доступ уже открыт.",
+  "housing.access.admin_not_configured": "Администратор не настроен.",
+  "housing.access.already_requested": "Запрос уже отправлен, подождите ответа.",
+  "housing.access.request_failed": "Не удалось отправить запрос. Попробуйте позже.",
+  "housing.access.request_sent_toast": "Запрос отправлен.",
+  "housing.access.request_sent_text": "📩 Запрос отправлен администратору.\n\nМы сообщим, как только доступ откроют.",
+  "housing.access.until": " до {date}",
+  "housing.access.granted": "✅ Доступ к мониторингу жилья открыт{until}. Нажмите «{btn}», чтобы добавить фильтр.",
+  "housing.access.revoked": "⛔ Доступ к мониторингу жилья закончился. Если он понадобится снова — нажмите «{btn}» и запросите доступ ещё раз.",
+  "housing.access.goodbye": "Спасибо, что были с нами! 🙏\n\nВ будущем всегда можете написать @artemtotal, если мониторинг жилья понадобится снова. Надеемся, вы уже нашли жильё. 🏡",
+  "housing.access.denied_notice": "К сожалению, доступ к мониторингу жилья сейчас не открыт.",
+  "housing.access.expiry_warning": "⏳ Через 3 дня заканчивается ваша подписка на мониторинг жилья в Потсдаме. Хотите продолжить?",
+  "housing.access.btn.continue": "✅ Продолжить подписку",
+  "housing.access.btn.stop": "❌ Не продолжать",
+  "housing.access.continue_toast": "Спасибо!",
+  "housing.access.continue_text": "Спасибо! Мы сообщили администратору — он свяжется с вами насчёт продления.",
+  "housing.access.stop_text": "Хорошо. Через 3 дня подписка и доступ к мониторингу жилья будут автоматически закрыты.",
+
+  "housing.btn.field_back": "⬅️ Назад — исправить ответ",
+
+  "housing.btn.done": "✅ Готово",
+  "housing.btn.all_districts": "🌍 Все районы",
+  "housing.btn.next": "➡ Далее",
+  "housing.btn.save_filter": "✅ Сохранить фильтр",
+  "housing.btn.back_fix_criteria": "⬅️ Назад — исправить условия",
+
+  "housing.district.text": "{title}\n\nВыберите районы галочками.\nТекущий выбор: <b>{selection}</b>",
+  "housing.district.title_immowelt": "🏙 <b>Районы Immowelt</b>",
+  "housing.district.title_propot": "🏢 <b>Районы ProPotsdam</b>",
+  "housing.district.title_multi": "🏙 <b>Районы</b>",
+
+  "housing.sources.none_selected": "не выбрано",
+  "housing.sources.text": "🔎 <b>Новый фильтр</b>\n\nВыберите, где искать — можно несколько порталов сразу. Список порталов со временем будет пополняться.\nТекущий выбор: <b>{selection}</b>",
+
+  "housing.preview.title": "🔍 <b>Проверка фильтра</b>",
+  "housing.preview.criteria_line": "Условия: {criteria}",
+  "housing.preview.no_connection": "Не удалось связаться с проверкой, но фильтр можно сохранить.",
+  "housing.preview.catalog_empty": "Каталог пока пуст — первый обход собирает его молча.",
+  "housing.preview.no_matches": "Сейчас под эти условия не подходит ни одна из {catalog_size} квартир в каталоге. Фильтр будет работать, но новостей может долго не быть — попробуйте ослабить условия.",
+  "housing.preview.matches_found": "Сейчас подходит {match_count} из {catalog_size} квартир в каталоге, например:",
+  "housing.preview.new_listings_note": "Новые объявления будут приходить по мере появления.",
+
+  "housing.wizard.pick_districts_hint": "Выберите районы кнопками ниже и нажмите «Готово».",
+  "housing.wizard.pick_sources_hint": "Выберите порталы кнопками ниже и нажмите «Далее».",
+  "housing.wizard.preview_hint": "Нажмите «Сохранить фильтр», «Назад» или «Отменить»."
 }

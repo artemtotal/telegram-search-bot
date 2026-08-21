@@ -311,21 +311,21 @@ PRICE_STEP_PROMPTS = {key: spec["prompt"] for key, spec in PRICE_STEP_FIELDS.ite
 BACK_CALLBACK = "housing:field_back"
 
 
-def _field_keyboard() -> InlineKeyboardMarkup:
+def _field_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
     # Просто «⬅ Назад» губилося серед тексту питання — люди не помічали, що
     # можна виправити попередню відповідь, і кидали майстер на середині.
-    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад — виправити відповідь", callback_data=BACK_CALLBACK)]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton(i18n.t("housing.btn.field_back", lang), callback_data=BACK_CALLBACK)]])
 
 
-def _reply_field_prompt(message, text: str) -> None:
+def _reply_field_prompt(message, text: str, lang: str = "uk") -> None:
     """All wizard field prompts go through here — otherwise the bold/code
     formatting in `_numeric_prompt` shows up as literal `<b>` tags instead of
     rendering, since `reply_text` defaults to no parse mode."""
-    message.reply_text(text, parse_mode="HTML", reply_markup=_field_keyboard())
+    message.reply_text(text, parse_mode="HTML", reply_markup=_field_keyboard(lang))
 
 
-def _edit_field_prompt(query, text: str) -> None:
-    query.edit_message_text(text, parse_mode="HTML", reply_markup=_field_keyboard())
+def _edit_field_prompt(query, text: str, lang: str = "uk") -> None:
+    query.edit_message_text(text, parse_mode="HTML", reply_markup=_field_keyboard(lang))
 
 
 def _format_answer(value) -> str:
@@ -919,7 +919,7 @@ def private_home_rows(user_id: Optional[int]) -> Iterable[list]:
     # попросити, а закритий екран сам пояснює, що робити далі.
     if not user_id:
         return []
-    return [[InlineKeyboardButton("🏠 Моніторинг житла", callback_data="housing:menu")]]
+    return [[InlineKeyboardButton(i18n.t("housing.btn.home_monitor", i18n.get_lang(user_id)), callback_data="housing:menu")]]
 
 
 def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKeyboardMarkup:
@@ -1536,12 +1536,13 @@ def request_access(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
     if not query or not user:
         return
+    lang = i18n.get_lang(user.id)
     if is_allowed(user.id):
-        query.answer("Доступ уже відкрито.")
+        query.answer(i18n.t("housing.access.already_open", lang))
         show_menu(update, context, edit=True)
         return
     if not ADMIN_ID:
-        query.answer("Адміністратора не налаштовано.", show_alert=True)
+        query.answer(i18n.t("housing.access.admin_not_configured", lang), show_alert=True)
         return
     # Pending state lives in bot_data (keyed by user id), not user_data:
     # the admin's grant/deny click runs in the ADMIN's own context, which
@@ -1549,7 +1550,7 @@ def request_access(update: Update, context: CallbackContext) -> None:
     # That mismatch was why a denied user stayed stuck until the container
     # restarted and wiped the in-memory user_data store.
     if context.bot_data.get("housing_access_pending", {}).get(int(user.id)):
-        query.answer("Запит вже надіслано, зачекайте на відповідь.", show_alert=True)
+        query.answer(i18n.t("housing.access.already_requested", lang), show_alert=True)
         return
 
     name = _display_name(user)
@@ -1570,49 +1571,34 @@ def request_access(update: Update, context: CallbackContext) -> None:
         )
     except Exception:
         logger.exception("Could not deliver housing access request to the admin")
-        query.answer("Не вдалося надіслати запит. Спробуйте пізніше.", show_alert=True)
+        query.answer(i18n.t("housing.access.request_failed", lang), show_alert=True)
         return
     context.bot_data.setdefault("housing_access_pending", {})[int(user.id)] = True
     context.bot_data.setdefault("housing_access_names", {})[int(user.id)] = name
-    query.answer("Запит надіслано.")
-    query.edit_message_text(
-        "📩 Запит надіслано адміністратору.\n\nМи повідомимо, щойно доступ відкриють."
-    )
+    query.answer(i18n.t("housing.access.request_sent_toast", lang))
+    query.edit_message_text(i18n.t("housing.access.request_sent_text", lang))
 
 
 def _notify_user_access_granted(bot, user_id: int, expires_at: Optional[datetime] = None) -> None:
-    until = f" до {expires_at.strftime('%d.%m.%Y')}" if expires_at else ""
+    lang = i18n.get_lang(user_id)
+    until = i18n.t("housing.access.until", lang, date=expires_at.strftime('%d.%m.%Y')) if expires_at else ""
+    btn = i18n.t("housing.btn.home_monitor", lang)
     try:
-        bot.send_message(
-            chat_id=user_id,
-            text=(
-                f"✅ Доступ до моніторингу житла відкрито{until}. Натисніть «🏠 Моніторинг житла», "
-                "щоб додати фільтр."
-            ),
-        )
+        bot.send_message(chat_id=user_id, text=i18n.t("housing.access.granted", lang, until=until, btn=btn))
     except Exception:
         # Людина могла заблокувати бота — рішення адміна від цього не залежить.
         logger.exception("Could not notify user %s about granted housing access", user_id)
 
 
 def _notify_user_access_revoked(bot, user_id: int) -> None:
+    lang = i18n.get_lang(user_id)
     try:
         bot.send_message(
             chat_id=user_id,
-            text=(
-                "⛔ Доступ до моніторингу житла закінчився. Якщо він знадобиться знову — "
-                "натисніть «🏠 Моніторинг житла» і запросіть доступ ще раз."
-            ),
+            text=i18n.t("housing.access.revoked", lang, btn=i18n.t("housing.btn.home_monitor", lang)),
         )
     except Exception:
         logger.exception("Could not notify user %s about revoked housing access", user_id)
-
-
-GOODBYE_TEXT = (
-    "Дякуємо, що були з нами! 🙏\n\n"
-    "У майбутньому завжди можете написати @artemtotal, якщо моніторинг житла "
-    "знадобиться знову. Сподіваємось, ви вже знайшли житло. 🏡"
-)
 
 
 def _close_access(bot, user_id: int, notify_admin: bool = True) -> None:
@@ -1622,7 +1608,7 @@ def _close_access(bot, user_id: int, notify_admin: bool = True) -> None:
     housing_access_store.revoke_access(user_id)
     removed = _delete_all_filters_for_user(user_id)
     try:
-        bot.send_message(chat_id=user_id, text=GOODBYE_TEXT)
+        bot.send_message(chat_id=user_id, text=i18n.t("housing.access.goodbye", i18n.get_lang(user_id)))
     except Exception:
         logger.exception("Could not send the goodbye message to user %s", user_id)
     if notify_admin and ADMIN_ID:
@@ -1671,7 +1657,7 @@ def _resolve_access_request(update: Update, context: CallbackContext, grant: boo
     try:
         context.bot.send_message(
             chat_id=target_id,
-            text="На жаль, доступ до моніторингу житла зараз не відкрито.",
+            text=i18n.t("housing.access.denied_notice", i18n.get_lang(target_id)),
         )
     except Exception:
         logger.exception("Could not notify user %s about the housing access denial", target_id)
@@ -1877,8 +1863,9 @@ def _handle_access_continue(update: Update, context: CallbackContext) -> None:
     if int(user.id) != target_id:
         query.answer()
         return
-    query.answer("Дякуємо!")
-    query.edit_message_text("Дякуємо! Ми повідомили адміністратора — він зв'яжеться з вами щодо продовження.")
+    lang = i18n.get_lang(user.id)
+    query.answer(i18n.t("housing.access.continue_toast", lang))
+    query.edit_message_text(i18n.t("housing.access.continue_text", lang))
     if not ADMIN_ID:
         return
     name = _display_name(user)
@@ -1922,9 +1909,7 @@ def _handle_access_stop(update: Update, context: CallbackContext) -> None:
         query.answer()
         return
     query.answer()
-    query.edit_message_text(
-        "Гаразд. Через 3 дні підписку та доступ до моніторингу житла буде автоматично закрито."
-    )
+    query.edit_message_text(i18n.t("housing.access.stop_text", i18n.get_lang(user.id)))
 
 
 def check_access_expiry(context) -> None:
@@ -1936,16 +1921,14 @@ def check_access_expiry(context) -> None:
         name = str(row.get("display_name") or "")
         expires_at = row.get("expires_at")
         expires_str = expires_at.strftime("%d.%m.%Y") if expires_at else "?"
+        expiry_lang = i18n.get_lang(target_id)
         try:
             bot.send_message(
                 chat_id=target_id,
-                text=(
-                    "⏳ Через 3 дні закінчується ваша підписка на моніторинг житла "
-                    "в Потсдамі. Бажаєте продовжити?"
-                ),
+                text=i18n.t("housing.access.expiry_warning", expiry_lang),
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("✅ Продовжити підписку", callback_data=f"housing:access_continue:{target_id}"),
-                    InlineKeyboardButton("❌ Не продовжувати", callback_data=f"housing:access_stop:{target_id}"),
+                    InlineKeyboardButton(i18n.t("housing.access.btn.continue", expiry_lang), callback_data=f"housing:access_continue:{target_id}"),
+                    InlineKeyboardButton(i18n.t("housing.access.btn.stop", expiry_lang), callback_data=f"housing:access_stop:{target_id}"),
                 ]]),
             )
         except Exception:
@@ -1986,7 +1969,7 @@ def start_admin_add_flow(update: Update, context: CallbackContext, edit: bool = 
         update.effective_message.reply_text(text, parse_mode="HTML")
 
 
-def _immowelt_district_keyboard(selected=None) -> InlineKeyboardMarkup:
+def _immowelt_district_keyboard(selected=None, lang: str = "uk") -> InlineKeyboardMarkup:
     selected = set(selected or [])
     rows = []
     for district in IMMOWELT_DISTRICTS:
@@ -1994,88 +1977,80 @@ def _immowelt_district_keyboard(selected=None) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(
             f"{mark} {district}", callback_data=f"housing:imm_district:{district}"
         )])
-    rows.append([InlineKeyboardButton("✅ Готово", callback_data="housing:imm_district_done")])
-    rows.append([InlineKeyboardButton("🌍 Усі райони", callback_data="housing:imm_district_all")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.done", lang), callback_data="housing:imm_district_done")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.all_districts", lang), callback_data="housing:imm_district_all")])
     rows.append([InlineKeyboardButton(BTN_CANCEL, callback_data="housing:imm_cancel")])
     return InlineKeyboardMarkup(rows)
 
 
-def _immowelt_district_text(selected=None) -> str:
+def _immowelt_district_text(selected=None, lang: str = "uk") -> str:
     selected = selected or []
-    suffix = ", ".join(selected) if selected else "усі райони"
-    return (
-        "🏙 <b>Райони Immowelt</b>\n\nОберіть райони галочками.\n"
-        f"Поточний вибір: <b>{html.escape(suffix)}</b>"
-    )
+    suffix = ", ".join(selected) if selected else i18n.t("housing.describe.all_districts", lang)
+    return i18n.t("housing.district.text", lang, title=i18n.t("housing.district.title_immowelt", lang), selection=html.escape(suffix))
 
 
 
-def _preview_text(criteria: Dict[str, object], preview: Dict[str, object]) -> str:
+def _preview_text(criteria: Dict[str, object], preview: Dict[str, object], lang: str = "uk") -> str:
     lines = [
-        "🔍 <b>Перевірка фільтра</b>",
+        i18n.t("housing.preview.title", lang),
         "",
-        f"Умови: {_describe_criteria(criteria)}",
+        i18n.t("housing.preview.criteria_line", lang, criteria=_describe_criteria(criteria, lang)),
         "",
     ]
     if not preview:
-        lines.append("Не вдалося звʼязатися з перевіркою, але фільтр можна зберегти.")
+        lines.append(i18n.t("housing.preview.no_connection", lang))
         return "\n".join(lines)
     match_count = int(preview.get("match_count") or 0)
     catalog_size = int(preview.get("catalog_size") or 0)
     if not catalog_size:
-        lines.append("Каталог ще порожній — перший обхід збирає його мовчки.")
+        lines.append(i18n.t("housing.preview.catalog_empty", lang))
     elif not match_count:
-        lines.append(
-            f"Зараз під ці умови не підходить жодна з {catalog_size} квартир у каталозі. "
-            "Фільтр працюватиме, але новин може довго не бути — спробуйте послабити умови."
-        )
+        lines.append(i18n.t("housing.preview.no_matches", lang, catalog_size=catalog_size))
     else:
-        lines.append(f"Зараз підходить {match_count} з {catalog_size} квартир у каталозі, наприклад:")
+        lines.append(i18n.t("housing.preview.matches_found", lang, match_count=match_count, catalog_size=catalog_size))
         for item in preview.get("matches") or []:
             title_text = html.escape(str(item.get("title") or "Wohnung"))
             details = []
             if item.get("price_eur"):
                 details.append(f"{int(item['price_eur'])} €")
             if item.get("rooms"):
-                details.append(f"{item['rooms']:g} кімн.")
+                details.append(f"{item['rooms']:g}{i18n.t('housing.unit.rooms', lang)}")
             if item.get("area_m2"):
-                details.append(f"{item['area_m2']:g} м²")
+                details.append(f"{item['area_m2']:g}{i18n.t('housing.unit.m2', lang)}")
             suffix = f" — {' · '.join(details)}" if details else ""
             lines.append(f"• <a href=\"{html.escape(str(item.get('url')))}\">{title_text}</a>{suffix}")
         lines.append("")
-        lines.append("Нові оголошення надходитимуть у міру появи.")
+        lines.append(i18n.t("housing.preview.new_listings_note", lang))
     return "\n".join(lines)
 
 
-def _preview_keyboard() -> InlineKeyboardMarkup:
+def _preview_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Зберегти фільтр", callback_data="housing:imm_save")],
-        [InlineKeyboardButton("⬅️ Назад — виправити умови", callback_data="housing:imm_back")],
+        [InlineKeyboardButton(i18n.t("housing.btn.save_filter", lang), callback_data="housing:imm_save")],
+        [InlineKeyboardButton(i18n.t("housing.btn.back_fix_criteria", lang), callback_data="housing:imm_back")],
         [InlineKeyboardButton(BTN_CANCEL, callback_data="housing:imm_cancel")],
     ])
 
 
-def _district_keyboard(selected=None) -> InlineKeyboardMarkup:
+def _district_keyboard(selected=None, lang: str = "uk") -> InlineKeyboardMarkup:
     selected = set(selected or [])
     rows = []
     for district in PROPOT_DISTRICTS:
         mark = "✅" if district in selected else "☐"
         rows.append([InlineKeyboardButton(f"{mark} {district}", callback_data=f"housing:propot_district:{district}")])
-    rows.append([InlineKeyboardButton("✅ Готово", callback_data="housing:propot_district_done")])
-    rows.append([InlineKeyboardButton("🌍 Усі райони", callback_data="housing:propot_district_all")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.done", lang), callback_data="housing:propot_district_done")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.all_districts", lang), callback_data="housing:propot_district_all")])
     rows.append([InlineKeyboardButton(BTN_CANCEL, callback_data="housing:propot_cancel")])
     return InlineKeyboardMarkup(rows)
 
 
-def _district_text(selected=None) -> str:
+def _district_text(selected=None, lang: str = "uk") -> str:
     selected = selected or []
-    suffix = ", ".join(selected) if selected else "усі райони"
-    return f"🏢 <b>Райони ProPotsdam</b>\n\nОберіть райони галочками.\nПоточний вибір: <b>{html.escape(suffix)}</b>"
+    suffix = ", ".join(selected) if selected else i18n.t("housing.describe.all_districts", lang)
+    return i18n.t("housing.district.text", lang, title=i18n.t("housing.district.title_propot", lang), selection=html.escape(suffix))
 
 
-
-
-def _sources_keyboard(selected) -> InlineKeyboardMarkup:
+def _sources_keyboard(selected, lang: str = "uk") -> InlineKeyboardMarkup:
     selected = set(selected or [])
     rows = []
     for spec in AVAILABLE_SOURCES:
@@ -2083,19 +2058,18 @@ def _sources_keyboard(selected) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(
             f"{mark} {spec['icon']} {spec['label']}", callback_data=f"housing:src:{spec['key']}"
         )])
-    rows.append([InlineKeyboardButton("➡ Далі", callback_data="housing:src_done")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.next", lang), callback_data="housing:src_done")])
     rows.append([InlineKeyboardButton(BTN_CANCEL, callback_data="housing:src_cancel")])
     return InlineKeyboardMarkup(rows)
 
 
-def _sources_text(selected) -> str:
+def _sources_text(selected, lang: str = "uk") -> str:
     selected = selected or []
-    names = ", ".join(SOURCE_LABEL.get(key, key) for key in selected) if selected else "не обрано"
-    return (
-        "🔎 <b>Новий фільтр</b>\n\nОберіть, де шукати — можна кілька порталів одразу. "
-        "Список порталів згодом поповнюватиметься.\n"
-        f"Поточний вибір: <b>{html.escape(names)}</b>"
+    names = (
+        ", ".join(SOURCE_LABEL.get(key, key) for key in selected) if selected
+        else i18n.t("housing.sources.none_selected", lang)
     )
+    return i18n.t("housing.sources.text", lang, selection=html.escape(names))
 
 
 def start_self_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
@@ -2108,8 +2082,9 @@ def start_self_add_flow(update: Update, context: CallbackContext, edit: bool = F
     context.user_data["housing_admin"] = {
         "step": "sources", "user_id": int(user.id), "sources_selected": [],
     }
-    text = _sources_text([])
-    keyboard = _sources_keyboard([])
+    lang = i18n.get_lang(user.id)
+    text = _sources_text([], lang)
+    keyboard = _sources_keyboard([], lang)
     if edit and update.callback_query:
         update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
     else:
@@ -2249,39 +2224,40 @@ def _set_notification_prefs(user_id: int, **kwargs) -> Dict[str, object]:
     return _request("POST", "/api/housing/notification-prefs", json={"user_id": user_id, **kwargs})
 
 
-def _notify_settings_text(prefs: Dict[str, object]) -> str:
-    quiet = "✅ увімкнена" if prefs.get("quiet_hours_enabled") else "вимкнена"
-    mode = "раз на день" if prefs.get("digest_mode") == "daily" else "одразу"
-    return (
-        "🔔 <b>Сповіщення</b>\n\n"
-        f"🌙 Тиха ніч ({QUIET_HOURS_LABEL}): {quiet}\n"
-        f"📬 Режим доставки: {mode}\n\n"
-        "У тиху ніч і в режимі «раз на день» оголошення не пропадають — "
-        "прийдуть, щойно ніч закінчиться чи настане час зведення. Понад "
-        f"{DEFAULT_HOURLY_CAP_LABEL} за годину теж не приходить одразу: "
-        "решта — одним підсумковим повідомленням."
+def _notify_settings_text(prefs: Dict[str, object], lang: str = "uk") -> str:
+    quiet = (
+        i18n.t("housing.notify.quiet_on", lang) if prefs.get("quiet_hours_enabled")
+        else i18n.t("housing.notify.quiet_off", lang)
+    )
+    mode = (
+        i18n.t("housing.notify.mode_daily", lang) if prefs.get("digest_mode") == "daily"
+        else i18n.t("housing.notify.mode_instant", lang)
+    )
+    return i18n.t(
+        "housing.notify.text", lang, quiet_hours=QUIET_HOURS_LABEL, quiet=quiet, mode=mode,
+        cap=i18n.t("housing.notify.cap_label", lang),
     )
 
 
-def _notify_settings_keyboard(prefs: Dict[str, object]) -> InlineKeyboardMarkup:
+def _notify_settings_keyboard(prefs: Dict[str, object], lang: str = "uk") -> InlineKeyboardMarkup:
     quiet_on = bool(prefs.get("quiet_hours_enabled"))
     mode = str(prefs.get("digest_mode") or "instant")
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
-            "🌙 Тиха ніч: увімкнена ✅" if quiet_on else "🌙 Тиха ніч: вимкнена",
+            i18n.t("housing.notify.btn.quiet_on", lang) if quiet_on else i18n.t("housing.notify.btn.quiet_off", lang),
             callback_data=f"housing:notify_quiet:{0 if quiet_on else 1}",
         )],
         [
             InlineKeyboardButton(
-                ("✅ " if mode == "instant" else "") + "📬 Одразу",
+                ("✅ " if mode == "instant" else "") + i18n.t("housing.notify.btn.instant", lang),
                 callback_data="housing:notify_digest:instant",
             ),
             InlineKeyboardButton(
-                ("✅ " if mode == "daily" else "") + "📮 Раз на день",
+                ("✅ " if mode == "daily" else "") + i18n.t("housing.notify.btn.daily", lang),
                 callback_data="housing:notify_digest:daily",
             ),
         ],
-        [InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")],
+        [InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")],
     ])
 
 
@@ -2289,9 +2265,10 @@ def show_notify_settings(update: Update, context: CallbackContext, edit: bool = 
     user = update.effective_user
     if not user or not is_allowed(user.id):
         return
+    lang = i18n.get_lang(user.id)
     prefs = _notification_prefs(int(user.id))
-    text = _notify_settings_text(prefs)
-    keyboard = _notify_settings_keyboard(prefs)
+    text = _notify_settings_text(prefs, lang)
+    keyboard = _notify_settings_keyboard(prefs, lang)
     if edit and update.callback_query:
         try:
             update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
@@ -2488,9 +2465,9 @@ def start_edit_flow(update: Update, context: CallbackContext, filter_id: int) ->
     }
     query.answer()
     query.edit_message_text(
-        _immowelt_district_text(districts_selected),
+        _immowelt_district_text(districts_selected, i18n.get_lang(user.id)),
         parse_mode="HTML",
-        reply_markup=_immowelt_district_keyboard(districts_selected),
+        reply_markup=_immowelt_district_keyboard(districts_selected, i18n.get_lang(user.id)),
     )
 
 
@@ -2522,9 +2499,9 @@ def start_propot_edit_flow(update: Update, context: CallbackContext, filter_id: 
     }
     query.answer()
     query.edit_message_text(
-        _district_text(districts_selected),
+        _district_text(districts_selected, i18n.get_lang(user.id)),
         parse_mode="HTML",
-        reply_markup=_district_keyboard(districts_selected),
+        reply_markup=_district_keyboard(districts_selected, i18n.get_lang(user.id)),
     )
 
 
@@ -2615,7 +2592,7 @@ def _handle_semmelhaack_flow(update: Update, context: CallbackContext, state: di
         if index < len(SEMM_CRITERIA_KEYS) - 1:
             next_key = SEMM_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, SEMM_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)))
+            _reply_field_prompt(update.message, _field_prompt(state, SEMM_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
             return True
         _finalize_semmelhaack_filter(update.message, context, state)
         return True
@@ -2708,7 +2685,7 @@ def _handle_schoba_flow(update: Update, context: CallbackContext, state: dict, t
         if index < len(SCHOBA_CRITERIA_KEYS) - 1:
             next_key = SCHOBA_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, SCHOBA_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)))
+            _reply_field_prompt(update.message, _field_prompt(state, SCHOBA_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
             return True
         _finalize_schoba_filter(update.message, context, state)
         return True
@@ -2801,7 +2778,7 @@ def _handle_regiomakler_flow(update: Update, context: CallbackContext, state: di
         if index < len(REGIOMAKLER_CRITERIA_KEYS) - 1:
             next_key = REGIOMAKLER_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)))
+            _reply_field_prompt(update.message, _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
             return True
         _finalize_regiomakler_filter(update.message, context, state)
         return True
@@ -2894,7 +2871,7 @@ def _handle_kleinanzeigen_flow(update: Update, context: CallbackContext, state: 
         if index < len(KLEINANZEIGEN_CRITERIA_KEYS) - 1:
             next_key = KLEINANZEIGEN_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)))
+            _reply_field_prompt(update.message, _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
             return True
         _finalize_kleinanzeigen_filter(update.message, context, state)
         return True
@@ -2987,7 +2964,7 @@ def _handle_locals_flow(update: Update, context: CallbackContext, state: dict, t
         if index < len(LOCALS_CRITERIA_KEYS) - 1:
             next_key = LOCALS_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, LOCALS_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)))
+            _reply_field_prompt(update.message, _field_prompt(state, LOCALS_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
             return True
         _finalize_locals_filter(update.message, context, state)
         return True
@@ -3080,7 +3057,7 @@ def _handle_karlmarx_flow(update: Update, context: CallbackContext, state: dict,
         if index < len(KARLMARX_CRITERIA_KEYS) - 1:
             next_key = KARLMARX_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, KARLMARX_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)))
+            _reply_field_prompt(update.message, _field_prompt(state, KARLMARX_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
             return True
         _finalize_karlmarx_filter(update.message, context, state)
         return True
@@ -3091,10 +3068,11 @@ def _show_immowelt_preview(message, state: dict) -> None:
     criteria = _criteria_from_state(state)
     state["title"] = _auto_title("immowelt", criteria)
     state["step"] = "preview"
+    lang = i18n.get_lang(state.get("user_id"))
     message.reply_text(
-        _preview_text(criteria, _preview_criteria(criteria)),
+        _preview_text(criteria, _preview_criteria(criteria), lang),
         parse_mode="HTML",
-        reply_markup=_preview_keyboard(),
+        reply_markup=_preview_keyboard(lang),
         disable_web_page_preview=True,
     )
 
@@ -3113,10 +3091,11 @@ def _back_from_immowelt_preview(update: Update, context: CallbackContext) -> Non
         return
     state["step"] = "districts"
     query.answer()
+    lang = i18n.get_lang(update.effective_user.id)
     query.edit_message_text(
-        _immowelt_district_text(state.get("districts_selected")),
+        _immowelt_district_text(state.get("districts_selected"), lang),
         parse_mode="HTML",
-        reply_markup=_immowelt_district_keyboard(state.get("districts_selected")),
+        reply_markup=_immowelt_district_keyboard(state.get("districts_selected"), lang),
     )
 
 
@@ -3286,14 +3265,15 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
 
 def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
     step = state.get("step")
+    lang = i18n.get_lang(update.effective_user.id)
     if step == "districts":
         update.message.reply_text(
-            "Оберіть райони кнопками нижче і натисніть «Готово».",
-            reply_markup=_immowelt_district_keyboard(state.get("districts_selected")),
+            i18n.t("housing.wizard.pick_districts_hint", lang),
+            reply_markup=_immowelt_district_keyboard(state.get("districts_selected"), lang),
         )
         return True
     if step == "preview":
-        update.message.reply_text("Натисніть «Зберегти фільтр», «Назад» або «Скасувати».", reply_markup=_preview_keyboard())
+        update.message.reply_text(i18n.t("housing.wizard.preview_hint", lang), reply_markup=_preview_keyboard(lang))
         return True
     if step == "clone_price_min" or step == "clone_price_max":
         return _handle_immowelt_clone_price_step(update, context, state, step, text)
@@ -3311,7 +3291,7 @@ def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict,
         if index < len(IMMOWELT_CRITERIA_KEYS) - 1:
             next_key = IMMOWELT_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)))
+            _reply_field_prompt(update.message, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
             return True
         _show_immowelt_preview(update.message, state)
         return True
@@ -3342,7 +3322,7 @@ def _handle_immowelt_clone_price_step(
     if step == "clone_price_min":
         state["step"] = "clone_price_max"
         price_fields = [IMMOWELT_CRITERIA_BY_KEY["min_price_eur"], IMMOWELT_CRITERIA_BY_KEY["max_price_eur"]]
-        _reply_field_prompt(update.message, _field_prompt(state, price_fields, "max_price_eur", i18n.get_lang(update.effective_user.id)))
+        _reply_field_prompt(update.message, _field_prompt(state, price_fields, "max_price_eur", i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
         return True
     _show_immowelt_preview(update.message, state)
     return True
@@ -3361,10 +3341,11 @@ def _toggle_immowelt_district(update: Update, context: CallbackContext, district
         selected.append(district)
     state["districts_selected"] = selected
     query.answer()
+    lang = i18n.get_lang(update.effective_user.id)
     query.edit_message_text(
-        _immowelt_district_text(selected),
+        _immowelt_district_text(selected, lang),
         parse_mode="HTML",
-        reply_markup=_immowelt_district_keyboard(selected),
+        reply_markup=_immowelt_district_keyboard(selected, lang),
     )
 
 
@@ -3379,13 +3360,17 @@ def _finish_immowelt_districts(update: Update, context: CallbackContext, all_dis
     first_key = IMMOWELT_CRITERIA_KEYS[0]
     state["step"] = first_key
     query.answer()
-    _edit_field_prompt(query, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)))
+    _edit_field_prompt(query, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
 
 
 def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
     step = state.get("step")
     if step == "districts":
-        update.message.reply_text("Оберіть райони кнопками нижче і натисніть 'Готово'.", reply_markup=_district_keyboard(state.get("districts_selected")))
+        lang = i18n.get_lang(update.effective_user.id)
+        update.message.reply_text(
+            i18n.t("housing.wizard.pick_districts_hint", lang),
+            reply_markup=_district_keyboard(state.get("districts_selected"), lang),
+        )
         return True
     if step == "clone_price_min" or step == "clone_price_max":
         return _handle_propot_clone_price_step(update, context, state, step, text)
@@ -3403,7 +3388,7 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
         if index < len(PROPOT_CRITERIA_KEYS) - 1:
             next_key = PROPOT_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, PROPOT_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)))
+            _reply_field_prompt(update.message, _field_prompt(state, PROPOT_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
             return True
         _finalize_propot_filter(update.message, int(update.effective_user.id), context, state)
         return True
@@ -3428,7 +3413,7 @@ def _handle_propot_clone_price_step(
     if step == "clone_price_min":
         state["step"] = "clone_price_max"
         rent_fields = [PROPOT_CRITERIA_BY_KEY["min_total_rent_eur"], PROPOT_CRITERIA_BY_KEY["max_total_rent_eur"]]
-        _reply_field_prompt(update.message, _field_prompt(state, rent_fields, "max_total_rent_eur", i18n.get_lang(update.effective_user.id)))
+        _reply_field_prompt(update.message, _field_prompt(state, rent_fields, "max_total_rent_eur", i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
         return True
     _finalize_propot_filter(update.message, int(update.effective_user.id), context, state)
     return True
@@ -3575,9 +3560,10 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
         )
         return True
     if state.get("step") == "sources":
+        lang = i18n.get_lang(user_id)
         update.message.reply_text(
-            "Оберіть портали кнопками нижче і натисніть «Далі».",
-            reply_markup=_sources_keyboard(state.get("sources_selected")),
+            i18n.t("housing.wizard.pick_sources_hint", lang),
+            reply_markup=_sources_keyboard(state.get("sources_selected"), lang),
         )
         return True
     if state.get("mode") == "propotsdam":
@@ -3612,7 +3598,8 @@ def _toggle_district(update: Update, context: CallbackContext, district: str) ->
         selected.append(district)
     state["districts_selected"] = selected
     query.answer()
-    query.edit_message_text(_district_text(selected), parse_mode="HTML", reply_markup=_district_keyboard(selected))
+    lang = i18n.get_lang(update.effective_user.id)
+    query.edit_message_text(_district_text(selected, lang), parse_mode="HTML", reply_markup=_district_keyboard(selected, lang))
 
 
 def _finish_districts(update: Update, context: CallbackContext, all_districts: bool = False) -> None:
@@ -3626,7 +3613,7 @@ def _finish_districts(update: Update, context: CallbackContext, all_districts: b
     first_key = PROPOT_CRITERIA_KEYS[0]
     state["step"] = first_key
     query.answer()
-    _edit_field_prompt(query, _field_prompt(state, PROPOT_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)))
+    _edit_field_prompt(query, _field_prompt(state, PROPOT_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
 
 
 def _toggle_source(update: Update, context: CallbackContext, source_key: str) -> None:
@@ -3642,26 +3629,27 @@ def _toggle_source(update: Update, context: CallbackContext, source_key: str) ->
         selected.append(source_key)
     state["sources_selected"] = selected
     query.answer()
-    query.edit_message_text(_sources_text(selected), parse_mode="HTML", reply_markup=_sources_keyboard(selected))
+    lang = i18n.get_lang(update.effective_user.id)
+    query.edit_message_text(_sources_text(selected, lang), parse_mode="HTML", reply_markup=_sources_keyboard(selected, lang))
 
 
-def _multi_district_keyboard(state: dict, selected) -> InlineKeyboardMarkup:
+def _multi_district_keyboard(state: dict, selected, lang: str = "uk") -> InlineKeyboardMarkup:
     selected = set(selected or [])
     districts = _canonical_districts(state.get("sources_selected") or [])
     rows = []
     for district in districts:
         mark = "✅" if district in selected else "☐"
         rows.append([InlineKeyboardButton(f"{mark} {district}", callback_data=f"housing:multi_district:{district}")])
-    rows.append([InlineKeyboardButton("✅ Готово", callback_data="housing:multi_district_done")])
-    rows.append([InlineKeyboardButton("🌍 Усі райони", callback_data="housing:multi_district_all")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.done", lang), callback_data="housing:multi_district_done")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.all_districts", lang), callback_data="housing:multi_district_all")])
     rows.append([InlineKeyboardButton(BTN_CANCEL, callback_data="housing:multi_cancel")])
     return InlineKeyboardMarkup(rows)
 
 
-def _multi_district_text(selected) -> str:
+def _multi_district_text(selected, lang: str = "uk") -> str:
     selected = selected or []
-    suffix = ", ".join(selected) if selected else "усі райони"
-    return f"🏙 <b>Райони</b>\n\nОберіть райони галочками.\nПоточний вибір: <b>{html.escape(suffix)}</b>"
+    suffix = ", ".join(selected) if selected else i18n.t("housing.describe.all_districts", lang)
+    return i18n.t("housing.district.text", lang, title=i18n.t("housing.district.title_multi", lang), selection=html.escape(suffix))
 
 
 def _finish_sources(update: Update, context: CallbackContext) -> None:
@@ -3677,17 +3665,18 @@ def _finish_sources(update: Update, context: CallbackContext) -> None:
     state["mode"] = "multi"
     state["districts_selected"] = []
     query.answer()
+    lang = i18n.get_lang(update.effective_user.id)
     if any(source in DISTRICT_AWARE_SOURCES for source in selected):
         state["step"] = "districts"
         query.edit_message_text(
-            _multi_district_text([]), parse_mode="HTML", reply_markup=_multi_district_keyboard(state, [])
+            _multi_district_text([], lang), parse_mode="HTML", reply_markup=_multi_district_keyboard(state, [], lang)
         )
         return
     # Жодне обране джерело не знає районів (лише SEMMELHAACK) — крок вибору
     # району тут нема сенсу показувати, він однаково нічого не відфільтрує.
     first_key = SHARED_CRITERIA_KEYS[0]
     state["step"] = first_key
-    _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)))
+    _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
 
 
 def _toggle_multi_district(update: Update, context: CallbackContext, district: str) -> None:
@@ -3703,8 +3692,9 @@ def _toggle_multi_district(update: Update, context: CallbackContext, district: s
         selected.append(district)
     state["districts_selected"] = selected
     query.answer()
+    lang = i18n.get_lang(update.effective_user.id)
     query.edit_message_text(
-        _multi_district_text(selected), parse_mode="HTML", reply_markup=_multi_district_keyboard(state, selected)
+        _multi_district_text(selected, lang), parse_mode="HTML", reply_markup=_multi_district_keyboard(state, selected, lang)
     )
 
 
@@ -3718,7 +3708,7 @@ def _finish_multi_districts(update: Update, context: CallbackContext, all_distri
         state["districts_selected"] = []
     state["step"] = SHARED_CRITERIA_KEYS[0]
     query.answer()
-    _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, SHARED_CRITERIA_KEYS[0], i18n.get_lang(update.effective_user.id)))
+    _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, SHARED_CRITERIA_KEYS[0], i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
 
 
 def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> None:
@@ -3933,26 +3923,26 @@ def _step_back(update: Update, context: CallbackContext) -> None:
         if idx == 0:
             state["step"] = "districts"
             query.edit_message_text(
-                _immowelt_district_text(state.get("districts_selected")), parse_mode="HTML",
-                reply_markup=_immowelt_district_keyboard(state.get("districts_selected")),
+                _immowelt_district_text(state.get("districts_selected"), lang), parse_mode="HTML",
+                reply_markup=_immowelt_district_keyboard(state.get("districts_selected"), lang),
             )
             return
         prev_key = IMMOWELT_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, prev_key, lang))
+        _edit_field_prompt(query, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, prev_key, lang), lang)
         return
     if mode == "propotsdam" and step in PROPOT_CRITERIA_KEYS:
         idx = PROPOT_CRITERIA_KEYS.index(step)
         if idx == 0:
             state["step"] = "districts"
             query.edit_message_text(
-                _district_text(state.get("districts_selected")), parse_mode="HTML",
-                reply_markup=_district_keyboard(state.get("districts_selected")),
+                _district_text(state.get("districts_selected"), lang), parse_mode="HTML",
+                reply_markup=_district_keyboard(state.get("districts_selected"), lang),
             )
             return
         prev_key = PROPOT_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, PROPOT_CRITERIA_FIELDS, prev_key, lang))
+        _edit_field_prompt(query, _field_prompt(state, PROPOT_CRITERIA_FIELDS, prev_key, lang), lang)
         return
     if mode == "semmelhaack" and step in SEMM_CRITERIA_KEYS:
         idx = SEMM_CRITERIA_KEYS.index(step)
@@ -3962,7 +3952,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = SEMM_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, SEMM_CRITERIA_FIELDS, prev_key, lang))
+        _edit_field_prompt(query, _field_prompt(state, SEMM_CRITERIA_FIELDS, prev_key, lang), lang)
         return
     if mode == "schoba" and step in SCHOBA_CRITERIA_KEYS:
         idx = SCHOBA_CRITERIA_KEYS.index(step)
@@ -3970,7 +3960,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = SCHOBA_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, SCHOBA_CRITERIA_FIELDS, prev_key, lang))
+        _edit_field_prompt(query, _field_prompt(state, SCHOBA_CRITERIA_FIELDS, prev_key, lang), lang)
         return
     if mode == "regiomakler" and step in REGIOMAKLER_CRITERIA_KEYS:
         idx = REGIOMAKLER_CRITERIA_KEYS.index(step)
@@ -3978,7 +3968,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = REGIOMAKLER_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, prev_key, lang))
+        _edit_field_prompt(query, _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, prev_key, lang), lang)
         return
     if mode == "kleinanzeigen" and step in KLEINANZEIGEN_CRITERIA_KEYS:
         idx = KLEINANZEIGEN_CRITERIA_KEYS.index(step)
@@ -3986,7 +3976,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = KLEINANZEIGEN_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, prev_key, lang))
+        _edit_field_prompt(query, _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, prev_key, lang), lang)
         return
     if mode == "locals" and step in LOCALS_CRITERIA_KEYS:
         idx = LOCALS_CRITERIA_KEYS.index(step)
@@ -3994,7 +3984,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = LOCALS_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, LOCALS_CRITERIA_FIELDS, prev_key, lang))
+        _edit_field_prompt(query, _field_prompt(state, LOCALS_CRITERIA_FIELDS, prev_key, lang), lang)
         return
     if mode == "karlmarx" and step in KARLMARX_CRITERIA_KEYS:
         idx = KARLMARX_CRITERIA_KEYS.index(step)
@@ -4002,7 +3992,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = KARLMARX_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, KARLMARX_CRITERIA_FIELDS, prev_key, lang))
+        _edit_field_prompt(query, _field_prompt(state, KARLMARX_CRITERIA_FIELDS, prev_key, lang), lang)
         return
     if mode in ("immowelt", "propotsdam") and step in ("clone_price_min", "clone_price_max"):
         # Клон переносить район/кімнати/площу без питань — до них нема куди
@@ -4023,19 +4013,19 @@ def _step_back(update: Update, context: CallbackContext) -> None:
                 if any(source in DISTRICT_AWARE_SOURCES for source in sources):
                     state["step"] = "districts"
                     query.edit_message_text(
-                        _multi_district_text(state.get("districts_selected")), parse_mode="HTML",
-                        reply_markup=_multi_district_keyboard(state, state.get("districts_selected")),
+                        _multi_district_text(state.get("districts_selected"), lang), parse_mode="HTML",
+                        reply_markup=_multi_district_keyboard(state, state.get("districts_selected"), lang),
                     )
                 else:
                     state["step"] = "sources"
                     query.edit_message_text(
-                        _sources_text(state.get("sources_selected")), parse_mode="HTML",
-                        reply_markup=_sources_keyboard(state.get("sources_selected")),
+                        _sources_text(state.get("sources_selected"), lang), parse_mode="HTML",
+                        reply_markup=_sources_keyboard(state.get("sources_selected"), lang),
                     )
                 return
             prev_key = SHARED_CRITERIA_KEYS[idx - 1]
             state["step"] = prev_key
-            _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key, lang))
+            _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key, lang), lang)
             return
         if step in PRICE_STEP_PROMPTS:
             price_steps = state.get("_price_steps") or []
@@ -4044,17 +4034,17 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             if idx == 0:
                 prev_key = SHARED_CRITERIA_KEYS[-1]
                 state["step"] = prev_key
-                _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key, lang))
+                _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key, lang), lang)
                 return
             prev_key = price_steps[idx - 1]
             state["step"] = prev_key
-            _edit_field_prompt(query, _field_prompt(state, price_fields, prev_key, lang))
+            _edit_field_prompt(query, _field_prompt(state, price_fields, prev_key, lang), lang)
             return
         if step == "districts":
             state["step"] = "sources"
             query.edit_message_text(
-                _sources_text(state.get("sources_selected")), parse_mode="HTML",
-                reply_markup=_sources_keyboard(state.get("sources_selected")),
+                _sources_text(state.get("sources_selected"), lang), parse_mode="HTML",
+                reply_markup=_sources_keyboard(state.get("sources_selected"), lang),
             )
             return
 
@@ -4062,9 +4052,10 @@ def _step_back(update: Update, context: CallbackContext) -> None:
 def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
     step = state.get("step")
     if step == "districts":
+        lang = i18n.get_lang(update.effective_user.id)
         update.message.reply_text(
-            "Оберіть райони кнопками нижче і натисніть «Готово».",
-            reply_markup=_multi_district_keyboard(state, state.get("districts_selected")),
+            i18n.t("housing.wizard.pick_districts_hint", lang),
+            reply_markup=_multi_district_keyboard(state, state.get("districts_selected"), lang),
         )
         return True
     if step in SHARED_CRITERIA_BY_KEY:
@@ -4081,7 +4072,7 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
         if index < len(SHARED_CRITERIA_KEYS) - 1:
             next_key = SHARED_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, SHARED_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)))
+            _reply_field_prompt(update.message, _field_prompt(state, SHARED_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
             return True
         price_steps = _price_steps_for(state.get("sources_selected") or [])
         if not price_steps:
@@ -4090,7 +4081,7 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
         state["_price_steps"] = price_steps
         state["step"] = price_steps[0]
         price_fields = SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_steps]
-        _reply_field_prompt(update.message, _field_prompt(state, price_fields, price_steps[0], i18n.get_lang(update.effective_user.id)))
+        _reply_field_prompt(update.message, _field_prompt(state, price_fields, price_steps[0], i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
         return True
     if step in PRICE_STEP_PROMPTS:
         value = _parse_single_number(text)
@@ -4108,7 +4099,7 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
             next_step = price_steps[idx + 1]
             state["step"] = next_step
             price_fields = SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_steps]
-            _reply_field_prompt(update.message, _field_prompt(state, price_fields, next_step, i18n.get_lang(update.effective_user.id)))
+            _reply_field_prompt(update.message, _field_prompt(state, price_fields, next_step, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
             return True
         _finalize_multi_filter(update.message, context, state)
         return True

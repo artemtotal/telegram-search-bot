@@ -105,5 +105,64 @@
   "housing.toast.filter_delete_failed": "Filter konnte nicht gelöscht werden.",
   "housing.toast.filter_deleted": "Filter gelöscht.",
   "housing.toast.filter_saved": "Filter gespeichert.",
-  "housing.toast.pick_a_source": "Wählen Sie mindestens ein Portal."
+  "housing.toast.pick_a_source": "Wählen Sie mindestens ein Portal.",
+
+  "housing.notify.quiet_on": "✅ aktiviert",
+  "housing.notify.quiet_off": "deaktiviert",
+  "housing.notify.mode_daily": "einmal täglich",
+  "housing.notify.mode_instant": "sofort",
+  "housing.notify.cap_label": "5 Angebote",
+  "housing.notify.text": "🔔 <b>Benachrichtigungen</b>\n\n🌙 Nachtruhe ({quiet_hours}): {quiet}\n📬 Zustellmodus: {mode}\n\nWährend der Nachtruhe und im Modus „einmal täglich“ gehen Angebote nicht verloren — sie kommen, sobald die Nachtruhe endet oder die Zusammenfassung fällig ist. Mehr als {cap} pro Stunde kommen ebenfalls nicht sofort: der Rest folgt in einer gesammelten Nachricht.",
+  "housing.notify.btn.quiet_on": "🌙 Nachtruhe: aktiviert ✅",
+  "housing.notify.btn.quiet_off": "🌙 Nachtruhe: deaktiviert",
+  "housing.notify.btn.instant": "📬 Sofort",
+  "housing.notify.btn.daily": "📮 Einmal täglich",
+
+  "housing.btn.home_monitor": "🏠 Wohnungs-Monitoring",
+
+  "housing.access.already_open": "Zugang ist bereits geöffnet.",
+  "housing.access.admin_not_configured": "Administrator ist nicht konfiguriert.",
+  "housing.access.already_requested": "Anfrage bereits gesendet, bitte warten Sie auf eine Antwort.",
+  "housing.access.request_failed": "Anfrage konnte nicht gesendet werden. Versuchen Sie es später erneut.",
+  "housing.access.request_sent_toast": "Anfrage gesendet.",
+  "housing.access.request_sent_text": "📩 Anfrage an den Administrator gesendet.\n\nWir melden uns, sobald der Zugang freigeschaltet ist.",
+  "housing.access.until": " bis {date}",
+  "housing.access.granted": "✅ Zugang zum Wohnungs-Monitoring freigeschaltet{until}. Tippen Sie auf „{btn}“, um einen Filter hinzuzufügen.",
+  "housing.access.revoked": "⛔ Der Zugang zum Wohnungs-Monitoring ist abgelaufen. Falls Sie ihn wieder benötigen — tippen Sie auf „{btn}“ und beantragen Sie erneut Zugang.",
+  "housing.access.goodbye": "Danke, dass Sie dabei waren! 🙏\n\nSie können sich jederzeit wieder an @artemtotal wenden, falls Sie das Wohnungs-Monitoring erneut brauchen. Wir hoffen, Sie haben bereits eine Wohnung gefunden. 🏡",
+  "housing.access.denied_notice": "Leider ist der Zugang zum Wohnungs-Monitoring derzeit nicht freigeschaltet.",
+  "housing.access.expiry_warning": "⏳ In 3 Tagen endet Ihr Abo für das Wohnungs-Monitoring in Potsdam. Möchten Sie verlängern?",
+  "housing.access.btn.continue": "✅ Abo verlängern",
+  "housing.access.btn.stop": "❌ Nicht verlängern",
+  "housing.access.continue_toast": "Danke!",
+  "housing.access.continue_text": "Danke! Wir haben den Administrator informiert — er meldet sich wegen der Verlängerung bei Ihnen.",
+  "housing.access.stop_text": "In Ordnung. In 3 Tagen werden Abo und Zugang zum Wohnungs-Monitoring automatisch beendet.",
+
+  "housing.btn.field_back": "⬅️ Zurück — Antwort korrigieren",
+
+  "housing.btn.done": "✅ Fertig",
+  "housing.btn.all_districts": "🌍 Alle Stadtteile",
+  "housing.btn.next": "➡ Weiter",
+  "housing.btn.save_filter": "✅ Filter speichern",
+  "housing.btn.back_fix_criteria": "⬅️ Zurück — Kriterien korrigieren",
+
+  "housing.district.text": "{title}\n\nWählen Sie die Stadtteile mit den Häkchen.\nAktuelle Auswahl: <b>{selection}</b>",
+  "housing.district.title_immowelt": "🏙 <b>Stadtteile Immowelt</b>",
+  "housing.district.title_propot": "🏢 <b>Stadtteile ProPotsdam</b>",
+  "housing.district.title_multi": "🏙 <b>Stadtteile</b>",
+
+  "housing.sources.none_selected": "nicht ausgewählt",
+  "housing.sources.text": "🔎 <b>Neuer Filter</b>\n\nWählen Sie aus, wo gesucht werden soll — mehrere Portale gleichzeitig sind möglich. Die Liste der Portale wird mit der Zeit erweitert.\nAktuelle Auswahl: <b>{selection}</b>",
+
+  "housing.preview.title": "🔍 <b>Filter-Vorschau</b>",
+  "housing.preview.criteria_line": "Kriterien: {criteria}",
+  "housing.preview.no_connection": "Verbindung zur Vorschau fehlgeschlagen, der Filter kann aber trotzdem gespeichert werden.",
+  "housing.preview.catalog_empty": "Der Katalog ist noch leer — der erste Durchlauf sammelt ihn still im Hintergrund.",
+  "housing.preview.no_matches": "Aktuell passt keine der {catalog_size} Wohnungen im Katalog zu diesen Kriterien. Der Filter läuft trotzdem, aber es kann lange dauern, bis etwas Neues kommt — versuchen Sie, die Kriterien zu lockern.",
+  "housing.preview.matches_found": "Aktuell passen {match_count} von {catalog_size} Wohnungen im Katalog, zum Beispiel:",
+  "housing.preview.new_listings_note": "Neue Angebote treffen ein, sobald sie erscheinen.",
+
+  "housing.wizard.pick_districts_hint": "Wählen Sie die Stadtteile mit den Schaltflächen unten und tippen Sie auf „Fertig“.",
+  "housing.wizard.pick_sources_hint": "Wählen Sie die Portale mit den Schaltflächen unten und tippen Sie auf „Weiter“.",
+  "housing.wizard.preview_hint": "Tippen Sie auf „Filter speichern“, „Zurück“ oder „Abbrechen“."
 }
