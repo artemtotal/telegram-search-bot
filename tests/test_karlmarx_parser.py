@@ -26,9 +26,9 @@ def _card(data_type, href, title, area_label, area_value, price_label, price_val
 
 
 RESIDENTIAL_CARD = _card(
-    "Wohnung Miete", "/fuer-wohnungssucher/expose/potsdamer-mitte-gewerbe-bueroflaechen",
-    "Potsdamer Mitte - Gewerbe, Bürofläche zu vermieten",
-    "Wohnfläche", "97", "Warmmiete", "2861,50", "2",
+    "Wohnung Miete", "/fuer-wohnungssucher/expose/helle-3-zimmer-wohnung",
+    "Helle 3-Zimmer-Wohnung am Alten Markt",
+    "Wohnfläche", "78", "Warmmiete", "950,00", "3",
     "Alter Markt 5a", "14467 Potsdam",
 )
 COMMERCIAL_CARD = _card(
@@ -36,6 +36,17 @@ COMMERCIAL_CARD = _card(
     "Büroräume Ahornstraße zu vermieten",
     "Hauptfläche", "234", "Miete pro Monat", "4212", "2026",
     "Ahornstraße 20", "14482 Potsdam",
+)
+# Real listing from wgkarlmarx.de (confirmed live 2026-08-21): an office
+# space the site itself mistags data-type="Wohnung Miete" even though the
+# title is unambiguously commercial ("Gewerbe, Bürofläche" = commercial
+# office space). This is why parse_listings also has to check the title,
+# not just trust data-type.
+MISTAGGED_COMMERCIAL_CARD = _card(
+    "Wohnung Miete", "/fuer-wohnungssucher/expose/potsdamer-mitte-gewerbe-bueroflaechen",
+    "Potsdamer Mitte - Gewerbe, Bürofläche zu vermieten",
+    "Wohnfläche", "97", "Warmmiete", "2861,50", "2",
+    "Alter Markt 5a", "14467 Potsdam",
 )
 PAGE_HTML = "<html><body>" + COMMERCIAL_CARD + RESIDENTIAL_CARD + "</body></html>"
 
@@ -49,16 +60,24 @@ class KarlmarxParserTests(unittest.TestCase):
         listings = karlmarx_parser.parse_listings(PAGE_HTML)
         listing = listings[0]
 
-        self.assertEqual(listing["listing_key"], "potsdamer-mitte-gewerbe-bueroflaechen")
-        self.assertEqual(listing["title"], "Potsdamer Mitte - Gewerbe, Bürofläche zu vermieten")
-        self.assertEqual(listing["rooms"], 2.0)
-        self.assertEqual(listing["area_m2"], 97.0)
-        self.assertEqual(listing["price_eur"], 2861.5)
+        self.assertEqual(listing["listing_key"], "helle-3-zimmer-wohnung")
+        self.assertEqual(listing["title"], "Helle 3-Zimmer-Wohnung am Alten Markt")
+        self.assertEqual(listing["rooms"], 3.0)
+        self.assertEqual(listing["area_m2"], 78.0)
+        self.assertEqual(listing["price_eur"], 950.0)
         self.assertEqual(listing["city"], "Potsdam")
         self.assertEqual(
             listing["detail_url"],
-            "https://wgkarlmarx.de/fuer-wohnungssucher/expose/potsdamer-mitte-gewerbe-bueroflaechen",
+            "https://wgkarlmarx.de/fuer-wohnungssucher/expose/helle-3-zimmer-wohnung",
         )
+
+    def test_mistagged_commercial_listing_is_excluded_despite_residential_data_type(self):
+        """Regression for a real bug: this exact listing matched a user's
+        residential filter because wgkarlmarx.de tags it data-type="Wohnung
+        Miete" even though it's an office. data-type alone isn't enough."""
+        html = "<html><body>" + MISTAGGED_COMMERCIAL_CARD + "</body></html>"
+
+        self.assertEqual(karlmarx_parser.parse_listings(html), [])
 
     def test_count_all_cards_counts_both_types(self):
         self.assertEqual(karlmarx_parser.count_all_cards(PAGE_HTML), 2)

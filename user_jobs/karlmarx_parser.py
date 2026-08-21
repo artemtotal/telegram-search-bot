@@ -26,6 +26,16 @@ RESIDENTIAL_TYPE = "Wohnung Miete"
 
 _CARD_SPLIT_RE = re.compile(r'<div class="immo-object card"')
 _DATA_TYPE_RE = re.compile(r'data-type="([^"]*)"')
+# wgkarlmarx.de has mistagged at least one real listing this way: an office
+# ("Potsdamer Mitte - Gewerbe, Bürofläche zu vermieten") carries
+# data-type="Wohnung Miete" on the live page despite being unambiguously
+# commercial. The dropdown/data-type alone can't be trusted, so anything
+# whose own title admits it's commercial space is dropped too, regardless
+# of what data-type claims.
+_COMMERCIAL_TITLE_RE = re.compile(
+    r"\b(gewerbe|b[uü]ro(?:fl[aä]che)?|praxis|ladenfl[aä]che|gastronomie|hotel|lagerfl[aä]che|lagerhalle|werkstatt)\b",
+    re.I,
+)
 _HREF_RE = re.compile(r'<a class="card-link" href="([^"]+)"')
 _TITLE_RE = re.compile(r'<h3 class="card-title">([^<]*)</h3>')
 _FIELD_RE = re.compile(r'<div class="number">\s*([^<]*?)\s*</div>\s*<div class="title">\s*([^<]*?)\s*</div>')
@@ -94,6 +104,9 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
         detail_url = BASE_URL + href_match.group(1) if href_match else ""
         title_match = _TITLE_RE.search(chunk)
         title = clean_text(title_match.group(1)) if title_match else ""
+
+        if _COMMERCIAL_TITLE_RE.search(title):
+            continue
 
         fields = {clean_text(label).casefold(): value for value, label in _FIELD_RE.findall(chunk)}
         area = fields.get("wohnfläche") or fields.get("hauptfläche")
