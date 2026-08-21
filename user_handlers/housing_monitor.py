@@ -590,15 +590,18 @@ _LOCAL_SOURCE_MODULES = {
     "locals": (locals_store, locals_matching),
     "karlmarx": (karlmarx_store, karlmarx_matching),
 }
-RECENT_WINDOWS = [("останню годину", 1), ("останню добу", 24)]
+RECENT_WINDOWS = [("housing.recent.last_hour", 1), ("housing.recent.last_day", 24)]
 
 
-def _recent_offer_keyboard() -> InlineKeyboardMarkup:
+def _recent_offer_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(f"🕐 Показати за {label}", callback_data=f"housing:recent:{hours}")]
-        for label, hours in RECENT_WINDOWS
+        [InlineKeyboardButton(
+            i18n.t("housing.recent.show_btn", lang, label=i18n.t(label_key, lang)),
+            callback_data=f"housing:recent:{hours}",
+        )]
+        for label_key, hours in RECENT_WINDOWS
     ]
-    rows.append([InlineKeyboardButton("Не треба", callback_data="housing:recent_skip")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.recent.skip_btn", lang), callback_data="housing:recent_skip")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -608,14 +611,6 @@ def _offer_recent_matches(context: CallbackContext, created) -> None:
     callback_data — Telegram's 64-byte limit makes that unsafe once more than
     a couple of sources are created together in the multi-source wizard."""
     context.user_data["recent_offer_filters"] = list(created)
-
-
-FIRST_FILTER_CONGRATS_TEXT = (
-    "🎉 Ви впорались, молодець!\n\n"
-    "Тепер усю рутину ми візьмемо на себе. Вам залишилось тільки чекати, "
-    "а ми будемо шукати квартири за вашими параметрами і, щойно знайдемо — "
-    "одразу пришлемо сюди. Терпіння! 🍀"
-)
 
 
 def _maybe_send_first_filter_congrats(context: CallbackContext, user_id: Optional[int]) -> None:
@@ -644,7 +639,7 @@ def _maybe_send_first_filter_congrats(context: CallbackContext, user_id: Optiona
     if bot is None:
         return
     try:
-        bot.send_message(chat_id=uid, text=FIRST_FILTER_CONGRATS_TEXT)
+        bot.send_message(chat_id=uid, text=i18n.t("housing.first_filter_congrats", i18n.get_lang(uid)))
     except Exception:
         logger.exception("Could not send the first-filter congrats message to user %s", user_id)
 
@@ -723,7 +718,7 @@ def _current_matches(source: str, filt: Dict[str, object]) -> list:
     return [listing for listing in listings if matching.matches_filter(listing, filt)]
 
 
-def _match_line(source: str, listing: Dict[str, object]) -> str:
+def _match_line(source: str, listing: Dict[str, object], lang: str = "uk") -> str:
     title = html.escape(str(listing.get("title") or "Wohnung"))
     bits = []
     district = listing.get("district")
@@ -731,10 +726,10 @@ def _match_line(source: str, listing: Dict[str, object]) -> str:
         bits.append(str(district))
     rooms = listing.get("rooms")
     if rooms:
-        bits.append(f"{rooms:g} кімн.")
+        bits.append(f"{rooms:g}{i18n.t('housing.unit.rooms', lang)}")
     area = listing.get("area_m2")
     if area:
-        bits.append(f"{area:g} м²")
+        bits.append(f"{area:g}{i18n.t('housing.unit.m2', lang)}")
     price = listing.get("price_eur")
     if price is None:
         price = listing.get("total_rent_eur")
@@ -744,7 +739,7 @@ def _match_line(source: str, listing: Dict[str, object]) -> str:
     url = listing.get("url") or listing.get("detail_url")
     if not url and source == "propotsdam":
         url = propotsdam_parser.PORTAL_URL
-    link = f' — <a href="{html.escape(str(url))}">Відкрити</a>' if url else ""
+    link = f' — <a href="{html.escape(str(url))}">{i18n.t("housing.matches.open_link", lang)}</a>' if url else ""
     return f"• {title}{suffix}{link}"
 
 
@@ -772,13 +767,14 @@ def show_current_matches(update: Update, context: CallbackContext) -> None:
         return
     if query:
         query.answer()
+    lang = i18n.get_lang(user.id)
     chat_id = int(user.id)
-    back_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]])
+    back_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")]])
     filters = user_filters(user.id)
     if not filters:
         context.bot.send_message(
             chat_id=chat_id,
-            text="У вас поки немає жодного фільтра. Спочатку додайте його кнопкою «➕ Додати фільтр».",
+            text=i18n.t("housing.matches.no_filters", lang, btn=i18n.t("housing.btn.self_add", lang)),
             reply_markup=back_keyboard,
         )
         return
@@ -794,16 +790,16 @@ def show_current_matches(update: Update, context: CallbackContext) -> None:
         filter_id = item.get("filter_id")
         lines = [f"{icon} <b>{html.escape(str(label))} #{filter_id}</b>: {html.escape(str(item.get('title') or ''))}"]
         if not matches:
-            lines.append("Поки нічого не підходить під ці умови.")
+            lines.append(i18n.t("housing.matches.none_for_filter", lang))
         else:
             for listing in matches[:MAX_MATCHES_SHOWN_PER_FILTER]:
-                lines.append(_match_line(source, listing))
+                lines.append(_match_line(source, listing, lang))
             if len(matches) > MAX_MATCHES_SHOWN_PER_FILTER:
-                lines.append(f"…і ще {len(matches) - MAX_MATCHES_SHOWN_PER_FILTER}.")
+                lines.append(i18n.t("housing.matches.more_count", lang, n=len(matches) - MAX_MATCHES_SHOWN_PER_FILTER))
         blocks.append("\n".join(lines))
 
     context.bot.send_message(
-        chat_id=chat_id, text=f"🔍 <b>Квартири, що підходять зараз: {total}</b>", parse_mode="HTML",
+        chat_id=chat_id, text=i18n.t("housing.matches.total_header", lang, total=total), parse_mode="HTML",
     )
     for block in blocks:
         context.bot.send_message(chat_id=chat_id, text=block, parse_mode="HTML", disable_web_page_preview=True)
@@ -813,10 +809,12 @@ def show_current_matches(update: Update, context: CallbackContext) -> None:
     # explicitly instead of letting the report look selective/incomplete.
     covered = {item.get("source") or "immowelt" for item in filters}
     missing = [s for s in ALL_HOUSING_SOURCES if s not in covered]
-    footer_lines = ["Якщо з'явиться нова квартира під ваші умови — ми одразу напишемо вам сюди."]
+    footer_lines = [i18n.t("housing.matches.footer_note", lang)]
     if missing:
         missing_labels = ", ".join(SOURCE_LABEL.get(s, s) for s in missing)
-        footer_lines.append(f"\nФільтра ще немає на: {missing_labels}. Додати можна кнопкою «➕ Додати фільтр».")
+        footer_lines.append(i18n.t(
+            "housing.matches.missing_sources", lang, sources=missing_labels, btn=i18n.t("housing.btn.self_add", lang),
+        ))
     context.bot.send_message(
         chat_id=chat_id, text="\n".join(footer_lines), reply_markup=back_keyboard,
     )
@@ -1025,48 +1023,26 @@ def _toggle_coop_subscription(update: Update, context: CallbackContext) -> None:
     show_coop_subscriptions(update, context, edit=True)
 
 
-FAQ_TEXT = (
-    "❓ <b>Довідка та часті питання</b>\n\n"
-    "<b>Що робить цей розділ?</b>\n"
-    "Стежить одразу за 8 порталами оренди житла в Потсдамі (Immowelt, ProPotsdam, "
-    "SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals®, Karl Marx) і надсилає "
-    "вам повідомлення, щойно з'являється квартира під ваші умови — самому нічого "
-    "перевіряти не треба.\n\n"
-    "<b>Як працює фільтр?</b>\n"
-    "Ви задаєте кімнати, площу і ціну (де можна — ще й район). Бот шукає за цими "
-    "умовами на всіх обраних порталах одночасно. Можна створити кілька фільтрів з "
-    "різними умовами — наприклад, один вужчий і один запасний, ширший.\n\n"
-    "<b>Чому іноді питає ціну двічі?</b>\n"
-    "Портали рахують орендну плату по-різному: більшість показує <b>Kaltmiete</b> "
-    "(холодну оренду, без комунальних) — це одне спільне питання. ProPotsdam показує "
-    "повну <b>Gesamtmiete</b>, Karl Marx — <b>Warmmiete</b> (з комунальними), а на "
-    "Kleinanzeigen ціна взагалі без чіткої мітки. Це різні числа за суттю, тож питання "
-    "теж окремі — так фільтр рахує правильно для кожного порталу.\n\n"
-    "<b>Що таке кнопки «за останню годину/добу» після створення фільтра?</b>\n"
-    "Одразу після створення фільтра бот запам'ятовує вже наявні квартири мовчки, щоб "
-    "не завалити вас усім архівом одразу. Якщо хочете все ж побачити, що зʼявилось "
-    "нещодавно — саме для цього ці дві кнопки.\n\n"
-    "<b>Як змінити або вимкнути фільтр?</b>\n"
-    f"«{BTN_SELF_MANAGE}» у головному меню — там можна поставити фільтр на паузу, "
-    "відредагувати умови або видалити зовсім.\n\n"
-    "<b>Скільки це коштує і як отримати доступ?</b>\n"
-    "10 €/місяць, відкриває адміністратор особисто після запиту через кнопку "
-    "«📩 Запросити доступ».\n\n"
-    "<b>Щось не працює або є питання?</b>\n"
-    "Напишіть про це прямо адміністратору."
-)
+def _faq_text(lang: str = "uk") -> str:
+    return i18n.t(
+        "housing.faq.text", lang,
+        btn_self_manage=i18n.t("housing.btn.self_manage", lang),
+        btn_request_access=i18n.t("housing.btn.request_access", lang),
+    )
 
 
 def show_faq(update: Update, context: CallbackContext, edit: bool = False) -> None:
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]])
+    lang = i18n.get_lang(update.effective_user.id) if update.effective_user else "uk"
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")]])
+    text = _faq_text(lang)
     if edit and update.callback_query:
         try:
-            update.callback_query.edit_message_text(FAQ_TEXT, parse_mode="HTML", reply_markup=keyboard)
+            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
         except BadRequest as exc:
             if "Message is not modified" not in str(exc):
                 raise
     else:
-        update.effective_message.reply_text(FAQ_TEXT, parse_mode="HTML", reply_markup=keyboard)
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
 def _admin_keyboard(page: int = 0) -> InlineKeyboardMarkup:
@@ -2121,7 +2097,7 @@ SOURCE_LABEL = {
 }
 
 
-def _item_criteria_summary(item: Dict[str, object], source: str) -> str:
+def _item_criteria_summary(item: Dict[str, object], source: str, lang: str = "uk") -> str:
     """Стислий опис умов фільтра для кнопки.
 
     Назва каже лише «чий це пошук» («Пошук Артема»), а не «який» — двоє
@@ -2145,13 +2121,13 @@ def _item_criteria_summary(item: Dict[str, object], source: str) -> str:
         criteria = item
     # _describe_criteria готує текст для HTML-повідомлення; кнопки HTML не
     # розбирають, тож &, < і подібне мають лишитися як є, а не як сутності.
-    summary = html.unescape(_describe_criteria(criteria))
+    summary = html.unescape(_describe_criteria(criteria, lang))
     if len(summary) > 40:
         summary = summary[:39].rstrip(" ,·") + "…"
     return summary
 
 
-def _self_manage_keyboard(user_id: int) -> InlineKeyboardMarkup:
+def _self_manage_keyboard(user_id: int, lang: str = "uk") -> InlineKeyboardMarkup:
     """Список фільтрів, розбитий на розділи за джерелом.
 
     Immowelt і ProPotsdam малювали однакові на вигляд кнопки в одному
@@ -2167,13 +2143,14 @@ def _self_manage_keyboard(user_id: int) -> InlineKeyboardMarkup:
         if not group:
             continue
         rows.append([InlineKeyboardButton(
-            f"── {SOURCE_ICON[source]} Фільтри {SOURCE_LABEL[source]} ──", callback_data="housing:noop"
+            i18n.t("housing.selfmanage.section", lang, icon=SOURCE_ICON[source], label=SOURCE_LABEL[source]),
+            callback_data="housing:noop",
         )])
         for item in group:
             filter_id = int(item.get("filter_id"))
             active = bool(item.get("active", True))
             mark = "✅" if active else "⏸"
-            summary = _item_criteria_summary(item, source)
+            summary = _item_criteria_summary(item, source, lang)
             rows.append([InlineKeyboardButton(
                 f"{mark} {summary}",
                 callback_data=f"housing:toggle:{source}:{filter_id}:{0 if active else 1}",
@@ -2181,10 +2158,10 @@ def _self_manage_keyboard(user_id: int) -> InlineKeyboardMarkup:
             # Раніше ProPotsdam-фільтр можна було лише поставити на паузу чи
             # видалити: одруківся в районі — і заводь новий фільтр з нуля.
             rows.append([
-                InlineKeyboardButton("✏️ Редагувати", callback_data=f"housing:edit:{source}:{filter_id}"),
-                InlineKeyboardButton("🗑 Видалити", callback_data=f"housing:delete:{source}:{filter_id}"),
+                InlineKeyboardButton(i18n.t("housing.btn.edit", lang), callback_data=f"housing:edit:{source}:{filter_id}"),
+                InlineKeyboardButton(i18n.t("housing.btn.delete", lang), callback_data=f"housing:delete:{source}:{filter_id}"),
             ])
-    rows.append([InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -2192,13 +2169,10 @@ def show_self_manage(update: Update, context: CallbackContext, edit: bool = Fals
     user = update.effective_user
     if not user or not is_allowed(user.id):
         return
+    lang = i18n.get_lang(user.id)
     filters = manageable_filters(user.id)
-    text = (
-        "⚙️ <b>Мої фільтри</b>\n\nНатисніть фільтр, щоб призупинити/увімкнути, "
-        "а «✏️ Редагувати»/«🗑 Видалити» поруч — щоб змінити умови або прибрати зовсім."
-        if filters else "⚙️ <b>Мої фільтри</b>\n\nУ вас ще немає фільтрів. Натисніть «➕ Додати фільтр» у меню."
-    )
-    keyboard = _self_manage_keyboard(user.id)
+    text = i18n.t("housing.selfmanage.text_with_filters" if filters else "housing.selfmanage.text_empty", lang)
+    keyboard = _self_manage_keyboard(user.id, lang)
     if edit and update.callback_query:
         update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
     else:
@@ -2572,7 +2546,7 @@ def _finalize_semmelhaack_filter(message, context: CallbackContext, state: dict)
     message.reply_text(
         i18n.t("housing.finalize.summary", lang, heading=heading, id=f"S{filter_id}", criteria=_describe_criteria(criteria, lang)),
         parse_mode="HTML",
-        reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
+        reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
 
 
@@ -2665,7 +2639,7 @@ def _finalize_schoba_filter(message, context: CallbackContext, state: dict) -> N
     message.reply_text(
         i18n.t("housing.finalize.summary", lang, heading=heading, id=f"C{filter_id}", criteria=_describe_criteria(criteria, lang)),
         parse_mode="HTML",
-        reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
+        reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
 
 
@@ -2758,7 +2732,7 @@ def _finalize_regiomakler_filter(message, context: CallbackContext, state: dict)
     message.reply_text(
         i18n.t("housing.finalize.summary", lang, heading=heading, id=f"R{filter_id}", criteria=_describe_criteria(criteria, lang)),
         parse_mode="HTML",
-        reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
+        reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
 
 
@@ -2851,7 +2825,7 @@ def _finalize_kleinanzeigen_filter(message, context: CallbackContext, state: dic
     message.reply_text(
         i18n.t("housing.finalize.summary", lang, heading=heading, id=f"K{filter_id}", criteria=_describe_criteria(criteria, lang)),
         parse_mode="HTML",
-        reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
+        reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
 
 
@@ -2944,7 +2918,7 @@ def _finalize_locals_filter(message, context: CallbackContext, state: dict) -> N
     message.reply_text(
         i18n.t("housing.finalize.summary", lang, heading=heading, id=f"L{filter_id}", criteria=_describe_criteria(criteria, lang)),
         parse_mode="HTML",
-        reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
+        reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
 
 
@@ -3037,7 +3011,7 @@ def _finalize_karlmarx_filter(message, context: CallbackContext, state: dict) ->
     message.reply_text(
         i18n.t("housing.finalize.summary", lang, heading=heading, id=f"M{filter_id}", criteria=_describe_criteria(criteria, lang)),
         parse_mode="HTML",
-        reply_markup=_recent_offer_keyboard() if not edit_filter_id else None,
+        reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
 
 
@@ -3476,7 +3450,7 @@ def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, 
     )
     _offer_recent_matches(context, [("propotsdam", filter_id)])
     _maybe_send_first_filter_congrats(context, state["user_id"])
-    rows = list(_recent_offer_keyboard().inline_keyboard)
+    rows = list(_recent_offer_keyboard(lang).inline_keyboard)
     if suggestion is not None:
         text_out += "\n\n💡 У вас ще немає фільтра Immowelt — можна завести такий самий."
         rows.insert(0, [suggestion])
@@ -3892,10 +3866,10 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
         (source, filter_id) for source, filter_id, _criteria, error in results
         if not error and source in _LOCAL_SOURCE_MODULES
     ]
-    rows = [[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]
+    rows = [[InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")]]
     if created:
         _offer_recent_matches(context, created)
-        rows = list(_recent_offer_keyboard().inline_keyboard) + rows
+        rows = list(_recent_offer_keyboard(lang).inline_keyboard) + rows
     if any(not error for _source, _filter_id, _criteria, error in results):
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(

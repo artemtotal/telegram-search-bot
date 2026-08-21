@@ -2776,6 +2776,16 @@ class HousingFirstFilterCongratsTests(unittest.TestCase):
 class HousingCurrentMatchesTests(unittest.TestCase):
     """«\U0001f50d Квартири, що підходять» — жива перевірка замість світлофорів свіжості."""
 
+    def setUp(self):
+        self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self.original_session = housing_monitor.user_settings_store.DBSession
+        housing_monitor.user_settings_store.DBSession = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        housing_monitor.user_settings_store.DBSession = self.original_session
+        self.engine.dispose()
+
     def test_menu_offers_the_current_matches_button(self):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
              mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
