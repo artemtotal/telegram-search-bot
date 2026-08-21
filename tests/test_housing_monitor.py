@@ -2854,6 +2854,51 @@ class HousingCurrentMatchesTests(unittest.TestCase):
         text = context.bot.send_message.call_args.kwargs['text']
         self.assertIn('немає жодного фільтра', text)
 
+    def test_show_current_matches_lists_sources_that_have_no_filter_yet(self):
+        # Regression: someone with filters on only 3 of the 8 sources read
+        # the report as buggy/selective, not realizing the other 5 sources
+        # simply had no filter to check at all.
+        context = SimpleNamespace(bot=mock.Mock())
+        query = SimpleNamespace(data='housing:current_matches', answer=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=5115109366))
+        filters = [
+            {'source': 'kleinanzeigen', 'filter_id': 4, 'title': 'Kleinanzeigen: ...'},
+            {'source': 'locals', 'filter_id': 4, 'title': 'locals: ...'},
+            {'source': 'karlmarx', 'filter_id': 6, 'title': 'Karl Marx: ...'},
+        ]
+
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=True), \
+             mock.patch.object(housing_monitor, 'user_filters', return_value=filters), \
+             mock.patch.object(housing_monitor, '_current_matches', return_value=[]):
+            housing_monitor.show_current_matches(update, context)
+
+        footer = context.bot.send_message.call_args_list[-1].kwargs.get('text', '')
+        self.assertIn('Фільтра ще немає на', footer)
+        self.assertIn('Immowelt', footer)
+        self.assertIn('ProPotsdam', footer)
+        self.assertIn('SEMMELHAACK', footer)
+        self.assertIn('SCHOBA', footer)
+        self.assertIn('ImmoTeam/alpha', footer)
+        self.assertNotIn('Kleinanzeigen', footer)
+        self.assertNotIn('Karl Marx', footer)
+
+    def test_show_current_matches_omits_the_missing_note_once_every_source_has_a_filter(self):
+        context = SimpleNamespace(bot=mock.Mock())
+        query = SimpleNamespace(data='housing:current_matches', answer=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        filters = [
+            {'source': source, 'filter_id': index, 'title': 'x'}
+            for index, source in enumerate(housing_monitor.ALL_HOUSING_SOURCES, start=1)
+        ]
+
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=True), \
+             mock.patch.object(housing_monitor, 'user_filters', return_value=filters), \
+             mock.patch.object(housing_monitor, '_current_matches', return_value=[]):
+            housing_monitor.show_current_matches(update, context)
+
+        footer = context.bot.send_message.call_args_list[-1].kwargs.get('text', '')
+        self.assertNotIn('Фільтра ще немає', footer)
+
 
 if __name__ == '__main__':
     unittest.main()

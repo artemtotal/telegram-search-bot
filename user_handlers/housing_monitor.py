@@ -691,6 +691,10 @@ def _match_line(source: str, listing: Dict[str, object]) -> str:
 
 
 MAX_MATCHES_SHOWN_PER_FILTER = 15
+ALL_HOUSING_SOURCES = [
+    "immowelt", "propotsdam", "semmelhaack", "schoba",
+    "regiomakler", "kleinanzeigen", "locals", "karlmarx",
+]
 
 
 def show_current_matches(update: Update, context: CallbackContext) -> None:
@@ -740,10 +744,18 @@ def show_current_matches(update: Update, context: CallbackContext) -> None:
     )
     for block in blocks:
         context.bot.send_message(chat_id=chat_id, text=block, parse_mode="HTML", disable_web_page_preview=True)
+
+    # People kept reading "some sources listed, others silent" as a bug -
+    # it was just that they'd never filtered those sources at all. Say so
+    # explicitly instead of letting the report look selective/incomplete.
+    covered = {item.get("source") or "immowelt" for item in filters}
+    missing = [s for s in ALL_HOUSING_SOURCES if s not in covered]
+    footer_lines = ["Якщо з'явиться нова квартира під ваші умови — ми одразу напишемо вам сюди."]
+    if missing:
+        missing_labels = ", ".join(SOURCE_LABEL.get(s, s) for s in missing)
+        footer_lines.append(f"\nФільтра ще немає на: {missing_labels}. Додати можна кнопкою «➕ Додати фільтр».")
     context.bot.send_message(
-        chat_id=chat_id,
-        text="Якщо з'явиться нова квартира під ваші умови — ми одразу напишемо вам сюди.",
-        reply_markup=back_keyboard,
+        chat_id=chat_id, text="\n".join(footer_lines), reply_markup=back_keyboard,
     )
 
 
