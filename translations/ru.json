@@ -181,6 +181,10 @@
   "housing.matches.footer_note": "Если появится новая квартира под ваши условия — мы сразу напишем вам сюда.",
   "housing.matches.missing_sources": "\nФильтра ещё нет на: {sources}. Добавить можно кнопкой «{btn}».",
 
+  "housing.toast.save_failed": "Не удалось сохранить фильтр.",
+  "housing.error.save_failed_detail": "⚠️ Не удалось сохранить фильтр: {error}",
+  "housing.error.filter_gone": "⚠️ Не удалось сохранить фильтр — возможно, он уже удалён.",
+
   "housing.selfmanage.section": "── {icon} Фильтры {label} ──",
   "housing.btn.edit": "✏️ Редактировать",
   "housing.btn.delete": "🗑 Удалить",

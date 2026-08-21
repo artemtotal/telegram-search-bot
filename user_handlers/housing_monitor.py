@@ -2534,7 +2534,7 @@ def _finalize_semmelhaack_filter(message, context: CallbackContext, state: dict)
     context.user_data.pop("housing_admin", None)
     lang = i18n.get_lang(int(state["user_id"]))
     if not ok:
-        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
     heading = (
         i18n.t("housing.finalize.updated", lang, source="SEMMELHAACK") if edit_filter_id
@@ -2627,7 +2627,7 @@ def _finalize_schoba_filter(message, context: CallbackContext, state: dict) -> N
     context.user_data.pop("housing_admin", None)
     lang = i18n.get_lang(int(state["user_id"]))
     if not ok:
-        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
     heading = (
         i18n.t("housing.finalize.updated", lang, source="SCHOBA") if edit_filter_id
@@ -2720,7 +2720,7 @@ def _finalize_regiomakler_filter(message, context: CallbackContext, state: dict)
     context.user_data.pop("housing_admin", None)
     lang = i18n.get_lang(int(state["user_id"]))
     if not ok:
-        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
     heading = (
         i18n.t("housing.finalize.updated", lang, source="ImmoTeam/alpha") if edit_filter_id
@@ -2813,7 +2813,7 @@ def _finalize_kleinanzeigen_filter(message, context: CallbackContext, state: dic
     context.user_data.pop("housing_admin", None)
     lang = i18n.get_lang(int(state["user_id"]))
     if not ok:
-        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
     heading = (
         i18n.t("housing.finalize.updated", lang, source="Kleinanzeigen") if edit_filter_id
@@ -2906,7 +2906,7 @@ def _finalize_locals_filter(message, context: CallbackContext, state: dict) -> N
     context.user_data.pop("housing_admin", None)
     lang = i18n.get_lang(int(state["user_id"]))
     if not ok:
-        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
     heading = (
         i18n.t("housing.finalize.updated", lang, source="locals®") if edit_filter_id
@@ -2999,7 +2999,7 @@ def _finalize_karlmarx_filter(message, context: CallbackContext, state: dict) ->
     context.user_data.pop("housing_admin", None)
     lang = i18n.get_lang(int(state["user_id"]))
     if not ok:
-        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
     heading = (
         i18n.t("housing.finalize.updated", lang, source="Karl Marx") if edit_filter_id
@@ -3207,8 +3207,9 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
             filter_id = payload.get("filter_id")
     except Exception as exc:
         logger.exception("Could not save housing filter")
-        query.answer("Не вдалося зберегти фільтр.", show_alert=True)
-        query.edit_message_text(f"⚠️ Не вдалося зберегти фільтр: {html.escape(str(exc))}")
+        error_lang = i18n.get_lang(int(state["user_id"]))
+        query.answer(i18n.t("housing.toast.save_failed", error_lang), show_alert=True)
+        query.edit_message_text(i18n.t("housing.error.save_failed_detail", error_lang, error=html.escape(str(exc))))
         context.user_data.pop("housing_admin", None)
         return
     context.user_data.pop("housing_admin", None)
@@ -3224,7 +3225,7 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
     text_out = i18n.t(
         "housing.finalize.summary_bold", lang, heading=heading, id=filter_id, criteria=_describe_criteria(criteria, lang),
     )
-    rows = [[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]
+    rows = [[InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")]]
     if not edit_filter_id:
         _maybe_send_first_filter_congrats(context, state.get("user_id"))
         suggestion = _cross_source_suggestion(
@@ -3427,7 +3428,7 @@ def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, 
     context.user_data.pop("housing_admin", None)
     lang = i18n.get_lang(chatter_id)
     if not ok:
-        message.reply_text("⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.")
+        message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
     heading = (
         i18n.t("housing.finalize.updated", lang, source="ProPotsdam") if edit_filter_id

@@ -181,6 +181,10 @@
   "housing.matches.footer_note": "Якщо з'явиться нова квартира під ваші умови — ми одразу напишемо вам сюди.",
   "housing.matches.missing_sources": "\nФільтра ще немає на: {sources}. Додати можна кнопкою «{btn}».",
 
+  "housing.toast.save_failed": "Не вдалося зберегти фільтр.",
+  "housing.error.save_failed_detail": "⚠️ Не вдалося зберегти фільтр: {error}",
+  "housing.error.filter_gone": "⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.",
+
   "housing.selfmanage.section": "── {icon} Фільтри {label} ──",
   "housing.btn.edit": "✏️ Редагувати",
   "housing.btn.delete": "🗑 Видалити",

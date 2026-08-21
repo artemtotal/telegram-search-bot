@@ -181,6 +181,10 @@
   "housing.matches.footer_note": "Sobald eine neue Wohnung zu Ihren Kriterien passt — schreiben wir Ihnen sofort hier.",
   "housing.matches.missing_sources": "\nNoch kein Filter für: {sources}. Hinzufügen über die Schaltfläche „{btn}“.",
 
+  "housing.toast.save_failed": "Filter konnte nicht gespeichert werden.",
+  "housing.error.save_failed_detail": "⚠️ Filter konnte nicht gespeichert werden: {error}",
+  "housing.error.filter_gone": "⚠️ Filter konnte nicht gespeichert werden — möglicherweise wurde er bereits gelöscht.",
+
   "housing.selfmanage.section": "── {icon} Filter {label} ──",
   "housing.btn.edit": "✏️ Bearbeiten",
   "housing.btn.delete": "🗑 Löschen",
