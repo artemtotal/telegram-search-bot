@@ -43,5 +43,31 @@
   "housing.coops.title": "🏘 <b>Кооперативы (Gewoba/WBG)</b>\n",
   "housing.coops.explain": "Эти три сайта не показывают отдельные объявления — только надпись «свободного жилья нет» на странице. Поэтому здесь нет условий по комнатам или цене: просто включаете нужный кооператив, и как только надпись исчезнет — мы напишем вам сюда, а детали придётся посмотреть на сайте самим.\n",
   "housing.coops.on": "✅ следим",
-  "housing.coops.off": "⬜ выключено"
+  "housing.coops.off": "⬜ выключено",
+
+  "housing.field.q.kaltmiete_min": "Минимальная холодная аренда (Kaltmiete), €",
+  "housing.field.q.kaltmiete_max": "Максимальная холодная аренда (Kaltmiete), €",
+  "housing.field.q.rooms_min": "Минимальное количество комнат",
+  "housing.field.q.rooms_max": "Максимальное количество комнат",
+  "housing.field.q.area_min": "Минимальная площадь, м²",
+  "housing.field.q.area_max": "Максимальная площадь, м²",
+  "housing.field.q.gesamtmiete_min": "Минимальная общая аренда (Gesamtmiete), €",
+  "housing.field.q.gesamtmiete_max": "Максимальная общая аренда (Gesamtmiete), €",
+  "housing.field.q.nettokaltmiete_min": "Минимальная холодная аренда (Nettokaltmiete), €",
+  "housing.field.q.nettokaltmiete_max": "Максимальная холодная аренда (Nettokaltmiete), €",
+  "housing.field.q.price_min": "Минимальная цена, €",
+  "housing.field.q.price_max": "Максимальная цена, €",
+  "housing.field.q.warmmiete_min": "Минимальная тёплая аренда (Warmmiete), €",
+  "housing.field.q.warmmiete_max": "Максимальная тёплая аренда (Warmmiete), €",
+
+  "housing.field.label.price_min": "Цена: минимум (от)",
+  "housing.field.label.price_max": "Цена: максимум (до)",
+  "housing.field.label.rooms_min": "Комнаты: минимум (от)",
+  "housing.field.label.rooms_max": "Комнаты: максимум (до)",
+  "housing.field.label.area_min": "Площадь: минимум (от)",
+  "housing.field.label.area_max": "Площадь: максимум (до)",
+  "housing.field.label.rent_min": "Аренда: минимум (от)",
+  "housing.field.label.rent_max": "Аренда: максимум (до)",
+
+  "housing.field.numeric_prompt": "🔢 <b>{question}</b>\n\nНапишите <b>одну цифру</b> внизу в чате и нажмите «Отправить» (например, <code>{example}</code>).\n\nНе хотите ограничивать этот показатель — просто отправьте «-»."
 }

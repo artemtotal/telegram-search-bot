@@ -3144,6 +3144,34 @@ class HousingTranslationSmokeTests(unittest.TestCase):
         self.assertIn('Genossenschaften (Gewoba/WBG)', de_text)
         self.assertIn('⬅ К мониторингу', ru_labels)
 
+    def test_wizard_field_prompt_in_russian_and_german(self):
+        ru = housing_monitor._field_prompt({}, housing_monitor.IMMOWELT_CRITERIA_FIELDS, 'min_rooms', lang='ru')
+        de = housing_monitor._field_prompt({}, housing_monitor.IMMOWELT_CRITERIA_FIELDS, 'min_rooms', lang='de')
+
+        self.assertIn('Минимальное количество комнат', ru)
+        self.assertIn('Mindestanzahl Zimmer', de)
+
+    def test_wizard_recap_uses_the_translated_label(self):
+        state = {'min_rooms': 2}
+        ru = housing_monitor._field_prompt(state, housing_monitor.IMMOWELT_CRITERIA_FIELDS, 'max_rooms', lang='ru')
+
+        self.assertIn('Комнаты: минимум (от): 2', ru)
+        self.assertIn('Максимальное количество комнат', ru)
+
+    def test_edit_flow_first_question_in_german(self):
+        query = SimpleNamespace(answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=777))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {777}), \
+             mock.patch.object(housing_monitor, '_own_filter', return_value={'min_rooms': None}), \
+             mock.patch.object(housing_monitor.user_settings_store, 'get_language', return_value='de'):
+            housing_monitor.start_semmelhaack_edit_flow(update, context, 5)
+
+        text = query.edit_message_text.call_args[0][0]
+        self.assertIn('Mindestanzahl Zimmer', text)
+
 
 if __name__ == '__main__':
     unittest.main()

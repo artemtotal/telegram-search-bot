@@ -43,5 +43,31 @@
   "housing.coops.title": "🏘 <b>Кооперативи (Gewoba/WBG)</b>\n",
   "housing.coops.explain": "Ці три сайти не показують окремі оголошення — лише напис «вільного житла немає» на сторінці. Тому тут немає умов за кімнатами чи ціною: просто вмикаєте потрібний кооператив, і щойно напис зникне — ми напишемо вам сюди, а деталі доведеться подивитись на сайті самим.\n",
   "housing.coops.on": "✅ стежимо",
-  "housing.coops.off": "⬜ вимкнено"
+  "housing.coops.off": "⬜ вимкнено",
+
+  "housing.field.q.kaltmiete_min": "Мінімальна холодна оренда (Kaltmiete), €",
+  "housing.field.q.kaltmiete_max": "Максимальна холодна оренда (Kaltmiete), €",
+  "housing.field.q.rooms_min": "Мінімальна кількість кімнат",
+  "housing.field.q.rooms_max": "Максимальна кількість кімнат",
+  "housing.field.q.area_min": "Мінімальна площа, м²",
+  "housing.field.q.area_max": "Максимальна площа, м²",
+  "housing.field.q.gesamtmiete_min": "Мінімальна загальна оренда (Gesamtmiete), €",
+  "housing.field.q.gesamtmiete_max": "Максимальна загальна оренда (Gesamtmiete), €",
+  "housing.field.q.nettokaltmiete_min": "Мінімальна холодна оренда (Nettokaltmiete), €",
+  "housing.field.q.nettokaltmiete_max": "Максимальна холодна оренда (Nettokaltmiete), €",
+  "housing.field.q.price_min": "Мінімальна ціна, €",
+  "housing.field.q.price_max": "Максимальна ціна, €",
+  "housing.field.q.warmmiete_min": "Мінімальна тепла оренда (Warmmiete), €",
+  "housing.field.q.warmmiete_max": "Максимальна тепла оренда (Warmmiete), €",
+
+  "housing.field.label.price_min": "Ціна: мінімум (від)",
+  "housing.field.label.price_max": "Ціна: максимум (до)",
+  "housing.field.label.rooms_min": "Кімнати: мінімум (від)",
+  "housing.field.label.rooms_max": "Кімнати: максимум (до)",
+  "housing.field.label.area_min": "Площа: мінімум (від)",
+  "housing.field.label.area_max": "Площа: максимум (до)",
+  "housing.field.label.rent_min": "Оренда: мінімум (від)",
+  "housing.field.label.rent_max": "Оренда: максимум (до)",
+
+  "housing.field.numeric_prompt": "🔢 <b>{question}</b>\n\nНапишіть <b>одну цифру</b> внизу в чаті й натисніть «Надіслати» (наприклад, <code>{example}</code>).\n\nНе хочете обмежувати цей показник — просто надішліть «-»."
 }

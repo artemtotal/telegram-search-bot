@@ -43,5 +43,31 @@
   "housing.coops.title": "🏘 <b>Genossenschaften (Gewoba/WBG)</b>\n",
   "housing.coops.explain": "Diese drei Seiten zeigen keine einzelnen Angebote — nur den Hinweis „keine freien Wohnungen“ auf der Seite. Deshalb gibt es hier keine Kriterien nach Zimmern oder Preis: Sie aktivieren einfach die gewünschte Genossenschaft, und sobald der Hinweis verschwindet, schreiben wir Ihnen hier — Details müssen Sie dann selbst auf der Website prüfen.\n",
   "housing.coops.on": "✅ wird beobachtet",
-  "housing.coops.off": "⬜ deaktiviert"
+  "housing.coops.off": "⬜ deaktiviert",
+
+  "housing.field.q.kaltmiete_min": "Mindest-Kaltmiete, €",
+  "housing.field.q.kaltmiete_max": "Höchst-Kaltmiete, €",
+  "housing.field.q.rooms_min": "Mindestanzahl Zimmer",
+  "housing.field.q.rooms_max": "Höchstanzahl Zimmer",
+  "housing.field.q.area_min": "Mindestfläche, m²",
+  "housing.field.q.area_max": "Höchstfläche, m²",
+  "housing.field.q.gesamtmiete_min": "Mindest-Gesamtmiete, €",
+  "housing.field.q.gesamtmiete_max": "Höchst-Gesamtmiete, €",
+  "housing.field.q.nettokaltmiete_min": "Mindest-Nettokaltmiete, €",
+  "housing.field.q.nettokaltmiete_max": "Höchst-Nettokaltmiete, €",
+  "housing.field.q.price_min": "Mindestpreis, €",
+  "housing.field.q.price_max": "Höchstpreis, €",
+  "housing.field.q.warmmiete_min": "Mindest-Warmmiete, €",
+  "housing.field.q.warmmiete_max": "Höchst-Warmmiete, €",
+
+  "housing.field.label.price_min": "Preis: minimum (ab)",
+  "housing.field.label.price_max": "Preis: maximum (bis)",
+  "housing.field.label.rooms_min": "Zimmer: minimum (ab)",
+  "housing.field.label.rooms_max": "Zimmer: maximum (bis)",
+  "housing.field.label.area_min": "Fläche: minimum (ab)",
+  "housing.field.label.area_max": "Fläche: maximum (bis)",
+  "housing.field.label.rent_min": "Miete: minimum (ab)",
+  "housing.field.label.rent_max": "Miete: maximum (bis)",
+
+  "housing.field.numeric_prompt": "🔢 <b>{question}</b>\n\nSchreiben Sie unten im Chat <b>eine einzelne Zahl</b> und tippen Sie auf „Senden“ (zum Beispiel <code>{example}</code>).\n\nWenn Sie diesen Wert nicht einschränken möchten — schicken Sie einfach „-“."
 }
