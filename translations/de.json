@@ -87,5 +87,23 @@
   "housing.finalize.propot_summary": "✅ {heading}.\nID: P{id}\nNutzer: {user_id}",
   "housing.finalize.multi_title": "✅ <b>Filter hinzugefügt</b>",
   "housing.finalize.multi_line": "{icon} {label} (ID {id}): {criteria}",
-  "housing.finalize.multi_error": "{icon} {label}: ⚠️ Speichern fehlgeschlagen ({error})"
+  "housing.finalize.multi_error": "{icon} {label}: ⚠️ Speichern fehlgeschlagen ({error})",
+
+  "housing.validation.invalid_number": "Unklarer Wert.\n\n{prompt}",
+  "housing.validation.min_over_max": "Das Minimum darf nicht größer als das Maximum sein. Bitte senden Sie den Wert erneut.\n\n{prompt}",
+
+  "housing.cancel.msg": "Abgebrochen.",
+
+  "housing.toast.not_your_filter": "Dieser Filter gehört Ihnen nicht.",
+  "housing.toast.unknown_coop": "Unbekannte Genossenschaft.",
+  "housing.toast.coop_off": "Deaktiviert: {label}",
+  "housing.toast.coop_on": "Wird beobachtet: {label}",
+  "housing.toast.settings_update_failed": "Einstellungen konnten nicht aktualisiert werden.",
+  "housing.toast.updated": "Aktualisiert.",
+  "housing.toast.filter_update_failed": "Filter konnte nicht aktualisiert werden.",
+  "housing.toast.filter_updated": "Filter aktualisiert.",
+  "housing.toast.filter_delete_failed": "Filter konnte nicht gelöscht werden.",
+  "housing.toast.filter_deleted": "Filter gelöscht.",
+  "housing.toast.filter_saved": "Filter gespeichert.",
+  "housing.toast.pick_a_source": "Wählen Sie mindestens ein Portal."
 }

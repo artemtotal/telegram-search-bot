@@ -87,5 +87,23 @@
   "housing.finalize.propot_summary": "✅ {heading}.\nID: P{id}\nПользователь: {user_id}",
   "housing.finalize.multi_title": "✅ <b>Фильтр добавлен</b>",
   "housing.finalize.multi_line": "{icon} {label} (ID {id}): {criteria}",
-  "housing.finalize.multi_error": "{icon} {label}: ⚠️ не удалось сохранить ({error})"
+  "housing.finalize.multi_error": "{icon} {label}: ⚠️ не удалось сохранить ({error})",
+
+  "housing.validation.invalid_number": "Непонятное значение.\n\n{prompt}",
+  "housing.validation.min_over_max": "Минимум не может быть больше максимума. Отправьте значение ещё раз.\n\n{prompt}",
+
+  "housing.cancel.msg": "Отменено.",
+
+  "housing.toast.not_your_filter": "Этот фильтр вам не принадлежит.",
+  "housing.toast.unknown_coop": "Неизвестный кооператив.",
+  "housing.toast.coop_off": "Выключено: {label}",
+  "housing.toast.coop_on": "Следим за: {label}",
+  "housing.toast.settings_update_failed": "Не удалось обновить настройки.",
+  "housing.toast.updated": "Обновлено.",
+  "housing.toast.filter_update_failed": "Не удалось обновить фильтр.",
+  "housing.toast.filter_updated": "Фильтр обновлён.",
+  "housing.toast.filter_delete_failed": "Не удалось удалить фильтр.",
+  "housing.toast.filter_deleted": "Фильтр удалён.",
+  "housing.toast.filter_saved": "Фильтр сохранён.",
+  "housing.toast.pick_a_source": "Выберите хотя бы один портал."
 }

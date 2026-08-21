@@ -376,6 +376,24 @@ def _field_prompt(state: dict, fields: list, next_key: str, lang: str = "uk") ->
     return f"{recap}\n\n{prompt}" if recap else prompt
 
 
+def _show_cancelled(query, lang: str = "uk") -> None:
+    query.answer()
+    query.edit_message_text(
+        i18n.t("housing.cancel.msg", lang),
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")]]
+        ),
+    )
+
+
+def _invalid_number_text(spec: dict, lang: str = "uk") -> str:
+    return i18n.t("housing.validation.invalid_number", lang, prompt=_localized_field(spec, lang)["prompt"])
+
+
+def _min_over_max_text(spec: dict, lang: str = "uk") -> str:
+    return i18n.t("housing.validation.min_over_max", lang, prompt=_localized_field(spec, lang)["prompt"])
+
+
 KALTMIETE_SOURCES = {"immowelt", "semmelhaack", "schoba", "regiomakler", "locals"}
 
 
@@ -991,18 +1009,19 @@ def _toggle_coop_subscription(update: Update, context: CallbackContext) -> None:
         if query:
             query.answer()
         return
+    lang = i18n.get_lang(user.id)
     coop_key = query.data.split(":", 2)[2]
     coop = next((c for c in coop_watchdog.COOPERATIVES if c["key"] == coop_key), None)
     if coop is None:
-        query.answer("Невідомий кооператив.", show_alert=True)
+        query.answer(i18n.t("housing.toast.unknown_coop", lang), show_alert=True)
         return
     currently_on = _coop_subscription_state(user.id).get(coop_key, False)
     if currently_on:
         coop_watchdog_store.set_filter_active(int(user.id), coop_key, False)
-        query.answer(f"Вимкнено: {coop['label']}")
+        query.answer(i18n.t("housing.toast.coop_off", lang, label=coop['label']))
     else:
         coop_watchdog_store.create_filter(int(user.id), coop_key, coop["label"])
-        query.answer(f"Стежимо за: {coop['label']}")
+        query.answer(i18n.t("housing.toast.coop_on", lang, label=coop['label']))
     show_coop_subscriptions(update, context, edit=True)
 
 
@@ -2292,9 +2311,9 @@ def toggle_quiet_hours(update: Update, context: CallbackContext, enabled: bool) 
         _set_notification_prefs(int(user.id), quiet_hours_enabled=enabled)
     except Exception:
         logger.exception("Could not update notification prefs")
-        query.answer("Не вдалося оновити налаштування.", show_alert=True)
+        query.answer(i18n.t("housing.toast.settings_update_failed", i18n.get_lang(user.id)), show_alert=True)
         return
-    query.answer("Оновлено.")
+    query.answer(i18n.t("housing.toast.updated", i18n.get_lang(user.id)))
     show_notify_settings(update, context, edit=True)
 
 
@@ -2307,9 +2326,9 @@ def set_digest_mode(update: Update, context: CallbackContext, mode: str) -> None
         _set_notification_prefs(int(user.id), digest_mode=mode)
     except Exception:
         logger.exception("Could not update notification prefs")
-        query.answer("Не вдалося оновити налаштування.", show_alert=True)
+        query.answer(i18n.t("housing.toast.settings_update_failed", i18n.get_lang(user.id)), show_alert=True)
         return
-    query.answer("Оновлено.")
+    query.answer(i18n.t("housing.toast.updated", i18n.get_lang(user.id)))
     show_notify_settings(update, context, edit=True)
 
 
@@ -2332,7 +2351,7 @@ def _toggle_owned_filter(update: Update, context: CallbackContext) -> None:
         and _item_source(item) == source
     ]
     if not own:
-        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
     if source == "propotsdam":
         ok = propotsdam_store.set_filter_active(filter_id, active, user_id=user.id)
@@ -2358,9 +2377,9 @@ def _toggle_owned_filter(update: Update, context: CallbackContext) -> None:
             logger.exception("Could not update owned housing filter")
             ok = False
     if not ok:
-        query.answer("Не вдалося оновити фільтр.", show_alert=True)
+        query.answer(i18n.t("housing.toast.filter_update_failed", i18n.get_lang(user.id)), show_alert=True)
         return
-    query.answer("Фільтр оновлено.")
+    query.answer(i18n.t("housing.toast.filter_updated", i18n.get_lang(user.id)))
     show_self_manage(update, context, edit=True)
 
 
@@ -2391,7 +2410,7 @@ def start_delete_flow(update: Update, context: CallbackContext, source: str, fil
         return
     item = _own_filter(int(user.id), source, filter_id)
     if not item:
-        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
     title = html.escape(str(item.get("title") or "Пошук житла"))
     query.answer()
@@ -2408,7 +2427,7 @@ def confirm_delete_filter(update: Update, context: CallbackContext, source: str,
     if not query or not user or not is_allowed(user.id):
         return
     if not _own_filter(int(user.id), source, filter_id):
-        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
     if source == "propotsdam":
         ok = propotsdam_store.delete_filter(filter_id, user_id=user.id)
@@ -2434,9 +2453,9 @@ def confirm_delete_filter(update: Update, context: CallbackContext, source: str,
             logger.exception("Could not delete housing filter")
             ok = False
     if not ok:
-        query.answer("Не вдалося видалити фільтр.", show_alert=True)
+        query.answer(i18n.t("housing.toast.filter_delete_failed", i18n.get_lang(user.id)), show_alert=True)
         return
-    query.answer("Фільтр видалено.")
+    query.answer(i18n.t("housing.toast.filter_deleted", i18n.get_lang(user.id)))
     show_self_manage(update, context, edit=True)
 
 
@@ -2453,7 +2472,7 @@ def start_edit_flow(update: Update, context: CallbackContext, filter_id: int) ->
         return
     item = _own_filter(int(user.id), "immowelt", filter_id)
     if not item:
-        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
     districts_selected = list(item.get("districts") or [])
     context.user_data["housing_admin"] = {
@@ -2487,7 +2506,7 @@ def start_propot_edit_flow(update: Update, context: CallbackContext, filter_id: 
         return
     item = _own_filter(int(user.id), "propotsdam", filter_id)
     if not item:
-        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
     districts_selected = [d for d in str(item.get("districts") or "").split(",") if d]
     context.user_data["housing_admin"] = {
@@ -2518,7 +2537,7 @@ def start_semmelhaack_edit_flow(update: Update, context: CallbackContext, filter
         return
     item = _own_filter(int(user.id), "semmelhaack", filter_id)
     if not item:
-        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
     first_key = SEMM_CRITERIA_KEYS[0]
     context.user_data["housing_admin"] = {
@@ -2586,12 +2605,10 @@ def _handle_semmelhaack_flow(update: Update, context: CallbackContext, state: di
         spec = SEMM_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
+            update.message.reply_text(_invalid_number_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
-            update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
-            )
+            update.message.reply_text(_min_over_max_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         state[step] = value
         index = SEMM_CRITERIA_KEYS.index(step)
@@ -2613,7 +2630,7 @@ def start_schoba_edit_flow(update: Update, context: CallbackContext, filter_id: 
         return
     item = _own_filter(int(user.id), "schoba", filter_id)
     if not item:
-        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
     first_key = SCHOBA_CRITERIA_KEYS[0]
     context.user_data["housing_admin"] = {
@@ -2681,12 +2698,10 @@ def _handle_schoba_flow(update: Update, context: CallbackContext, state: dict, t
         spec = SCHOBA_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
+            update.message.reply_text(_invalid_number_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
-            update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
-            )
+            update.message.reply_text(_min_over_max_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         state[step] = value
         index = SCHOBA_CRITERIA_KEYS.index(step)
@@ -2708,7 +2723,7 @@ def start_regiomakler_edit_flow(update: Update, context: CallbackContext, filter
         return
     item = _own_filter(int(user.id), "regiomakler", filter_id)
     if not item:
-        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
     first_key = REGIOMAKLER_CRITERIA_KEYS[0]
     context.user_data["housing_admin"] = {
@@ -2776,12 +2791,10 @@ def _handle_regiomakler_flow(update: Update, context: CallbackContext, state: di
         spec = REGIOMAKLER_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
+            update.message.reply_text(_invalid_number_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
-            update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
-            )
+            update.message.reply_text(_min_over_max_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         state[step] = value
         index = REGIOMAKLER_CRITERIA_KEYS.index(step)
@@ -2803,7 +2816,7 @@ def start_kleinanzeigen_edit_flow(update: Update, context: CallbackContext, filt
         return
     item = _own_filter(int(user.id), "kleinanzeigen", filter_id)
     if not item:
-        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
     first_key = KLEINANZEIGEN_CRITERIA_KEYS[0]
     context.user_data["housing_admin"] = {
@@ -2871,12 +2884,10 @@ def _handle_kleinanzeigen_flow(update: Update, context: CallbackContext, state: 
         spec = KLEINANZEIGEN_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
+            update.message.reply_text(_invalid_number_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
-            update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
-            )
+            update.message.reply_text(_min_over_max_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         state[step] = value
         index = KLEINANZEIGEN_CRITERIA_KEYS.index(step)
@@ -2898,7 +2909,7 @@ def start_locals_edit_flow(update: Update, context: CallbackContext, filter_id: 
         return
     item = _own_filter(int(user.id), "locals", filter_id)
     if not item:
-        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
     first_key = LOCALS_CRITERIA_KEYS[0]
     context.user_data["housing_admin"] = {
@@ -2966,12 +2977,10 @@ def _handle_locals_flow(update: Update, context: CallbackContext, state: dict, t
         spec = LOCALS_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
+            update.message.reply_text(_invalid_number_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
-            update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
-            )
+            update.message.reply_text(_min_over_max_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         state[step] = value
         index = LOCALS_CRITERIA_KEYS.index(step)
@@ -2993,7 +3002,7 @@ def start_karlmarx_edit_flow(update: Update, context: CallbackContext, filter_id
         return
     item = _own_filter(int(user.id), "karlmarx", filter_id)
     if not item:
-        query.answer("Цей фільтр вам не належить.", show_alert=True)
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
     first_key = KARLMARX_CRITERIA_KEYS[0]
     context.user_data["housing_admin"] = {
@@ -3061,12 +3070,10 @@ def _handle_karlmarx_flow(update: Update, context: CallbackContext, state: dict,
         spec = KARLMARX_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
+            update.message.reply_text(_invalid_number_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
-            update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
-            )
+            update.message.reply_text(_min_over_max_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         state[step] = value
         index = KARLMARX_CRITERIA_KEYS.index(step)
@@ -3257,7 +3264,10 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
         i18n.t("housing.finalize.immowelt_updated", lang) if edit_filter_id
         else i18n.t("housing.finalize.immowelt_added", lang)
     )
-    query.answer("Фільтр оновлено." if edit_filter_id else "Фільтр збережено.")
+    query.answer(
+        i18n.t("housing.toast.filter_updated", lang) if edit_filter_id
+        else i18n.t("housing.toast.filter_saved", lang)
+    )
     text_out = i18n.t(
         "housing.finalize.summary_bold", lang, heading=heading, id=filter_id, criteria=_describe_criteria(criteria, lang),
     )
@@ -3291,12 +3301,10 @@ def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict,
         spec = IMMOWELT_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
+            update.message.reply_text(_invalid_number_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
-            update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
-            )
+            update.message.reply_text(_min_over_max_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         state[step] = value
         index = IMMOWELT_CRITERIA_KEYS.index(step)
@@ -3323,13 +3331,12 @@ def _handle_immowelt_clone_price_step(
     field = "min_price_eur" if step == "clone_price_min" else "max_price_eur"
     spec = IMMOWELT_CRITERIA_BY_KEY[field]
     value = _parse_single_number(text)
+    lang = i18n.get_lang(update.effective_user.id)
     if value is _INVALID_NUMBER:
-        update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
+        update.message.reply_text(_invalid_number_text(spec, lang), parse_mode="HTML")
         return True
     if step == "clone_price_max" and _violates_sibling_bound(state, field, value):
-        update.message.reply_text(
-            "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
-        )
+        update.message.reply_text(_min_over_max_text(spec, lang), parse_mode="HTML")
         return True
     state[field] = value
     if step == "clone_price_min":
@@ -3386,12 +3393,10 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
         spec = PROPOT_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
+            update.message.reply_text(_invalid_number_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
-            update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
-            )
+            update.message.reply_text(_min_over_max_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         state[step] = value
         index = PROPOT_CRITERIA_KEYS.index(step)
@@ -3412,13 +3417,12 @@ def _handle_propot_clone_price_step(
     field = "min_total_rent_eur" if step == "clone_price_min" else "max_total_rent_eur"
     spec = PROPOT_CRITERIA_BY_KEY[field]
     value = _parse_single_number(text)
+    lang = i18n.get_lang(update.effective_user.id)
     if value is _INVALID_NUMBER:
-        update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
+        update.message.reply_text(_invalid_number_text(spec, lang), parse_mode="HTML")
         return True
     if step == "clone_price_max" and _violates_sibling_bound(state, field, value):
-        update.message.reply_text(
-            "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
-        )
+        update.message.reply_text(_min_over_max_text(spec, lang), parse_mode="HTML")
         return True
     state[field] = value
     if step == "clone_price_min":
@@ -3558,7 +3562,7 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
         return False
     if text == BTN_CANCEL:
         context.user_data.pop("housing_admin", None)
-        update.message.reply_text("Скасовано.")
+        update.message.reply_text(i18n.t("housing.cancel.msg", i18n.get_lang(user_id)))
         return True
     if state.get("step") == "admin_target_user_id":
         if not text.lstrip("-").isdigit():
@@ -3668,7 +3672,7 @@ def _finish_sources(update: Update, context: CallbackContext) -> None:
         return
     selected = list(state.get("sources_selected") or [])
     if not selected:
-        query.answer("Оберіть хоча б один портал.", show_alert=True)
+        query.answer(i18n.t("housing.toast.pick_a_source", i18n.get_lang(update.effective_user.id)), show_alert=True)
         return
     state["mode"] = "multi"
     state["districts_selected"] = []
@@ -4067,12 +4071,10 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
         spec = SHARED_CRITERIA_BY_KEY[step]
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + spec["prompt"], parse_mode="HTML")
+            update.message.reply_text(_invalid_number_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
-            update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + spec["prompt"], parse_mode="HTML"
-            )
+            update.message.reply_text(_min_over_max_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
             return True
         state[step] = value
         index = SHARED_CRITERIA_KEYS.index(step)
@@ -4092,13 +4094,12 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
         return True
     if step in PRICE_STEP_PROMPTS:
         value = _parse_single_number(text)
+        lang = i18n.get_lang(update.effective_user.id)
         if value is _INVALID_NUMBER:
-            update.message.reply_text("Незрозуміле значення.\n\n" + PRICE_STEP_PROMPTS[step], parse_mode="HTML")
+            update.message.reply_text(_invalid_number_text(PRICE_STEP_FIELDS[step], lang), parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
-            update.message.reply_text(
-                "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n" + PRICE_STEP_PROMPTS[step], parse_mode="HTML"
-            )
+            update.message.reply_text(_min_over_max_text(PRICE_STEP_FIELDS[step], lang), parse_mode="HTML")
             return True
         state[step] = value
         price_steps = state.get("_price_steps") or []
@@ -4192,11 +4193,7 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _back_from_immowelt_preview(update, context)
     elif query.data == "housing:imm_cancel":
         context.user_data.pop("housing_admin", None)
-        query.answer()
-        query.edit_message_text(
-            "Скасовано.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]),
-        )
+        _show_cancelled(query, i18n.get_lang(update.effective_user.id))
     elif query.data.startswith("housing:propot_district:"):
         _toggle_district(update, context, query.data.split(":", 2)[2])
     elif query.data == "housing:propot_district_done":
@@ -4205,11 +4202,7 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _finish_districts(update, context, all_districts=True)
     elif query.data == "housing:propot_cancel":
         context.user_data.pop("housing_admin", None)
-        query.answer()
-        query.edit_message_text(
-            "Скасовано.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]),
-        )
+        _show_cancelled(query, i18n.get_lang(update.effective_user.id))
     elif query.data == BACK_CALLBACK:
         _step_back(update, context)
     elif query.data == "housing:self_add":
@@ -4221,11 +4214,7 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _finish_sources(update, context)
     elif query.data == "housing:src_cancel":
         context.user_data.pop("housing_admin", None)
-        query.answer()
-        query.edit_message_text(
-            "Скасовано.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]),
-        )
+        _show_cancelled(query, i18n.get_lang(update.effective_user.id))
     elif query.data.startswith("housing:multi_district:"):
         _toggle_multi_district(update, context, query.data.split(":", 2)[2])
     elif query.data == "housing:multi_district_done":
@@ -4234,11 +4223,7 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _finish_multi_districts(update, context, all_districts=True)
     elif query.data == "housing:multi_cancel":
         context.user_data.pop("housing_admin", None)
-        query.answer()
-        query.edit_message_text(
-            "Скасовано.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]]),
-        )
+        _show_cancelled(query, i18n.get_lang(update.effective_user.id))
     elif query.data == "housing:clone_propot":
         _clone_propot_from_immowelt(update, context)
     elif query.data == "housing:clone_immo":

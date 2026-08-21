@@ -3201,6 +3201,40 @@ class HousingTranslationSmokeTests(unittest.TestCase):
         self.assertIn('Filter SEMMELHAACK hinzugefügt', text)
         self.assertIn('ID: S9', text)
 
+    def test_validation_messages_in_russian_and_german(self):
+        spec = housing_monitor.IMMOWELT_CRITERIA_BY_KEY['min_rooms']
+
+        ru_invalid = housing_monitor._invalid_number_text(spec, lang='ru')
+        de_min_over_max = housing_monitor._min_over_max_text(spec, lang='de')
+
+        self.assertIn('Непонятное значение.', ru_invalid)
+        self.assertIn('Минимальное количество комнат', ru_invalid)
+        self.assertIn('darf nicht größer', de_min_over_max)
+        self.assertIn('Mindestanzahl Zimmer', de_min_over_max)
+
+    def test_cancel_message_in_german(self):
+        query = SimpleNamespace(answer=mock.Mock(), edit_message_text=mock.Mock())
+
+        housing_monitor._show_cancelled(query, lang='de')
+
+        text, kwargs = query.edit_message_text.call_args[0][0], query.edit_message_text.call_args[1]
+        self.assertEqual(text, 'Abgebrochen.')
+        labels = [b.text for row in kwargs['reply_markup'].inline_keyboard for b in row]
+        self.assertIn('⬅ Zum Monitoring', labels)
+
+    def test_not_your_filter_toast_in_russian(self):
+        query = SimpleNamespace(answer=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=777))
+        context = SimpleNamespace()
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {777}), \
+             mock.patch.object(housing_monitor, '_own_filter', return_value=None), \
+             mock.patch.object(housing_monitor.user_settings_store, 'get_language', return_value='ru'):
+            housing_monitor.start_delete_flow(update, context, 'immowelt', 5)
+
+        query.answer.assert_called_once_with('Этот фильтр вам не принадлежит.', show_alert=True)
+
 
 if __name__ == '__main__':
     unittest.main()

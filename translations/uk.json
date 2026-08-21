@@ -87,5 +87,23 @@
   "housing.finalize.propot_summary": "✅ {heading}.\nID: P{id}\nКористувач: {user_id}",
   "housing.finalize.multi_title": "✅ <b>Фільтр додано</b>",
   "housing.finalize.multi_line": "{icon} {label} (ID {id}): {criteria}",
-  "housing.finalize.multi_error": "{icon} {label}: ⚠️ не вдалося зберегти ({error})"
+  "housing.finalize.multi_error": "{icon} {label}: ⚠️ не вдалося зберегти ({error})",
+
+  "housing.validation.invalid_number": "Незрозуміле значення.\n\n{prompt}",
+  "housing.validation.min_over_max": "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n{prompt}",
+
+  "housing.cancel.msg": "Скасовано.",
+
+  "housing.toast.not_your_filter": "Цей фільтр вам не належить.",
+  "housing.toast.unknown_coop": "Невідомий кооператив.",
+  "housing.toast.coop_off": "Вимкнено: {label}",
+  "housing.toast.coop_on": "Стежимо за: {label}",
+  "housing.toast.settings_update_failed": "Не вдалося оновити налаштування.",
+  "housing.toast.updated": "Оновлено.",
+  "housing.toast.filter_update_failed": "Не вдалося оновити фільтр.",
+  "housing.toast.filter_updated": "Фільтр оновлено.",
+  "housing.toast.filter_delete_failed": "Не вдалося видалити фільтр.",
+  "housing.toast.filter_deleted": "Фільтр видалено.",
+  "housing.toast.filter_saved": "Фільтр збережено.",
+  "housing.toast.pick_a_source": "Оберіть хоча б один портал."
 }
