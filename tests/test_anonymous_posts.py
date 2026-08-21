@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest import mock
 
@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import i18n
 from database import Base
 from user_handlers import anonymous_validation
 from user_handlers import anonymous_posts
@@ -289,6 +290,46 @@ class LanguageSwitcherTests(unittest.TestCase):
         anonymous_posts.handle_callback(update, context)
 
         self.assertEqual(user_settings_store.get_language(777), 'uk')
+
+
+class AnonymousPostsTranslationSmokeTests(unittest.TestCase):
+    """Not a full duplicate of every uk-language assertion - just enough per
+    converted screen to prove lang actually reaches the rendered text."""
+
+    def test_validation_errors_in_russian_and_german(self):
+        ru = anonymous_validation.validate_submission("short", lang='ru')
+        de = anonymous_validation.validate_submission("short", lang='de')
+
+        self.assertIn('слишком короткий', ru)
+        self.assertIn('zu kurz', de)
+
+    def test_cooldown_text_in_russian_and_german(self):
+        now = datetime(2026, 8, 21, 12, 0, 0)
+        last = now - timedelta(days=6, hours=1)
+
+        ru = anonymous_validation.cooldown_text(last, 7, now, lang='ru')
+        de = anonymous_validation.cooldown_text(last, 7, now, lang='de')
+
+        self.assertIn('Новый анонимный пост', ru)
+        self.assertIn('anonymer Beitrag', de)
+
+    def test_home_screen_in_russian_and_german(self):
+        ru = i18n.t('anon.home.text', 'ru', days=7)
+        de = i18n.t('anon.home.text', 'de', days=7)
+
+        self.assertIn('Анонимный вопрос в чате Потсдама', ru)
+        self.assertIn('Anonyme Frage im Potsdam-Chat', de)
+
+    def test_reply_keyboard_in_german(self):
+        with mock.patch.object(user_settings_store, 'get_language', return_value='uk'):
+            keyboard_uk = anonymous_posts.reply_menu_keyboard(544675510)
+        with mock.patch.object(user_settings_store, 'get_language', return_value='de'):
+            keyboard_de = anonymous_posts.reply_menu_keyboard(544675510)
+
+        labels_uk = [button.text for row in keyboard_uk.keyboard for button in row]
+        labels_de = [button.text for row in keyboard_de.keyboard for button in row]
+        self.assertIn('🏠 Меню', labels_uk)
+        self.assertIn('🏠 Menü', labels_de)
 
 
 class BotCommandMenuTests(unittest.TestCase):

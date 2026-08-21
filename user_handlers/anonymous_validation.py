@@ -1,9 +1,11 @@
-"""Dependency-free validation helpers for anonymous forum posts."""
+"""Validation helpers for anonymous forum posts."""
 
 import hashlib
 import math
 import re
 from datetime import datetime, timedelta
+
+import i18n
 
 
 _URL_RE = re.compile(r"(?i)(?:https?://|www\.|t\.me/|telegram\.me/|joinchat/|@[a-z0-9_]{4,})")
@@ -20,29 +22,29 @@ def text_fingerprint(text: str) -> str:
     return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
 
 
-def validate_submission(text: str, min_length: int = 15, max_length: int = 1500):
+def validate_submission(text: str, min_length: int = 15, max_length: int = 1500, lang: str = "uk"):
     """Return a user-facing validation error, or None when text is allowed."""
     cleaned = (text or "").strip()
     if len(cleaned) < min_length:
-        return f"Запитання занадто коротке. Потрібно мінімум {min_length} символів."
+        return i18n.t("anon.validate.too_short", lang, n=min_length)
     if len(cleaned) > max_length:
-        return f"Запитання занадто довге. Максимум {max_length} символів."
+        return i18n.t("anon.validate.too_long", lang, n=max_length)
     if len(cleaned.splitlines()) > 25:
-        return "Забагато рядків. Скоротіть та надішліть запитання ще раз."
+        return i18n.t("anon.validate.too_many_lines", lang)
     phone_found = any(
         sum(character.isdigit() for character in candidate) >= 9
         for candidate in _PHONE_CANDIDATE_RE.findall(cleaned)
     )
     if _URL_RE.search(cleaned) or _EMAIL_RE.search(cleaned) or phone_found:
-        return "Посилання, @імена, e-mail та номери телефонів в анонімних постах заборонені."
+        return i18n.t("anon.validate.links_forbidden", lang)
     if _REPEATED_RE.search(cleaned):
-        return "У тексті забагато повторюваних символів."
+        return i18n.t("anon.validate.too_repetitive", lang)
     if len(set(normalize_text(cleaned))) < 5:
-        return "Текст схожий на спам. Сформулюйте запитання звичайними словами."
+        return i18n.t("anon.validate.looks_like_spam", lang)
     return None
 
 
-def cooldown_text(last_submission_at, cooldown_days: int, now: datetime = None) -> str:
+def cooldown_text(last_submission_at, cooldown_days: int, now: datetime = None, lang: str = "uk") -> str:
     if not last_submission_at:
         return ""
     now = now or datetime.utcnow()
@@ -54,8 +56,8 @@ def cooldown_text(last_submission_at, cooldown_days: int, now: datetime = None) 
     days, minute_remainder = divmod(total_minutes, 24 * 60)
     hours, minutes = divmod(minute_remainder, 60)
     if days:
-        return f"Новий анонімний пост можна створити через {days} дн. {hours} год."
-    return f"Новий анонімний пост можна створити через {hours} год. {minutes} хв."
+        return i18n.t("anon.cooldown.days_hours", lang, days=days, hours=hours)
+    return i18n.t("anon.cooldown.hours_minutes", lang, hours=hours, minutes=minutes)
 
 
 def message_link(message) -> str:

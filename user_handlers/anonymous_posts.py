@@ -49,18 +49,19 @@ def utc_now() -> datetime:
     return datetime.utcnow()
 
 
-def validate_submission(text: str):
-    return validate_submission_text(text, MIN_LENGTH, MAX_LENGTH)
+def validate_submission(text: str, lang: str = "uk"):
+    return validate_submission_text(text, MIN_LENGTH, MAX_LENGTH, lang)
 
 
 def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
+    lang = i18n.get_lang(user_id) if user_id else "uk"
     rows = [
-        [InlineKeyboardButton("✍️ Поставити анонімне запитання", callback_data="anon:new")],
-        [InlineKeyboardButton("📋 Мої публікації", callback_data="anon:mine")],
+        [InlineKeyboardButton(i18n.t("anon.btn.ask_question", lang), callback_data="anon:new")],
+        [InlineKeyboardButton(i18n.t("anon.btn.my_posts", lang), callback_data="anon:mine")],
     ]
     rows.extend(equeue_monitor.private_home_rows(user_id))
     rows.extend(housing_monitor.private_home_rows(user_id))
-    rows.append([InlineKeyboardButton(BTN_FEEDBACK, callback_data="anon:feedback")])
+    rows.append([InlineKeyboardButton(i18n.t("anon.btn.feedback", lang), callback_data="anon:feedback")])
     rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="anon:lang:menu")])
     return InlineKeyboardMarkup(rows)
 
@@ -75,26 +76,27 @@ def _lang_picker_keyboard() -> InlineKeyboardMarkup:
 
 
 def reply_menu_keyboard(user_id=None) -> ReplyKeyboardMarkup:
-    rows = [[BTN_HOME, BTN_ANON], [BTN_MY_POSTS]]
+    lang = i18n.get_lang(user_id) if user_id else "uk"
+    rows = [[i18n.t("anon.btn.home", lang), i18n.t("anon.btn.ask", lang)], [i18n.t("anon.btn.my_posts", lang)]]
     if equeue_monitor.is_allowed(user_id):
-        rows[1].append(BTN_EQUEUE)
+        rows[1].append(i18n.t("anon.btn.equeue", lang))
     # Shown to everyone, allowed or not: housing_monitor.show_menu() renders
     # its own locked screen (pricing + "request access") for people without
     # access yet, same as the top inline menu already does.
-    rows.append([BTN_HOUSING])
-    rows.append([BTN_FEEDBACK])
+    rows.append([i18n.t("anon.btn.housing", lang)])
+    rows.append([i18n.t("anon.btn.feedback", lang)])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
 
-def _cancel_keyboard() -> InlineKeyboardMarkup:
+def _cancel_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✖ Скасувати", callback_data="anon:cancel")],
+        [InlineKeyboardButton(i18n.t("anon.btn.cancel", lang), callback_data="anon:cancel")],
     ])
 
 
-def _feedback_cancel_keyboard() -> InlineKeyboardMarkup:
+def _feedback_cancel_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✖ Скасувати", callback_data="anon:feedback_cancel")],
+        [InlineKeyboardButton(i18n.t("anon.btn.cancel", lang), callback_data="anon:feedback_cancel")],
     ])
 
 
@@ -105,30 +107,28 @@ def start_feedback(update: Update, context: CallbackContext) -> None:
     в чаті — жодного окремого каналу для скарги, ідеї чи помилки не було.
     """
     context.user_data["feedback"] = {"step": "text"}
-    text = (
-        "💬 <b>Зворотній звʼязок</b>\n\n"
-        "Напишіть одним повідомленням — помилку, ідею чи скаргу. "
-        "Дійде особисто адміністратору, без публікації в чаті."
-    )
+    lang = i18n.get_lang(update.effective_user.id) if update.effective_user else "uk"
+    text = i18n.t("anon.feedback.intro", lang)
     query = update.callback_query
     if query:
         query.answer()
-        query.edit_message_text(text, parse_mode="HTML", reply_markup=_feedback_cancel_keyboard())
+        query.edit_message_text(text, parse_mode="HTML", reply_markup=_feedback_cancel_keyboard(lang))
     else:
-        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_feedback_cancel_keyboard())
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_feedback_cancel_keyboard(lang))
 
 
 def _handle_feedback_text(update: Update, context: CallbackContext) -> None:
     text = (update.message.text or "").strip()
+    user = update.effective_user
+    lang = i18n.get_lang(user.id) if user else "uk"
     if len(text) < FEEDBACK_MIN_LENGTH:
         update.message.reply_text(
-            f"Закоротко — хоча б {FEEDBACK_MIN_LENGTH} символів. Напишіть ще раз або натисніть «Скасувати».",
-            reply_markup=_feedback_cancel_keyboard(),
+            i18n.t("anon.feedback.too_short", lang, n=FEEDBACK_MIN_LENGTH),
+            reply_markup=_feedback_cancel_keyboard(lang),
         )
         return
     text = text[:FEEDBACK_MAX_LENGTH]
     context.user_data.pop("feedback", None)
-    user = update.effective_user
     username = getattr(user, "username", None) if user else None
     sender = f"@{username}" if username else (getattr(user, "full_name", None) or "Невідомо")
     user_id = user.id if user else 0
@@ -143,11 +143,7 @@ def _handle_feedback_text(update: Update, context: CallbackContext) -> None:
             delivered = True
         except Exception:
             logger.exception("Could not forward feedback to admin")
-    reply = (
-        "Дякуємо! Повідомлення передано адміністратору."
-        if delivered else
-        "Не вдалося передати повідомлення адміністратору — спробуйте пізніше."
-    )
+    reply = i18n.t("anon.feedback.delivered", lang) if delivered else i18n.t("anon.feedback.failed", lang)
     update.message.reply_text(reply, reply_markup=_home_keyboard(user_id))
 
 
@@ -156,9 +152,9 @@ def cancel_feedback(update: Update, context: CallbackContext) -> None:
     show_home(update, context, edit=True)
 
 
-def _main_menu_keyboard() -> InlineKeyboardMarkup:
+def _main_menu_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")],
+        [InlineKeyboardButton(i18n.t("anon.btn.back_home", lang), callback_data="anon:home")],
     ])
 
 
@@ -211,32 +207,27 @@ def _get_or_create_user(session, telegram_user) -> AnonymousUser:
     return row
 
 
-def _cooldown_text(user: AnonymousUser) -> str:
-    return cooldown_text(user.last_submission_at, COOLDOWN_DAYS, utc_now())
+def _cooldown_text(user: AnonymousUser, lang: str = "uk") -> str:
+    return cooldown_text(user.last_submission_at, COOLDOWN_DAYS, utc_now(), lang)
 
 
 def show_home(update: Update, context: CallbackContext, edit: bool = False) -> None:
     """Show the anonymous posting landing screen in a private chat."""
     context.user_data.pop("anonymous", None)
-    text = (
-        "🙈 <b>Анонімне запитання у чаті Потсдама</b>\n\n"
-        "Оберіть тему, напишіть запитання та підтвердіть публікацію. "
-        f"Анонімний пост можна створити не частіше одного разу на {COOLDOWN_DAYS} днів.\n\n"
-        "Для учасників чату автор не відображається. Адміністратор зберігає Telegram ID автора "
-        "лише для захисту від спаму та порушень. Посилання та контактні дані заборонені."
-    )
     user_id = update.effective_user.id if update.effective_user else None
+    lang = i18n.get_lang(user_id) if user_id else "uk"
+    text = i18n.t("anon.home.text", lang, days=COOLDOWN_DAYS)
     if edit and update.callback_query:
-        update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_home_keyboard(update.effective_user.id if update.effective_user else None))
+        update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_home_keyboard(user_id))
     else:
         update.effective_message.reply_text(
-            "⬇️ Швидке меню закріплено внизу. Можна не натискати /start щоразу.",
+            i18n.t("anon.home.quick_menu_note", lang),
             reply_markup=reply_menu_keyboard(user_id),
         )
         update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_home_keyboard(user_id))
 
 
-def _new_captcha(context: CallbackContext) -> InlineKeyboardMarkup:
+def _new_captcha(context: CallbackContext, lang: str = "uk") -> InlineKeyboardMarkup:
     left = random.randint(2, 9)
     right = random.randint(1, 9)
     answer = left + right
@@ -252,18 +243,18 @@ def _new_captcha(context: CallbackContext) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(str(value), callback_data=f"anon:captcha:{token}:{value}") for value in values[:2]],
         [InlineKeyboardButton(str(value), callback_data=f"anon:captcha:{token}:{value}") for value in values[2:]],
-        [InlineKeyboardButton("✖ Скасувати", callback_data="anon:cancel")],
+        [InlineKeyboardButton(i18n.t("anon.btn.cancel", lang), callback_data="anon:cancel")],
     ])
 
 
-def _show_captcha(query, context: CallbackContext, prefix: str = "") -> None:
-    keyboard = _new_captcha(context)
+def _show_captcha(query, context: CallbackContext, prefix: str = "", lang: str = "uk") -> None:
+    keyboard = _new_captcha(context, lang)
     question = context.user_data["anonymous"]["captcha_question"]
-    text = (prefix + "\n\n" if prefix else "") + f"🛡 Перевірка від спаму: скільки буде <b>{question}</b>?"
+    text = (prefix + "\n\n" if prefix else "") + i18n.t("anon.captcha.question", lang, question=question)
     query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
-def _topics_keyboard(session, page: int = 0) -> InlineKeyboardMarkup:
+def _topics_keyboard(session, page: int = 0, lang: str = "uk") -> InlineKeyboardMarkup:
     chat_id = _target_chat_id(session)
     topics = (
         session.query(AnonymousTopic)
@@ -282,7 +273,7 @@ def _topics_keyboard(session, page: int = 0) -> InlineKeyboardMarkup:
         nav.append(InlineKeyboardButton("➡", callback_data=f"anon:topics:{page + 1}"))
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton("✖ Скасувати", callback_data="anon:cancel")])
+    rows.append([InlineKeyboardButton(i18n.t("anon.btn.cancel", lang), callback_data="anon:cancel")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -295,15 +286,15 @@ def _show_topics(query, context: CallbackContext, page: int = 0) -> None:
             AnonymousTopic.chat_id == chat_id,
             AnonymousTopic.is_active == 1,
         ).count()
+        lang = i18n.get_lang(query.from_user.id)
         if not chat_id or not count:
             query.edit_message_text(
-                "Теми ще не завантажені. Бот додає їх автоматично після нових повідомлень у темах. "
-                "Адміністратор також може виконати /anon_topic Назва всередині потрібної теми.",
-                reply_markup=_main_menu_keyboard(),
+                i18n.t("anon.topics.not_loaded", lang),
+                reply_markup=_main_menu_keyboard(lang),
             )
             return
         context.user_data.setdefault("anonymous", {})["step"] = "topic"
-        query.edit_message_text("📌 Оберіть тему для запитання:", reply_markup=_topics_keyboard(session, page))
+        query.edit_message_text(i18n.t("anon.topics.pick", lang), reply_markup=_topics_keyboard(session, page, lang))
     finally:
         session.close()
 
@@ -313,32 +304,34 @@ def _start_new(query, context: CallbackContext) -> None:
     try:
         user = _get_or_create_user(session, query.from_user)
         session.commit()
+        lang = i18n.get_lang(query.from_user.id)
         if user.is_blocked:
-            query.answer("Публікацію для вашого акаунту заблоковано.", show_alert=True)
+            query.answer(i18n.t("anon.new.blocked", lang), show_alert=True)
             return
         if user.captcha_locked_until and user.captcha_locked_until > utc_now():
             minutes = max(1, int((user.captcha_locked_until - utc_now()).total_seconds() // 60) + 1)
-            query.answer(f"Забагато помилок. Спробуйте через {minutes} хв.", show_alert=True)
+            query.answer(i18n.t("anon.new.too_many_failures", lang, n=minutes), show_alert=True)
             return
-        cooldown = _cooldown_text(user)
+        cooldown = _cooldown_text(user, lang)
         if cooldown:
             query.answer(cooldown, show_alert=True)
             return
         context.user_data["anonymous"] = {"submit_token": secrets.token_urlsafe(12)}
-        _show_captcha(query, context)
+        _show_captcha(query, context, lang=lang)
     finally:
         session.close()
 
 
 def _handle_captcha(query, context: CallbackContext, parts) -> None:
     state = context.user_data.get("anonymous") or {}
+    lang = i18n.get_lang(query.from_user.id)
     if len(parts) != 4 or state.get("step") != "captcha" or parts[2] != state.get("captcha_token"):
-        query.answer("Перевірка застаріла. Почніть заново.", show_alert=True)
+        query.answer(i18n.t("anon.captcha.expired", lang), show_alert=True)
         return
     try:
         selected = int(parts[3])
     except ValueError:
-        query.answer("Некоректна відповідь.", show_alert=True)
+        query.answer(i18n.t("anon.captcha.invalid_answer", lang), show_alert=True)
         return
 
     session = DBSession()
@@ -352,18 +345,18 @@ def _handle_captcha(query, context: CallbackContext, parts) -> None:
                 session.commit()
                 context.user_data.pop("anonymous", None)
                 query.edit_message_text(
-                    f"🛑 Забагато хибних відповідей. Спробуйте через {CAPTCHA_LOCK_MINUTES} хвилин.",
-                    reply_markup=_main_menu_keyboard(),
+                    i18n.t("anon.captcha.locked", lang, n=CAPTCHA_LOCK_MINUTES),
+                    reply_markup=_main_menu_keyboard(lang),
                 )
                 return
             session.commit()
-            _show_captcha(query, context, "❌ Невірно. Спробуйте ще раз.")
+            _show_captcha(query, context, i18n.t("anon.captcha.wrong", lang), lang)
             return
         user.captcha_failures = 0
         user.captcha_locked_until = None
         user.captcha_passed_at = utc_now()
         session.commit()
-        query.answer("Перевірку пройдено")
+        query.answer(i18n.t("anon.captcha.passed", lang))
         _show_topics(query, context)
     finally:
         session.close()
@@ -373,27 +366,25 @@ def _select_topic(query, context: CallbackContext, topic_id: int) -> None:
     session = DBSession()
     try:
         topic = session.query(AnonymousTopic).get(topic_id)
+        lang = i18n.get_lang(query.from_user.id)
         if not topic or not topic.is_active or topic.chat_id != _target_chat_id(session):
-            query.answer("Тема більше недоступна.", show_alert=True)
+            query.answer(i18n.t("anon.topic.gone", lang), show_alert=True)
             return
         state = context.user_data.setdefault("anonymous", {})
         state.update({"step": "text", "topic_id": topic.id, "topic_name": topic.name})
         query.edit_message_text(
-            f"Тема: <b>{html.escape(topic.name)}</b>\n\n"
-            f"Напишіть запитання одним повідомленням — від {MIN_LENGTH} до {MAX_LENGTH} символів. "
-            "Не додавайте посилання, @імена, e-mail та номери телефонів.",
+            i18n.t("anon.topic.prompt", lang, topic=html.escape(topic.name), min=MIN_LENGTH, max=MAX_LENGTH),
             parse_mode="HTML",
-            reply_markup=_cancel_keyboard(),
+            reply_markup=_cancel_keyboard(lang),
         )
     finally:
         session.close()
 
 
-def _preview_text(state) -> str:
-    return (
-        f"📌 Тема: <b>{html.escape(state['topic_name'])}</b>\n\n"
-        f"🙈 <b>Попередній перегляд</b>\n\n{html.escape(state['text'])}\n\n"
-        "Після підтвердження запитання одразу з'явиться у чаті. Видалити його через бота можна протягом години."
+def _preview_text(state, lang: str = "uk") -> str:
+    return i18n.t(
+        "anon.preview.text", lang,
+        topic=html.escape(state['topic_name']), text=html.escape(state['text']),
     )
 
 
@@ -406,31 +397,33 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
         return
     state = context.user_data.get("anonymous") or {}
     text = update.message.text.strip()
+    user_id = update.effective_user.id if update.effective_user else None
+    lang = i18n.get_lang(user_id) if user_id else "uk"
     if state.get("step") != "text":
-        if text == BTN_HOME:
+        if text == i18n.t("anon.btn.home", lang):
             show_home(update, context)
             return
-        if text == BTN_FEEDBACK:
+        if text == i18n.t("anon.btn.feedback", lang):
             start_feedback(update, context)
             return
-        if text == BTN_EQUEUE and equeue_monitor.is_allowed(update.effective_user.id if update.effective_user else None):
+        if text == i18n.t("anon.btn.equeue", lang) and equeue_monitor.is_allowed(user_id):
             equeue_monitor.show_menu(update, context)
             return
-        if text == BTN_HOUSING:
+        if text == i18n.t("anon.btn.housing", lang):
             housing_monitor.show_menu(update, context)
             return
         if housing_monitor.handle_private_text(update, context):
             return
-        if text in {BTN_ANON, BTN_MY_POSTS}:
+        if text in {i18n.t("anon.btn.ask", lang), i18n.t("anon.btn.my_posts", lang)}:
             show_home(update, context)
             return
         show_home(update, context)
         return
     if state.get("step") != "text":
         return
-    error = validate_submission(update.message.text)
+    error = validate_submission(update.message.text, lang)
     if error:
-        update.message.reply_text(f"❌ {error}\n\nВиправте текст або скасуйте публікацію.", reply_markup=_cancel_keyboard())
+        update.message.reply_text(i18n.t("anon.submit.validation_error", lang, error=error), reply_markup=_cancel_keyboard(lang))
         return
 
     session = DBSession()
@@ -443,8 +436,8 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
         ).first()
         if duplicate:
             update.message.reply_text(
-                "❌ Такий самий текст уже публікувався за останні 30 днів. Сформулюйте запитання інакше.",
-                reply_markup=_cancel_keyboard(),
+                i18n.t("anon.submit.duplicate", lang),
+                reply_markup=_cancel_keyboard(lang),
             )
             return
     finally:
@@ -453,34 +446,34 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
     state["text"] = update.message.text.strip()
     state["step"] = "confirm"
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Опублікувати", callback_data="anon:confirm")],
-        [InlineKeyboardButton("✏️ Змінити текст", callback_data="anon:edit_text")],
-        [InlineKeyboardButton("📌 Обрати іншу тему", callback_data="anon:change_topic")],
-        [InlineKeyboardButton("✖ Скасувати", callback_data="anon:cancel")],
+        [InlineKeyboardButton(i18n.t("anon.preview.btn_publish", lang), callback_data="anon:confirm")],
+        [InlineKeyboardButton(i18n.t("anon.preview.btn_edit", lang), callback_data="anon:edit_text")],
+        [InlineKeyboardButton(i18n.t("anon.preview.btn_change_topic", lang), callback_data="anon:change_topic")],
+        [InlineKeyboardButton(i18n.t("anon.btn.cancel", lang), callback_data="anon:cancel")],
     ])
-    update.message.reply_text(_preview_text(state), parse_mode="HTML", reply_markup=keyboard)
+    update.message.reply_text(_preview_text(state, lang), parse_mode="HTML", reply_markup=keyboard)
 
 
 def _message_link(message) -> str:
     return message_link(message)
 
 
-def _reserve_post(query, state):
+def _reserve_post(query, state, lang: str = "uk"):
     session = DBSession()
     try:
         session.execute("BEGIN IMMEDIATE")
         user = _get_or_create_user(session, query.from_user)
         if user.is_blocked:
             session.rollback()
-            return None, "Публікацію для вашого акаунту заблоковано."
-        cooldown = _cooldown_text(user)
+            return None, i18n.t("anon.new.blocked", lang)
+        cooldown = _cooldown_text(user, lang)
         if cooldown:
             session.rollback()
             return None, cooldown
         topic = session.query(AnonymousTopic).get(int(state["topic_id"]))
         if not topic or not topic.is_active:
             session.rollback()
-            return None, "Обрана тема більше недоступна."
+            return None, i18n.t("anon.reserve.topic_gone", lang)
         now = utc_now()
         post = AnonymousPost(
             submit_token=state["submit_token"],
@@ -504,8 +497,8 @@ def _reserve_post(query, state):
             AnonymousPost.submit_token == state.get("submit_token", "")
         ).first()
         if existing and existing.status == "published":
-            return int(existing.id), "Це запитання вже опубліковано."
-        return None, "Запит вже обробляється. Зачекайте кілька секунд."
+            return int(existing.id), i18n.t("anon.reserve.already_published", lang)
+        return None, i18n.t("anon.reserve.processing", lang)
     finally:
         session.close()
 
@@ -602,19 +595,23 @@ def _notify_admin(context: CallbackContext, post: AnonymousPost, telegram_user) 
 
 def _publish(query, context: CallbackContext) -> None:
     state = context.user_data.get("anonymous") or {}
+    lang = i18n.get_lang(query.from_user.id)
     if state.get("step") != "confirm" or not state.get("text") or not state.get("topic_id"):
-        query.answer("Чернетка застаріла. Почніть заново.", show_alert=True)
+        query.answer(i18n.t("anon.publish.stale_draft", lang), show_alert=True)
         return
-    post_id, error = _reserve_post(query, state)
+    post_id, error = _reserve_post(query, state, lang)
     if error:
         query.answer(error, show_alert=True)
         if post_id:
             context.user_data.pop("anonymous", None)
         return
-    query.answer("Публікую…")
+    query.answer(i18n.t("anon.publish.publishing_toast", lang))
     session = DBSession()
     try:
         post = session.query(AnonymousPost).get(post_id)
+        # Posted into the shared group chat - stays in Ukrainian regardless of
+        # the anonymous author's own language, since it's public-facing text
+        # read by the whole chat, not a private reply to this one user.
         body = (
             "🙈 <b>Анонімне запитання</b>\n\n"
             f"{html.escape(post.text)}\n\n"
@@ -635,8 +632,8 @@ def _publish(query, context: CallbackContext) -> None:
         _release_failed_reservation(post_id, str(exc))
         logger.exception("Could not publish anonymous post")
         query.edit_message_text(
-            "❌ Не вдалося опублікувати запитання. Ліміт не списано — спробуйте ще раз пізніше.",
-            reply_markup=_main_menu_keyboard(),
+            i18n.t("anon.publish.failed", lang),
+            reply_markup=_main_menu_keyboard(lang),
         )
         return
     finally:
@@ -646,12 +643,11 @@ def _publish(query, context: CallbackContext) -> None:
     context.user_data.pop("anonymous", None)
     rows = []
     if post.message_link:
-        rows.append([InlineKeyboardButton("🔗 Відкрити запитання", url=post.message_link)])
-    rows.append([InlineKeyboardButton("🗑 Видалити протягом години", callback_data=f"anon:delete:{post.id}")])
-    rows.append([InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")])
+        rows.append([InlineKeyboardButton(i18n.t("anon.publish.btn_open", lang), url=post.message_link)])
+    rows.append([InlineKeyboardButton(i18n.t("anon.publish.btn_delete", lang), callback_data=f"anon:delete:{post.id}")])
+    rows.append([InlineKeyboardButton(i18n.t("anon.btn.back_home", lang), callback_data="anon:home")])
     query.edit_message_text(
-        "✅ Запитання опубліковано анонімно. Відповіді на нього надходитимуть сюди.\n\n"
-        f"Наступний анонімний пост можна створити через {COOLDOWN_DAYS} днів.",
+        i18n.t("anon.publish.success", lang, days=COOLDOWN_DAYS),
         reply_markup=InlineKeyboardMarkup(rows),
     )
     _notify_admin(context, post, query.from_user)
@@ -662,25 +658,26 @@ def _delete_post(query, context: CallbackContext, post_id: int, admin: bool = Fa
     indexed_message_pk = None
     try:
         post = session.query(AnonymousPost).get(post_id)
+        lang = i18n.get_lang(query.from_user.id)
         if not post:
-            query.answer("Публікацію не знайдено.", show_alert=True)
+            query.answer(i18n.t("anon.delete.not_found", lang), show_alert=True)
             return
         if not admin and post.user_id != query.from_user.id:
-            query.answer("Немає доступу.", show_alert=True)
+            query.answer(i18n.t("anon.delete.no_access", lang), show_alert=True)
             return
         if admin and query.from_user.id != ADMIN_ID:
-            query.answer("Немає доступу.", show_alert=True)
+            query.answer(i18n.t("anon.delete.no_access", lang), show_alert=True)
             return
         if post.status == "deleted":
-            query.answer("Публікацію вже видалено.", show_alert=True)
+            query.answer(i18n.t("anon.delete.already_deleted", lang), show_alert=True)
             return
         if not admin and (not post.can_delete_until or post.can_delete_until < utc_now()):
-            query.answer("Час для видалення вже минув. Зверніться до адміністратора.", show_alert=True)
+            query.answer(i18n.t("anon.delete.too_late", lang), show_alert=True)
             return
         try:
             context.bot.delete_message(post.chat_id, post.target_message_id)
         except Exception as exc:
-            query.answer(f"Не вдалося видалити: {exc}", show_alert=True)
+            query.answer(i18n.t("anon.delete.failed", lang, error=exc), show_alert=True)
             return
         post.status = "deleted"
         post.deleted_at = utc_now()
@@ -702,10 +699,13 @@ def _delete_post(query, context: CallbackContext, post_id: int, admin: bool = Fa
         session.commit()
         if indexed_message_pk is not None:
             enqueue_message_reindex(post.chat_id, indexed_message_pk)
-        query.answer("Удалено" + (" и заблокировано" if block else ""), show_alert=True)
+        query.answer(
+            i18n.t("anon.delete.toast_blocked", lang) if block else i18n.t("anon.delete.toast", lang),
+            show_alert=True,
+        )
         query.edit_message_text(
-            "🗑 Публікацію видалено." + (" Автора заблоковано." if block else ""),
-            reply_markup=_main_menu_keyboard() if not admin else None,
+            i18n.t("anon.delete.success_blocked", lang) if block else i18n.t("anon.delete.success", lang),
+            reply_markup=_main_menu_keyboard(lang) if not admin else None,
         )
     finally:
         session.close()
@@ -714,25 +714,26 @@ def _delete_post(query, context: CallbackContext, post_id: int, admin: bool = Fa
 def _show_my_posts(query) -> None:
     session = DBSession()
     try:
+        lang = i18n.get_lang(query.from_user.id)
         posts = session.query(AnonymousPost).filter(
             AnonymousPost.user_id == query.from_user.id,
             AnonymousPost.status.in_(("published", "deleted")),
         ).order_by(AnonymousPost.created_at.desc()).limit(5).all()
         if not posts:
-            query.edit_message_text("У вас ще немає анонімних публікацій.", reply_markup=_main_menu_keyboard())
+            query.edit_message_text(i18n.t("anon.myposts.empty", lang), reply_markup=_main_menu_keyboard(lang))
             return
         rows = []
-        lines = ["📋 <b>Останні анонімні публікації</b>", ""]
+        lines = [i18n.t("anon.myposts.header", lang), ""]
         for post in posts:
-            status = "🗑 видалено" if post.status == "deleted" else "✅ опубліковано"
+            status = i18n.t("anon.myposts.status_deleted", lang) if post.status == "deleted" else i18n.t("anon.myposts.status_published", lang)
             lines.append(f"#{post.id} · {status} · {post.created_at.strftime('%d.%m.%Y %H:%M')}")
             lines.append(html.escape(post.text[:100]))
             lines.append("")
             if post.status == "published" and post.message_link:
-                rows.append([InlineKeyboardButton(f"🔗 Відкрити #{post.id}", url=post.message_link)])
+                rows.append([InlineKeyboardButton(i18n.t("anon.myposts.btn_open", lang, id=post.id), url=post.message_link)])
             if post.status == "published" and post.can_delete_until and post.can_delete_until >= utc_now():
-                rows.append([InlineKeyboardButton(f"🗑 Видалити #{post.id}", callback_data=f"anon:delete:{post.id}")])
-        rows.append([InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")])
+                rows.append([InlineKeyboardButton(i18n.t("anon.myposts.btn_delete", lang, id=post.id), callback_data=f"anon:delete:{post.id}")])
+        rows.append([InlineKeyboardButton(i18n.t("anon.btn.back_home", lang), callback_data="anon:home")])
         query.edit_message_text("\n".join(lines), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(rows))
     finally:
         session.close()
@@ -780,7 +781,8 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         state = context.user_data.get("anonymous") or {}
         state["step"] = "text"
         query.answer()
-        query.edit_message_text("Надішліть виправлений текст запитання.", reply_markup=_cancel_keyboard())
+        lang = i18n.get_lang(query.from_user.id)
+        query.edit_message_text(i18n.t("anon.edit.prompt", lang), reply_markup=_cancel_keyboard(lang))
     elif data == "anon:change_topic":
         query.answer()
         _show_topics(query, context)
@@ -921,13 +923,14 @@ def observe_forum(update: Update, context: CallbackContext) -> None:
         user_id = post.user_id
     finally:
         session.close()
-    preview = (message.text or message.caption or "[медиа]").strip()[:500]
+    lang = i18n.get_lang(user_id)
+    preview = (message.text or message.caption or i18n.t("anon.reply_notify.media_fallback", lang)).strip()[:500]
     link = _message_link(message)
-    rows = [[InlineKeyboardButton("🔗 Открыть ответ", url=link)]] if link else []
+    rows = [[InlineKeyboardButton(i18n.t("anon.reply_notify.btn_open", lang), url=link)]] if link else []
     try:
         context.bot.send_message(
             user_id,
-            "💬 <b>Нова відповідь на ваше анонімне запитання</b>\n\n" + html.escape(preview),
+            i18n.t("anon.reply_notify.text", lang, preview=html.escape(preview)),
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(rows) if rows else None,
         )

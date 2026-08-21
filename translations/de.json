@@ -191,5 +191,90 @@
   "housing.selfmanage.text_with_filters": "⚙️ <b>Meine Filter</b>\n\nTippen Sie auf einen Filter, um ihn zu pausieren/aktivieren, und daneben auf „✏️ Bearbeiten“/„🗑 Löschen“, um die Kriterien zu ändern oder ihn ganz zu entfernen.",
   "housing.selfmanage.text_empty": "⚙️ <b>Meine Filter</b>\n\nSie haben noch keine Filter. Tippen Sie im Menü auf „➕ Filter hinzufügen“.",
 
+  "anon.validate.too_short": "Die Frage ist zu kurz. Mindestens {n} Zeichen erforderlich.",
+  "anon.validate.too_long": "Die Frage ist zu lang. Maximal {n} Zeichen.",
+  "anon.validate.too_many_lines": "Zu viele Zeilen. Kürzen Sie die Frage und senden Sie sie erneut.",
+  "anon.validate.links_forbidden": "Links, @Namen, E-Mail-Adressen und Telefonnummern sind in anonymen Beiträgen nicht erlaubt.",
+  "anon.validate.too_repetitive": "Der Text enthält zu viele sich wiederholende Zeichen.",
+  "anon.validate.looks_like_spam": "Der Text sieht nach Spam aus. Formulieren Sie die Frage mit gewöhnlichen Wörtern.",
+  "anon.cooldown.days_hours": "Ein neuer anonymer Beitrag ist in {days} Tg. {hours} Std. möglich.",
+  "anon.cooldown.hours_minutes": "Ein neuer anonymer Beitrag ist in {hours} Std. {minutes} Min. möglich.",
+
+  "anon.btn.ask_question": "✍️ Anonyme Frage stellen",
+  "anon.btn.my_posts": "📋 Meine Beiträge",
+  "anon.btn.feedback": "💬 Feedback",
+  "anon.btn.home": "🏠 Menü",
+  "anon.btn.ask": "✍️ Anonyme Frage",
+  "anon.btn.equeue": "🛂 Ausländerbehörde-Termin",
+  "anon.btn.housing": "🏠 Wohnungs-Monitoring",
+  "anon.btn.cancel": "✖ Abbrechen",
+  "anon.btn.back_home": "⬅ Hauptmenü",
+
+  "anon.feedback.intro": "💬 <b>Feedback</b>\n\nSchreiben Sie in einer Nachricht — einen Fehler, eine Idee oder eine Beschwerde. Geht persönlich an den Administrator, ohne Veröffentlichung im Chat.",
+  "anon.feedback.too_short": "Zu kurz — mindestens {n} Zeichen. Schreiben Sie es erneut oder tippen Sie auf „Abbrechen“.",
+  "anon.feedback.delivered": "Danke! Die Nachricht wurde an den Administrator weitergeleitet.",
+  "anon.feedback.failed": "Die Nachricht konnte nicht an den Administrator übermittelt werden — versuchen Sie es später erneut.",
+
+  "anon.home.quick_menu_note": "⬇️ Das Schnellmenü ist unten angeheftet. Sie müssen nicht jedes Mal /start tippen.",
+  "anon.home.text": "🙈 <b>Anonyme Frage im Potsdam-Chat</b>\n\nWählen Sie ein Thema, schreiben Sie die Frage und bestätigen Sie die Veröffentlichung. Ein anonymer Beitrag ist höchstens einmal alle {days} Tage möglich.\n\nFür die Chat-Mitglieder wird der Autor nicht angezeigt. Der Administrator speichert die Telegram-ID des Autors nur zum Schutz vor Spam und Verstößen. Links und Kontaktdaten sind nicht erlaubt.",
+
+  "anon.captcha.question": "🛡 Spam-Schutz: Wie viel ergibt <b>{question}</b>?",
+  "anon.captcha.expired": "Die Prüfung ist abgelaufen. Beginnen Sie erneut.",
+  "anon.captcha.invalid_answer": "Ungültige Antwort.",
+  "anon.captcha.locked": "🛑 Zu viele falsche Antworten. Versuchen Sie es in {n} Minuten erneut.",
+  "anon.captcha.wrong": "❌ Falsch. Versuchen Sie es erneut.",
+  "anon.captcha.passed": "Prüfung bestanden",
+
+  "anon.topics.not_loaded": "Die Themen sind noch nicht geladen. Der Bot fügt sie automatisch nach neuen Nachrichten in den Themen hinzu. Der Administrator kann auch /anon_topic Name innerhalb des gewünschten Themas ausführen.",
+  "anon.topics.pick": "📌 Wählen Sie ein Thema für die Frage:",
+
+  "anon.new.blocked": "Die Veröffentlichung für Ihr Konto ist gesperrt.",
+  "anon.new.too_many_failures": "Zu viele Fehler. Versuchen Sie es in {n} Min. erneut.",
+
+  "anon.topic.gone": "Das Thema ist nicht mehr verfügbar.",
+  "anon.topic.prompt": "Thema: <b>{topic}</b>\n\nSchreiben Sie die Frage in einer Nachricht — {min} bis {max} Zeichen. Fügen Sie keine Links, @Namen, E-Mail-Adressen oder Telefonnummern hinzu.",
+
+  "anon.preview.text": "📌 Thema: <b>{topic}</b>\n\n🙈 <b>Vorschau</b>\n\n{text}\n\nNach der Bestätigung erscheint die Frage sofort im Chat. Löschen über den Bot ist innerhalb einer Stunde möglich.",
+  "anon.preview.btn_publish": "✅ Veröffentlichen",
+  "anon.preview.btn_edit": "✏️ Text ändern",
+  "anon.preview.btn_change_topic": "📌 Anderes Thema wählen",
+
+  "anon.submit.validation_error": "❌ {error}\n\nKorrigieren Sie den Text oder brechen Sie die Veröffentlichung ab.",
+  "anon.submit.duplicate": "❌ Derselbe Text wurde in den letzten 30 Tagen bereits veröffentlicht. Formulieren Sie die Frage anders.",
+
+  "anon.edit.prompt": "Senden Sie den korrigierten Text der Frage.",
+
+  "anon.reserve.topic_gone": "Das gewählte Thema ist nicht mehr verfügbar.",
+  "anon.reserve.already_published": "Diese Frage wurde bereits veröffentlicht.",
+  "anon.reserve.processing": "Die Anfrage wird noch verarbeitet. Bitte warten Sie einige Sekunden.",
+
+  "anon.publish.stale_draft": "Der Entwurf ist abgelaufen. Beginnen Sie erneut.",
+  "anon.publish.publishing_toast": "Wird veröffentlicht…",
+  "anon.publish.failed": "❌ Die Frage konnte nicht veröffentlicht werden. Das Limit wurde nicht verbraucht — versuchen Sie es später erneut.",
+  "anon.publish.success": "✅ Die Frage wurde anonym veröffentlicht. Antworten darauf treffen hier ein.\n\nDer nächste anonyme Beitrag ist in {days} Tagen möglich.",
+  "anon.publish.btn_open": "🔗 Frage öffnen",
+  "anon.publish.btn_delete": "🗑 Innerhalb einer Stunde löschen",
+
+  "anon.delete.not_found": "Beitrag nicht gefunden.",
+  "anon.delete.no_access": "Kein Zugriff.",
+  "anon.delete.already_deleted": "Der Beitrag wurde bereits gelöscht.",
+  "anon.delete.too_late": "Die Zeit zum Löschen ist bereits abgelaufen. Wenden Sie sich an den Administrator.",
+  "anon.delete.failed": "Löschen fehlgeschlagen: {error}",
+  "anon.delete.toast": "Gelöscht",
+  "anon.delete.toast_blocked": "Gelöscht und gesperrt",
+  "anon.delete.success": "🗑 Beitrag gelöscht.",
+  "anon.delete.success_blocked": "🗑 Beitrag gelöscht. Autor gesperrt.",
+
+  "anon.myposts.empty": "Sie haben noch keine anonymen Beiträge.",
+  "anon.myposts.header": "📋 <b>Letzte anonyme Beiträge</b>",
+  "anon.myposts.status_deleted": "🗑 gelöscht",
+  "anon.myposts.status_published": "✅ veröffentlicht",
+  "anon.myposts.btn_open": "🔗 Öffnen #{id}",
+  "anon.myposts.btn_delete": "🗑 Löschen #{id}",
+
+  "anon.reply_notify.media_fallback": "[Medien]",
+  "anon.reply_notify.btn_open": "🔗 Antwort öffnen",
+  "anon.reply_notify.text": "💬 <b>Neue Antwort auf Ihre anonyme Frage</b>\n\n{preview}",
+
   "housing.faq.text": "❓ <b>Hilfe und häufige Fragen</b>\n\n<b>Was macht dieser Bereich?</b>\nÜberwacht gleichzeitig 8 Wohnungsportale in Potsdam (Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals®, Karl Marx) und schickt Ihnen eine Benachrichtigung, sobald eine Wohnung nach Ihren Kriterien erscheint — Sie müssen selbst nichts prüfen.\n\n<b>Wie funktioniert ein Filter?</b>\nSie geben Zimmer, Fläche und Preis an (wo möglich — auch den Stadtteil). Der Bot sucht nach diesen Kriterien gleichzeitig auf allen gewählten Portalen. Sie können mehrere Filter mit unterschiedlichen Kriterien anlegen — zum Beispiel einen engeren und einen breiteren als Reserve.\n\n<b>Warum wird der Preis manchmal zweimal abgefragt?</b>\nDie Portale berechnen die Miete unterschiedlich: die meisten zeigen die <b>Kaltmiete</b> (ohne Nebenkosten) — das ist eine gemeinsame Frage. ProPotsdam zeigt die volle <b>Gesamtmiete</b>, Karl Marx die <b>Warmmiete</b> (mit Nebenkosten), und bei Kleinanzeigen ist der Preis gar nicht eindeutig gekennzeichnet. Das sind inhaltlich unterschiedliche Zahlen, daher auch getrennte Fragen — so rechnet der Filter für jedes Portal richtig.\n\n<b>Was bedeuten die Schaltflächen „letzte Stunde/24 Stunden“ nach dem Anlegen eines Filters?</b>\nDirekt nach dem Anlegen merkt sich der Bot die bereits vorhandenen Wohnungen still, um Sie nicht mit dem gesamten Archiv zu überfluten. Falls Sie trotzdem sehen möchten, was kürzlich erschienen ist — dafür gibt es diese beiden Schaltflächen.\n\n<b>Wie ändere oder deaktiviere ich einen Filter?</b>\n„{btn_self_manage}“ im Hauptmenü — dort können Sie einen Filter pausieren, die Kriterien bearbeiten oder ihn ganz löschen.\n\n<b>Was kostet das und wie bekomme ich Zugang?</b>\n10 €/Monat, wird persönlich vom Administrator freigeschaltet, nachdem Sie über die Schaltfläche „{btn_request_access}“ angefragt haben.\n\n<b>Etwas funktioniert nicht oder Sie haben eine Frage?</b>\nSchreiben Sie direkt an den Administrator."
 }
