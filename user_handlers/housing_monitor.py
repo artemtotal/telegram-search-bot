@@ -59,10 +59,13 @@ ACCESS_MONTH_OPTIONS = [1, 3, 6, 12]
 EXPIRY_WARNING_DAYS = 3
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 IMMOWELT_STALE_AFTER = timedelta(minutes=30)
-PROPOTSDAM_STALE_AFTER = timedelta(minutes=45)
-# Kleinanzeigen опитується раз на годину, а не раз на 30 хв, як решта джерел —
+# propotsdam/semmelhaack/schoba/regiomakler/locals/karlmarx all scan every 15
+# minutes now (2026-08-21, was 30) — 20 minutes keeps the same ~1.5x margin
+# so a normal successful check still reads green/yellow, not red.
+PROPOTSDAM_STALE_AFTER = timedelta(minutes=20)
+# Kleinanzeigen опитується раз на 30 хв, а не раз на 15, як решта джерел —
 # з тим самим порогом свіжості він завжди показував би 🔴 одразу після успіху.
-KLEINANZEIGEN_STALE_AFTER = timedelta(minutes=90)
+KLEINANZEIGEN_STALE_AFTER = timedelta(minutes=45)
 PROPOT_DISTRICTS = [
     "Babelsberg",
     "Babelsberg Nord",

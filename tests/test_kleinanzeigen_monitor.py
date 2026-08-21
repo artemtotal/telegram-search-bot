@@ -30,9 +30,10 @@ def _listing(key, city="Potsdam", title="Wohnung", rooms=3.0, area=76.0, price=5
 
 
 class KleinanzeigenMonitorCheckJobTests(unittest.TestCase):
-    def test_polls_once_an_hour_not_every_30_minutes(self):
-        """Explicit user decision: Kleinanzeigen is scraped less often than the other sources."""
-        self.assertEqual(kleinanzeigen_monitor.CHECK_INTERVAL_SECONDS, 3600)
+    def test_polls_every_30_minutes_not_every_15_like_the_rest(self):
+        """Explicit user decision: Kleinanzeigen is scraped less often than the other
+        sources (tightened 2026-08-21 from 60 to 30 minutes, still the slowest)."""
+        self.assertEqual(kleinanzeigen_monitor.CHECK_INTERVAL_SECONDS, 1800)
 
     def test_disabled_flag_skips_the_scan_entirely(self):
         context = SimpleNamespace(bot=FakeBot())

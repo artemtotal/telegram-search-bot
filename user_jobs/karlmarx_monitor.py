@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 CHECK_ENABLED = os.getenv("KARLMARX_CHECK_ENABLED", "1") == "1"
 TIMEOUT = int(os.getenv("KARLMARX_TIMEOUT", "30") or 30)
-CHECK_INTERVAL_SECONDS = 30 * 60
+CHECK_INTERVAL_SECONDS = 15 * 60
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 _USER_AGENT = "Mozilla/5.0 (compatible; PotsdamHousingBot/1.0)"
 

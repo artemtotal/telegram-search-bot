@@ -19,8 +19,8 @@ class FakeContext:
 
 
 class ProPotsdamMonitorTests(unittest.TestCase):
-    def test_schedule_runs_every_thirty_minutes(self):
-        self.assertEqual(propotsdam_monitor.CHECK_INTERVAL_SECONDS, 1800)
+    def test_schedule_runs_every_fifteen_minutes(self):
+        self.assertEqual(propotsdam_monitor.CHECK_INTERVAL_SECONDS, 900)
 
     def test_check_job_does_not_overlap_an_existing_scan(self):
         context = FakeContext()

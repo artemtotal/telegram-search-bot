@@ -1,11 +1,13 @@
-"""Scheduled Kleinanzeigen scan — deliberately once an hour, not every 30 minutes.
+"""Scheduled Kleinanzeigen scan — deliberately slower than the other sources.
 
 Kleinanzeigen is a large classifieds platform, not a small local broker site,
 and its Terms of Service prohibit automated scraping. A single manual-looking
-GET succeeds without a CAPTCHA, but polling it on the same 30-minute cadence
-as the other sources would be systematic scraping the platform could detect
-and act on — so this source is capped to once an hour, well below normal
-browsing traffic, as an explicit user decision.
+GET succeeds without a CAPTCHA, but polling it on the same cadence as the
+other sources would be systematic scraping the platform could detect and act
+on — so this source stays capped to once every 30 minutes even though the
+others were sped up to every 15, as an explicit user decision (2026-08-21:
+tightened from 60 to 30 minutes, still deliberately the slowest of the
+bunch).
 
 Also filters out two kinds of noise the raw search page includes:
 - Results outside Potsdam itself — the search radius pulls in nearby towns
@@ -28,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 CHECK_ENABLED = os.getenv("KLEINANZEIGEN_CHECK_ENABLED", "1") == "1"
 TIMEOUT = int(os.getenv("KLEINANZEIGEN_TIMEOUT", "30") or 30)
-CHECK_INTERVAL_SECONDS = 60 * 60
+CHECK_INTERVAL_SECONDS = 30 * 60
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 _USER_AGENT = "Mozilla/5.0 (compatible; PotsdamHousingBot/1.0)"
 
