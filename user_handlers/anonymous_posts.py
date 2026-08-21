@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters, MessageHandler
 
+import i18n
 from database import AnonymousPost, AnonymousTopic, AnonymousUser, Chat, DBSession, Message, User
 from user_handlers.anonymous_validation import (
     cooldown_text,
@@ -20,6 +21,7 @@ from user_handlers.anonymous_validation import (
     validate_submission as validate_submission_text,
 )
 from user_handlers import equeue_monitor, housing_monitor
+from user_jobs import user_settings_store
 from user_jobs.reindex_queue import enqueue_message_reindex
 
 
@@ -59,6 +61,16 @@ def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
     rows.extend(equeue_monitor.private_home_rows(user_id))
     rows.extend(housing_monitor.private_home_rows(user_id))
     rows.append([InlineKeyboardButton(BTN_FEEDBACK, callback_data="anon:feedback")])
+    rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="anon:lang:menu")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _lang_picker_keyboard() -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(i18n.LANG_LABELS[code], callback_data=f"anon:lang:set:{code}")]
+        for code in i18n.SUPPORTED_LANGS
+    ]
+    rows.append([InlineKeyboardButton("⬅ Назад / Назад / Zurück", callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -734,6 +746,20 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     parts = data.split(":")
     if data == "anon:home" or data == "anon:cancel":
         query.answer()
+        show_home(update, context, edit=True)
+    elif data == "anon:lang:menu":
+        query.answer()
+        query.edit_message_text(
+            "🌐 Оберіть мову / Выберите язык / Sprache wählen",
+            reply_markup=_lang_picker_keyboard(),
+        )
+    elif data.startswith("anon:lang:set:"):
+        lang = parts[3]
+        if lang in i18n.SUPPORTED_LANGS:
+            user_settings_store.set_language(query.from_user.id, lang)
+            query.answer(i18n.LANG_LABELS[lang])
+        else:
+            query.answer()
         show_home(update, context, edit=True)
     elif data == "anon:feedback":
         start_feedback(update, context)

@@ -3028,5 +3028,55 @@ class HousingCoopSubscriptionTests(unittest.TestCase):
         self.assertIn('призупинено', paused['title'])
 
 
+class HousingLanguageSwitcherTests(unittest.TestCase):
+    def _query_update(self, data, user_id=999999):
+        query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_text=mock.Mock())
+        return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
+
+    def setUp(self):
+        self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self.original_session = housing_monitor.user_settings_store.DBSession
+        housing_monitor.user_settings_store.DBSession = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        housing_monitor.user_settings_store.DBSession = self.original_session
+        self.engine.dispose()
+
+    def test_menu_offers_a_language_button(self):
+        labels = [b.text for row in housing_monitor._menu_keyboard(999999).inline_keyboard for b in row]
+
+        self.assertIn("🌐 Мова / Язык / Sprache", labels)
+
+    def test_opening_the_picker_shows_all_three_languages(self):
+        update = self._query_update('housing:lang:menu')
+        context = SimpleNamespace()
+
+        housing_monitor.handle_callback(update, context)
+
+        update.callback_query.answer.assert_called_once()
+        keyboard = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
+        labels = [b.text for row in keyboard.inline_keyboard for b in row]
+        self.assertIn("🇺🇦 Українська", labels)
+        self.assertIn("🇷🇺 Русский", labels)
+        self.assertIn("🇩🇪 Deutsch", labels)
+
+    def test_picking_a_language_stores_it(self):
+        update = self._query_update('housing:lang:set:de', user_id=777)
+        context = SimpleNamespace()
+
+        housing_monitor.handle_callback(update, context)
+
+        self.assertEqual(housing_monitor.user_settings_store.get_language(777), 'de')
+
+    def test_an_unsupported_language_code_is_ignored(self):
+        update = self._query_update('housing:lang:set:fr', user_id=777)
+        context = SimpleNamespace()
+
+        housing_monitor.handle_callback(update, context)
+
+        self.assertEqual(housing_monitor.user_settings_store.get_language(777), 'uk')
+
+
 if __name__ == '__main__':
     unittest.main()

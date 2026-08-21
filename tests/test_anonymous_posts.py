@@ -3,8 +3,14 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest import mock
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from database import Base
 from user_handlers import anonymous_validation
 from user_handlers import anonymous_posts
+from user_jobs import user_settings_store
 
 
 class AnonymousPostValidationTests(unittest.TestCase):
@@ -222,6 +228,67 @@ class FakeBot:
     def set_chat_menu_button(self, **kwargs):
         self.menu_buttons.append(kwargs)
         return True
+
+
+class LanguageSwitcherTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine(
+            'sqlite://',
+            connect_args={'check_same_thread': False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(self.engine)
+        self.original_session = user_settings_store.DBSession
+        user_settings_store.DBSession = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        user_settings_store.DBSession = self.original_session
+        self.engine.dispose()
+
+    def test_lang_menu_button_is_on_the_home_screen(self):
+        keyboard = anonymous_posts._home_keyboard(544675510)
+        labels = [button.text for row in keyboard.inline_keyboard for button in row]
+
+        self.assertIn("🌐 Мова / Язык / Sprache", labels)
+
+    def test_opening_the_picker_shows_all_three_languages(self):
+        query = SimpleNamespace(data="anon:lang:menu", answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=1))
+        context = SimpleNamespace(user_data={})
+
+        anonymous_posts.handle_callback(update, context)
+
+        query.answer.assert_called_once()
+        keyboard = query.edit_message_text.call_args.kwargs["reply_markup"]
+        labels = [button.text for row in keyboard.inline_keyboard for button in row]
+        self.assertIn("🇺🇦 Українська", labels)
+        self.assertIn("🇷🇺 Русский", labels)
+        self.assertIn("🇩🇪 Deutsch", labels)
+
+    def test_picking_a_language_stores_it_and_returns_home(self):
+        query = SimpleNamespace(
+            data="anon:lang:set:ru", answer=mock.Mock(), edit_message_text=mock.Mock(),
+            from_user=SimpleNamespace(id=777),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=777))
+        context = SimpleNamespace(user_data={})
+
+        anonymous_posts.handle_callback(update, context)
+
+        self.assertEqual(user_settings_store.get_language(777), 'ru')
+        query.edit_message_text.assert_called_once()
+
+    def test_an_unsupported_language_code_is_ignored(self):
+        query = SimpleNamespace(
+            data="anon:lang:set:fr", answer=mock.Mock(), edit_message_text=mock.Mock(),
+            from_user=SimpleNamespace(id=777),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=777))
+        context = SimpleNamespace(user_data={})
+
+        anonymous_posts.handle_callback(update, context)
+
+        self.assertEqual(user_settings_store.get_language(777), 'uk')
 
 
 class BotCommandMenuTests(unittest.TestCase):

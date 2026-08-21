@@ -13,6 +13,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
 from telegram.error import BadRequest
 
+import i18n
 from user_jobs import (
     coop_watchdog,
     coop_watchdog_store,
@@ -32,6 +33,7 @@ from user_jobs import (
     schoba_store,
     semmelhaack_matching,
     semmelhaack_store,
+    user_settings_store,
 )
 
 logger = logging.getLogger(__name__)
@@ -888,7 +890,17 @@ def _menu_keyboard(user_id: Optional[int] = None) -> InlineKeyboardMarkup:
         rows.insert(2, [InlineKeyboardButton(BTN_CURRENT_MATCHES, callback_data="housing:current_matches")])
         rows.insert(3, [InlineKeyboardButton(BTN_COOPS, callback_data="housing:coops")])
         rows.insert(4, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
+    rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="housing:lang:menu")])
     rows.append([InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _lang_picker_keyboard() -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(i18n.LANG_LABELS[code], callback_data=f"housing:lang:set:{code}")]
+        for code in i18n.SUPPORTED_LANGS
+    ]
+    rows.append([InlineKeyboardButton("⬅ Назад / Назад / Zurück", callback_data="housing:menu")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -4093,6 +4105,20 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         return
     if query.data == "housing:menu":
         query.answer()
+        show_menu(update, context, edit=True)
+    elif query.data == "housing:lang:menu":
+        query.answer()
+        query.edit_message_text(
+            "🌐 Оберіть мову / Выберите язык / Sprache wählen",
+            reply_markup=_lang_picker_keyboard(),
+        )
+    elif query.data.startswith("housing:lang:set:"):
+        lang = query.data.split(":")[3]
+        if lang in i18n.SUPPORTED_LANGS:
+            user_settings_store.set_language(update.effective_user.id, lang)
+            query.answer(i18n.LANG_LABELS[lang])
+        else:
+            query.answer()
         show_menu(update, context, edit=True)
     elif query.data == "housing:admin":
         query.answer()
