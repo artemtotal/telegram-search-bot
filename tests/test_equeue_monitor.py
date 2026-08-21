@@ -113,5 +113,28 @@ class EqueueMonitorTest(unittest.TestCase):
             session.close()
 
 
+class EqueueTranslationSmokeTests(unittest.TestCase):
+    """Not a full duplicate of every uk-language assertion - just enough to
+    prove lang actually reaches the rendered text for this module."""
+
+    def test_menu_keyboard_in_russian_and_german(self):
+        from user_handlers.equeue_monitor import _menu_keyboard
+
+        ru_labels = [b.text for row in _menu_keyboard(False, lang='ru').inline_keyboard for b in row]
+        de_labels = [b.text for row in _menu_keyboard(False, lang='de').inline_keyboard for b in row]
+
+        self.assertIn('🔔 Подписаться на проверку', ru_labels)
+        self.assertIn('🔔 Prüfung abonnieren', de_labels)
+
+    def test_render_menu_in_russian_and_german(self):
+        from user_handlers.equeue_monitor import _render_menu
+
+        ru = _render_menu(True, lang='ru')
+        de = _render_menu(True, lang='de')
+
+        self.assertIn('включена', ru)
+        self.assertIn('aktiviert', de)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -13,6 +13,7 @@ from telegram.error import BadRequest
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
 
+import i18n
 from database import DBSession, EqueueStatus, EqueueSubscription
 
 
@@ -57,18 +58,18 @@ def is_allowed(user_id: Optional[int]) -> bool:
 def private_home_rows(user_id: Optional[int]) -> Iterable[list]:
     if not is_allowed(user_id):
         return []
-    return [[InlineKeyboardButton("🛂 Терміни ДП Документ", callback_data="equeue:menu")]]
+    return [[InlineKeyboardButton(i18n.t("equeue.btn.home", i18n.get_lang(user_id)), callback_data="equeue:menu")]]
 
 
-def _menu_keyboard(active: bool) -> InlineKeyboardMarkup:
+def _menu_keyboard(active: bool, lang: str = "uk") -> InlineKeyboardMarkup:
     rows = []
     if active:
-        rows.append([InlineKeyboardButton("🔕 Відписатися від перевірки", callback_data="equeue:unsubscribe")])
+        rows.append([InlineKeyboardButton(i18n.t("equeue.btn.unsubscribe", lang), callback_data="equeue:unsubscribe")])
     else:
-        rows.append([InlineKeyboardButton("🔔 Підписатися на перевірку", callback_data="equeue:subscribe")])
-    rows.append([InlineKeyboardButton("🔎 Перевірити зараз", callback_data="equeue:check")])
-    rows.append([InlineKeyboardButton("🌐 Відкрити сайт", url=SERVICE_URL)])
-    rows.append([InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")])
+        rows.append([InlineKeyboardButton(i18n.t("equeue.btn.subscribe", lang), callback_data="equeue:subscribe")])
+    rows.append([InlineKeyboardButton(i18n.t("equeue.btn.check_now", lang), callback_data="equeue:check")])
+    rows.append([InlineKeyboardButton(i18n.t("equeue.btn.open_site", lang), url=SERVICE_URL)])
+    rows.append([InlineKeyboardButton(i18n.t("anon.btn.back_home", lang), callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -92,7 +93,7 @@ def _is_active(user_id: int) -> bool:
         session.close()
 
 
-def _latest_status_text(user_id: int) -> str:
+def _latest_status_text(user_id: int, lang: str = "uk") -> str:
     """Return the latest browser-submitted status for the service.
 
     Browser-only checks are global: Chrome checks the site once and posts the
@@ -115,19 +116,16 @@ def _latest_status_text(user_id: int) -> str:
                 .first()
             )
         if not row or row.last_checked_at is None:
-            return (
-                "⏳ Браузерна перевірка ще не надходила. "
-                "Вона запускається через Chrome-розширення; дочекайтеся найближчого циклу."
-            )
+            return i18n.t("equeue.status.never_checked", lang)
         checked = _format_berlin_time(row.last_checked_at)
         status = row.last_status or "unknown"
         if status == "available":
-            return f"🟢 Остання браузерна перевірка {checked}: є ознаки вільних термінів."
+            return i18n.t("equeue.status.available", lang, checked=checked)
         if status == "none":
-            return f"⚪ Остання браузерна перевірка {checked}: вільні терміни не підтверджені."
+            return i18n.t("equeue.status.none", lang, checked=checked)
         if status == "blocked":
-            return f"⚠️ Остання браузерна перевірка {checked}: сторінка показала Cloudflare/JavaScript-перевірку."
-        return f"ℹ️ Остання браузерна перевірка {checked}: статус {html.escape(status)}."
+            return i18n.t("equeue.status.blocked", lang, checked=checked)
+        return i18n.t("equeue.status.other", lang, checked=checked, status=html.escape(status))
     finally:
         session.close()
 
@@ -171,15 +169,10 @@ def _deactivate_subscription(user_id: int) -> None:
         session.close()
 
 
-def _render_menu(active: bool, user_id: Optional[int] = None, prefix: str = "") -> str:
-    status = "увімкнена" if active else "вимкнена"
-    latest = _latest_status_text(user_id) if user_id else ""
-    body = (
-        f"🛂 <b>{html.escape(SERVICE_TITLE)}</b>\n\n"
-        "Бот може кожні 15 хвилин перевіряти електронну чергу й написати вам, "
-        "якщо зʼявляться вільні терміни.\n\n"
-        f"Статус підписки: <b>{status}</b>."
-    )
+def _render_menu(active: bool, user_id: Optional[int] = None, prefix: str = "", lang: str = "uk") -> str:
+    status = i18n.t("equeue.subscription.on", lang) if active else i18n.t("equeue.subscription.off", lang)
+    latest = _latest_status_text(user_id, lang) if user_id else ""
+    body = i18n.t("equeue.menu.text", lang, title=html.escape(SERVICE_TITLE), status=status)
     if latest:
         body += f"\n\n{latest}"
     return (prefix + "\n\n" + body) if prefix else body
@@ -188,22 +181,23 @@ def _render_menu(active: bool, user_id: Optional[int] = None, prefix: str = "") 
 def show_menu(update: Update, context: CallbackContext, edit: bool = False, prefix: str = "") -> None:
     user = update.effective_user
     if not user or not is_allowed(user.id):
-        text = "Ця перевірка зараз доступна тільки для дозволених користувачів."
+        text = i18n.t("equeue.not_allowed", i18n.get_lang(user.id) if user else "uk")
         if edit and update.callback_query:
             update.callback_query.edit_message_text(text)
         else:
             update.effective_message.reply_text(text)
         return
+    lang = i18n.get_lang(user.id)
     active = _is_active(user.id)
-    text = _render_menu(active, user_id=user.id, prefix=prefix)
+    text = _render_menu(active, user_id=user.id, prefix=prefix, lang=lang)
     if edit and update.callback_query:
         try:
-            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(active))
+            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(active, lang))
         except BadRequest as exc:
             if "Message is not modified" not in str(exc):
                 raise
     else:
-        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(active))
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(active, lang))
 
 
 def _looks_like_cloudflare_challenge(text: str, status_code: int) -> bool:
@@ -381,18 +375,19 @@ def _notify_admin_error(bot, result: Dict[str, object]) -> None:
 
 
 def _notify_available(bot, subscribers, result: Dict[str, object]) -> None:
-    text = (
-        f"🟢 <b>Є ознаки вільних термінів: {html.escape(SERVICE_TITLE)}</b>\n\n"
-        "Відкрийте сайт і перевірте запис вручну.\n"
-        f"Причина: {html.escape(str(result.get('reason') or 'знайдено доступність'))}"
-    )
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🌐 Відкрити електронну чергу", url=SERVICE_URL)],
-        [InlineKeyboardButton("🔕 Відписатися", callback_data="equeue:unsubscribe")],
-    ])
     for user_id, last_status, _last_notified_at in subscribers:
         if last_status == "available":
             continue
+        lang = i18n.get_lang(user_id)
+        text = i18n.t(
+            "equeue.notify.available", lang,
+            title=html.escape(SERVICE_TITLE),
+            reason=html.escape(str(result.get('reason') or i18n.t("equeue.notify.default_reason", lang))),
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(i18n.t("equeue.btn.open_queue", lang), url=SERVICE_URL)],
+            [InlineKeyboardButton(i18n.t("equeue.btn.unsubscribe_short", lang), callback_data="equeue:unsubscribe")],
+        ])
         try:
             bot.send_message(
                 user_id,
@@ -459,33 +454,34 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     if not query or not query.data:
         return
     user = query.from_user
+    lang = i18n.get_lang(user.id)
     if not is_allowed(user.id):
-        query.answer("Немає доступу", show_alert=True)
+        query.answer(i18n.t("equeue.no_access", lang), show_alert=True)
         return
     if query.data == "equeue:menu":
         query.answer()
         show_menu(update, context, edit=True)
     elif query.data == "equeue:subscribe":
         _upsert_subscription(user)
-        query.answer("Підписку увімкнено")
-        show_menu(update, context, edit=True, prefix="✅ Підписку увімкнено. Перевірка йде кожні 15 хвилин.")
+        query.answer(i18n.t("equeue.toast.subscribed", lang))
+        show_menu(update, context, edit=True, prefix=i18n.t("equeue.prefix.subscribed", lang))
     elif query.data == "equeue:unsubscribe":
         _deactivate_subscription(user.id)
-        query.answer("Підписку вимкнено")
-        show_menu(update, context, edit=True, prefix="🔕 Підписку вимкнено.")
+        query.answer(i18n.t("equeue.toast.unsubscribed", lang))
+        show_menu(update, context, edit=True, prefix=i18n.t("equeue.prefix.unsubscribed", lang))
     elif query.data == "equeue:check":
         if BROWSER_ONLY:
-            query.answer("Показую останній браузерний статус")
-            show_menu(update, context, edit=True, prefix=_latest_status_text(user.id))
+            query.answer(i18n.t("equeue.toast.showing_latest", lang))
+            show_menu(update, context, edit=True, prefix=_latest_status_text(user.id, lang))
             return
-        query.answer("Перевіряю…")
+        query.answer(i18n.t("equeue.toast.checking", lang))
         result = check_equeue_availability()
         if result.get("available"):
-            prefix = "🟢 Зараз є ознаки вільних термінів. Відкрийте сайт і перевірте вручну."
+            prefix = i18n.t("equeue.prefix.available_now", lang)
         elif result.get("ok"):
-            prefix = "⚪ Вільні терміни зараз не підтверджені."
+            prefix = i18n.t("equeue.prefix.none_now", lang)
         else:
-            prefix = f"⚠️ Перевірка не виконана: {result.get('reason')}"
+            prefix = i18n.t("equeue.prefix.check_failed", lang, reason=result.get('reason'))
         show_menu(update, context, edit=True, prefix=prefix)
 
 
