@@ -512,6 +512,28 @@ class CoopWatchdogStatus(Base):
     last_error = Column(TEXT)
 
 
+class CoopWatchdogFilter(Base):
+    """A person's "notify me about this cooperative" subscription.
+
+    Not a real filter — the watchdog only knows empty vs. not-empty for the
+    whole page (see CoopWatchdogStatus), no per-listing rooms/price/area to
+    match against yet. This just tracks who wants the ping when a
+    cooperative's page stops saying "no vacancies"; real per-listing
+    filtering waits until there's an actual scraper for one of these."""
+
+    __tablename__ = 'coop_watchdog_filter'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'coop_key', name='uq_coop_watchdog_filter_user_coop'),
+    )
+
+    filter_id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    coop_key = Column(TEXT, nullable=False)
+    title = Column(TEXT, nullable=False)
+    active = Column(BOOLEAN, nullable=False, default=True)
+    created_at = Column(DATETIME, nullable=False)
+
+
 class KarlmarxListing(Base):
     """Wohnungsgenossenschaft "Karl Marx": без районів, ціна — Warmmiete
     (тепла оренда), а не Kaltmiete, як у решти маклерів."""

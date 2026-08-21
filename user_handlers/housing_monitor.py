@@ -14,6 +14,8 @@ from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, 
 from telegram.error import BadRequest
 
 from user_jobs import (
+    coop_watchdog,
+    coop_watchdog_store,
     housing_access_store,
     karlmarx_matching,
     karlmarx_store,
@@ -55,6 +57,7 @@ BTN_CANCEL = "✖ Скасувати"
 BTN_SELF_ADD = "➕ Додати фільтр"
 BTN_SELF_MANAGE = "⚙️ Мої фільтри"
 BTN_CURRENT_MATCHES = "🔍 Квартири, що підходять"
+BTN_COOPS = "🏘 Кооперативи (Gewoba/WBG)"
 ACCESS_MONTH_OPTIONS = [1, 3, 6, 12]
 EXPIRY_WARNING_DAYS = 3
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
@@ -66,6 +69,8 @@ PROPOTSDAM_STALE_AFTER = timedelta(minutes=20)
 # Kleinanzeigen опитується раз на 30 хв, а не раз на 15, як решта джерел —
 # з тим самим порогом свіжості він завжди показував би 🔴 одразу після успіху.
 KLEINANZEIGEN_STALE_AFTER = timedelta(minutes=45)
+# coop_watchdog.CHECK_INTERVAL_SECONDS is 30 minutes - same ~1.5x margin.
+COOP_STALE_AFTER = timedelta(minutes=45)
 PROPOT_DISTRICTS = [
     "Babelsberg",
     "Babelsberg Nord",
@@ -694,9 +699,14 @@ def _match_line(source: str, listing: Dict[str, object]) -> str:
 
 
 MAX_MATCHES_SHOWN_PER_FILTER = 15
+COOP_SOURCE_KEYS = [coop["key"] for coop in coop_watchdog.COOPERATIVES]
+# Explicit, not derived from the key - "wbg1903" and "wbg_daheim" would both
+# collide on "W" if this were auto-generated from the first letter.
+COOP_PREFIXES = {"gewoba": "G", "wbg1903": "W", "wbg_daheim": "D"}
 ALL_HOUSING_SOURCES = [
     "immowelt", "propotsdam", "semmelhaack", "schoba",
     "regiomakler", "kleinanzeigen", "locals", "karlmarx",
+    *COOP_SOURCE_KEYS,
 ]
 
 
@@ -791,7 +801,10 @@ def user_filters(user_id: Optional[int]) -> list:
     km = karlmarx_store.list_filters(user_id=int(user_id), active_only=True)
     for item in km:
         item.setdefault("source", "karlmarx")
-    return immowelt + propot + semm + schoba + regio + kanz + loc + km
+    coops = coop_watchdog_store.list_filters(user_id=int(user_id), active_only=True)
+    for item in coops:
+        item["source"] = item["coop_key"]
+    return immowelt + propot + semm + schoba + regio + kanz + loc + km + coops
 
 
 def manageable_filters(user_id: Optional[int]) -> list:
@@ -867,14 +880,90 @@ def _menu_keyboard(user_id: Optional[int] = None) -> InlineKeyboardMarkup:
     if user_id and int(user_id) == ADMIN_ID:
         rows.insert(0, [InlineKeyboardButton("⚙️ Адмінка житла", callback_data="housing:admin")])
         rows.insert(1, [InlineKeyboardButton(BTN_CURRENT_MATCHES, callback_data="housing:current_matches")])
-        rows.insert(2, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
+        rows.insert(2, [InlineKeyboardButton(BTN_COOPS, callback_data="housing:coops")])
+        rows.insert(3, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
     elif is_allowed(user_id):
         rows.insert(0, [InlineKeyboardButton(BTN_SELF_ADD, callback_data="housing:self_add")])
         rows.insert(1, [InlineKeyboardButton(BTN_SELF_MANAGE, callback_data="housing:self_manage")])
         rows.insert(2, [InlineKeyboardButton(BTN_CURRENT_MATCHES, callback_data="housing:current_matches")])
-        rows.insert(3, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
+        rows.insert(3, [InlineKeyboardButton(BTN_COOPS, callback_data="housing:coops")])
+        rows.insert(4, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
     rows.append([InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
+
+
+def _coop_subscription_state(user_id: int) -> Dict[str, bool]:
+    subs = coop_watchdog_store.list_filters(user_id=int(user_id))
+    return {row["coop_key"]: bool(row["active"]) for row in subs}
+
+
+def _coops_text(user_id: int) -> str:
+    state = _coop_subscription_state(user_id)
+    lines = [
+        "🏘 <b>Кооперативи (Gewoba/WBG)</b>\n",
+        "Ці три сайти не показують окремі оголошення — лише напис «вільного "
+        "житла немає» на сторінці. Тому тут немає умов за кімнатами чи ціною: "
+        "просто вмикаєте потрібний кооператив, і щойно напис зникне — ми "
+        "напишемо вам сюди, а деталі доведеться подивитись на сайті самим.\n",
+    ]
+    for coop in coop_watchdog.COOPERATIVES:
+        on = state.get(coop["key"], False)
+        mark = "✅ стежимо" if on else "⬜ вимкнено"
+        lines.append(f"{mark} — {html.escape(coop['label'])}")
+    return "\n".join(lines)
+
+
+def _coops_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    state = _coop_subscription_state(user_id)
+    rows = []
+    for coop in coop_watchdog.COOPERATIVES:
+        on = state.get(coop["key"], False)
+        mark = "✅" if on else "⬜"
+        rows.append([InlineKeyboardButton(
+            f"{mark} {coop['label']}", callback_data=f"housing:coop_toggle:{coop['key']}",
+        )])
+    rows.append([InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")])
+    return InlineKeyboardMarkup(rows)
+
+
+def show_coop_subscriptions(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    user = update.effective_user
+    if not user or not is_allowed(user.id):
+        if update.callback_query:
+            update.callback_query.answer()
+        return
+    text = _coops_text(user.id)
+    keyboard = _coops_keyboard(user.id)
+    if edit and update.callback_query:
+        try:
+            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+        except BadRequest as exc:
+            if "Message is not modified" not in str(exc):
+                raise
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+
+def _toggle_coop_subscription(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        if query:
+            query.answer()
+        return
+    coop_key = query.data.split(":", 2)[2]
+    coop = next((c for c in coop_watchdog.COOPERATIVES if c["key"] == coop_key), None)
+    if coop is None:
+        query.answer("Невідомий кооператив.", show_alert=True)
+        return
+    currently_on = _coop_subscription_state(user.id).get(coop_key, False)
+    if currently_on:
+        coop_watchdog_store.set_filter_active(int(user.id), coop_key, False)
+        query.answer(f"Вимкнено: {coop['label']}")
+    else:
+        coop_watchdog_store.create_filter(int(user.id), coop_key, coop["label"])
+        query.answer(f"Стежимо за: {coop['label']}")
+    show_coop_subscriptions(update, context, edit=True)
 
 
 FAQ_TEXT = (
@@ -1148,6 +1237,29 @@ def _status_lines() -> list:
             lines.append(f"Остання помилка Karl Marx: {html.escape(str(karlmarx_status.get('last_error')))}")
     else:
         lines.append("🔴 Karl Marx: перевірка ще не запускалась.")
+
+    # Cooperatives have no per-listing scrape yet (see CoopWatchdogFilter's
+    # docstring) - the light here reflects crawl freshness same as the rest,
+    # but "state" is just empty/not-empty, never a listing count.
+    for coop in coop_watchdog.COOPERATIVES:
+        coop_status = coop_watchdog_store.get_status(coop["key"])
+        label = html.escape(coop["label"])
+        if coop_status:
+            light = _traffic_light(coop_status.get("last_checked_at"), COOP_STALE_AFTER)
+            was_empty = coop_status.get("was_empty")
+            if was_empty is False:
+                state = "можливо є вільне житло!"
+            elif was_empty is True:
+                state = "вільного житла немає"
+            else:
+                state = "перевіряється вперше"
+            lines.append(
+                f"{light} {label}: перевірка {_relative_time(coop_status.get('last_checked_at'))}, {state}."
+            )
+            if coop_status.get("last_error"):
+                lines.append(f"Остання помилка {label}: {html.escape(str(coop_status.get('last_error')))}")
+        else:
+            lines.append(f"🔴 {label}: перевірка ще не запускалась.")
     return lines
 
 
@@ -1160,6 +1272,11 @@ def _render_menu(user_id: int) -> str:
         "SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® та Karl Marx. "
         "Нова квартира під ваші умови — і ви одразу отримаєте повідомлення.",
         "",
+        "Плюс 3 житлових кооперативи (Gewoba, WBG 1903, WBG «Daheim») — там поки "
+        "немає розбору за кімнатами/ціною, просто сповіщення, щойно на їхній "
+        "сторінці зникає «вільного житла немає». Підписатись — кнопка "
+        f"«{BTN_COOPS}» нижче.",
+        "",
         "Статус перевірки:",
         *_status_lines(),
         "",
@@ -1171,6 +1288,7 @@ def _render_menu(user_id: int) -> str:
         prefixes = {
             "immowelt": "", "propotsdam": "P", "semmelhaack": "S", "schoba": "C",
             "regiomakler": "R", "kleinanzeigen": "K", "locals": "L", "karlmarx": "M",
+            **COOP_PREFIXES,
         }
         for item in filters:
             prefix = prefixes.get(_item_source(item), "")
@@ -1264,6 +1382,15 @@ def _admin_rows() -> list:
         rows.append({
             "user_id": int(item.get("user_id")), "label": f"M#{int(item.get('filter_id'))}",
             "title": html.escape(str(item.get("title") or "Karl Marx")),
+        })
+    for item in coop_watchdog_store.list_filters():
+        prefix = COOP_PREFIXES.get(item["coop_key"], "?")
+        title = html.escape(str(item.get("title") or item["coop_key"]))
+        if not item.get("active"):
+            title += " · призупинено"
+        rows.append({
+            "user_id": int(item.get("user_id")), "label": f"{prefix}#{int(item.get('filter_id'))}",
+            "title": title,
         })
     return rows
 
@@ -1999,12 +2126,16 @@ def _item_source(item: Dict[str, object]) -> str:
 SOURCE_ICON = {
     "immowelt": "🏠", "propotsdam": "🏢", "semmelhaack": "🏘", "schoba": "🏡",
     "regiomakler": "🤝", "kleinanzeigen": "📋", "locals": "🔑", "karlmarx": "🧱",
+    "gewoba": "🏗", "wbg1903": "🏚", "wbg_daheim": "🛖",
 }
 SOURCE_LABEL = {
     "immowelt": "Immowelt", "propotsdam": "ProPotsdam", "semmelhaack": "SEMMELHAACK",
     "schoba": "SCHOBA", "regiomakler": "ImmoTeam/alpha", "kleinanzeigen": "Kleinanzeigen",
     "locals": "locals®", "karlmarx": "Karl Marx",
     "all": "усі джерела",
+    # Labels come straight from coop_watchdog.COOPERATIVES - one source of
+    # truth for the human-readable name of each cooperative.
+    **{coop["key"]: coop["label"] for coop in coop_watchdog.COOPERATIVES},
 }
 
 
@@ -4076,6 +4207,10 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         show_self_manage(update, context, edit=True)
     elif query.data == "housing:current_matches":
         show_current_matches(update, context)
+    elif query.data == "housing:coops":
+        show_coop_subscriptions(update, context, edit=True)
+    elif query.data.startswith("housing:coop_toggle:"):
+        _toggle_coop_subscription(update, context)
     elif query.data == "housing:noop":
         query.answer()
     elif query.data == "housing:notify_settings":

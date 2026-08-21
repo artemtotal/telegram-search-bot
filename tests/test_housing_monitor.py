@@ -3,6 +3,11 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest import mock
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from database import Base
 from user_handlers import anonymous_posts, housing_monitor
 
 
@@ -2898,6 +2903,127 @@ class HousingCurrentMatchesTests(unittest.TestCase):
 
         footer = context.bot.send_message.call_args_list[-1].kwargs.get('text', '')
         self.assertNotIn('Фільтра ще немає', footer)
+
+
+class HousingCoopSubscriptionTests(unittest.TestCase):
+    """Gewoba/WBG 1903/WBG «Daheim» - subscribe-only, no rooms/price/area
+    criteria yet (see CoopWatchdogFilter's docstring for why)."""
+
+    def _query_update(self, data, user_id=544675510):
+        query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_text=mock.Mock())
+        return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
+
+    def test_menu_offers_the_coops_button_for_self_service_users(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            labels = [b.text for row in housing_monitor._menu_keyboard(544675510).inline_keyboard for b in row]
+
+        self.assertIn(housing_monitor.BTN_COOPS, labels)
+
+    def test_admin_menu_also_offers_the_coops_button(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            labels = [b.text for row in housing_monitor._menu_keyboard(312029534).inline_keyboard for b in row]
+
+        self.assertIn(housing_monitor.BTN_COOPS, labels)
+
+    def test_all_eleven_sources_are_listed(self):
+        self.assertEqual(len(housing_monitor.ALL_HOUSING_SOURCES), 11)
+        for key in ('gewoba', 'wbg1903', 'wbg_daheim'):
+            self.assertIn(key, housing_monitor.ALL_HOUSING_SOURCES)
+
+    def test_toggling_on_subscribes_and_toggling_off_pauses(self):
+        # Isolated in-memory DB - this must NOT touch the real coop_watchdog_filter
+        # table, which has real users' subscriptions in it.
+        engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(engine)
+        original_session = housing_monitor.coop_watchdog_store.DBSession
+        housing_monitor.coop_watchdog_store.DBSession = sessionmaker(bind=engine)
+        try:
+            update_on = self._query_update('housing:coop_toggle:gewoba')
+            context = SimpleNamespace(bot=mock.Mock())
+
+            with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+                 mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+                housing_monitor.handle_callback(update_on, context)
+
+            subs = housing_monitor.coop_watchdog_store.list_filters(user_id=544675510)
+            self.assertEqual(len(subs), 1)
+            self.assertEqual(subs[0]['coop_key'], 'gewoba')
+            self.assertTrue(subs[0]['active'])
+
+            update_off = self._query_update('housing:coop_toggle:gewoba')
+            with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+                 mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+                housing_monitor.handle_callback(update_off, context)
+
+            subs = housing_monitor.coop_watchdog_store.list_filters(user_id=544675510)
+            self.assertFalse(subs[0]['active'])
+        finally:
+            housing_monitor.coop_watchdog_store.DBSession = original_session
+            engine.dispose()
+
+    def test_a_locked_out_user_cannot_toggle(self):
+        engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(engine)
+        original_session = housing_monitor.coop_watchdog_store.DBSession
+        housing_monitor.coop_watchdog_store.DBSession = sessionmaker(bind=engine)
+        try:
+            update = self._query_update('housing:coop_toggle:gewoba', user_id=999999)
+            context = SimpleNamespace(bot=mock.Mock())
+
+            with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+                 mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', set()), \
+                 mock.patch.object(housing_monitor, 'is_allowed', return_value=False):
+                housing_monitor.handle_callback(update, context)
+
+            self.assertEqual(housing_monitor.coop_watchdog_store.list_filters(user_id=999999), [])
+        finally:
+            housing_monitor.coop_watchdog_store.DBSession = original_session
+            engine.dispose()
+
+    def test_user_filters_includes_active_coop_subscriptions_with_the_right_source(self):
+        with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.propotsdam_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.semmelhaack_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.schoba_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.regiomakler_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.kleinanzeigen_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.locals_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]), \
+             mock.patch.object(
+                 housing_monitor.coop_watchdog_store, 'list_filters',
+                 return_value=[{'filter_id': 3, 'user_id': 544675510, 'coop_key': 'wbg1903',
+                                 'title': 'WBG 1903 Potsdam', 'active': True}],
+             ):
+            filters = housing_monitor.user_filters(544675510)
+
+        self.assertEqual(len(filters), 1)
+        self.assertEqual(filters[0]['source'], 'wbg1903')
+        self.assertEqual(housing_monitor.SOURCE_LABEL[filters[0]['source']], 'WBG 1903 Potsdam')
+
+    def test_admin_panel_lists_coop_subscriptions_with_distinct_prefixes(self):
+        with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.propotsdam_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.semmelhaack_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.schoba_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.regiomakler_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.kleinanzeigen_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.locals_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]), \
+             mock.patch.object(
+                 housing_monitor.coop_watchdog_store, 'list_filters',
+                 return_value=[
+                     {'filter_id': 1, 'user_id': 544675510, 'coop_key': 'gewoba', 'title': 'Gewoba eG Babelsberg', 'active': True},
+                     {'filter_id': 2, 'user_id': 544675510, 'coop_key': 'wbg1903', 'title': 'WBG 1903 Potsdam', 'active': True},
+                     {'filter_id': 3, 'user_id': 544675510, 'coop_key': 'wbg_daheim', 'title': 'WBG „Daheim" eG', 'active': False},
+                 ],
+             ):
+            rows = housing_monitor._admin_rows()
+
+        labels = {row['label'] for row in rows}
+        self.assertEqual(labels, {'G#1', 'W#2', 'D#3'})
+        paused = next(row for row in rows if row['label'] == 'D#3')
+        self.assertIn('призупинено', paused['title'])
 
 
 if __name__ == '__main__':

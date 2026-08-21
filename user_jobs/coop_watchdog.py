@@ -2,13 +2,14 @@
 
 Gewoba eG Babelsberg, WBG 1903 Potsdam, and WBG "Daheim" eG each show a static
 "no vacancies" line on their offers page even without JS — confirmed live, not
-guessed. Building a full parser (matching/store/monitor/wizard wiring) for a
-source with nothing to parse would be wasted work. Instead this just re-checks
-that exact line on a schedule and pings the admin the moment it disappears —
-that disappearance is the actual signal that a real scraper is worth building
-for that source.
-
-This is admin-only: no per-user filters, no listing storage, no wizard entry.
+guessed. Building a full parser (matching listings against rooms/price/area
+criteria) for a source with nothing to parse would be wasted work — instead
+this just re-checks that exact line on a schedule and pings whoever's
+subscribed (2026-08-21: admin plus per-user CoopWatchdogFilter subscriptions,
+see coop_watchdog_store) the moment it disappears. That disappearance is the
+actual signal that a real per-listing scraper is worth building for that
+source; until then, subscribers get a generic "check manually" nudge, not a
+filtered listing.
 """
 
 import html
@@ -21,6 +22,7 @@ from typing import Dict
 import requests
 
 from database import CoopWatchdogStatus, DBSession
+from user_jobs import coop_watchdog_store
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +82,28 @@ def _notify_admin_vacancy_appeared(bot, coop: Dict[str, str]) -> None:
         logger.exception("Could not notify admin about %s vacancy watchdog", coop["key"])
 
 
+def _notify_subscribers_vacancy_appeared(bot, coop: Dict[str, str]) -> int:
+    """Generic "check it yourself" ping, not a filtered listing - there's no
+    per-listing data here yet, just empty vs. not-empty for the whole page."""
+    text = (
+        f"🏘 <b>{html.escape(coop['label'])}: можливо, з'явилось вільне житло!</b>\n\n"
+        "Ми лише стежимо за написом «вільного житла немає» на їхній сторінці "
+        "— він щойно зник. Деталей про конкретну квартиру в нас поки немає, "
+        "перевірте сторінку самі:\n\n"
+        f"{html.escape(coop['url'])}"
+    )
+    sent = 0
+    for user_id in coop_watchdog_store.list_subscriber_ids(coop["key"]):
+        if user_id == ADMIN_ID:
+            continue  # already gets the admin-facing version above
+        try:
+            bot.send_message(chat_id=user_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
+            sent += 1
+        except Exception:
+            logger.exception("Could not notify subscriber %s about %s vacancy watchdog", user_id, coop["key"])
+    return sent
+
+
 def check_job(context) -> Dict[str, int]:
     if not CHECK_ENABLED:
         return {"ok": 1, "enabled": 0, "alerts": 0}
@@ -106,9 +130,11 @@ def check_job(context) -> Dict[str, int]:
             # Only the empty->not-empty edge triggers an alert — `was_empty is
             # True` (not just truthy) so a brand-new row (was_empty=None,
             # unknown prior state) baselines silently on its first check.
-            if row.was_empty is True and not still_empty and ADMIN_ID:
-                _notify_admin_vacancy_appeared(bot, coop)
-                alerts += 1
+            if row.was_empty is True and not still_empty:
+                if ADMIN_ID:
+                    _notify_admin_vacancy_appeared(bot, coop)
+                    alerts += 1
+                alerts += _notify_subscribers_vacancy_appeared(bot, coop)
             row.was_empty = still_empty
     finally:
         session.commit()
