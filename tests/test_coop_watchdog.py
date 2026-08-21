@@ -83,9 +83,6 @@ class CoopWatchdogTests(unittest.TestCase):
         coop_watchdog.DBSession = test_session
         try:
             with mock.patch.object(coop_watchdog, 'ADMIN_ID', 312029534), \
-                 mock.patch(
-                     'user_jobs.coop_watchdog.coop_watchdog_store.list_subscriber_ids', return_value=[]
-                 ), \
                  mock.patch('requests.get', side_effect=[
                      FakeResponse(GEWOBA_NOT_EMPTY), FakeResponse(WBG_EMPTY), FakeResponse(DAHEIM_EMPTY),
                  ]):
@@ -99,9 +96,11 @@ class CoopWatchdogTests(unittest.TestCase):
         self.assertIn('Gewoba', context.bot.sent[0][1])
         self.assertEqual(result['alerts'], 1)
 
-    def test_transition_also_notifies_subscribed_users_generically(self):
-        """Subscribers get a plain "check yourself" nudge - no per-listing
-        data exists yet for these sources, see CoopWatchdogFilter's docstring."""
+    def test_subscribed_users_are_not_pinged_yet(self):
+        """Deliberate, 2026-08-21: built subscriber notifications, then turned
+        them back off before shipping - a subscriber should see the green
+        status light, not an unfiltered "go check yourself" message, until
+        there's a real per-listing scraper to filter against."""
         engine, test_session = self._fresh_session()
         now = datetime.utcnow()
         session = test_session()
@@ -116,10 +115,6 @@ class CoopWatchdogTests(unittest.TestCase):
         coop_watchdog.DBSession = test_session
         try:
             with mock.patch.object(coop_watchdog, 'ADMIN_ID', 312029534), \
-                 mock.patch(
-                     'user_jobs.coop_watchdog.coop_watchdog_store.list_subscriber_ids',
-                     side_effect=lambda key: [544675510, 5115109366] if key == 'gewoba' else [],
-                 ), \
                  mock.patch('requests.get', side_effect=[
                      FakeResponse(GEWOBA_NOT_EMPTY), FakeResponse(WBG_EMPTY), FakeResponse(DAHEIM_EMPTY),
                  ]):
@@ -128,9 +123,10 @@ class CoopWatchdogTests(unittest.TestCase):
             coop_watchdog.DBSession = original_session
             engine.dispose()
 
-        recipients = {chat_id for chat_id, _text, _kwargs in context.bot.sent}
-        self.assertEqual(recipients, {312029534, 544675510, 5115109366})
-        self.assertEqual(result['alerts'], 3)
+        # Exactly one message (the admin's) - no fan-out to subscribers.
+        self.assertEqual(len(context.bot.sent), 1)
+        self.assertEqual(context.bot.sent[0][0], 312029534)
+        self.assertEqual(result['alerts'], 1)
 
     def test_daheim_transition_from_empty_to_not_empty_alerts_the_admin(self):
         engine, test_session = self._fresh_session()
@@ -147,9 +143,6 @@ class CoopWatchdogTests(unittest.TestCase):
         coop_watchdog.DBSession = test_session
         try:
             with mock.patch.object(coop_watchdog, 'ADMIN_ID', 312029534), \
-                 mock.patch(
-                     'user_jobs.coop_watchdog.coop_watchdog_store.list_subscriber_ids', return_value=[]
-                 ), \
                  mock.patch('requests.get', side_effect=[
                      FakeResponse(GEWOBA_EMPTY), FakeResponse(WBG_EMPTY),
                      FakeResponse("<html><body>Es gibt jetzt eine 3-Zimmer-Wohnung.</body></html>"),

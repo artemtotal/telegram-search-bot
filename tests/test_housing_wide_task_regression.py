@@ -82,7 +82,8 @@ class WideTaskRegressionTests(unittest.TestCase):
                 mock.patch.object(housing_monitor.regiomakler_store, 'list_filters', return_value=[]), \
                 mock.patch.object(housing_monitor.kleinanzeigen_store, 'list_filters', return_value=[]), \
                 mock.patch.object(housing_monitor.locals_store, 'list_filters', return_value=[]), \
-                mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]):
+                mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]), \
+                mock.patch.object(housing_monitor.coop_watchdog_store, 'list_filters', return_value=[]):
             first = housing_monitor.user_filters(312029534)
             second = housing_monitor.user_filters(5115109366)
             stranger = housing_monitor.user_filters(999)
@@ -100,7 +101,8 @@ class WideTaskRegressionTests(unittest.TestCase):
                 mock.patch.object(housing_monitor.regiomakler_store, 'list_filters', return_value=[]), \
                 mock.patch.object(housing_monitor.kleinanzeigen_store, 'list_filters', return_value=[]), \
                 mock.patch.object(housing_monitor.locals_store, 'list_filters', return_value=[]), \
-                mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]):
+                mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]), \
+                mock.patch.object(housing_monitor.coop_watchdog_store, 'list_filters', return_value=[]):
             self.assertEqual(housing_monitor.user_filters(312029534), [])
 
     def test_status_uses_the_receiver_scan_time(self):

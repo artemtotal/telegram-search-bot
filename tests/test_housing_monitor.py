@@ -300,7 +300,8 @@ class HousingAdminFlowTests(unittest.TestCase):
              mock.patch.object(housing_monitor.regiomakler_store, 'list_filters', return_value=[]), \
              mock.patch.object(housing_monitor.kleinanzeigen_store, 'list_filters', return_value=[]), \
              mock.patch.object(housing_monitor.locals_store, 'list_filters', return_value=[]), \
-             mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]):
+             mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.coop_watchdog_store, 'list_filters', return_value=[]):
             filters = housing_monitor.user_filters(544675510)
 
         self.assertEqual([item['title'] for item in filters], ['Immowelt', 'ProPotsdam'])
@@ -729,7 +730,8 @@ class HousingAdminFlowTests(unittest.TestCase):
              mock.patch.object(housing_monitor.regiomakler_store, 'list_filters', return_value=[]), \
              mock.patch.object(housing_monitor.kleinanzeigen_store, 'list_filters', return_value=[]), \
              mock.patch.object(housing_monitor.locals_store, 'list_filters', return_value=[]), \
-             mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]):
+             mock.patch.object(housing_monitor.karlmarx_store, 'list_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.coop_watchdog_store, 'list_filters', return_value=[]):
             first = housing_monitor._render_admin(0)
             second = housing_monitor._render_admin(1)
             beyond = housing_monitor._render_admin(99)
