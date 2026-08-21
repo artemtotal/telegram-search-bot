@@ -22,6 +22,7 @@ from user_jobs import (
     locals_matching,
     locals_store,
     propotsdam_matching,
+    propotsdam_parser,
     propotsdam_store,
     regiomakler_matching,
     regiomakler_store,
@@ -53,6 +54,7 @@ BTN_ADMIN_ACCESS_LIST = "👥 Доступ до моніторингу"
 BTN_CANCEL = "✖ Скасувати"
 BTN_SELF_ADD = "➕ Додати фільтр"
 BTN_SELF_MANAGE = "⚙️ Мої фільтри"
+BTN_CURRENT_MATCHES = "🔍 Квартири, що підходять"
 ACCESS_MONTH_OPTIONS = [1, 3, 6, 12]
 EXPIRY_WARNING_DAYS = 3
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
@@ -640,6 +642,111 @@ def _send_recent_matches(update: Update, context: CallbackContext, hours: int) -
         )
 
 
+def _current_matches(source: str, filt: Dict[str, object]) -> list:
+    """Listings that satisfy this filter's criteria right now - a live
+    check, not a delivery. Used by show_current_matches() so a person can
+    see for themselves whether their filter is actually finding anything,
+    instead of guessing from the crawl-freshness traffic lights."""
+    if source == "immowelt":
+        criteria = {"districts": list(filt.get("districts") or [])}
+        for key in IMMOWELT_CRITERIA_KEYS:
+            criteria[key] = filt.get(key)
+        preview = _preview_criteria(criteria)
+        return list(preview.get("matches") or [])
+    modules = _LOCAL_SOURCE_MODULES.get(source)
+    if not modules:
+        return []
+    store, matching = modules
+    try:
+        listings = store.list_active_listings()
+    except Exception:
+        logger.exception("Could not load active listings for %s while checking current matches", source)
+        return []
+    return [listing for listing in listings if matching.matches_filter(listing, filt)]
+
+
+def _match_line(source: str, listing: Dict[str, object]) -> str:
+    title = html.escape(str(listing.get("title") or "Wohnung"))
+    bits = []
+    district = listing.get("district")
+    if district:
+        bits.append(str(district))
+    rooms = listing.get("rooms")
+    if rooms:
+        bits.append(f"{rooms:g} кімн.")
+    area = listing.get("area_m2")
+    if area:
+        bits.append(f"{area:g} м²")
+    price = listing.get("price_eur")
+    if price is None:
+        price = listing.get("total_rent_eur")
+    if price:
+        bits.append(f"{price:g} €")
+    suffix = f" · {' · '.join(bits)}" if bits else ""
+    url = listing.get("url") or listing.get("detail_url")
+    if not url and source == "propotsdam":
+        url = propotsdam_parser.PORTAL_URL
+    link = f' — <a href="{html.escape(str(url))}">Відкрити</a>' if url else ""
+    return f"• {title}{suffix}{link}"
+
+
+MAX_MATCHES_SHOWN_PER_FILTER = 15
+
+
+def show_current_matches(update: Update, context: CallbackContext) -> None:
+    """«🔍 Квартири, що підходять» — an on-demand, real check across every
+    active filter, instead of the freshness traffic lights people kept
+    misreading as "there's an apartment for you"."""
+    query = update.callback_query
+    user = update.effective_user
+    if not user or not is_allowed(user.id):
+        if query:
+            query.answer()
+        return
+    if query:
+        query.answer()
+    chat_id = int(user.id)
+    back_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")]])
+    filters = user_filters(user.id)
+    if not filters:
+        context.bot.send_message(
+            chat_id=chat_id,
+            text="У вас поки немає жодного фільтра. Спочатку додайте його кнопкою «➕ Додати фільтр».",
+            reply_markup=back_keyboard,
+        )
+        return
+
+    total = 0
+    blocks = []
+    for item in filters:
+        source = item.get("source") or "immowelt"
+        matches = _current_matches(source, item)
+        total += len(matches)
+        icon = SOURCE_ICON.get(source, "🏠")
+        label = SOURCE_LABEL.get(source, source)
+        filter_id = item.get("filter_id")
+        lines = [f"{icon} <b>{html.escape(str(label))} #{filter_id}</b>: {html.escape(str(item.get('title') or ''))}"]
+        if not matches:
+            lines.append("Поки нічого не підходить під ці умови.")
+        else:
+            for listing in matches[:MAX_MATCHES_SHOWN_PER_FILTER]:
+                lines.append(_match_line(source, listing))
+            if len(matches) > MAX_MATCHES_SHOWN_PER_FILTER:
+                lines.append(f"…і ще {len(matches) - MAX_MATCHES_SHOWN_PER_FILTER}.")
+        blocks.append("\n".join(lines))
+
+    context.bot.send_message(
+        chat_id=chat_id, text=f"🔍 <b>Квартири, що підходять зараз: {total}</b>", parse_mode="HTML",
+    )
+    for block in blocks:
+        context.bot.send_message(chat_id=chat_id, text=block, parse_mode="HTML", disable_web_page_preview=True)
+    context.bot.send_message(
+        chat_id=chat_id,
+        text="Якщо з'явиться нова квартира під ваші умови — ми одразу напишемо вам сюди.",
+        reply_markup=back_keyboard,
+    )
+
+
 def user_filters(user_id: Optional[int]) -> list:
     if not user_id:
         return []
@@ -744,11 +851,13 @@ def _menu_keyboard(user_id: Optional[int] = None) -> InlineKeyboardMarkup:
     ]
     if user_id and int(user_id) == ADMIN_ID:
         rows.insert(0, [InlineKeyboardButton("⚙️ Адмінка житла", callback_data="housing:admin")])
-        rows.insert(1, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
+        rows.insert(1, [InlineKeyboardButton(BTN_CURRENT_MATCHES, callback_data="housing:current_matches")])
+        rows.insert(2, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
     elif is_allowed(user_id):
         rows.insert(0, [InlineKeyboardButton(BTN_SELF_ADD, callback_data="housing:self_add")])
         rows.insert(1, [InlineKeyboardButton(BTN_SELF_MANAGE, callback_data="housing:self_manage")])
-        rows.insert(2, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
+        rows.insert(2, [InlineKeyboardButton(BTN_CURRENT_MATCHES, callback_data="housing:current_matches")])
+        rows.insert(3, [InlineKeyboardButton("🔔 Сповіщення", callback_data="housing:notify_settings")])
     rows.append([InlineKeyboardButton("⬅ Головне меню", callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
 
@@ -3950,6 +4059,8 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:self_manage":
         query.answer()
         show_self_manage(update, context, edit=True)
+    elif query.data == "housing:current_matches":
+        show_current_matches(update, context)
     elif query.data == "housing:noop":
         query.answer()
     elif query.data == "housing:notify_settings":

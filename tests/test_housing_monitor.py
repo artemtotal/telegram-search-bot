@@ -2765,5 +2765,95 @@ class HousingFirstFilterCongratsTests(unittest.TestCase):
 
         self.assertEqual(self._congrats_calls(context.bot), [])
 
+
+class HousingCurrentMatchesTests(unittest.TestCase):
+    """«\U0001f50d Квартири, що підходять» — жива перевірка замість світлофорів свіжості."""
+
+    def test_menu_offers_the_current_matches_button(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            labels = [b.text for row in housing_monitor._menu_keyboard(544675510).inline_keyboard for b in row]
+
+        self.assertIn(housing_monitor.BTN_CURRENT_MATCHES, labels)
+
+    def test_admin_menu_also_offers_the_current_matches_button(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            labels = [b.text for row in housing_monitor._menu_keyboard(312029534).inline_keyboard for b in row]
+
+        self.assertIn(housing_monitor.BTN_CURRENT_MATCHES, labels)
+
+    def test_current_matches_for_a_local_source_filters_active_listings(self):
+        filt = {'user_id': 544675510, 'min_rooms': 2}
+        listings = [{'listing_key': 'a'}, {'listing_key': 'b'}]
+        with mock.patch.object(housing_monitor.semmelhaack_store, 'list_active_listings', return_value=listings), \
+             mock.patch.object(
+                 housing_monitor.semmelhaack_matching, 'matches_filter',
+                 side_effect=lambda listing, _filt: listing['listing_key'] == 'b',
+             ):
+            result = housing_monitor._current_matches('semmelhaack', filt)
+
+        self.assertEqual(result, [{'listing_key': 'b'}])
+
+    def test_current_matches_for_immowelt_uses_the_live_preview_endpoint(self):
+        filt = {
+            'districts': ['Golm'], 'min_price_eur': None, 'max_price_eur': 800,
+            'min_rooms': 2, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
+        }
+        with mock.patch.object(
+            housing_monitor, '_preview_criteria',
+            return_value={'match_count': 1, 'matches': [{'title': 'X'}]},
+        ) as preview:
+            result = housing_monitor._current_matches('immowelt', filt)
+
+        preview.assert_called_once_with({
+            'districts': ['Golm'], 'min_price_eur': None, 'max_price_eur': 800,
+            'min_rooms': 2, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
+        })
+        self.assertEqual(result, [{'title': 'X'}])
+
+    def test_match_line_falls_back_to_the_propotsdam_portal_when_theres_no_direct_link(self):
+        # ProPotsdam's easysquare portal is a JS SPA - there's rarely a
+        # per-listing detail_url, so the fallback needs a real destination.
+        line = housing_monitor._match_line('propotsdam', {
+            'title': 'Helle 3-Raum-Wohnung!', 'district': 'Waldstadt 2',
+            'rooms': 3, 'area_m2': 54, 'total_rent_eur': 650.4,
+        })
+
+        self.assertIn('Helle 3-Raum-Wohnung!', line)
+        self.assertIn('Waldstadt 2', line)
+        self.assertIn('650.4 €', line)
+        self.assertIn(housing_monitor.propotsdam_parser.PORTAL_URL, line)
+
+    def test_show_current_matches_reports_a_total_and_the_notification_reassurance(self):
+        context = SimpleNamespace(bot=mock.Mock())
+        query = SimpleNamespace(data='housing:current_matches', answer=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        filters = [{'source': 'semmelhaack', 'filter_id': 4, 'title': 'до 800 €'}]
+
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=True), \
+             mock.patch.object(housing_monitor, 'user_filters', return_value=filters), \
+             mock.patch.object(housing_monitor, '_current_matches', return_value=[
+                 {'title': 'Nice flat', 'rooms': 2, 'area_m2': 50, 'price_eur': 700, 'detail_url': 'https://example.test/1'},
+             ]):
+            housing_monitor.show_current_matches(update, context)
+
+        texts = [call.kwargs.get('text', '') for call in context.bot.send_message.call_args_list]
+        self.assertTrue(any('Квартири, що підходять зараз: 1' in t for t in texts))
+        self.assertTrue(any('Nice flat' in t for t in texts))
+        self.assertTrue(any('одразу напишемо вам сюди' in t for t in texts))
+
+    def test_show_current_matches_asks_to_add_a_filter_first_when_there_are_none(self):
+        context = SimpleNamespace(bot=mock.Mock())
+        query = SimpleNamespace(data='housing:current_matches', answer=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=True), \
+             mock.patch.object(housing_monitor, 'user_filters', return_value=[]):
+            housing_monitor.show_current_matches(update, context)
+
+        text = context.bot.send_message.call_args.kwargs['text']
+        self.assertIn('немає жодного фільтра', text)
+
+
 if __name__ == '__main__':
     unittest.main()
