@@ -45,12 +45,42 @@ class RegiomaklerMonitorCheckJobTests(unittest.TestCase):
     def test_fetch_failure_on_any_url_records_an_error_status(self):
         context = SimpleNamespace(bot=FakeBot())
         with mock.patch.object(regiomakler_monitor, 'CHECK_ENABLED', True), \
+             mock.patch.object(regiomakler_monitor, 'ADMIN_ID', 0), \
              mock.patch('requests.get', side_effect=RuntimeError('timeout')), \
+             mock.patch('user_jobs.regiomakler_monitor.regiomakler_store.latest_status', return_value={}), \
              mock.patch('user_jobs.regiomakler_monitor.regiomakler_store.record_status') as record_status:
             result = regiomakler_monitor.check_job(context)
 
         record_status.assert_called_once_with('error', listings_count=0, error='timeout')
         self.assertEqual(result['ok'], 0)
+
+    def test_first_fetch_failure_alerts_the_admin(self):
+        context = SimpleNamespace(bot=FakeBot())
+        with mock.patch.object(regiomakler_monitor, 'CHECK_ENABLED', True), \
+             mock.patch.object(regiomakler_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch('requests.get', side_effect=RuntimeError('connection refused')), \
+             mock.patch('user_jobs.regiomakler_monitor.regiomakler_store.latest_status', return_value={}), \
+             mock.patch('user_jobs.regiomakler_monitor.regiomakler_store.record_status'):
+            result = regiomakler_monitor.check_job(context)
+
+        self.assertEqual(len(context.bot.sent), 1)
+        chat_id, text, _ = context.bot.sent[0]
+        self.assertEqual(chat_id, 312029534)
+        self.assertIn('connection refused', text)
+        self.assertEqual(result['admin_alerted'], 1)
+
+    def test_a_second_failure_within_the_cooldown_does_not_alert_again(self):
+        context = SimpleNamespace(bot=FakeBot())
+        previous_status = {'last_status': 'error', 'last_checked_at': regiomakler_monitor.regiomakler_store.utc_now()}
+        with mock.patch.object(regiomakler_monitor, 'CHECK_ENABLED', True), \
+             mock.patch.object(regiomakler_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch('requests.get', side_effect=RuntimeError('still down')), \
+             mock.patch('user_jobs.regiomakler_monitor.regiomakler_store.latest_status', return_value=previous_status), \
+             mock.patch('user_jobs.regiomakler_monitor.regiomakler_store.record_status'):
+            result = regiomakler_monitor.check_job(context)
+
+        self.assertEqual(context.bot.sent, [])
+        self.assertEqual(result['admin_alerted'], 0)
 
     def test_duplicate_listing_from_both_sites_is_stored_and_sent_only_once(self):
         """The same Objekt-ID appears on both immoteam URLs and the alpha page —

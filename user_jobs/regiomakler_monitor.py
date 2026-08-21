@@ -14,6 +14,7 @@ every match.
 import html
 import logging
 import os
+from datetime import timedelta
 from typing import Dict, List
 
 import requests
@@ -26,6 +27,7 @@ CHECK_ENABLED = os.getenv("REGIOMAKLER_CHECK_ENABLED", "1") == "1"
 TIMEOUT = int(os.getenv("REGIOMAKLER_TIMEOUT", "30") or 30)
 CHECK_INTERVAL_SECONDS = 15 * 60
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
+ERROR_ALERT_COOLDOWN = timedelta(hours=2)
 _USER_AGENT = "Mozilla/5.0 (compatible; PotsdamHousingBot/1.0)"
 
 _IMMOTEAM_URLS = [
@@ -82,6 +84,27 @@ def _notify_admin_parse_broke(bot) -> None:
         logger.exception("Could not notify admin about a broken ImmoTeam/alpha parse")
 
 
+def _should_alert_fetch_error(previous_status: Dict) -> bool:
+    if not previous_status or previous_status.get("last_status") != "error":
+        return True
+    last_checked = previous_status.get("last_checked_at")
+    if last_checked is None:
+        return True
+    return regiomakler_store.utc_now() - last_checked >= ERROR_ALERT_COOLDOWN
+
+
+def _notify_admin_fetch_failed(bot, error: Exception, previous_status: Dict) -> bool:
+    if not ADMIN_ID or not _should_alert_fetch_error(previous_status):
+        return False
+    text = f"⚠️ <b>ImmoTeam/alpha: не вдалося перевірити оголошення</b>\n\nПричина: {html.escape(str(error))}"
+    try:
+        bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode="HTML", disable_web_page_preview=True)
+        return True
+    except Exception:
+        logger.exception("Could not notify admin about an ImmoTeam/alpha fetch failure")
+        return False
+
+
 def check_job(context) -> Dict[str, int]:
     if not CHECK_ENABLED:
         regiomakler_store.record_status("disabled", listings_count=0)
@@ -90,9 +113,11 @@ def check_job(context) -> Dict[str, int]:
     try:
         all_listings = _fetch_all_listings()
     except Exception as exc:
+        previous_status = regiomakler_store.latest_status()
+        alerted = _notify_admin_fetch_failed(bot, exc, previous_status)
         regiomakler_store.record_status("error", listings_count=0, error=str(exc))
-        logger.warning("ImmoTeam/alpha scan failed: %s", exc)
-        return {"ok": 0, "enabled": 1, "sent": 0}
+        logger.warning("ImmoTeam/alpha scan failed; admin_alerted=%s: %s", alerted, exc)
+        return {"ok": 0, "enabled": 1, "sent": 0, "admin_alerted": int(alerted)}
     if not all_listings:
         _notify_admin_parse_broke(bot)
     relevant = _dedupe([item for item in all_listings if _is_relevant(item)])
