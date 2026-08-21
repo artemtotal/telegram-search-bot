@@ -412,13 +412,16 @@ def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
         "reason": str(payload.get("reason") or ""),
     }
     _record_service_status(status, str(result["reason"]))
-    if not subscribers:
-        _update_status_for_active(status, notified=False)
-        return {"ok": True, "subscribers": 0, "status": status}
+    # A failed/blocked check is worth alerting the admin about regardless of
+    # whether anyone is currently subscribed - it's an operational problem
+    # with the checker itself, not something that only matters to subscribers.
     if not result["ok"]:
         _notify_admin_error(bot, result)
         _update_status_for_active(status, notified=False)
         return {"ok": True, "subscribers": len(subscribers), "status": status}
+    if not subscribers:
+        _update_status_for_active(status, notified=False)
+        return {"ok": True, "subscribers": 0, "status": status}
     if result["available"]:
         _notify_available(bot, subscribers, result)
         _update_status_for_active(status, notified=True)
@@ -428,9 +431,6 @@ def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
 
 
 def check_job(context: CallbackContext) -> None:
-    subscribers = _active_subscribers()
-    if not subscribers:
-        return
     if BROWSER_ONLY:
         return
     result = check_equeue_availability()
@@ -439,6 +439,10 @@ def check_job(context: CallbackContext) -> None:
         logger.warning("E-queue check failed: %s", result)
         _notify_admin_error(context.bot, result)
         _update_status_for_active(status, notified=False)
+        return
+
+    subscribers = _active_subscribers()
+    if not subscribers:
         return
 
     if not result.get("available"):

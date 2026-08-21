@@ -96,6 +96,23 @@ class EqueueStatusFreezeTests(unittest.TestCase):
 
         self.assertIn("ще не надходила", text)
 
+    def test_admin_is_alerted_on_a_blocked_check_even_with_no_subscribers(self):
+        """A failed/blocked browser check used to skip the admin alert
+        entirely whenever nobody was actively subscribed (handle_browser_result
+        checked `if not subscribers: return` before checking `result["ok"]`) -
+        an operational problem (Cloudflare blocking the checker) has nothing
+        to do with subscriber count and must always reach the admin."""
+        bot = mock.Mock()
+        with mock.patch.object(self.monitor, 'ADMIN_ID', 312029534):
+            self.monitor.handle_browser_result(
+                bot,
+                {"source": self.monitor.SERVICE_KEY, "status": "blocked", "reason": "Cloudflare"},
+            )
+
+        bot.send_message.assert_called_once()
+        args, kwargs = bot.send_message.call_args
+        self.assertEqual(args[0], 312029534)
+
 
 if __name__ == '__main__':
     unittest.main()
