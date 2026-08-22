@@ -117,6 +117,11 @@
   "housing.notify.btn.quiet_off": "🌙 Nachtruhe: deaktiviert",
   "housing.notify.btn.instant": "📬 Sofort",
   "housing.notify.btn.daily": "📮 Einmal täglich",
+  "housing.notify.news_line": "📰 Bot-Neuigkeiten: {news}",
+  "housing.notify.news_on": "✅ aktiviert",
+  "housing.notify.news_off": "deaktiviert",
+  "housing.notify.btn.news_on": "📰 Bot-Neuigkeiten: aktiviert ✅",
+  "housing.notify.btn.news_off": "📰 Bot-Neuigkeiten: deaktiviert",
 
   "housing.btn.home_monitor": "🏠 Wohnungs-Monitoring",
 

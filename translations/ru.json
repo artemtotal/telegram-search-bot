@@ -117,6 +117,11 @@
   "housing.notify.btn.quiet_off": "🌙 Тихая ночь: выключена",
   "housing.notify.btn.instant": "📬 Сразу",
   "housing.notify.btn.daily": "📮 Раз в день",
+  "housing.notify.news_line": "📰 Новости бота: {news}",
+  "housing.notify.news_on": "✅ включено",
+  "housing.notify.news_off": "выключено",
+  "housing.notify.btn.news_on": "📰 Новости бота: включено ✅",
+  "housing.notify.btn.news_off": "📰 Новости бота: выключено",
 
   "housing.btn.home_monitor": "🏠 Мониторинг жилья",
 

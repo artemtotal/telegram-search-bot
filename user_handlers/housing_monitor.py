@@ -4,6 +4,7 @@ import calendar
 import html
 import logging
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Iterable, Optional
 from zoneinfo import ZoneInfo
@@ -57,6 +58,7 @@ ALLOW_CHECK_TIMEOUT = int(os.getenv("HOUSING_ALLOW_CHECK_TIMEOUT", "3") or 3)
 BTN_ADMIN_ADD = "➕ Додати користувача"
 BTN_ADMIN_ACCESS_ADD = "👤 Додати доступ користувачу"
 BTN_ADMIN_ACCESS_LIST = "👥 Доступ до моніторингу"
+BTN_ADMIN_BROADCAST = "📢 Розсилка новин"
 BTN_CANCEL = "✖ Скасувати"
 BTN_SELF_ADD = "➕ Додати фільтр"
 BTN_SELF_MANAGE = "⚙️ Мої фільтри"
@@ -1128,6 +1130,7 @@ def _admin_keyboard(page: int = 0) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(BTN_ADMIN_ADD, callback_data="housing:add")],
         [InlineKeyboardButton(BTN_ADMIN_ACCESS_ADD, callback_data="housing:access_add")],
         [InlineKeyboardButton(BTN_ADMIN_ACCESS_LIST, callback_data="housing:access_list")],
+        [InlineKeyboardButton(BTN_ADMIN_BROADCAST, callback_data="housing:broadcast")],
         [InlineKeyboardButton("⬅ До моніторингу", callback_data="housing:menu")],
     ])
     return InlineKeyboardMarkup(rows)
@@ -2013,6 +2016,48 @@ def start_admin_add_flow(update: Update, context: CallbackContext, edit: bool = 
         update.effective_message.reply_text(text, parse_mode="HTML")
 
 
+def _broadcast_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Надіслати", callback_data="housing:broadcast_send")],
+        [InlineKeyboardButton(BTN_CANCEL, callback_data="housing:broadcast_cancel")],
+    ])
+
+
+def start_broadcast_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    """Admin-only: a message sent here goes out to every subscribed private
+    user (user_settings_store.list_subscribed_user_ids) - separate state key
+    from `housing_admin` so it can't collide with the add-user wizard."""
+    user = update.effective_user
+    if not user or int(user.id) != ADMIN_ID:
+        return
+    context.user_data["housing_broadcast"] = {"step": "text"}
+    count = len(user_settings_store.list_subscribed_user_ids())
+    text = (
+        f"📢 <b>Розсилка новин</b>\n\nОтримають: <b>{count}</b> користувачів.\n\n"
+        "Надішліть текст повідомлення (підтримується HTML-розмітка Telegram: "
+        "<code>&lt;b&gt;</code>, <code>&lt;i&gt;</code>, <code>&lt;a href=...&gt;</code>)."
+    )
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(BTN_CANCEL, callback_data="housing:broadcast_cancel")]])
+    if edit and update.callback_query:
+        update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+
+def _send_broadcast(context: CallbackContext, text: str) -> Dict[str, int]:
+    sent = 0
+    failed = 0
+    for user_id in user_settings_store.list_subscribed_user_ids():
+        try:
+            context.bot.send_message(chat_id=user_id, text=text, parse_mode="HTML", disable_web_page_preview=True)
+            sent += 1
+        except Exception:
+            failed += 1
+            logger.warning("Broadcast to %s failed", user_id, exc_info=True)
+        time.sleep(0.05)
+    return {"sent": sent, "failed": failed}
+
+
 def _immowelt_district_keyboard(selected=None, lang: str = "uk") -> InlineKeyboardMarkup:
     selected = set(selected or [])
     rows = []
@@ -2266,7 +2311,7 @@ def _set_notification_prefs(user_id: int, **kwargs) -> Dict[str, object]:
     return _request("POST", "/api/housing/notification-prefs", json={"user_id": user_id, **kwargs})
 
 
-def _notify_settings_text(prefs: Dict[str, object], lang: str = "uk") -> str:
+def _notify_settings_text(prefs: Dict[str, object], lang: str = "uk", news_subscribed: bool = True) -> str:
     quiet = (
         i18n.t("housing.notify.quiet_on", lang) if prefs.get("quiet_hours_enabled")
         else i18n.t("housing.notify.quiet_off", lang)
@@ -2275,13 +2320,15 @@ def _notify_settings_text(prefs: Dict[str, object], lang: str = "uk") -> str:
         i18n.t("housing.notify.mode_daily", lang) if prefs.get("digest_mode") == "daily"
         else i18n.t("housing.notify.mode_instant", lang)
     )
-    return i18n.t(
+    base = i18n.t(
         "housing.notify.text", lang, quiet_hours=QUIET_HOURS_LABEL, quiet=quiet, mode=mode,
         cap=i18n.t("housing.notify.cap_label", lang),
     )
+    news = i18n.t("housing.notify.news_on", lang) if news_subscribed else i18n.t("housing.notify.news_off", lang)
+    return base + "\n\n" + i18n.t("housing.notify.news_line", lang, news=news)
 
 
-def _notify_settings_keyboard(prefs: Dict[str, object], lang: str = "uk") -> InlineKeyboardMarkup:
+def _notify_settings_keyboard(prefs: Dict[str, object], lang: str = "uk", news_subscribed: bool = True) -> InlineKeyboardMarkup:
     quiet_on = bool(prefs.get("quiet_hours_enabled"))
     mode = str(prefs.get("digest_mode") or "instant")
     return InlineKeyboardMarkup([
@@ -2299,6 +2346,10 @@ def _notify_settings_keyboard(prefs: Dict[str, object], lang: str = "uk") -> Inl
                 callback_data="housing:notify_digest:daily",
             ),
         ],
+        [InlineKeyboardButton(
+            i18n.t("housing.notify.btn.news_on", lang) if news_subscribed else i18n.t("housing.notify.btn.news_off", lang),
+            callback_data=f"housing:notify_news:{0 if news_subscribed else 1}",
+        )],
         [InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")],
     ])
 
@@ -2309,8 +2360,9 @@ def show_notify_settings(update: Update, context: CallbackContext, edit: bool = 
         return
     lang = i18n.get_lang(user.id)
     prefs = _notification_prefs(int(user.id))
-    text = _notify_settings_text(prefs, lang)
-    keyboard = _notify_settings_keyboard(prefs, lang)
+    news_subscribed = user_settings_store.get_news_subscribed(int(user.id))
+    text = _notify_settings_text(prefs, lang, news_subscribed)
+    keyboard = _notify_settings_keyboard(prefs, lang, news_subscribed)
     if edit and update.callback_query:
         try:
             update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
@@ -2347,6 +2399,16 @@ def set_digest_mode(update: Update, context: CallbackContext, mode: str) -> None
         logger.exception("Could not update notification prefs")
         query.answer(i18n.t("housing.toast.settings_update_failed", i18n.get_lang(user.id)), show_alert=True)
         return
+    query.answer(i18n.t("housing.toast.updated", i18n.get_lang(user.id)))
+    show_notify_settings(update, context, edit=True)
+
+
+def toggle_news_subscription(update: Update, context: CallbackContext, enabled: bool) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    user_settings_store.set_news_subscribed(int(user.id), enabled)
     query.answer(i18n.t("housing.toast.updated", i18n.get_lang(user.id)))
     show_notify_settings(update, context, edit=True)
 
@@ -3585,6 +3647,28 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
                 reply_markup=_access_months_keyboard(target_id),
             )
             return True
+    broadcast_state = context.user_data.get("housing_broadcast")
+    if broadcast_state:
+        if user_id != ADMIN_ID:
+            return False
+        if text == BTN_CANCEL:
+            context.user_data.pop("housing_broadcast", None)
+            update.message.reply_text("Скасовано.")
+            return True
+        if broadcast_state.get("step") == "text":
+            if not text:
+                update.message.reply_text("Текст не може бути порожнім. Надішліть ще раз.")
+                return True
+            broadcast_state["text"] = text
+            broadcast_state["step"] = "confirm"
+            count = len(user_settings_store.list_subscribed_user_ids())
+            update.message.reply_text(
+                f"📢 <b>Підтвердіть розсилку</b>\n\nОтримають: <b>{count}</b> користувачів.\n\n"
+                f"— — —\n{text}",
+                parse_mode="HTML",
+                reply_markup=_broadcast_confirm_keyboard(),
+            )
+            return True
     state = context.user_data.get("housing_admin")
     if not state:
         return False
@@ -4176,6 +4260,28 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:add":
         query.answer()
         start_admin_add_flow(update, context, edit=True)
+    elif query.data == "housing:broadcast":
+        query.answer()
+        start_broadcast_flow(update, context, edit=True)
+    elif query.data == "housing:broadcast_cancel":
+        query.answer()
+        if update.effective_user and int(update.effective_user.id) == ADMIN_ID:
+            context.user_data.pop("housing_broadcast", None)
+            query.edit_message_text("Скасовано.")
+    elif query.data == "housing:broadcast_send":
+        if not update.effective_user or int(update.effective_user.id) != ADMIN_ID:
+            query.answer()
+        else:
+            state = context.user_data.pop("housing_broadcast", None)
+            broadcast_text = (state or {}).get("text")
+            if not broadcast_text:
+                query.answer()
+            else:
+                query.answer("Розсилаю…")
+                result = _send_broadcast(context, broadcast_text)
+                query.edit_message_text(
+                    f"📢 Розсилку завершено.\n\nНадіслано: {result['sent']}\nНе вдалося: {result['failed']}",
+                )
     elif query.data == "housing:faq":
         query.answer()
         show_faq(update, context, edit=True)
@@ -4287,6 +4393,9 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data.startswith("housing:notify_digest:"):
         mode = query.data.split(":", 2)[2]
         set_digest_mode(update, context, mode)
+    elif query.data.startswith("housing:notify_news:"):
+        raw = query.data.split(":")[2]
+        toggle_news_subscription(update, context, raw == "1")
     elif query.data.startswith("housing:toggle:"):
         _toggle_owned_filter(update, context)
     elif query.data.startswith("housing:edit:"):

@@ -2315,6 +2315,16 @@ class HousingWizardBackButtonTests(unittest.TestCase):
 class HousingNotificationSettingsTests(unittest.TestCase):
     """Тиха ніч і денний дайджест — вибирає користувач, не адмін."""
 
+    def setUp(self):
+        self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self.original_session = housing_monitor.user_settings_store.DBSession
+        housing_monitor.user_settings_store.DBSession = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        housing_monitor.user_settings_store.DBSession = self.original_session
+        self.engine.dispose()
+
     def _update(self, user_id=544675510, data='housing:notify_settings'):
         query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_text=mock.Mock())
         return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
@@ -2398,6 +2408,131 @@ class HousingNotificationSettingsTests(unittest.TestCase):
             ]
 
         self.assertIn('🔔 Сповіщення', labels)
+
+    def test_settings_screen_shows_news_subscribed_by_default(self):
+        update = self._update()
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(
+                 housing_monitor, '_request',
+                 return_value={'ok': True, 'quiet_hours_enabled': False, 'digest_mode': 'instant'},
+             ):
+            housing_monitor.handle_callback(update, context)
+
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        self.assertIn('Новини бота', text)
+        self.assertIn('увімкнено', text)
+
+    def test_toggle_news_off_then_screen_reflects_it(self):
+        update = self._update(data='housing:notify_news:0')
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(
+                 housing_monitor, '_request',
+                 return_value={'ok': True, 'quiet_hours_enabled': False, 'digest_mode': 'instant'},
+             ):
+            housing_monitor.handle_callback(update, context)
+
+        self.assertFalse(housing_monitor.user_settings_store.get_news_subscribed(544675510))
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        self.assertIn('вимкнено', text)
+
+
+class HousingBroadcastTests(unittest.TestCase):
+    """Admin-only "📢 Розсилка новин" — sends to everyone still subscribed."""
+
+    def setUp(self):
+        self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self.original_session = housing_monitor.user_settings_store.DBSession
+        housing_monitor.user_settings_store.DBSession = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        housing_monitor.user_settings_store.DBSession = self.original_session
+        self.engine.dispose()
+
+    def _seed_subscribers(self, *user_ids):
+        for uid in user_ids:
+            housing_monitor.user_settings_store.get_language(uid)
+
+    def test_admin_keyboard_offers_the_broadcast_button(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            labels = [b.text for row in housing_monitor._admin_keyboard().inline_keyboard for b in row]
+
+        self.assertIn(housing_monitor.BTN_ADMIN_BROADCAST, labels)
+
+    def test_non_admin_cannot_start_the_broadcast_flow(self):
+        query = SimpleNamespace(data='housing:broadcast', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=999))
+        context = SimpleNamespace(user_data={}, bot=mock.Mock())
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            housing_monitor.handle_callback(update, context)
+
+        query.edit_message_text.assert_not_called()
+        self.assertNotIn('housing_broadcast', context.user_data)
+
+    def test_broadcast_text_then_confirm_sends_to_every_subscriber(self):
+        self._seed_subscribers(1, 2, 3)
+        context = SimpleNamespace(user_data={'housing_broadcast': {'step': 'text'}}, bot=mock.Mock())
+        message = FakeMessage(text='Оновлення: додали статистику!', user_id=312029534)
+        update = SimpleNamespace(message=message, effective_user=SimpleNamespace(id=312029534))
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            handled = housing_monitor.handle_private_text(update, context)
+
+        self.assertTrue(handled)
+        self.assertEqual(context.user_data['housing_broadcast']['step'], 'confirm')
+        confirm_text = message.replies[0][0]
+        self.assertIn('3', confirm_text)
+        self.assertIn('Оновлення: додали статистику!', confirm_text)
+
+        query = SimpleNamespace(data='housing:broadcast_send', answer=mock.Mock(), edit_message_text=mock.Mock())
+        send_update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=312029534))
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.time, 'sleep'):
+            housing_monitor.handle_callback(send_update, context)
+
+        self.assertEqual(context.bot.send_message.call_count, 3)
+        sent_to = {c.kwargs['chat_id'] for c in context.bot.send_message.call_args_list}
+        self.assertEqual(sent_to, {1, 2, 3})
+        self.assertNotIn('housing_broadcast', context.user_data)
+        result_text = query.edit_message_text.call_args.args[0]
+        self.assertIn('Надіслано: 3', result_text)
+
+    def test_unsubscribed_users_are_skipped(self):
+        self._seed_subscribers(1, 2)
+        housing_monitor.user_settings_store.set_news_subscribed(2, False)
+        context = SimpleNamespace(user_data={'housing_broadcast': {'text': 'hi', 'step': 'confirm'}}, bot=mock.Mock())
+        query = SimpleNamespace(data='housing:broadcast_send', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=312029534))
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.time, 'sleep'):
+            housing_monitor.handle_callback(update, context)
+
+        self.assertEqual(context.bot.send_message.call_args.kwargs['chat_id'], 1)
+        self.assertEqual(context.bot.send_message.call_count, 1)
+
+    def test_a_send_failure_for_one_recipient_does_not_stop_the_rest(self):
+        self._seed_subscribers(1, 2)
+        context = SimpleNamespace(user_data={'housing_broadcast': {'text': 'hi', 'step': 'confirm'}}, bot=mock.Mock())
+        context.bot.send_message.side_effect = [Exception('blocked'), None]
+        query = SimpleNamespace(data='housing:broadcast_send', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=312029534))
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.time, 'sleep'):
+            housing_monitor.handle_callback(update, context)
+
+        self.assertEqual(context.bot.send_message.call_count, 2)
+        result_text = query.edit_message_text.call_args.args[0]
+        self.assertIn('Надіслано: 1', result_text)
+        self.assertIn('Не вдалося: 1', result_text)
 
 
 class HousingAccessRequestTests(unittest.TestCase):

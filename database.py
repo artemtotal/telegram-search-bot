@@ -554,16 +554,22 @@ class CoopWatchdogFilter(Base):
 
 
 class UserSettings(Base):
-    """Per-user bot preferences. Currently just the chosen UI language
+    """Per-user bot preferences. Started as just the chosen UI language
     (uk/ru/de) — a dedicated table rather than reusing `User` (shared with
     message-archival/search/AI, and only lazily created on observed group
     messages) or `HousingAccessUser` (only exists for admin-granted housing
-    users), since the language switcher must work for any bot user."""
+    users), since the language switcher must work for any bot user. Also
+    doubles as the "known private-chat users" registry the admin broadcast
+    (housing:broadcast) sends to: a row appears here for anyone who ever
+    triggers a language lookup, which happens on basically every private
+    screen — `news_subscribed` defaults to True so opt-in is automatic and
+    users just opt back out via the notification-settings screen."""
 
     __tablename__ = 'user_settings'
 
     user_id = Column(INTEGER, primary_key=True)
     language = Column(TEXT, nullable=False, default='uk')
+    news_subscribed = Column(BOOLEAN, nullable=False, default=True)
     updated_at = Column(DATETIME, nullable=False)
 
 
@@ -661,6 +667,7 @@ def _ensure_column(table_name: str, column_name: str, column_type: str) -> None:
 _ensure_column('propotsdam_filter', 'min_total_rent_eur', 'FLOAT')
 _ensure_column('housing_access_user', 'expires_at', 'DATETIME')
 _ensure_column('housing_access_user', 'expiry_notice_sent', 'BOOLEAN')
+_ensure_column('user_settings', 'news_subscribed', 'BOOLEAN NOT NULL DEFAULT 1')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword
 # `text_lower LIKE '%word%'` queries per user message, each filtered by
