@@ -160,6 +160,25 @@ class HousingAccessUser(Base):
     updated_at = Column(DATETIME, nullable=False)
 
 
+class ImmoweltListing(Base):
+    """Immowelt-оголошення, зафіксовані в момент доставки людині — на відміну
+    від решти джерел, Immowelt не має власного повного сканування в цьому
+    боті (окремий сервіс лише пересилає збіги з чиїмось фільтром), тож це не
+    "всі оголошення на сайті", а "всі, що колись комусь підійшли". Досить для
+    статистики "скільки знайдено" за період."""
+
+    __tablename__ = 'immowelt_listing'
+
+    listing_key = Column(TEXT, primary_key=True)
+    title = Column(TEXT)
+    address = Column(TEXT)
+    rooms = Column(FLOAT)
+    area_m2 = Column(FLOAT)
+    price_eur = Column(FLOAT)
+    detail_url = Column(TEXT)
+    first_seen_at = Column(DATETIME, nullable=False)
+
+
 class ProPotsdamListing(Base):
     __tablename__ = 'propotsdam_listing'
 

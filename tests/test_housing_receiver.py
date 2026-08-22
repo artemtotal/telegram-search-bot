@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from telegram.error import NetworkError
 
-from database import Base
+from database import Base, ImmoweltListing
 from user_handlers import housing_receiver
 
 
@@ -79,6 +79,53 @@ class HousingReceiverTests(unittest.TestCase):
             bot.messages[0]["reply_markup"].inline_keyboard[0][0].url,
             "https://www.immowelt.de/expose/abc",
         )
+
+    def test_immowelt_listing_is_recorded_with_parsed_numbers_for_stats(self):
+        bot = FakeBot()
+
+        housing_receiver.handle_immowelt_result(bot, {
+            "source": "immowelt",
+            "user_id": 544675510,
+            "filter_title": "Пошук Каті",
+            "listing": {
+                "listing_id": "abc",
+                "url": "https://www.immowelt.de/expose/abc",
+                "title": "Wohnung zur Miete",
+                "price": "1.119 €",
+                "rooms": "3 Zimmer",
+                "area": "75,7 m²",
+                "address": "Brunnenallee 3 a, Waldstadt I, Potsdam (14478)",
+            },
+        })
+
+        session = housing_receiver.DBSession()
+        try:
+            row = session.query(ImmoweltListing).get("abc")
+        finally:
+            session.close()
+        self.assertIsNotNone(row)
+        self.assertEqual(row.rooms, 3.0)
+        self.assertEqual(row.area_m2, 75.7)
+        self.assertEqual(row.price_eur, 1119.0)
+
+    def test_immowelt_listing_is_recorded_once_across_duplicate_deliveries(self):
+        bot = FakeBot()
+
+        housing_receiver.handle_immowelt_result(bot, _payload())
+        housing_receiver.handle_immowelt_result(bot, _payload())
+
+        session = housing_receiver.DBSession()
+        try:
+            count = session.query(ImmoweltListing).count()
+        finally:
+            session.close()
+        self.assertEqual(count, 1)
+
+    def test_parse_number_handles_missing_and_unparseable_values(self):
+        self.assertIsNone(housing_receiver._parse_number(None))
+        self.assertIsNone(housing_receiver._parse_number(""))
+        self.assertIsNone(housing_receiver._parse_number("keine Angabe"))
+        self.assertEqual(housing_receiver._parse_number("3,5 Zimmer"), 3.5)
 
     def test_immowelt_payload_rejects_non_immowelt_url(self):
         bot = FakeBot()

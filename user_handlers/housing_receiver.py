@@ -4,6 +4,7 @@ import html
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -12,7 +13,7 @@ from urllib.parse import urlparse
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import NetworkError
 
-from database import DBSession, HousingDelivery
+from database import DBSession, HousingDelivery, ImmoweltListing
 
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,49 @@ def _request_never_left(exc):
     return any(marker in text for marker in _NOT_SENT_MARKERS)
 
 
+_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _parse_number(raw):
+    """Best-effort extraction of a number from the relay's free-text fields
+    (e.g. "950 €", "3 Zimmer", "75 m²", "1.200,50 €") — German formatting uses
+    '.' as a thousands separator and ',' as the decimal point."""
+    if raw is None:
+        return None
+    text = str(raw).strip().replace(".", "").replace(",", ".")
+    match = _NUMBER_RE.search(text)
+    if not match:
+        return None
+    try:
+        return float(match.group())
+    except ValueError:
+        return None
+
+
+def _record_listing_for_stats(listing_id, listing):
+    """Immowelt has no full-catalogue scan of its own in this bot — a
+    separate relay service just forwards matches. So this is the only place
+    we ever see an Immowelt listing; recording it here (once per listing_key)
+    is what the housing stats dashboard (housing:stats) draws on."""
+    session = DBSession()
+    try:
+        if session.query(ImmoweltListing).get(listing_id) is not None:
+            return
+        session.add(ImmoweltListing(
+            listing_key=listing_id,
+            title=str(listing.get("title") or "").strip() or None,
+            address=str(listing.get("address") or "").strip() or None,
+            rooms=_parse_number(listing.get("rooms")),
+            area_m2=_parse_number(listing.get("area")),
+            price_eur=_parse_number(listing.get("price")),
+            detail_url=str(listing.get("url") or "").strip() or None,
+            first_seen_at=datetime.utcnow(),
+        ))
+        session.commit()
+    finally:
+        session.close()
+
+
 def handle_immowelt_result(bot, payload):
     if not isinstance(payload, dict):
         raise ValueError("JSON body must be an object")
@@ -93,6 +137,7 @@ def handle_immowelt_result(bot, payload):
         raise ValueError("listing URL must be an Immowelt HTTPS URL")
 
     listing_id = str(listing.get("listing_id") or "").strip() or url
+    _record_listing_for_stats(listing_id, listing)
     if _already_delivered(user_id, listing_id):
         # Отправитель повторяет объявление, когда не дождался ответа. Само
         # сообщение при этом уже у человека, так что второй раз слать нечего.

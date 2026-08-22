@@ -27,6 +27,8 @@ from user_jobs import (
     propotsdam_matching,
     propotsdam_parser,
     propotsdam_store,
+    housing_stats_chart,
+    housing_stats_store,
     regiomakler_matching,
     regiomakler_store,
     schoba_matching,
@@ -923,6 +925,7 @@ def private_home_rows(user_id: Optional[int]) -> Iterable[list]:
 def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(i18n.t("housing.btn.refresh_status", lang), callback_data="housing:menu")],
+        [InlineKeyboardButton(i18n.t("housing.btn.stats", lang), callback_data="housing:stats")],
         [InlineKeyboardButton(i18n.t("housing.btn.faq", lang), callback_data="housing:faq")],
     ]
     if user_id and int(user_id) == ADMIN_ID:
@@ -1043,6 +1046,71 @@ def show_faq(update: Update, context: CallbackContext, edit: bool = False) -> No
                 raise
     else:
         update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+
+_STATS_PERIOD_DAYS = {"week": 7, "month": 30}
+
+
+def _stats_period_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(i18n.t("housing.stats.btn_week", lang), callback_data="housing:stats:week")],
+        [InlineKeyboardButton(i18n.t("housing.stats.btn_month", lang), callback_data="housing:stats:month")],
+        [InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")],
+    ])
+
+
+def show_stats_menu(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    lang = i18n.get_lang(update.effective_user.id) if update.effective_user else "uk"
+    text = i18n.t("housing.stats.pick_period", lang)
+    keyboard = _stats_period_keyboard(lang)
+    if edit and update.callback_query:
+        try:
+            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+        except BadRequest as exc:
+            if "Message is not modified" not in str(exc):
+                raise
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+
+def send_stats_dashboard(update: Update, context: CallbackContext, period: str) -> None:
+    """Renders the found-listings dashboard for the chosen period as a new
+    message — a photo can't replace the menu's text message via edit, so this
+    always sends fresh rather than editing in place, same as _send_recent_matches."""
+    query = update.callback_query
+    days = _STATS_PERIOD_DAYS.get(period)
+    if days is None:
+        if query:
+            query.answer()
+        return
+    if query:
+        query.answer()
+    if not update.effective_user:
+        return
+    chat_id = int(update.effective_user.id)
+    lang = i18n.get_lang(chat_id)
+    keyboard = _stats_period_keyboard(lang)
+    period_label = i18n.t(f"housing.stats.period_{period}", lang)
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    rows = housing_stats_store.fetch_listings_since(cutoff)
+    if not rows:
+        context.bot.send_message(
+            chat_id=chat_id,
+            text=i18n.t("housing.stats.empty", lang, period=period_label),
+            reply_markup=keyboard,
+        )
+        return
+    chart_title = i18n.t("housing.stats.chart_title", lang, period=period_label, count=len(rows))
+    axis_labels = {
+        "area": i18n.t("housing.stats.axis_area", lang),
+        "price": i18n.t("housing.stats.axis_price", lang),
+        "rooms": i18n.t("housing.stats.axis_rooms", lang),
+    }
+    buf = housing_stats_chart.render_dashboard(rows, chart_title, axis_labels)
+    caption = i18n.t("housing.stats.caption", lang, period=period_label, count=len(rows))
+    context.bot.send_photo(
+        chat_id=chat_id, photo=buf, caption=caption, parse_mode="HTML", reply_markup=keyboard,
+    )
 
 
 def _admin_keyboard(page: int = 0) -> InlineKeyboardMarkup:
@@ -4111,6 +4179,11 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:faq":
         query.answer()
         show_faq(update, context, edit=True)
+    elif query.data == "housing:stats":
+        query.answer()
+        show_stats_menu(update, context, edit=True)
+    elif query.data.startswith("housing:stats:"):
+        send_stats_dashboard(update, context, query.data.split(":", 2)[2])
     elif query.data == "housing:access_request":
         request_access(update, context)
     elif query.data.startswith("housing:access_grant:"):

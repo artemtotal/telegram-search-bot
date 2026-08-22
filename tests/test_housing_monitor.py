@@ -2917,6 +2917,82 @@ class HousingCurrentMatchesTests(unittest.TestCase):
         self.assertNotIn('Фільтра ще немає', footer)
 
 
+class HousingStatsTests(unittest.TestCase):
+    """"\U0001f4ca Статистика" — found-listings dashboard, open to every user."""
+
+    def setUp(self):
+        self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self.original_session = housing_monitor.user_settings_store.DBSession
+        housing_monitor.user_settings_store.DBSession = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        housing_monitor.user_settings_store.DBSession = self.original_session
+        self.engine.dispose()
+
+    def test_menu_offers_the_stats_button_to_any_user(self):
+        # Deliberately outside admin/allowed branches - stats are for everyone.
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', set()):
+            labels = [b.text for row in housing_monitor._menu_keyboard(999999).inline_keyboard for b in row]
+
+        self.assertIn(housing_monitor.i18n.t('housing.btn.stats'), labels)
+
+    def test_show_stats_menu_offers_week_and_month(self):
+        query = SimpleNamespace(data='housing:stats', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+
+        housing_monitor.show_stats_menu(update, SimpleNamespace(bot=mock.Mock()), edit=True)
+
+        text, kwargs = query.edit_message_text.call_args.args[0], query.edit_message_text.call_args.kwargs
+        self.assertIn('Статистика', text)
+        callbacks = [b.callback_data for row in kwargs['reply_markup'].inline_keyboard for b in row]
+        self.assertIn('housing:stats:week', callbacks)
+        self.assertIn('housing:stats:month', callbacks)
+
+    def test_send_stats_dashboard_with_no_listings_sends_an_empty_message(self):
+        context = SimpleNamespace(bot=mock.Mock())
+        query = SimpleNamespace(data='housing:stats:week', answer=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+
+        with mock.patch.object(housing_monitor.housing_stats_store, 'fetch_listings_since', return_value=[]):
+            housing_monitor.send_stats_dashboard(update, context, 'week')
+
+        context.bot.send_photo.assert_not_called()
+        text = context.bot.send_message.call_args.kwargs['text']
+        self.assertIn('тиждень', text)
+
+    def test_send_stats_dashboard_renders_and_sends_a_photo(self):
+        context = SimpleNamespace(bot=mock.Mock())
+        query = SimpleNamespace(data='housing:stats:month', answer=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        rows = [(3.0, 75.0, 950.0), (None, 50.0, None)]
+
+        with mock.patch.object(housing_monitor.housing_stats_store, 'fetch_listings_since', return_value=rows) as fetch, \
+             mock.patch.object(housing_monitor.housing_stats_chart, 'render_dashboard', return_value=b'PNGDATA') as render:
+            housing_monitor.send_stats_dashboard(update, context, 'month')
+
+        fetch.assert_called_once()
+        render.assert_called_once()
+        self.assertEqual(render.call_args.args[0], rows)
+        context.bot.send_photo.assert_called_once()
+        kwargs = context.bot.send_photo.call_args.kwargs
+        self.assertEqual(kwargs['chat_id'], 544675510)
+        self.assertEqual(kwargs['photo'], b'PNGDATA')
+        self.assertIn('2', kwargs['caption'])
+
+    def test_send_stats_dashboard_ignores_an_unknown_period(self):
+        context = SimpleNamespace(bot=mock.Mock())
+        query = SimpleNamespace(data='housing:stats:year', answer=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+
+        housing_monitor.send_stats_dashboard(update, context, 'year')
+
+        query.answer.assert_called_once()
+        context.bot.send_message.assert_not_called()
+        context.bot.send_photo.assert_not_called()
+
+
 class HousingCoopSubscriptionTests(unittest.TestCase):
     """Gewoba/WBG 1903/WBG «Daheim» - subscribe-only, no rooms/price/area
     criteria yet (see CoopWatchdogFilter's docstring for why)."""
