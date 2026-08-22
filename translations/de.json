@@ -207,7 +207,7 @@
   "anon.cooldown.hours_minutes": "Ein neuer anonymer Beitrag ist in {hours} Std. {minutes} Min. möglich.",
 
   "anon.btn.menu": "✍️ Anonyme Fragen",
-  "anon.submenu.text": "✍️ <b>Anonyme Fragen</b>\n\nStellen Sie eine Frage im Chat oder sehen Sie sich Ihre Beiträge an.",
+  "anon.submenu.text": "✍️ <b>Anonyme Fragen</b>\n\nDie Frage wird im allgemeinen Potsdam-Chat veröffentlicht — alle Mitglieder sehen sie, aber wer sie gestellt hat, sieht niemand außer dem Administrator (nur zum Schutz vor Spam).\n\n„✍️ Anonyme Frage stellen“ — eine neue Frage schreiben.\n„📋 Meine Beiträge“ — Ihre bisherigen Beiträge ansehen.",
   "anon.btn.ask_question": "✍️ Anonyme Frage stellen",
   "anon.btn.my_posts": "📋 Meine Beiträge",
   "anon.btn.feedback": "💬 Feedback",

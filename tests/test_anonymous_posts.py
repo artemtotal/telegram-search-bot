@@ -336,9 +336,20 @@ class AnonSubmenuTests(unittest.TestCase):
         query.answer.assert_called_once()
         text, kwargs = query.edit_message_text.call_args.args[0], query.edit_message_text.call_args.kwargs
         self.assertIn("Анонімні запитання", text)
+        # Explains what this even is for people new to the bot - it's not
+        # obvious "anonymous questions" means "posted into the Potsdam group
+        # chat" without saying so explicitly.
+        self.assertIn("чат Потсдама", text)
         callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
         self.assertIn("anon:new", callbacks)
         self.assertIn("anon:mine", callbacks)
+
+    def test_submenu_explains_the_potsdam_chat_in_russian_and_german(self):
+        ru = anonymous_posts.i18n.t("anon.submenu.text", "ru")
+        de = anonymous_posts.i18n.t("anon.submenu.text", "de")
+
+        self.assertIn("чате Потсдама", ru)
+        self.assertIn("Potsdam-Chat", de)
 
     def test_submenu_in_russian_and_german(self):
         ru = anonymous_posts._anon_submenu_keyboard(lang='ru')
