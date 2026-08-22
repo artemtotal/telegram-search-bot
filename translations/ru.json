@@ -22,6 +22,7 @@
   "housing.menu.intro": "Один фильтр работает сразу на <b>8 порталах</b>: Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® и Karl Marx. Новая квартира под ваши условия — и вы сразу получите уведомление.",
   "housing.menu.coops_intro": "Плюс 3 жилищных кооператива (Gewoba, WBG 1903, WBG «Daheim») — там пока нет разбора по комнатам/цене, просто уведомление, как только на их странице исчезнет «свободного жилья нет». Подписаться — кнопка «{btn}» ниже.",
   "housing.menu.status_header": "Статус проверки:",
+  "housing.status_screen.title": "📡 <b>Статус мониторинга</b>",
   "housing.menu.no_filters": "Для вашего Telegram ID пока нет активных фильтров.",
   "housing.menu.your_filters": "Ваши фильтры:",
   "housing.filter.default_title": "Поиск жилья",
@@ -31,7 +32,7 @@
   "housing.btn.back_home": "⬅ Главное меню",
   "housing.locked.text": "🏠 <b>Мониторинг жилья в Потсдаме</b>\n\nОдин фильтр — и бот сразу следит за <b>8 порталами одновременно</b>: Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® и Karl Marx. Как только где-то появляется квартира под ваши условия — мгновенное уведомление в Telegram, вместо того чтобы проверять каждый сайт вручную по несколько раз в день.\n\n💶 Доступ — <b>10 €/месяц</b>, открывает администратор лично.\n\nНажмите кнопку ниже — и мы свяжемся.",
 
-  "housing.btn.refresh_status": "🔄 Обновить статус",
+  "housing.btn.monitoring_status": "📡 Статус мониторинга",
   "housing.btn.admin": "⚙️ Админка жилья",
   "housing.btn.current_matches": "🔍 Квартиры, которые подходят",
   "housing.btn.coops": "🏘 Кооперативы (Gewoba/WBG)",

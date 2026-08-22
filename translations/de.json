@@ -22,6 +22,7 @@
   "housing.menu.intro": "Ein Filter durchsucht sofort <b>8 Portale</b> gleichzeitig: Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® und Karl Marx. Eine neue Wohnung nach Ihren Kriterien — und Sie erhalten sofort eine Benachrichtigung.",
   "housing.menu.coops_intro": "Dazu 3 Wohnungsgenossenschaften (Gewoba, WBG 1903, WBG „Daheim“) — dort gibt es noch keine Filterung nach Zimmern/Preis, nur eine Benachrichtigung, sobald auf ihrer Seite „keine freien Wohnungen“ verschwindet. Abonnieren — Schaltfläche „{btn}“ unten.",
   "housing.menu.status_header": "Prüfstatus:",
+  "housing.status_screen.title": "📡 <b>Überwachungsstatus</b>",
   "housing.menu.no_filters": "Für Ihre Telegram-ID gibt es noch keine aktiven Filter.",
   "housing.menu.your_filters": "Ihre Filter:",
   "housing.filter.default_title": "Wohnungssuche",
@@ -31,7 +32,7 @@
   "housing.btn.back_home": "⬅ Hauptmenü",
   "housing.locked.text": "🏠 <b>Wohnungs-Monitoring in Potsdam</b>\n\nEin Filter — und der Bot überwacht sofort <b>8 Portale gleichzeitig</b>: Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® und Karl Marx. Sobald irgendwo eine Wohnung nach Ihren Kriterien erscheint — sofortige Benachrichtigung in Telegram, statt jede Seite mehrmals täglich manuell zu prüfen.\n\n💶 Zugang — <b>10 €/Monat</b>, wird persönlich vom Administrator freigeschaltet.\n\nDrücken Sie die Schaltfläche unten — wir melden uns.",
 
-  "housing.btn.refresh_status": "🔄 Status aktualisieren",
+  "housing.btn.monitoring_status": "📡 Überwachungsstatus",
   "housing.btn.admin": "⚙️ Wohnungs-Adminbereich",
   "housing.btn.current_matches": "🔍 Passende Wohnungen",
   "housing.btn.coops": "🏘 Genossenschaften (Gewoba/WBG)",

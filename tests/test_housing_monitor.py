@@ -3128,6 +3128,59 @@ class HousingStatsTests(unittest.TestCase):
         context.bot.send_photo.assert_not_called()
 
 
+class HousingMonitoringStatusScreenTests(unittest.TestCase):
+    """"📡 Статус моніторингу" - split off the main menu so /housing stays
+    short (regression: it used to dump every source's crawl status inline)."""
+
+    def setUp(self):
+        self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self.original_session = housing_monitor.user_settings_store.DBSession
+        housing_monitor.user_settings_store.DBSession = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        housing_monitor.user_settings_store.DBSession = self.original_session
+        self.engine.dispose()
+
+    def test_main_menu_button_points_at_the_status_screen(self):
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            keyboard = housing_monitor._menu_keyboard(544675510)
+
+        button = next(b for row in keyboard.inline_keyboard for b in row if b.callback_data == 'housing:status')
+        self.assertEqual(button.text, housing_monitor.i18n.t('housing.btn.monitoring_status'))
+
+    def test_main_menu_text_no_longer_contains_the_status_lines(self):
+        with mock.patch.object(housing_monitor, '_status_lines', return_value=['MARKER-LINE']), \
+             mock.patch.object(housing_monitor, 'user_filters', return_value=[]):
+            text = housing_monitor._render_menu(544675510)
+
+        self.assertNotIn('MARKER-LINE', text)
+
+    def test_status_screen_shows_the_status_lines(self):
+        query = SimpleNamespace(data='housing:status', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(bot=mock.Mock())
+
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=True), \
+             mock.patch.object(housing_monitor, '_status_lines', return_value=['MARKER-LINE']):
+            housing_monitor.handle_callback(update, context)
+
+        text = query.edit_message_text.call_args.args[0]
+        self.assertIn('MARKER-LINE', text)
+        self.assertIn('Статус моніторингу', text)
+
+    def test_a_user_without_access_cannot_reach_the_status_screen(self):
+        query = SimpleNamespace(data='housing:status', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=999))
+        context = SimpleNamespace(bot=mock.Mock())
+
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=False):
+            housing_monitor.handle_callback(update, context)
+
+        query.edit_message_text.assert_not_called()
+
+
 class HousingCoopSubscriptionTests(unittest.TestCase):
     """Gewoba/WBG 1903/WBG «Daheim» - subscribe-only, no rooms/price/area
     criteria yet (see CoopWatchdogFilter's docstring for why)."""
@@ -3136,10 +3189,20 @@ class HousingCoopSubscriptionTests(unittest.TestCase):
         query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_text=mock.Mock())
         return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
 
-    def test_menu_offers_the_coops_button_for_self_service_users(self):
+    def test_self_service_main_menu_no_longer_shows_coops_directly(self):
+        # Moved one level down into "Мої фільтри" - see test below - to keep
+        # the main menu short (regression: it used to be a wall of buttons).
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
              mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
             labels = [b.text for row in housing_monitor._menu_keyboard(544675510).inline_keyboard for b in row]
+
+        self.assertNotIn(housing_monitor.BTN_COOPS, labels)
+
+    def test_self_manage_screen_offers_the_coops_button(self):
+        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[]):
+            labels = [
+                b.text for row in housing_monitor._self_manage_keyboard(544675510).inline_keyboard for b in row
+            ]
 
         self.assertIn(housing_monitor.BTN_COOPS, labels)
 

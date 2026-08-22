@@ -926,7 +926,7 @@ def private_home_rows(user_id: Optional[int]) -> Iterable[list]:
 
 def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(i18n.t("housing.btn.refresh_status", lang), callback_data="housing:menu")],
+        [InlineKeyboardButton(i18n.t("housing.btn.monitoring_status", lang), callback_data="housing:status")],
         [InlineKeyboardButton(i18n.t("housing.btn.stats", lang), callback_data="housing:stats")],
         [InlineKeyboardButton(i18n.t("housing.btn.faq", lang), callback_data="housing:faq")],
     ]
@@ -936,11 +936,12 @@ def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKey
         rows.insert(2, [InlineKeyboardButton(i18n.t("housing.btn.coops", lang), callback_data="housing:coops")])
         rows.insert(3, [InlineKeyboardButton(i18n.t("housing.btn.notify_settings", lang), callback_data="housing:notify_settings")])
     elif is_allowed(user_id):
+        # Кооперативи звідси прибрані - вони живуть у "Мої фільтри"
+        # (_self_manage_keyboard), туди й підписки на фільтри одразу видно.
         rows.insert(0, [InlineKeyboardButton(i18n.t("housing.btn.self_add", lang), callback_data="housing:self_add")])
         rows.insert(1, [InlineKeyboardButton(i18n.t("housing.btn.self_manage", lang), callback_data="housing:self_manage")])
         rows.insert(2, [InlineKeyboardButton(i18n.t("housing.btn.current_matches", lang), callback_data="housing:current_matches")])
-        rows.insert(3, [InlineKeyboardButton(i18n.t("housing.btn.coops", lang), callback_data="housing:coops")])
-        rows.insert(4, [InlineKeyboardButton(i18n.t("housing.btn.notify_settings", lang), callback_data="housing:notify_settings")])
+        rows.insert(3, [InlineKeyboardButton(i18n.t("housing.btn.notify_settings", lang), callback_data="housing:notify_settings")])
     rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="housing:lang:menu")])
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.back_home", lang), callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
@@ -1329,17 +1330,43 @@ def _status_lines(lang: str = "uk") -> list:
     return lines
 
 
+def _monitoring_status_text(lang: str = "uk") -> str:
+    return "\n".join([i18n.t("housing.status_screen.title", lang), "", *_status_lines(lang)])
+
+
+def _monitoring_status_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")],
+    ])
+
+
+def show_monitoring_status(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    user = update.effective_user
+    if not user or not is_allowed(user.id):
+        return
+    lang = i18n.get_lang(user.id)
+    text = _monitoring_status_text(lang)
+    keyboard = _monitoring_status_keyboard(lang)
+    if edit and update.callback_query:
+        try:
+            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+        except BadRequest as exc:
+            if "Message is not modified" not in str(exc):
+                raise
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+
 def _render_menu(user_id: int, lang: str = "uk") -> str:
+    """Deliberately short - per-service crawl status used to be dumped right
+    here (see _status_lines), which turned this into a wall of text on every
+    open. That detail moved to its own screen, reachable via the "monitoring
+    status" button (housing:status / show_monitoring_status)."""
     filters = user_filters(user_id)
     lines = [
         i18n.t("housing.menu.title", lang),
         "",
         i18n.t("housing.menu.intro", lang),
-        "",
-        i18n.t("housing.menu.coops_intro", lang, btn=i18n.t("housing.btn.coops", lang)),
-        "",
-        i18n.t("housing.menu.status_header", lang),
-        *_status_lines(lang),
         "",
     ]
     if not filters:
@@ -2274,6 +2301,9 @@ def _self_manage_keyboard(user_id: int, lang: str = "uk") -> InlineKeyboardMarku
                 InlineKeyboardButton(i18n.t("housing.btn.edit", lang), callback_data=f"housing:edit:{source}:{filter_id}"),
                 InlineKeyboardButton(i18n.t("housing.btn.delete", lang), callback_data=f"housing:delete:{source}:{filter_id}"),
             ])
+    # Кооперативи не мають розбору за критеріями (див. CoopWatchdogFilter),
+    # тож не потрапляють у групи вище - їм тут своя окрема кнопка-вхід.
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.coops", lang), callback_data="housing:coops")])
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")])
     return InlineKeyboardMarkup(rows)
 
@@ -4240,6 +4270,9 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     if query.data == "housing:menu":
         query.answer()
         show_menu(update, context, edit=True)
+    elif query.data == "housing:status":
+        query.answer()
+        show_monitoring_status(update, context, edit=True)
     elif query.data == "housing:lang:menu":
         query.answer()
         query.edit_message_text(
