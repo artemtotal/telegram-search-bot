@@ -56,14 +56,33 @@ def validate_submission(text: str, lang: str = "uk"):
 def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
     lang = i18n.get_lang(user_id) if user_id else "uk"
     rows = [
-        [InlineKeyboardButton(i18n.t("anon.btn.ask_question", lang), callback_data="anon:new")],
-        [InlineKeyboardButton(i18n.t("anon.btn.my_posts", lang), callback_data="anon:mine")],
+        [InlineKeyboardButton(i18n.t("anon.btn.menu", lang), callback_data="anon:menu")],
     ]
     rows.extend(equeue_monitor.private_home_rows(user_id))
     rows.extend(housing_monitor.private_home_rows(user_id))
     rows.append([InlineKeyboardButton(i18n.t("anon.btn.feedback", lang), callback_data="anon:feedback")])
     rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="anon:lang:menu")])
     return InlineKeyboardMarkup(rows)
+
+
+def _anon_submenu_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(i18n.t("anon.btn.ask_question", lang), callback_data="anon:new")],
+        [InlineKeyboardButton(i18n.t("anon.btn.my_posts", lang), callback_data="anon:mine")],
+        [InlineKeyboardButton(i18n.t("anon.btn.back_home", lang), callback_data="anon:home")],
+    ])
+
+
+def show_anon_submenu(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    user_id = update.effective_user.id if update.effective_user else None
+    lang = i18n.get_lang(user_id) if user_id else "uk"
+    text = i18n.t("anon.submenu.text", lang)
+    keyboard = _anon_submenu_keyboard(lang)
+    query = update.callback_query
+    if edit and query:
+        query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
 def _lang_picker_keyboard() -> InlineKeyboardMarkup:
@@ -748,6 +767,9 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     if data == "anon:home" or data == "anon:cancel":
         query.answer()
         show_home(update, context, edit=True)
+    elif data == "anon:menu":
+        query.answer()
+        show_anon_submenu(update, context, edit=True)
     elif data == "anon:lang:menu":
         query.answer()
         query.edit_message_text(

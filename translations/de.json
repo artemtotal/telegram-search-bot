@@ -206,6 +206,8 @@
   "anon.cooldown.days_hours": "Ein neuer anonymer Beitrag ist in {days} Tg. {hours} Std. möglich.",
   "anon.cooldown.hours_minutes": "Ein neuer anonymer Beitrag ist in {hours} Std. {minutes} Min. möglich.",
 
+  "anon.btn.menu": "✍️ Anonyme Fragen",
+  "anon.submenu.text": "✍️ <b>Anonyme Fragen</b>\n\nStellen Sie eine Frage im Chat oder sehen Sie sich Ihre Beiträge an.",
   "anon.btn.ask_question": "✍️ Anonyme Frage stellen",
   "anon.btn.my_posts": "📋 Meine Beiträge",
   "anon.btn.feedback": "💬 Feedback",

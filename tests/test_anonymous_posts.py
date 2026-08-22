@@ -292,6 +292,63 @@ class LanguageSwitcherTests(unittest.TestCase):
         self.assertEqual(user_settings_store.get_language(777), 'uk')
 
 
+class AnonSubmenuTests(unittest.TestCase):
+    """"✍️ Анонімні запитання" - "ask" and "my posts" used to be two separate
+    top-level home-screen buttons; now they're grouped one level down."""
+
+    def setUp(self):
+        self.engine = create_engine(
+            'sqlite://',
+            connect_args={'check_same_thread': False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(self.engine)
+        self.original_session = user_settings_store.DBSession
+        user_settings_store.DBSession = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        user_settings_store.DBSession = self.original_session
+        self.engine.dispose()
+
+    def test_home_screen_offers_one_consolidated_anon_button(self):
+        keyboard = anonymous_posts._home_keyboard(544675510)
+        callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+
+        self.assertIn("anon:menu", callbacks)
+        self.assertNotIn("anon:new", callbacks)
+        self.assertNotIn("anon:mine", callbacks)
+
+    def test_submenu_offers_ask_my_posts_and_a_way_back(self):
+        callbacks = [
+            b.callback_data for row in anonymous_posts._anon_submenu_keyboard().inline_keyboard for b in row
+        ]
+
+        self.assertIn("anon:new", callbacks)
+        self.assertIn("anon:mine", callbacks)
+        self.assertIn("anon:home", callbacks)
+
+    def test_callback_anon_menu_opens_the_submenu(self):
+        query = SimpleNamespace(data="anon:menu", answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        anonymous_posts.handle_callback(update, context)
+
+        query.answer.assert_called_once()
+        text, kwargs = query.edit_message_text.call_args.args[0], query.edit_message_text.call_args.kwargs
+        self.assertIn("Анонімні запитання", text)
+        callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+        self.assertIn("anon:new", callbacks)
+        self.assertIn("anon:mine", callbacks)
+
+    def test_submenu_in_russian_and_german(self):
+        ru = anonymous_posts._anon_submenu_keyboard(lang='ru')
+        de = anonymous_posts._anon_submenu_keyboard(lang='de')
+
+        self.assertIn('Задать анонимный вопрос', ru.inline_keyboard[0][0].text)
+        self.assertIn('Anonyme Frage stellen', de.inline_keyboard[0][0].text)
+
+
 class AnonymousPostsTranslationSmokeTests(unittest.TestCase):
     """Not a full duplicate of every uk-language assertion - just enough per
     converted screen to prove lang actually reaches the rendered text."""

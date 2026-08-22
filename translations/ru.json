@@ -206,6 +206,8 @@
   "anon.cooldown.days_hours": "Новый анонимный пост можно создать через {days} дн. {hours} ч.",
   "anon.cooldown.hours_minutes": "Новый анонимный пост можно создать через {hours} ч. {minutes} мин.",
 
+  "anon.btn.menu": "✍️ Анонимные вопросы",
+  "anon.submenu.text": "✍️ <b>Анонимные вопросы</b>\n\nЗадайте вопрос в чат или посмотрите свои публикации.",
   "anon.btn.ask_question": "✍️ Задать анонимный вопрос",
   "anon.btn.my_posts": "📋 Мои публикации",
   "anon.btn.feedback": "💬 Обратная связь",
