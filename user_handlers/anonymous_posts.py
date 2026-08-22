@@ -39,8 +39,6 @@ TOPICS_PER_PAGE = 8
 BTN_HOME = "🏠 Меню"
 BTN_EQUEUE = "🛂 ДП Документ"
 BTN_HOUSING = "🏠 Моніторинг житла"
-BTN_ANON = "✍️ Анонімне запитання"
-BTN_MY_POSTS = "📋 Мої публікації"
 BTN_FEEDBACK = "💬 Зворотній звʼязок"
 FEEDBACK_MIN_LENGTH = 5
 FEEDBACK_MAX_LENGTH = 2000
@@ -96,9 +94,9 @@ def _lang_picker_keyboard() -> InlineKeyboardMarkup:
 
 def reply_menu_keyboard(user_id=None) -> ReplyKeyboardMarkup:
     lang = i18n.get_lang(user_id) if user_id else "uk"
-    rows = [[i18n.t("anon.btn.home", lang), i18n.t("anon.btn.ask", lang)], [i18n.t("anon.btn.my_posts", lang)]]
+    rows = [[i18n.t("anon.btn.home", lang), i18n.t("anon.btn.menu", lang)]]
     if equeue_monitor.is_allowed(user_id):
-        rows[1].append(i18n.t("anon.btn.equeue", lang))
+        rows.append([i18n.t("anon.btn.equeue", lang)])
     # Shown to everyone, allowed or not: housing_monitor.show_menu() renders
     # its own locked screen (pricing + "request access") for people without
     # access yet, same as the top inline menu already does.
@@ -433,8 +431,8 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
             return
         if housing_monitor.handle_private_text(update, context):
             return
-        if text in {i18n.t("anon.btn.ask", lang), i18n.t("anon.btn.my_posts", lang)}:
-            show_home(update, context)
+        if text == i18n.t("anon.btn.menu", lang):
+            show_anon_submenu(update, context)
             return
         show_home(update, context)
         return

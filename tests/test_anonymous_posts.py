@@ -80,8 +80,7 @@ class AnonymousPostValidationTests(unittest.TestCase):
         flattened = [button["text"] for row in keyboard for button in row]
 
         self.assertIn(anonymous_posts.BTN_HOME, flattened)
-        self.assertIn(anonymous_posts.BTN_ANON, flattened)
-        self.assertIn(anonymous_posts.BTN_MY_POSTS, flattened)
+        self.assertIn(anonymous_posts.i18n.t("anon.btn.menu"), flattened)
         self.assertIn(anonymous_posts.BTN_EQUEUE, flattened)
 
     def test_housing_button_is_shown_for_allowed_user(self):
@@ -347,6 +346,33 @@ class AnonSubmenuTests(unittest.TestCase):
 
         self.assertIn('Задать анонимный вопрос', ru.inline_keyboard[0][0].text)
         self.assertIn('Anonyme Frage stellen', de.inline_keyboard[0][0].text)
+
+    def test_reply_keyboard_has_one_consolidated_anon_button(self):
+        labels = [
+            b for row in anonymous_posts.reply_menu_keyboard(544675510).to_dict()["keyboard"] for b in row
+        ]
+        texts = [b["text"] for b in labels]
+
+        self.assertIn(anonymous_posts.i18n.t("anon.btn.menu"), texts)
+        self.assertNotIn("📋 Мої публікації", texts)
+
+    def test_tapping_the_reply_keyboard_button_opens_the_submenu(self):
+        message = FakeMessage(text=anonymous_posts.i18n.t("anon.btn.menu"))
+        update = SimpleNamespace(
+            message=message, effective_message=message, callback_query=None,
+            effective_user=SimpleNamespace(id=544675510),
+        )
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch("user_handlers.anonymous_posts.housing_monitor.handle_private_text", return_value=False):
+            anonymous_posts.handle_private_text(update, context)
+
+        self.assertTrue(message.replies)
+        text, kwargs = message.replies[0]
+        self.assertIn("Анонімні запитання", text)
+        callbacks = [b.callback_data for row in kwargs["reply_markup"].inline_keyboard for b in row]
+        self.assertIn("anon:new", callbacks)
+        self.assertIn("anon:mine", callbacks)
 
 
 class AnonymousPostsTranslationSmokeTests(unittest.TestCase):
