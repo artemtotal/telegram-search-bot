@@ -8,6 +8,7 @@ apartment that says "# vermietet" right there in the listing.
 import html
 import logging
 import os
+import time
 from datetime import timedelta
 from typing import Dict, List
 
@@ -23,14 +24,33 @@ CHECK_INTERVAL_SECONDS = 15 * 60
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 ERROR_ALERT_COOLDOWN = timedelta(hours=2)
 _USER_AGENT = "Mozilla/5.0 (compatible; PotsdamHousingBot/1.0)"
+# schoba.de періодично рве TLS-з'єднання на рівному місці
+# (SSLZeroReturnError "TLS/SSL connection has been closed (EOF)") — повторний
+# запит через секунду-другу проходить нормально. Без цих спроб кожен такий
+# одиничний збій піднімав адмінський алерт про несправну перевірку, хоча сайт
+# був цілком живий.
+_FETCH_ATTEMPTS = 3
+_RETRY_BACKOFF_SECONDS = (2, 5)
 
 
 def _fetch_listings() -> List[Dict]:
-    response = requests.get(
-        schoba_parser.LISTINGS_URL, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT},
-    )
-    response.raise_for_status()
-    return schoba_parser.parse_listings(response.text)
+    last_error = None
+    for attempt in range(_FETCH_ATTEMPTS):
+        try:
+            response = requests.get(
+                schoba_parser.LISTINGS_URL, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT},
+            )
+            response.raise_for_status()
+            return schoba_parser.parse_listings(response.text)
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt + 1 < _FETCH_ATTEMPTS:
+                logger.info(
+                    "SCHOBA fetch attempt %s/%s failed, retrying: %s",
+                    attempt + 1, _FETCH_ATTEMPTS, exc,
+                )
+                time.sleep(_RETRY_BACKOFF_SECONDS[attempt])
+    raise last_error
 
 
 def _notify_admin_parse_broke(bot) -> None:

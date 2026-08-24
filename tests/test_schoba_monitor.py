@@ -2,6 +2,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+import requests
+
 from user_jobs import schoba_monitor
 
 
@@ -117,6 +119,63 @@ class SchobaMonitorCheckJobTests(unittest.TestCase):
         self.assertEqual(context.bot.sent[0][0], 544675510)
         mark_delivered.assert_called_once_with(9, '1')
         self.assertEqual(result['sent'], 1)
+
+
+class SchobaFetchRetryTests(unittest.TestCase):
+    """schoba.de intermittently drops the TLS connection mid-handshake
+    (SSLZeroReturnError); an immediate retry succeeds. Without retries every
+    one of those blips raised an admin alert about a broken check even though
+    the site was perfectly healthy."""
+
+    def test_a_transient_tls_drop_is_retried_and_succeeds(self):
+        error = requests.exceptions.SSLError('TLS/SSL connection has been closed (EOF)')
+
+        with mock.patch('requests.get', side_effect=[error, FakeResponse('page html')]) as get, \
+             mock.patch('user_jobs.schoba_monitor.time.sleep') as sleep, \
+             mock.patch(
+                 'user_jobs.schoba_monitor.schoba_parser.parse_listings', return_value=['listing'],
+             ):
+            listings = schoba_monitor._fetch_listings()
+
+        self.assertEqual(listings, ['listing'])
+        self.assertEqual(get.call_count, 2)
+        sleep.assert_called_once_with(schoba_monitor._RETRY_BACKOFF_SECONDS[0])
+
+    def test_a_genuinely_down_site_still_raises_after_every_attempt(self):
+        error = requests.exceptions.SSLError('still down')
+
+        with mock.patch('requests.get', side_effect=error) as get, \
+             mock.patch('user_jobs.schoba_monitor.time.sleep'):
+            with self.assertRaises(requests.exceptions.SSLError):
+                schoba_monitor._fetch_listings()
+
+        self.assertEqual(get.call_count, schoba_monitor._FETCH_ATTEMPTS)
+
+    def test_a_working_site_is_fetched_once_without_any_sleeping(self):
+        with mock.patch('requests.get', return_value=FakeResponse('page html')) as get, \
+             mock.patch('user_jobs.schoba_monitor.time.sleep') as sleep, \
+             mock.patch(
+                 'user_jobs.schoba_monitor.schoba_parser.parse_listings', return_value=[],
+             ):
+            schoba_monitor._fetch_listings()
+
+        self.assertEqual(get.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_repeated_transient_drops_still_recover_on_the_last_attempt(self):
+        error = requests.exceptions.SSLError('flaky')
+
+        with mock.patch(
+            'requests.get', side_effect=[error, error, FakeResponse('page html')],
+        ) as get, \
+             mock.patch('user_jobs.schoba_monitor.time.sleep'), \
+             mock.patch(
+                 'user_jobs.schoba_monitor.schoba_parser.parse_listings', return_value=['listing'],
+             ):
+            listings = schoba_monitor._fetch_listings()
+
+        self.assertEqual(listings, ['listing'])
+        self.assertEqual(get.call_count, 3)
 
 
 if __name__ == '__main__':
