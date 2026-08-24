@@ -106,16 +106,21 @@ class KleinanzeigenMonitorCheckJobTests(unittest.TestCase):
         self.assertEqual(result['admin_alerted'], 0)
 
     def test_nearby_towns_and_swap_listings_are_filtered_out(self):
+        # Regression: "Wohnungsswap - 3 Zimmer, ..." (a commercial swap
+        # account's ads) slipped through notifications because only the
+        # German "tausch" was excluded, not the English "swap" some swap
+        # posters use in their titles instead.
         context = SimpleNamespace(bot=FakeBot())
         potsdam = _listing('1')
         nearby = _listing('2', city='Rathenow')
-        swap = _listing('3', title='TAUSCHWOHNUNG 2-Zimmer gegen Berlin')
+        swap_de = _listing('3', title='TAUSCHWOHNUNG 2-Zimmer gegen Berlin')
+        swap_en = _listing('4', title='Wohnungsswap - 3 Zimmer, schöne Terrasse')
 
         with mock.patch.object(kleinanzeigen_monitor, 'CHECK_ENABLED', True), \
              mock.patch('requests.get', return_value=FakeResponse('irrelevant')), \
              mock.patch(
                  'user_jobs.kleinanzeigen_monitor.kleinanzeigen_parser.parse_listings',
-                 return_value=[potsdam, nearby, swap],
+                 return_value=[potsdam, nearby, swap_de, swap_en],
              ), \
              mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.record_status'), \
              mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.upsert_listings', return_value=1) as upsert, \

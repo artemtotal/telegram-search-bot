@@ -16,9 +16,10 @@ what should be the first thing to notice it and to widen the interval back.
 Also filters out two kinds of noise the raw search page includes:
 - Results outside Potsdam itself — the search radius pulls in nearby towns
   (Rathenow, Berlin-Schöneberg, ...), which the caller doesn't want.
-- "TAUSCHWOHNUNG" (apartment-swap) listings — these aren't available to just
-  apply for, the poster wants YOUR apartment in exchange for theirs, so
-  matching them against a normal search filter would be misleading.
+- Apartment-swap listings ("TAUSCHWOHNUNG", or "Wohnungsswap"-branded ones
+  from commercial swap accounts) — these aren't available to just apply for,
+  the poster wants YOUR apartment in exchange for theirs, so matching them
+  against a normal search filter would be misleading.
 """
 
 import html
@@ -49,10 +50,16 @@ def _fetch_listings() -> List[Dict]:
     return kleinanzeigen_parser.parse_listings(response.text)
 
 
+# Some swap-listing posters (e.g. the commercial account "Wohnungsswap.de")
+# title every ad with the English "swap" instead of the German "Tausch" -
+# a real one slipped through notifications with only "tausch" excluded.
+_SWAP_KEYWORDS = ("tausch", "swap")
+
+
 def _is_relevant(listing: Dict) -> bool:
     city = str(listing.get("city") or "").strip().casefold()
     title = str(listing.get("title") or "").casefold()
-    return city == "potsdam" and "tausch" not in title
+    return city == "potsdam" and not any(keyword in title for keyword in _SWAP_KEYWORDS)
 
 
 def _notify_admin_parse_broke(bot) -> None:
