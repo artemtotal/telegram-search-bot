@@ -146,6 +146,10 @@ class EqueueStatus(Base):
     last_checked_at = Column(DATETIME)
     last_status = Column(TEXT)
     last_reason = Column(TEXT)
+    # Коли адміну справді пішло попередження про несправну перевірку - окремо
+    # від last_checked_at, який оновлюється щоразу незалежно від статусу і
+    # тому не годиться як мітка кулдауна (див. _notify_admin_error).
+    last_admin_alert_at = Column(DATETIME)
 
 
 class HousingAccessUser(Base):
@@ -689,6 +693,7 @@ _ensure_column('housing_access_user', 'expires_at', 'DATETIME')
 _ensure_column('housing_access_user', 'expiry_notice_sent', 'BOOLEAN')
 _ensure_column('housing_access_user', 'is_trial', 'BOOLEAN NOT NULL DEFAULT 0')
 _ensure_column('housing_access_user', 'trial_grace_ends_at', 'DATETIME')
+_ensure_column('equeue_status', 'last_admin_alert_at', 'DATETIME')
 _ensure_column('user_settings', 'news_subscribed', 'BOOLEAN NOT NULL DEFAULT 1')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword

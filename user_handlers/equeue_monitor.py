@@ -342,36 +342,54 @@ def _update_status_for_active(status: str, notified: bool = False) -> None:
 
 
 def _notify_admin_error(bot, result: Dict[str, object]) -> None:
+    """Попереджає адміна, коли браузерна перевірка не змогла визначити статус.
+
+    Кулдаун звіряється з `EqueueStatus.last_admin_alert_at` - міткою САМЕ
+    факту надсилання - а не з `EqueueSubscription.last_checked_at`, який
+    оновлюється щоразу незалежно від статусу (див. `_update_status_for_active`).
+    Раніше кулдаун звірявся якраз із цим полем, і поки статус лишався тим самим
+    (наприклад, блокування Cloudflare тривало днями), "недавній" запис
+    знаходився щоразу заново - адмін отримував рівно одне повідомлення при
+    першому переході в проблемний стан і жодного нагадування після, аж доки
+    статус хоч раз не зміниться.
+    """
     if not ADMIN_ID:
         return
+    now = utc_now()
     session = DBSession()
     try:
-        recent = (
-            session.query(EqueueSubscription)
-            .filter(
-                EqueueSubscription.service == SERVICE_KEY,
-                EqueueSubscription.last_status == str(result.get("status")),
-                EqueueSubscription.last_checked_at.isnot(None),
-            )
-            .order_by(EqueueSubscription.last_checked_at.desc())
-            .first()
-        )
-        now = utc_now()
-        if recent and recent.last_checked_at > now - ADMIN_ERROR_COOLDOWN:
+        row = session.query(EqueueStatus).filter(EqueueStatus.service == SERVICE_KEY).first()
+        if row is None:
+            row = EqueueStatus(service=SERVICE_KEY)
+            session.add(row)
+        if row.last_admin_alert_at is not None and row.last_admin_alert_at > now - ADMIN_ERROR_COOLDOWN:
             return
+        status = str(result.get("status") or "")
+        reason = html.escape(str(result.get("reason") or "невідома"))
+        if status == "blocked":
+            text = (
+                "🔒 <b>ДП Документ: потрібна ручна перевірка Cloudflare</b>\n\n"
+                f"Причина: {reason}\n\n"
+                "Автоматична перевірка сама не може пройти капчу. Відкрийте сайт "
+                "у тому ж профілі Chrome, де працює розширення-збирач, і пройдіть "
+                "перевірку вручну - після цього автоматичні перевірки знову запрацюють.\n\n"
+                f"Сайт: {SERVICE_URL}"
+            )
+        else:
+            text = (
+                "⚠️ <b>Перевірка ДП Документ не виконана</b>\n\n"
+                f"Причина: {reason}\n"
+                f"Сайт: {SERVICE_URL}"
+            )
+        try:
+            bot.send_message(ADMIN_ID, text, parse_mode="HTML", disable_web_page_preview=True)
+        except Exception:
+            logger.exception("Could not notify admin about e-queue checker error")
+            return
+        row.last_admin_alert_at = now
+        session.commit()
     finally:
         session.close()
-    try:
-        bot.send_message(
-            ADMIN_ID,
-            "⚠️ Перевірка ДП Документ не виконана\n\n"
-            f"Причина: {html.escape(str(result.get('reason') or 'невідома'))}\n"
-            f"Сайт: {SERVICE_URL}",
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-        )
-    except Exception:
-        logger.exception("Could not notify admin about e-queue checker error")
 
 
 def _notify_available(bot, subscribers, result: Dict[str, object]) -> None:

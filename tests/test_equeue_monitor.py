@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest import mock
 
 
@@ -111,6 +111,93 @@ class EqueueMonitorTest(unittest.TestCase):
                 status_row.last_reason = original_status["last_reason"]
             session.commit()
             session.close()
+
+
+class EqueueAdminAlertCooldownTests(unittest.TestCase):
+    """Regression: the cooldown used to compare against subscribers'
+    `last_checked_at`, which is refreshed on every single check regardless
+    of status - so once a status like "blocked" persisted for more than one
+    check cycle, that timestamp was always "recent" and the admin never got
+    a second alert, ever, no matter how long the outage lasted. It must
+    instead track the moment the admin was actually last notified.
+    """
+
+    def setUp(self):
+        import user_handlers.equeue_monitor as monitor
+
+        self.monitor = monitor
+        self.admin_id_patch = mock.patch.object(monitor, "ADMIN_ID", 312029534)
+        self.admin_id_patch.start()
+        session = monitor.DBSession()
+        self.row = session.query(monitor.EqueueStatus).filter(
+            monitor.EqueueStatus.service == monitor.SERVICE_KEY
+        ).first()
+        self.original_alert_at = self.row.last_admin_alert_at if self.row else None
+        session.close()
+
+    def tearDown(self):
+        self.admin_id_patch.stop()
+        session = self.monitor.DBSession()
+        row = session.query(self.monitor.EqueueStatus).filter(
+            self.monitor.EqueueStatus.service == self.monitor.SERVICE_KEY
+        ).first()
+        if row is not None:
+            row.last_admin_alert_at = self.original_alert_at
+            session.commit()
+        session.close()
+
+    def _set_last_alert_at(self, value):
+        session = self.monitor.DBSession()
+        row = session.query(self.monitor.EqueueStatus).filter(
+            self.monitor.EqueueStatus.service == self.monitor.SERVICE_KEY
+        ).first()
+        if row is None:
+            row = self.monitor.EqueueStatus(service=self.monitor.SERVICE_KEY)
+            session.add(row)
+        row.last_admin_alert_at = value
+        session.commit()
+        session.close()
+
+    def test_blocked_status_alerts_immediately_the_first_time(self):
+        self._set_last_alert_at(None)
+        bot = mock.Mock()
+
+        self.monitor._notify_admin_error(bot, {"status": "blocked", "reason": "сторінка показала Cloudflare"})
+
+        bot.send_message.assert_called_once()
+        text = bot.send_message.call_args.args[1]
+        self.assertIn("вручну", text)
+        self.assertIn("Cloudflare", text)
+
+    def test_repeated_blocked_checks_do_not_spam_within_the_cooldown(self):
+        self._set_last_alert_at(self.monitor.utc_now() - timedelta(hours=1))
+        bot = mock.Mock()
+
+        # Simulates many 15-minute checks in a row all still reporting
+        # "blocked" - this used to keep finding a "recent" subscriber
+        # timestamp forever and never re-alert.
+        for _ in range(5):
+            self.monitor._notify_admin_error(bot, {"status": "blocked", "reason": "still blocked"})
+
+        bot.send_message.assert_not_called()
+
+    def test_admin_gets_reminded_again_once_the_cooldown_passes(self):
+        self._set_last_alert_at(self.monitor.utc_now() - self.monitor.ADMIN_ERROR_COOLDOWN - timedelta(minutes=1))
+        bot = mock.Mock()
+
+        self.monitor._notify_admin_error(bot, {"status": "blocked", "reason": "still blocked"})
+
+        bot.send_message.assert_called_once()
+
+    def test_non_blocked_errors_get_a_generic_message_not_the_captcha_hint(self):
+        self._set_last_alert_at(None)
+        bot = mock.Mock()
+
+        self.monitor._notify_admin_error(bot, {"status": "error", "reason": "timeout"})
+
+        text = bot.send_message.call_args.args[1]
+        self.assertNotIn("вручну", text)
+        self.assertIn("не виконана", text)
 
 
 class EqueueTranslationSmokeTests(unittest.TestCase):
