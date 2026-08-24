@@ -68,13 +68,33 @@ def _navigate_to_list(page):
     page.goto(PORTAL_URL, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(3000)
     _login_if_needed(page)
-    for pattern in ["Immobiliensuche", "mehr anzeigen", "^Immobilien$", "Immobilien"]:
+    for pattern in ["Immobiliensuche", "^Immobilien$", "Immobilien"]:
         _click_text(page, [pattern], timeout=5000)
     try:
         page.wait_for_load_state("networkidle", timeout=20000)
     except PlaywrightTimeoutError:
         pass
     page.wait_for_timeout(3000)
+    _load_all_pages(page)
+
+
+def _load_all_pages(page, max_clicks=50):
+    """The listing view paginates behind a "mehr anzeigen" (show more)
+    button instead of showing everything up front. A single click - which
+    is all this used to do, as part of _navigate_to_list's one-shot pattern
+    list - only ever loaded the first page, so listings on later pages
+    (including the last one) were silently never scanned. Keeps clicking
+    until the button is gone (or `max_clicks` as a safety cap against an
+    unexpected always-present button) so every page's xmlforms response
+    gets captured by `scan`'s response listener.
+    """
+    for _ in range(max_clicks):
+        if not _click_text(page, ["mehr anzeigen"], timeout=3000):
+            return
+        try:
+            page.wait_for_load_state("networkidle", timeout=20000)
+        except PlaywrightTimeoutError:
+            pass
 
 
 def _extract_cards_from_dom(page):
