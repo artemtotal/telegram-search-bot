@@ -144,6 +144,13 @@
   "housing.access.continue_text": "Danke! Wir haben den Administrator informiert — er meldet sich wegen der Verlängerung bei Ihnen.",
   "housing.access.stop_text": "In Ordnung. In 3 Tagen werden Abo und Zugang zum Wohnungs-Monitoring automatisch beendet.",
 
+  "housing.btn.trial_start": "🎁 7 Tage kostenlos",
+  "housing.trial.already_used": "Der kostenlose Testzeitraum wurde für dieses Konto bereits genutzt.",
+  "housing.trial.granted_toast": "Testzeitraum aktiviert!",
+  "housing.trial.granted_text": "🎁 Kostenloser Zugang zum Wohnungs-Monitoring für {days} Tage freigeschaltet. Tippen Sie auf „{btn}“, um einen Filter hinzuzufügen.",
+  "housing.trial.warning": "⏳ Noch {days} Tag kostenloser Testzeitraum für das Wohnungs-Monitoring. Wenn er Ihnen gefallen hat — tippen Sie, um vollen Monatszugang zu beantragen.",
+  "housing.trial.stopped": "⏸ Der kostenlose Testzeitraum ist beendet, das Monitoring wurde gestoppt. Ihre Filter bleiben noch ein paar Tage gespeichert — wenn Sie fortfahren möchten, beantragen Sie vollen Zugang, und alles läuft wieder, ohne dass Sie die Filter neu anlegen müssen.",
+
   "housing.btn.field_back": "⬅️ Zurück — Antwort korrigieren",
 
   "housing.btn.done": "✅ Fertig",

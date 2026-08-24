@@ -2815,12 +2815,17 @@ class HousingAccessExpiryTests(unittest.TestCase):
         expires_at = datetime.utcnow() + timedelta(days=2)
         context = SimpleNamespace(bot=mock.Mock())
 
+        def fake_expiring_soon(within_days, trial=None):
+            if trial is False:
+                return [{'user_id': 777, 'display_name': 'Іван', 'expires_at': expires_at}]
+            return []
+
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
              mock.patch.object(
-                 housing_monitor.housing_access_store, 'list_expiring_soon',
-                 return_value=[{'user_id': 777, 'display_name': 'Іван', 'expires_at': expires_at}],
+                 housing_monitor.housing_access_store, 'list_expiring_soon', side_effect=fake_expiring_soon,
              ), \
              mock.patch.object(housing_monitor.housing_access_store, 'list_expired', return_value=[]), \
+             mock.patch.object(housing_monitor.housing_access_store, 'list_trial_grace_expired', return_value=[]), \
              mock.patch.object(housing_monitor.housing_access_store, 'mark_notice_sent') as mark_sent:
             housing_monitor.check_access_expiry(context)
 
@@ -2837,12 +2842,15 @@ class HousingAccessExpiryTests(unittest.TestCase):
     def test_check_access_expiry_closes_access_once_the_date_has_passed(self):
         context = SimpleNamespace(bot=mock.Mock())
 
+        def fake_expired(trial=None):
+            if trial is False:
+                return [{'user_id': 888, 'display_name': 'Стара підписка', 'expires_at': datetime.utcnow()}]
+            return []
+
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
              mock.patch.object(housing_monitor.housing_access_store, 'list_expiring_soon', return_value=[]), \
-             mock.patch.object(
-                 housing_monitor.housing_access_store, 'list_expired',
-                 return_value=[{'user_id': 888, 'display_name': 'Стара підписка', 'expires_at': datetime.utcnow()}],
-             ), \
+             mock.patch.object(housing_monitor.housing_access_store, 'list_expired', side_effect=fake_expired), \
+             mock.patch.object(housing_monitor.housing_access_store, 'list_trial_grace_expired', return_value=[]), \
              mock.patch.object(housing_monitor.housing_access_store, 'revoke_access') as revoke, \
              mock.patch.object(housing_monitor, '_delete_all_filters_for_user', return_value=0):
             housing_monitor.check_access_expiry(context)
@@ -2854,6 +2862,201 @@ class HousingAccessExpiryTests(unittest.TestCase):
         ]
         self.assertEqual(len(goodbye_calls), 1)
         self.assertIn('Дякуємо', goodbye_calls[0].kwargs['text'])
+
+
+class HousingTrialTests(unittest.TestCase):
+    """Self-service 7-day trial: no admin approval, one shot per Telegram ID."""
+
+    def _update(self, user_id=777, data='housing:trial_start'):
+        query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_text=mock.Mock())
+        return SimpleNamespace(
+            callback_query=query,
+            effective_user=SimpleNamespace(id=user_id, first_name='Іван', last_name='', username='ivan'),
+        )
+
+    def test_locked_menu_offers_the_trial_when_not_used_yet(self):
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=False), \
+             mock.patch.object(housing_monitor.housing_access_store, 'has_used_trial', return_value=False):
+            labels = [
+                button.text
+                for row in housing_monitor._locked_keyboard('uk', 777).inline_keyboard
+                for button in row
+            ]
+
+        self.assertIn('🎁 7 днів безкоштовно', labels)
+
+    def test_locked_menu_hides_the_trial_once_already_used(self):
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=False), \
+             mock.patch.object(housing_monitor.housing_access_store, 'has_used_trial', return_value=True):
+            labels = [
+                button.text
+                for row in housing_monitor._locked_keyboard('uk', 777).inline_keyboard
+                for button in row
+            ]
+
+        self.assertNotIn('🎁 7 днів безкоштовно', labels)
+
+    def test_locked_menu_hides_the_trial_without_a_user_id(self):
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=False):
+            labels = [
+                button.text
+                for row in housing_monitor._locked_keyboard('uk').inline_keyboard
+                for button in row
+            ]
+
+        self.assertNotIn('🎁 7 днів безкоштовно', labels)
+
+    def test_start_trial_grants_access_without_admin_involvement(self):
+        context = SimpleNamespace(bot=mock.Mock())
+        update = self._update()
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'is_allowed', return_value=False), \
+             mock.patch.object(housing_monitor.housing_access_store, 'has_used_trial', return_value=False), \
+             mock.patch.object(housing_monitor.housing_access_store, 'grant_trial') as grant_trial:
+            housing_monitor.start_trial(update, context)
+
+        grant_trial.assert_called_once()
+        args = grant_trial.call_args.args
+        self.assertEqual(args[0], 777)
+        expires_at = grant_trial.call_args.kwargs['expires_at']
+        self.assertAlmostEqual(
+            expires_at, datetime.utcnow() + timedelta(days=housing_monitor.TRIAL_DAYS), delta=timedelta(minutes=1),
+        )
+        update.callback_query.answer.assert_called_once()
+        update.callback_query.edit_message_text.assert_called_once()
+        # An FYI ping to the admin, not a decision request - no approval buttons.
+        context.bot.send_message.assert_called_once()
+        self.assertEqual(context.bot.send_message.call_args.kwargs['chat_id'], 312029534)
+
+    def test_start_trial_refuses_a_second_time_for_the_same_id(self):
+        context = SimpleNamespace(bot=mock.Mock())
+        update = self._update()
+
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=False), \
+             mock.patch.object(housing_monitor.housing_access_store, 'has_used_trial', return_value=True), \
+             mock.patch.object(housing_monitor.housing_access_store, 'grant_trial') as grant_trial:
+            housing_monitor.start_trial(update, context)
+
+        grant_trial.assert_not_called()
+        update.callback_query.answer.assert_called_once()
+        self.assertTrue(update.callback_query.answer.call_args.kwargs.get('show_alert'))
+
+    def test_start_trial_is_a_no_op_when_access_is_already_open(self):
+        context = SimpleNamespace(bot=mock.Mock())
+        update = self._update()
+
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=True), \
+             mock.patch.object(housing_monitor.housing_access_store, 'grant_trial') as grant_trial:
+            housing_monitor.start_trial(update, context)
+
+        grant_trial.assert_not_called()
+
+    def test_request_access_reaches_the_admin_for_a_user_still_on_their_trial(self):
+        # The 1-day-left trial warning's button re-enters request_access
+        # while is_allowed is still True - unlike a real paid user, it must
+        # not be short-circuited by the "already open" branch.
+        context = SimpleNamespace(user_data={}, bot_data={}, bot=mock.Mock())
+        update = self._update(data='housing:access_request')
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'is_allowed', return_value=True), \
+             mock.patch.object(housing_monitor.housing_access_store, 'is_trial', return_value=True):
+            housing_monitor.handle_callback(update, context)
+
+        context.bot.send_message.assert_called_once()
+        self.assertEqual(context.bot.send_message.call_args.kwargs['chat_id'], 312029534)
+
+    def test_request_access_is_a_no_op_for_an_already_paid_user(self):
+        context = SimpleNamespace(user_data={}, bot_data={}, bot=mock.Mock())
+        update = self._update(data='housing:access_request')
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'is_allowed', return_value=True), \
+             mock.patch.object(housing_monitor.housing_access_store, 'is_trial', return_value=False):
+            housing_monitor.handle_callback(update, context)
+
+        context.bot.send_message.assert_not_called()
+
+    def test_check_access_expiry_warns_a_trial_one_day_before_it_ends(self):
+        expires_at = datetime.utcnow() + timedelta(hours=12)
+        context = SimpleNamespace(bot=mock.Mock())
+
+        def fake_expiring_soon(within_days, trial=None):
+            if trial is True:
+                return [{'user_id': 777, 'display_name': 'Іван', 'expires_at': expires_at}]
+            return []
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(
+                 housing_monitor.housing_access_store, 'list_expiring_soon', side_effect=fake_expiring_soon,
+             ), \
+             mock.patch.object(housing_monitor.housing_access_store, 'list_expired', return_value=[]), \
+             mock.patch.object(housing_monitor.housing_access_store, 'list_trial_grace_expired', return_value=[]), \
+             mock.patch.object(housing_monitor.housing_access_store, 'mark_notice_sent') as mark_sent:
+            housing_monitor.check_access_expiry(context)
+
+        calls = {call.kwargs['chat_id']: call for call in context.bot.send_message.call_args_list}
+        self.assertIn(777, calls)
+        callbacks = [b.callback_data for row in calls[777].kwargs['reply_markup'].inline_keyboard for b in row]
+        self.assertIn('housing:access_request', callbacks)
+        mark_sent.assert_called_once_with(777)
+
+    def test_check_access_expiry_pauses_monitoring_but_keeps_filters_when_a_trial_runs_out(self):
+        context = SimpleNamespace(bot=mock.Mock())
+
+        def fake_expired(trial=None):
+            if trial is True:
+                return [{'user_id': 777, 'display_name': 'Іван', 'expires_at': datetime.utcnow()}]
+            return []
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'list_expiring_soon', return_value=[]), \
+             mock.patch.object(housing_monitor.housing_access_store, 'list_expired', side_effect=fake_expired), \
+             mock.patch.object(housing_monitor.housing_access_store, 'list_trial_grace_expired', return_value=[]), \
+             mock.patch.object(housing_monitor.housing_access_store, 'set_trial_dormant') as set_dormant, \
+             mock.patch.object(housing_monitor, '_set_all_filters_active_for_user') as set_filters_active, \
+             mock.patch.object(housing_monitor, '_delete_all_filters_for_user') as delete_filters:
+            housing_monitor.check_access_expiry(context)
+
+        set_dormant.assert_called_once()
+        self.assertEqual(set_dormant.call_args.args[0], 777)
+        set_filters_active.assert_called_once_with(777, False)
+        delete_filters.assert_not_called()
+        stop_calls = [
+            call for call in context.bot.send_message.call_args_list
+            if call.kwargs.get('chat_id') == 777
+        ]
+        self.assertEqual(len(stop_calls), 1)
+
+    def test_check_access_expiry_deletes_filters_once_the_trial_grace_period_ends(self):
+        context = SimpleNamespace(bot=mock.Mock())
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'list_expiring_soon', return_value=[]), \
+             mock.patch.object(housing_monitor.housing_access_store, 'list_expired', return_value=[]), \
+             mock.patch.object(
+                 housing_monitor.housing_access_store, 'list_trial_grace_expired',
+                 return_value=[{'user_id': 777, 'display_name': 'Іван'}],
+             ), \
+             mock.patch.object(housing_monitor.housing_access_store, 'revoke_access') as revoke, \
+             mock.patch.object(housing_monitor, '_delete_all_filters_for_user', return_value=2):
+            housing_monitor.check_access_expiry(context)
+
+        revoke.assert_called_once_with(777)
+
+    def test_finalize_access_grant_reactivates_any_filters_paused_by_a_trial(self):
+        context = SimpleNamespace(
+            user_data={}, bot_data={'housing_access_names': {777: 'Іван (@ivan)'}}, bot=mock.Mock()
+        )
+        update = self._update(user_id=312029534, data='housing:access_months:777:1')
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.housing_access_store, 'grant_access'), \
+             mock.patch.object(housing_monitor, '_set_all_filters_active_for_user') as set_filters_active:
+            housing_monitor.handle_callback(update, context)
+
+        set_filters_active.assert_called_once_with(777, True)
 
 
 class HousingFirstFilterCongratsTests(unittest.TestCase):

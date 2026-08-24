@@ -156,8 +156,28 @@ class HousingAccessUser(Base):
     active = Column(BOOLEAN, nullable=False, default=True)
     expires_at = Column(DATETIME)
     expiry_notice_sent = Column(BOOLEAN, nullable=False, default=False)
+    # True while this grant is the free self-service trial rather than an
+    # admin-approved paid grant. Cleared (False) the moment an admin grants
+    # real months, so the row falls back into the ordinary paid-expiry path.
+    is_trial = Column(BOOLEAN, nullable=False, default=False)
+    # Set when a trial's 7 days run out: monitoring stops immediately, but
+    # the filters are kept until this timestamp so a same-day upgrade to
+    # full access doesn't force the person to rebuild every filter.
+    trial_grace_ends_at = Column(DATETIME)
     created_at = Column(DATETIME, nullable=False)
     updated_at = Column(DATETIME, nullable=False)
+
+
+class HousingTrialUsed(Base):
+    """Permanent record of Telegram IDs that already burned their one free
+    7-day trial. Kept separate from HousingAccessUser because that row gets
+    deleted once access closes (see `_close_access`) - this one must survive
+    that deletion so nobody can re-trigger the trial by asking again."""
+
+    __tablename__ = 'housing_trial_used'
+
+    user_id = Column(INTEGER, primary_key=True)
+    used_at = Column(DATETIME, nullable=False)
 
 
 class ImmoweltListing(Base):
@@ -667,6 +687,8 @@ def _ensure_column(table_name: str, column_name: str, column_type: str) -> None:
 _ensure_column('propotsdam_filter', 'min_total_rent_eur', 'FLOAT')
 _ensure_column('housing_access_user', 'expires_at', 'DATETIME')
 _ensure_column('housing_access_user', 'expiry_notice_sent', 'BOOLEAN')
+_ensure_column('housing_access_user', 'is_trial', 'BOOLEAN NOT NULL DEFAULT 0')
+_ensure_column('housing_access_user', 'trial_grace_ends_at', 'DATETIME')
 _ensure_column('user_settings', 'news_subscribed', 'BOOLEAN NOT NULL DEFAULT 1')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword

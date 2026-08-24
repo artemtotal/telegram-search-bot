@@ -66,6 +66,13 @@ BTN_CURRENT_MATCHES = "🔍 Квартири, що підходять"
 BTN_COOPS = "🏘 Кооперативи (Gewoba/WBG)"
 ACCESS_MONTH_OPTIONS = [1, 3, 6, 12]
 EXPIRY_WARNING_DAYS = 3
+# Self-service trial: no admin approval, one shot per Telegram ID (enforced
+# via housing_access_store.has_used_trial/grant_trial). Filters survive
+# TRIAL_GRACE_DAYS past the stop so a same-day upgrade to full access can
+# resume monitoring instead of forcing a rebuild from scratch.
+TRIAL_DAYS = 7
+TRIAL_GRACE_DAYS = 3
+TRIAL_WARNING_DAYS = 1
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 IMMOWELT_STALE_AFTER = timedelta(minutes=30)
 # propotsdam/semmelhaack/schoba/regiomakler/locals/karlmarx all scan every 15
@@ -1385,12 +1392,14 @@ def _render_menu(user_id: int, lang: str = "uk") -> str:
     return "\n".join(lines)
 
 
-def _locked_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request")],
-        [InlineKeyboardButton(i18n.t("housing.btn.faq", lang), callback_data="housing:faq")],
-        [InlineKeyboardButton(i18n.t("housing.btn.back_home", lang), callback_data="anon:home")],
-    ])
+def _locked_keyboard(lang: str = "uk", user_id: Optional[int] = None) -> InlineKeyboardMarkup:
+    rows = []
+    if user_id is not None and not housing_access_store.has_used_trial(user_id):
+        rows.append([InlineKeyboardButton(i18n.t("housing.btn.trial_start", lang), callback_data="housing:trial_start")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.faq", lang), callback_data="housing:faq")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.back_home", lang), callback_data="anon:home")])
+    return InlineKeyboardMarkup(rows)
 
 
 def show_menu(update: Update, context: CallbackContext, edit: bool = False) -> None:
@@ -1400,10 +1409,11 @@ def show_menu(update: Update, context: CallbackContext, edit: bool = False) -> N
         # не було чим про нього попросити.
         lang = i18n.get_lang(user.id) if user else "uk"
         text = i18n.t("housing.locked.text", lang)
+        keyboard = _locked_keyboard(lang, user.id if user else None)
         if edit and update.callback_query:
-            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_locked_keyboard(lang))
+            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
         else:
-            update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_locked_keyboard(lang))
+            update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
         return
     lang = i18n.get_lang(user.id)
     text = _render_menu(user.id, lang)
@@ -1605,13 +1615,20 @@ def _access_months_keyboard(target_id: int) -> InlineKeyboardMarkup:
 
 
 def request_access(update: Update, context: CallbackContext) -> None:
-    """Надсилає адміну запит на доступ до моніторингу житла."""
+    """Надсилає адміну запит на доступ до моніторингу житла.
+
+    Trial users are let through even though `is_allowed` is already True for
+    them - this is also how someone still on their 7-day trial asks to
+    upgrade to full paid access (e.g. from the 1-day-left trial warning),
+    and unlike a real paid user they don't already have a standing grant to
+    fall back to.
+    """
     query = update.callback_query
     user = update.effective_user
     if not query or not user:
         return
     lang = i18n.get_lang(user.id)
-    if is_allowed(user.id):
+    if is_allowed(user.id) and not housing_access_store.is_trial(user.id):
         query.answer(i18n.t("housing.access.already_open", lang))
         show_menu(update, context, edit=True)
         return
@@ -1651,6 +1668,43 @@ def request_access(update: Update, context: CallbackContext) -> None:
     context.bot_data.setdefault("housing_access_names", {})[int(user.id)] = name
     query.answer(i18n.t("housing.access.request_sent_toast", lang))
     query.edit_message_text(i18n.t("housing.access.request_sent_text", lang))
+
+
+def start_trial(update: Update, context: CallbackContext) -> None:
+    """Self-service 7-day trial - no admin approval, one shot per Telegram
+    ID (see housing_access_store.has_used_trial/grant_trial)."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user:
+        return
+    lang = i18n.get_lang(user.id)
+    if is_allowed(user.id):
+        query.answer(i18n.t("housing.access.already_open", lang))
+        show_menu(update, context, edit=True)
+        return
+    if housing_access_store.has_used_trial(user.id):
+        query.answer(i18n.t("housing.trial.already_used", lang), show_alert=True)
+        return
+    name = _display_name(user)
+    expires_at = datetime.utcnow() + timedelta(days=TRIAL_DAYS)
+    housing_access_store.grant_trial(user.id, name, expires_at=expires_at)
+    query.answer(i18n.t("housing.trial.granted_toast", lang))
+    query.edit_message_text(
+        i18n.t("housing.trial.granted_text", lang, days=TRIAL_DAYS, btn=i18n.t("housing.btn.home_monitor", lang))
+    )
+    if ADMIN_ID:
+        try:
+            context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(
+                    f"🎁 Користувач {html.escape(name)} самостійно активував "
+                    f"{TRIAL_DAYS}-денний тріал моніторингу житла.\n"
+                    f"Telegram ID: <code>{int(user.id)}</code>"
+                ),
+                parse_mode="HTML",
+            )
+        except Exception:
+            logger.exception("Could not notify admin about a self-served trial activation for user %s", user.id)
 
 
 def _notify_user_access_granted(bot, user_id: int, expires_at: Optional[datetime] = None) -> None:
@@ -1756,6 +1810,12 @@ def _finalize_access_grant(update: Update, context: CallbackContext) -> None:
     name = str(context.bot_data.get("housing_access_names", {}).pop(target_id, ""))
     expires_at = _add_months(datetime.utcnow(), months)
     housing_access_store.grant_access(target_id, name, expires_at=expires_at)
+    # Reactivates any filters a trial left paused in its grace period (see
+    # _pause_trial) so upgrading to full access resumes monitoring instead
+    # of leaving the person to rebuild every filter from scratch. A no-op
+    # for a brand-new grant or a normal renewal, since those filters are
+    # already active.
+    _set_all_filters_active_for_user(target_id, True)
     expires_str = expires_at.strftime("%d.%m.%Y")
     query.answer("✅ Доступ надано")
     query.edit_message_text(
@@ -1786,8 +1846,9 @@ def _render_access_users() -> str:
         lines.append("Окремо доданих користувачів поки немає.")
     for item in users:
         mark = "✅" if item.get("active") else "⏸"
+        trial_mark = " 🎁" if item.get("is_trial") else ""
         name = html.escape(str(item.get("display_name") or "без назви"))
-        lines.append(f"{mark} {int(item['user_id'])} · {name}")
+        lines.append(f"{mark} {int(item['user_id'])} · {name}{trial_mark}")
     return "\n".join(lines)
 
 
@@ -1878,6 +1939,71 @@ def _delete_all_filters_for_user(user_id: int) -> int:
             if store.delete_filter(int(filt["filter_id"]), user_id=user_id):
                 removed += 1
     return removed
+
+
+def _set_all_filters_active_for_user(user_id: int, active: bool) -> int:
+    """Toggles every filter a person owns across all sources without
+    deleting anything - unlike `_delete_all_filters_for_user`, this is
+    reversible. Used to pause a trial's monitoring at day 7 while keeping
+    the filters intact through the grace period (see `_pause_trial`), and
+    to resume them if the trial converts to full access before that grace
+    period runs out (see `_finalize_access_grant`).
+    """
+    changed = 0
+    for item in _all_immowelt_filters():
+        if int(item.get("user_id") or 0) != int(user_id):
+            continue
+        filter_id = _filter_id(item)
+        if filter_id is None:
+            continue
+        try:
+            _request("PATCH", f"/api/housing/filters/{filter_id}/active", json={"active": active})
+            changed += 1
+        except Exception:
+            logger.exception("Could not toggle Immowelt filter %s while pausing/resuming a trial", filter_id)
+
+    propot_filters = propotsdam_store.list_filters(user_id=user_id)
+    for filt in propot_filters:
+        if propotsdam_store.set_filter_active(int(filt["filter_id"]), active, user_id=user_id):
+            changed += 1
+    if propot_filters:
+        _sync_propot_filters()
+
+    for store in (semmelhaack_store, schoba_store, regiomakler_store, kleinanzeigen_store, locals_store, karlmarx_store):
+        for filt in store.list_filters(user_id=user_id):
+            if store.set_filter_active(int(filt["filter_id"]), active, user_id=user_id):
+                changed += 1
+    return changed
+
+
+def _pause_trial(bot, user_id: int) -> None:
+    """Trial's TRIAL_DAYS are up: stops monitoring right away but keeps the
+    filters for TRIAL_GRACE_DAYS more (see `set_trial_dormant`), and tells
+    the person the only thing left is to request full access - same as
+    `_locked_keyboard` shows once `has_used_trial` is True."""
+    lang = i18n.get_lang(user_id)
+    grace_ends_at = datetime.utcnow() + timedelta(days=TRIAL_GRACE_DAYS)
+    housing_access_store.set_trial_dormant(user_id, grace_ends_at)
+    _set_all_filters_active_for_user(user_id, False)
+    try:
+        bot.send_message(
+            chat_id=user_id,
+            text=i18n.t("housing.trial.stopped", lang),
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request"),
+            ]]),
+        )
+    except Exception:
+        logger.exception("Could not notify user %s that their trial monitoring stopped", user_id)
+    if ADMIN_ID:
+        try:
+            bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"⏸ Тріал користувача {user_id} закінчився, моніторинг зупинено "
+                     f"(фільтри збережено ще {TRIAL_GRACE_DAYS} дні).",
+            )
+        except Exception:
+            logger.exception("Could not notify admin about trial pause for user %s", user_id)
 
 
 def confirm_access_delete(update: Update, context: CallbackContext, target_id: int) -> None:
@@ -1987,10 +2113,17 @@ def _handle_access_stop(update: Update, context: CallbackContext) -> None:
 
 
 def check_access_expiry(context) -> None:
-    """Daily job: warns 3 days before expiry, then auto-closes access once
-    the date actually passes (whether or not anyone answered the warning)."""
+    """Daily job. Four passes, paid and trial handled separately because
+    they close on different schedules:
+    - paid: warns EXPIRY_WARNING_DAYS before expiry, then auto-closes
+      (deletes filters right away) once the date passes.
+    - trial: warns TRIAL_WARNING_DAYS before expiry to nudge a request for
+      full access, then on expiry stops monitoring but keeps the filters
+      for TRIAL_GRACE_DAYS (`_pause_trial`), and finally deletes them once
+      that grace period itself runs out.
+    """
     bot = context.bot
-    for row in housing_access_store.list_expiring_soon(within_days=EXPIRY_WARNING_DAYS):
+    for row in housing_access_store.list_expiring_soon(within_days=EXPIRY_WARNING_DAYS, trial=False):
         target_id = int(row["user_id"])
         name = str(row.get("display_name") or "")
         expires_at = row.get("expires_at")
@@ -2021,7 +2154,28 @@ def check_access_expiry(context) -> None:
                 logger.exception("Could not notify admin about expiring access for user %s", target_id)
         housing_access_store.mark_notice_sent(target_id)
 
-    for row in housing_access_store.list_expired():
+    for row in housing_access_store.list_expiring_soon(within_days=TRIAL_WARNING_DAYS, trial=True):
+        target_id = int(row["user_id"])
+        trial_lang = i18n.get_lang(target_id)
+        try:
+            bot.send_message(
+                chat_id=target_id,
+                text=i18n.t("housing.trial.warning", trial_lang, days=TRIAL_WARNING_DAYS),
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton(i18n.t("housing.btn.request_access", trial_lang), callback_data="housing:access_request"),
+                ]]),
+            )
+        except Exception:
+            logger.exception("Could not send the trial expiry warning to user %s", target_id)
+        housing_access_store.mark_notice_sent(target_id)
+
+    for row in housing_access_store.list_expired(trial=False):
+        _close_access(bot, int(row["user_id"]))
+
+    for row in housing_access_store.list_expired(trial=True):
+        _pause_trial(bot, int(row["user_id"]))
+
+    for row in housing_access_store.list_trial_grace_expired():
         _close_access(bot, int(row["user_id"]))
 
 
@@ -4325,6 +4479,8 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         send_stats_dashboard(update, context, query.data.split(":", 2)[2])
     elif query.data == "housing:access_request":
         request_access(update, context)
+    elif query.data == "housing:trial_start":
+        start_trial(update, context)
     elif query.data.startswith("housing:access_grant:"):
         _resolve_access_request(update, context, grant=True)
     elif query.data.startswith("housing:access_deny:"):
