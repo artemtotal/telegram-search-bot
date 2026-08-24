@@ -2911,9 +2911,10 @@ class HousingTrialTests(unittest.TestCase):
         update = self._update()
 
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
-             mock.patch.object(housing_monitor, 'is_allowed', return_value=False), \
+             mock.patch.object(housing_monitor, 'is_allowed', side_effect=[False, True]), \
              mock.patch.object(housing_monitor.housing_access_store, 'has_used_trial', return_value=False), \
-             mock.patch.object(housing_monitor.housing_access_store, 'grant_trial') as grant_trial:
+             mock.patch.object(housing_monitor.housing_access_store, 'grant_trial') as grant_trial, \
+             mock.patch.object(housing_monitor, 'user_filters', return_value=[]):
             housing_monitor.start_trial(update, context)
 
         grant_trial.assert_called_once()
@@ -2925,6 +2926,13 @@ class HousingTrialTests(unittest.TestCase):
         )
         update.callback_query.answer.assert_called_once()
         update.callback_query.edit_message_text.assert_called_once()
+        # Drops straight into the real menu (with the "add filter" button),
+        # not just a static confirmation text nobody can act on.
+        edit_kwargs = update.callback_query.edit_message_text.call_args.kwargs
+        menu_callbacks = [
+            b.callback_data for row in edit_kwargs['reply_markup'].inline_keyboard for b in row
+        ]
+        self.assertIn('housing:self_add', menu_callbacks)
         # An FYI ping to the admin, not a decision request - no approval buttons.
         context.bot.send_message.assert_called_once()
         self.assertEqual(context.bot.send_message.call_args.kwargs['chat_id'], 312029534)

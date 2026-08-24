@@ -1689,9 +1689,12 @@ def start_trial(update: Update, context: CallbackContext) -> None:
     expires_at = datetime.utcnow() + timedelta(days=TRIAL_DAYS)
     housing_access_store.grant_trial(user.id, name, expires_at=expires_at)
     query.answer(i18n.t("housing.trial.granted_toast", lang))
-    query.edit_message_text(
-        i18n.t("housing.trial.granted_text", lang, days=TRIAL_DAYS, btn=i18n.t("housing.btn.home_monitor", lang))
-    )
+    # Drops straight into the actual filter-adding menu instead of just
+    # telling the person to go tap a button themselves - the earlier
+    # version left them staring at a static confirmation text with nothing
+    # to act on.
+    text = i18n.t("housing.trial.granted_text", lang, days=TRIAL_DAYS) + "\n\n" + _render_menu(user.id, lang)
+    query.edit_message_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(user.id, lang))
     if ADMIN_ID:
         try:
             context.bot.send_message(
