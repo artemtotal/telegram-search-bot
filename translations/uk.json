@@ -303,6 +303,9 @@
   "equeue.status.none": "⚪ Остання браузерна перевірка {checked}: вільні терміни не підтверджені.",
   "equeue.status.blocked": "⚠️ Остання браузерна перевірка {checked}: сторінка показала Cloudflare/JavaScript-перевірку.",
   "equeue.status.other": "ℹ️ Остання браузерна перевірка {checked}: статус {status}.",
+  "equeue.sightings.title": "📌 Востаннє вільні терміни бачили:",
+  "equeue.sightings.ago": "Відтоді минуло годин: {hours}.",
+  "equeue.sightings.none": "📌 Вільних термінів ще жодного разу не бачили за весь час спостережень.",
 
   "equeue.subscription.on": "увімкнена",
   "equeue.subscription.off": "вимкнена",

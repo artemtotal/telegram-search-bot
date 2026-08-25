@@ -150,6 +150,28 @@ class EqueueStatus(Base):
     # від last_checked_at, який оновлюється щоразу незалежно від статусу і
     # тому не годиться як мітка кулдауна (див. _notify_admin_error).
     last_admin_alert_at = Column(DATETIME)
+    # Кулдаун окремого попередження "давно не бачили вільних термінів"
+    # (див. _notify_admin_stale). Тримається окремо від last_admin_alert_at,
+    # бо це різні за суттю тривоги: та про зламану перевірку, ця про підозріло
+    # довгу тишу за цілком справної перевірки.
+    last_stale_alert_at = Column(DATETIME)
+
+
+class EqueueAvailableSighting(Base):
+    """Історія моментів, коли перевірка справді побачила вільні терміни.
+
+    `EqueueStatus` зберігає лише останній результат, тож по ньому не видно
+    ні коли терміни траплялися востаннє, ні як давно їх не було. Кожна
+    знахідка лягає сюди окремим рядком - меню показує кілька останніх, а
+    `check_equeue_stale` по них розуміє, чи не занадто довго тиша.
+    """
+
+    __tablename__ = 'equeue_available_sighting'
+
+    id = Column(INTEGER, primary_key=True)
+    service = Column(TEXT, nullable=False, index=True)
+    found_at = Column(DATETIME, nullable=False, index=True)
+    reason = Column(TEXT)
 
 
 class HousingAccessUser(Base):
@@ -694,6 +716,7 @@ _ensure_column('housing_access_user', 'expiry_notice_sent', 'BOOLEAN')
 _ensure_column('housing_access_user', 'is_trial', 'BOOLEAN NOT NULL DEFAULT 0')
 _ensure_column('housing_access_user', 'trial_grace_ends_at', 'DATETIME')
 _ensure_column('equeue_status', 'last_admin_alert_at', 'DATETIME')
+_ensure_column('equeue_status', 'last_stale_alert_at', 'DATETIME')
 _ensure_column('user_settings', 'news_subscribed', 'BOOLEAN NOT NULL DEFAULT 1')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword

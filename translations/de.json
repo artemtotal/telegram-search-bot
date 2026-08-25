@@ -303,6 +303,9 @@
   "equeue.status.none": "⚪ Letzte Browser-Prüfung {checked}: keine freien Termine bestätigt.",
   "equeue.status.blocked": "⚠️ Letzte Browser-Prüfung {checked}: die Seite zeigte eine Cloudflare-/JavaScript-Prüfung.",
   "equeue.status.other": "ℹ️ Letzte Browser-Prüfung {checked}: Status {status}.",
+  "equeue.sightings.title": "📌 Zuletzt wurden freie Termine gesehen:",
+  "equeue.sightings.ago": "Seitdem vergangene Stunden: {hours}.",
+  "equeue.sightings.none": "📌 Freie Termine wurden im gesamten Beobachtungszeitraum noch nie gesehen.",
 
   "equeue.subscription.on": "aktiviert",
   "equeue.subscription.off": "deaktiviert",

@@ -14,7 +14,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
 
 import i18n
-from database import DBSession, EqueueStatus, EqueueSubscription
+from database import DBSession, EqueueAvailableSighting, EqueueStatus, EqueueSubscription
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,13 @@ SERVICE_URL = os.getenv(
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 CHECK_TIMEOUT = int(os.getenv("PASSPORT_EQUEUE_TIMEOUT", "45") or 45)
 ADMIN_ERROR_COOLDOWN = timedelta(hours=6)
+# Скільки останніх знахідок вільних термінів показувати в меню.
+SIGHTINGS_SHOWN = 3
+# Якщо вільних термінів не бачили довше за цей строк, попереджаємо адміна:
+# сама перевірка при цьому може бути цілком справною (сайт чесно каже "місць
+# немає"), тож це підказка "варто глянути", а не доказ поломки.
+STALE_AFTER = timedelta(hours=int(os.getenv("PASSPORT_EQUEUE_STALE_HOURS", "24") or 24))
+STALE_ALERT_COOLDOWN = timedelta(hours=12)
 BROWSER_ONLY = os.getenv("PASSPORT_EQUEUE_BROWSER_ONLY", "1") == "1"
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
@@ -130,6 +137,49 @@ def _latest_status_text(user_id: int, lang: str = "uk") -> str:
         session.close()
 
 
+def _record_available_sighting(reason: str = "") -> None:
+    session = DBSession()
+    try:
+        session.add(EqueueAvailableSighting(
+            service=SERVICE_KEY, found_at=utc_now(), reason=str(reason or "")[:500],
+        ))
+        session.commit()
+    finally:
+        session.close()
+
+
+def recent_sightings(limit: int = SIGHTINGS_SHOWN) -> list:
+    session = DBSession()
+    try:
+        rows = (
+            session.query(EqueueAvailableSighting)
+            .filter(EqueueAvailableSighting.service == SERVICE_KEY)
+            .order_by(EqueueAvailableSighting.found_at.desc())
+            .limit(int(limit))
+            .all()
+        )
+        return [row.found_at for row in rows]
+    finally:
+        session.close()
+
+
+def _sightings_text(lang: str = "uk") -> str:
+    """Кілька останніх моментів, коли терміни справді бачили.
+
+    Сам по собі рядок "вільні терміни не підтверджені" не відрізняє "місць
+    зараз немає" від "перевірка мовчки зламалась тиждень тому" - за списком
+    останніх знахідок це видно одразу.
+    """
+    found = recent_sightings()
+    if not found:
+        return i18n.t("equeue.sightings.none", lang)
+    lines = [i18n.t("equeue.sightings.title", lang)]
+    lines.extend(f"• {_format_berlin_time(value)}" for value in found)
+    ago_hours = int((utc_now() - found[0]).total_seconds() // 3600)
+    lines.append(i18n.t("equeue.sightings.ago", lang, hours=ago_hours))
+    return "\n".join(lines)
+
+
 def _upsert_subscription(user) -> None:
     session = DBSession()
     try:
@@ -175,6 +225,8 @@ def _render_menu(active: bool, user_id: Optional[int] = None, prefix: str = "", 
     body = i18n.t("equeue.menu.text", lang, title=html.escape(SERVICE_TITLE), status=status)
     if latest:
         body += f"\n\n{latest}"
+    if user_id:
+        body += f"\n\n{_sightings_text(lang)}"
     return (prefix + "\n\n" + body) if prefix else body
 
 
@@ -392,6 +444,55 @@ def _notify_admin_error(bot, result: Dict[str, object]) -> None:
         session.close()
 
 
+def _notify_admin_stale(bot) -> None:
+    """Попереджає, коли вільних термінів не бачили довше за STALE_AFTER.
+
+    Викликається лише після успішної перевірки (сайт відповів), тож це саме
+    "перевірка працює, але тиша підозріло довга", а не дубль до
+    `_notify_admin_error`. Тиша може бути й правдою - місць справді нема, -
+    тому текст пропонує перевірити, а не стверджує поломку.
+    """
+    if not ADMIN_ID:
+        return
+    now = utc_now()
+    found = recent_sightings(limit=1)
+    quiet_since = found[0] if found else None
+    if quiet_since is not None and now - quiet_since < STALE_AFTER:
+        return
+    session = DBSession()
+    try:
+        row = session.query(EqueueStatus).filter(EqueueStatus.service == SERVICE_KEY).first()
+        if row is None:
+            row = EqueueStatus(service=SERVICE_KEY)
+            session.add(row)
+        if row.last_stale_alert_at is not None and row.last_stale_alert_at > now - STALE_ALERT_COOLDOWN:
+            return
+        if quiet_since is None:
+            since = "жодного разу за весь час спостережень"
+        else:
+            hours = int((now - quiet_since).total_seconds() // 3600)
+            since = f"востаннє {_format_berlin_time(quiet_since)} ({hours} год тому)"
+        try:
+            bot.send_message(
+                ADMIN_ID,
+                "🟡 <b>ДП Документ: давно не було вільних термінів</b>\n\n"
+                f"Перевірка проходить успішно, але вільних місць не бачили {html.escape(since)}.\n\n"
+                "Можливо, місць справді немає — але так само виглядає й перевірка, "
+                "що мовчки почала читати не ту сторінку. Варто відкрити сайт руками "
+                "й звірити з тим, що показує бот.\n\n"
+                f"Сайт: {SERVICE_URL}",
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            logger.exception("Could not notify admin about a stale e-queue")
+            return
+        row.last_stale_alert_at = now
+        session.commit()
+    finally:
+        session.close()
+
+
 def _notify_available(bot, subscribers, result: Dict[str, object]) -> None:
     for user_id, last_status, _last_notified_at in subscribers:
         if last_status == "available":
@@ -437,6 +538,13 @@ def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
         _notify_admin_error(bot, result)
         _update_status_for_active(status, notified=False)
         return {"ok": True, "subscribers": len(subscribers), "status": status}
+    # Знахідка - факт про сайт, а не про підписки: пишеться навіть коли
+    # підписників нема, інакше історія в меню мала б дірки саме за ті періоди,
+    # коли ніхто не був підписаний.
+    if result["available"]:
+        _record_available_sighting(str(result["reason"]))
+    else:
+        _notify_admin_stale(bot)
     if not subscribers:
         _update_status_for_active(status, notified=False)
         return {"ok": True, "subscribers": 0, "status": status}

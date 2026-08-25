@@ -303,6 +303,9 @@
   "equeue.status.none": "⚪ Последняя проверка через браузер {checked}: свободные места не подтверждены.",
   "equeue.status.blocked": "⚠️ Последняя проверка через браузер {checked}: страница показала проверку Cloudflare/JavaScript.",
   "equeue.status.other": "ℹ️ Последняя проверка через браузер {checked}: статус {status}.",
+  "equeue.sightings.title": "📌 В последний раз свободные места видели:",
+  "equeue.sightings.ago": "С тех пор прошло часов: {hours}.",
+  "equeue.sightings.none": "📌 Свободные места ещё ни разу не видели за всё время наблюдений.",
 
   "equeue.subscription.on": "включена",
   "equeue.subscription.off": "выключена",
