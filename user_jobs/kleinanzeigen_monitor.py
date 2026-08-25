@@ -25,6 +25,7 @@ Also filters out two kinds of noise the raw search page includes:
 import html
 import logging
 import os
+import time
 from datetime import timedelta
 from typing import Dict, List
 
@@ -40,14 +41,42 @@ CHECK_INTERVAL_SECONDS = 20 * 60
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 ERROR_ALERT_COOLDOWN = timedelta(hours=2)
 _USER_AGENT = "Mozilla/5.0 (compatible; PotsdamHousingBot/1.0)"
+# Пошук по Потсдаму ніколи не буває порожнім — сторінка стабільно віддає 25-26
+# карток. Одиничний нуль (реально спостережений 2026-08-25 12:45 серед сусідніх
+# перевірок із 25-26) означає не зміну розмітки, а миттєвий збій на боці сайту,
+# і повторний запит одразу повертає нормальну сторінку.
+_FETCH_ATTEMPTS = 3
+_RETRY_BACKOFF_SECONDS = (2, 5)
 
 
 def _fetch_listings() -> List[Dict]:
-    response = requests.get(
-        kleinanzeigen_parser.LISTINGS_URL, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT},
-    )
-    response.raise_for_status()
-    return kleinanzeigen_parser.parse_listings(response.text)
+    last_error = None
+    for attempt in range(_FETCH_ATTEMPTS):
+        try:
+            response = requests.get(
+                kleinanzeigen_parser.LISTINGS_URL, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT},
+            )
+            response.raise_for_status()
+            listings = kleinanzeigen_parser.parse_listings(response.text)
+            if listings:
+                return listings
+            last_error = None
+            logger.info(
+                "Kleinanzeigen returned 0 listings on attempt %s/%s; retrying",
+                attempt + 1, _FETCH_ATTEMPTS,
+            )
+        except requests.RequestException as exc:
+            last_error = exc
+            logger.info(
+                "Kleinanzeigen fetch attempt %s/%s failed: %s", attempt + 1, _FETCH_ATTEMPTS, exc,
+            )
+        if attempt + 1 < _FETCH_ATTEMPTS:
+            time.sleep(_RETRY_BACKOFF_SECONDS[attempt])
+    if last_error is not None:
+        raise last_error
+    # Порожньо і після всіх спроб — тоді це вже схоже на справжню зміну
+    # розмітки, і про це має дізнатись адмін (_notify_admin_parse_broke).
+    return []
 
 
 # Some swap-listing posters (e.g. the commercial account "Wohnungsswap.de")
@@ -62,17 +91,38 @@ def _is_relevant(listing: Dict) -> bool:
     return city == "potsdam" and not any(keyword in title for keyword in _SWAP_KEYWORDS)
 
 
-def _notify_admin_parse_broke(bot) -> None:
-    if not ADMIN_ID:
-        return
+def _should_alert_parse_broke(previous_status: Dict) -> bool:
+    """Кулдаун для повідомлення про порожній розбір.
+
+    На відміну від `_notify_admin_fetch_failed`, це повідомлення не мало
+    жодного кулдауна: поки сторінка порожня, воно йшло щоперевірки, тобто
+    кожні 20 хвилин. Попередній нульовий розбір записується як статус "ok"
+    із listings_count=0, тож саме за цією парою й звіряємось.
+    """
+    if not previous_status:
+        return True
+    if previous_status.get("listings_count"):
+        return True
+    last_checked = previous_status.get("last_checked_at")
+    if last_checked is None:
+        return True
+    return kleinanzeigen_store.utc_now() - last_checked >= ERROR_ALERT_COOLDOWN
+
+
+def _notify_admin_parse_broke(bot, previous_status: Dict = None) -> bool:
+    if not ADMIN_ID or not _should_alert_parse_broke(previous_status or {}):
+        return False
     text = (
         "⚠️ <b>Kleinanzeigen: розбір сторінки повернув 0 оголошень</b>\n\n"
-        "Схоже, змінилась розмітка сторінки пошуку — варто перевірити вручну."
+        f"Порожньо навіть після {_FETCH_ATTEMPTS} спроб поспіль — схоже, "
+        "змінилась розмітка сторінки пошуку, варто перевірити вручну."
     )
     try:
         bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode="HTML", disable_web_page_preview=True)
+        return True
     except Exception:
         logger.exception("Could not notify admin about a broken Kleinanzeigen parse")
+        return False
 
 
 def _should_alert_fetch_error(previous_status: Dict) -> bool:
@@ -120,7 +170,7 @@ def check_job(context) -> Dict[str, int]:
         logger.warning("Kleinanzeigen scan failed; admin_alerted=%s: %s", alerted, exc)
         return {"ok": 0, "enabled": 1, "sent": 0, "admin_alerted": int(alerted)}
     if not all_listings:
-        _notify_admin_parse_broke(bot)
+        _notify_admin_parse_broke(bot, kleinanzeigen_store.latest_status())
     relevant = [item for item in all_listings if _is_relevant(item)]
     stored = kleinanzeigen_store.upsert_listings(relevant)
     kleinanzeigen_store.record_status("ok", listings_count=stored)

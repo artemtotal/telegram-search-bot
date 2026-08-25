@@ -152,5 +152,108 @@ class KleinanzeigenMonitorCheckJobTests(unittest.TestCase):
         self.assertEqual(result['sent'], 1)
 
 
+class KleinanzeigenEmptyPageTests(unittest.TestCase):
+    """The Potsdam search page never legitimately returns nothing - it steadily
+    serves 25-26 cards. A lone zero (observed 2026-08-25 12:45 between
+    neighbouring 25-26 scans) is a momentary hiccup on their side, not a markup
+    change, and a retry immediately gets a normal page."""
+
+    def test_a_one_off_empty_page_is_retried_and_recovers(self):
+        with mock.patch('requests.get', return_value=FakeResponse('irrelevant')) as get, \
+             mock.patch('user_jobs.kleinanzeigen_monitor.time.sleep') as sleep, \
+             mock.patch(
+                 'user_jobs.kleinanzeigen_monitor.kleinanzeigen_parser.parse_listings',
+                 side_effect=[[], [_listing('1')]],
+             ):
+            listings = kleinanzeigen_monitor._fetch_listings()
+
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(get.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_a_genuinely_empty_page_still_reports_empty_after_every_attempt(self):
+        with mock.patch('requests.get', return_value=FakeResponse('irrelevant')) as get, \
+             mock.patch('user_jobs.kleinanzeigen_monitor.time.sleep'), \
+             mock.patch(
+                 'user_jobs.kleinanzeigen_monitor.kleinanzeigen_parser.parse_listings',
+                 return_value=[],
+             ):
+            listings = kleinanzeigen_monitor._fetch_listings()
+
+        self.assertEqual(listings, [])
+        self.assertEqual(get.call_count, kleinanzeigen_monitor._FETCH_ATTEMPTS)
+
+    def test_a_normal_page_is_fetched_once_without_retrying(self):
+        with mock.patch('requests.get', return_value=FakeResponse('irrelevant')) as get, \
+             mock.patch('user_jobs.kleinanzeigen_monitor.time.sleep') as sleep, \
+             mock.patch(
+                 'user_jobs.kleinanzeigen_monitor.kleinanzeigen_parser.parse_listings',
+                 return_value=[_listing('1')],
+             ):
+            kleinanzeigen_monitor._fetch_listings()
+
+        self.assertEqual(get.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_a_transient_network_error_is_retried_too(self):
+        error = requests.exceptions.SSLError('flaky')
+
+        with mock.patch(
+            'requests.get', side_effect=[error, FakeResponse('irrelevant')],
+        ) as get, \
+             mock.patch('user_jobs.kleinanzeigen_monitor.time.sleep'), \
+             mock.patch(
+                 'user_jobs.kleinanzeigen_monitor.kleinanzeigen_parser.parse_listings',
+                 return_value=[_listing('1')],
+             ):
+            listings = kleinanzeigen_monitor._fetch_listings()
+
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(get.call_count, 2)
+
+
+class KleinanzeigenParseAlertCooldownTests(unittest.TestCase):
+    """The empty-parse alert had no cooldown at all, unlike the fetch-error
+    one - while the page stayed empty it fired on every 20-minute scan."""
+
+    def test_the_first_empty_parse_alerts_immediately(self):
+        bot = FakeBot()
+
+        with mock.patch.object(kleinanzeigen_monitor, 'ADMIN_ID', 312029534):
+            alerted = kleinanzeigen_monitor._notify_admin_parse_broke(bot, {})
+
+        self.assertTrue(alerted)
+        self.assertEqual(len(bot.sent), 1)
+
+    def test_a_repeated_empty_parse_within_the_cooldown_stays_quiet(self):
+        bot = FakeBot()
+        previous = {
+            'last_status': 'ok',
+            'listings_count': 0,
+            'last_checked_at': kleinanzeigen_monitor.kleinanzeigen_store.utc_now(),
+        }
+
+        with mock.patch.object(kleinanzeigen_monitor, 'ADMIN_ID', 312029534):
+            alerted = kleinanzeigen_monitor._notify_admin_parse_broke(bot, previous)
+
+        self.assertFalse(alerted)
+        self.assertEqual(bot.sent, [])
+
+    def test_an_empty_parse_after_a_healthy_scan_alerts_again(self):
+        # A scan that saw listings resets the situation: the next zero is
+        # genuinely new information, not a repeat of an ongoing outage.
+        bot = FakeBot()
+        previous = {
+            'last_status': 'ok',
+            'listings_count': 25,
+            'last_checked_at': kleinanzeigen_monitor.kleinanzeigen_store.utc_now(),
+        }
+
+        with mock.patch.object(kleinanzeigen_monitor, 'ADMIN_ID', 312029534):
+            alerted = kleinanzeigen_monitor._notify_admin_parse_broke(bot, previous)
+
+        self.assertTrue(alerted)
+
+
 if __name__ == '__main__':
     unittest.main()
