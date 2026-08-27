@@ -3,9 +3,10 @@
 import html
 import logging
 import os
+import time
 from datetime import timedelta
 from threading import Lock
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import requests
 
@@ -23,6 +24,10 @@ PROPOTSDAM_PORTAL_URL = os.getenv(
 )
 PROPOTSDAM_CHECK_ENABLED = os.getenv("PROPOTSDAM_CHECK_ENABLED", "0") == "1"
 PROPOTSDAM_TIMEOUT = int(os.getenv("PROPOTSDAM_TIMEOUT", "60") or 60)
+# How long a tick waits for a scan it just started before leaving the result to
+# the next tick. Only bounds the wait — it is never reported as a failure.
+PROPOTSDAM_SCAN_WAIT_SECONDS = int(os.getenv("PROPOTSDAM_SCAN_WAIT_SECONDS", "100") or 100)
+PROPOTSDAM_POLL_SECONDS = int(os.getenv("PROPOTSDAM_POLL_SECONDS", "5") or 5)
 CHECK_INTERVAL_SECONDS = 15 * 60
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 ERROR_ALERT_COOLDOWN = timedelta(hours=6)
@@ -43,18 +48,62 @@ RELOGIN_HINT = (
     "4) После входа следующая проверка снова соберёт квартиры автоматически."
 )
 _scan_lock = Lock()
+# `finished_at` of the newest collector result already stored. Kept in memory on
+# purpose: after a restart the newest result is simply consumed once more, and
+# `upsert_listings` plus the delivery keys make that a no-op instead of a resend.
+_last_consumed_finished_at: Optional[str] = None
+
+
+class ScanPending(Exception):
+    """The collector is still scanning; a later tick will pick the result up."""
+
+
+def _fetch_last_result() -> Dict:
+    response = requests.get(
+        f"{PROPOTSDAM_RECEIVER_URL}/api/propotsdam/listings",
+        timeout=PROPOTSDAM_TIMEOUT,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("collector returned a non-object payload")
+    return payload
 
 
 def _request_scan() -> List[Dict]:
-    response = requests.post(f"{PROPOTSDAM_RECEIVER_URL}/api/propotsdam/scan", timeout=PROPOTSDAM_TIMEOUT)
-    response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, dict) or not payload.get("ok"):
-        raise RuntimeError(str(payload.get("error") if isinstance(payload, dict) else payload))
-    listings = payload.get("listings") or []
-    if not isinstance(listings, list):
-        raise RuntimeError("collector returned non-list listings")
-    return listings
+    """Start a scan and return the newest completed result.
+
+    The collector runs a real browser, so a scan can outlast any HTTP timeout the
+    bot is willing to hold a worker thread for. It therefore runs in the
+    background: this starts one, waits a short while, and if it is not done yet
+    raises `ScanPending` so the next tick consumes it. Previously the request
+    blocked for the whole scan, and one slow run produced a bogus "collector is
+    broken, re-login" alert even though the scan had actually succeeded.
+    """
+    global _last_consumed_finished_at
+    started = requests.post(
+        f"{PROPOTSDAM_RECEIVER_URL}/api/propotsdam/scan",
+        timeout=PROPOTSDAM_TIMEOUT,
+    )
+    started.raise_for_status()
+
+    deadline = time.monotonic() + PROPOTSDAM_SCAN_WAIT_SECONDS
+    while True:
+        payload = _fetch_last_result()
+        finished_at = payload.get("finished_at")
+        if finished_at and finished_at != _last_consumed_finished_at:
+            if not payload.get("ok"):
+                raise RuntimeError(str(payload.get("error") or "collector reported a failed scan"))
+            listings = payload.get("listings") or []
+            if not isinstance(listings, list):
+                raise RuntimeError("collector returned non-list listings")
+            _last_consumed_finished_at = finished_at
+            return listings
+        if not payload.get("running") and not finished_at:
+            raise RuntimeError(str(payload.get("error") or "collector has produced no result yet"))
+        if time.monotonic() >= deadline:
+            raise ScanPending()
+        time.sleep(PROPOTSDAM_POLL_SECONDS)
 
 
 def _should_alert_error(previous_status: Dict) -> bool:
@@ -134,6 +183,11 @@ def _check_job_locked(context) -> Dict[str, int]:
     bot = context.bot
     try:
         listings = _request_scan()
+    except ScanPending:
+        # Not a failure: the browser is still working. Keep the previous status
+        # so a slow scan cannot masquerade as a dead session.
+        logger.info("ProPotsdam scan still running; the result will be consumed on a later tick")
+        return {"ok": 1, "enabled": 1, "pending": 1, "sent": 0}
     except Exception as exc:
         previous_status = propotsdam_store.latest_status()
         alerted = _notify_admin_error(bot, exc, previous_status)

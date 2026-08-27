@@ -66,6 +66,68 @@ class ProPotsdamMonitorTests(unittest.TestCase):
         self.assertEqual(result['admin_alerted'], 0)
         self.assertEqual(context.bot.messages, [])
 
+    def test_a_still_running_scan_is_not_reported_as_a_failure(self):
+        """A slow browser must not look like a dead collector session.
+
+        The old blocking call turned any scan longer than the HTTP timeout into
+        an "error" plus a re-login alert, even though the scan then finished fine.
+        """
+        context = FakeContext()
+        with mock.patch.object(propotsdam_monitor, 'PROPOTSDAM_CHECK_ENABLED', True), \
+             mock.patch.object(propotsdam_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(propotsdam_monitor, '_request_scan',
+                               side_effect=propotsdam_monitor.ScanPending()), \
+             mock.patch.object(propotsdam_store, 'record_status') as record_status:
+            result = propotsdam_monitor.check_job(context)
+
+        self.assertEqual(result, {'ok': 1, 'enabled': 1, 'pending': 1, 'sent': 0})
+        self.assertEqual(context.bot.messages, [])
+        record_status.assert_not_called()
+
+    def test_scan_consumes_a_result_that_finished_while_polling(self):
+        propotsdam_monitor._last_consumed_finished_at = None
+        posted = mock.Mock(status_code=202)
+        posted.json.return_value = {'ok': True, 'started': True, 'running': True}
+        with mock.patch.object(propotsdam_monitor.requests, 'post', return_value=posted), \
+             mock.patch.object(propotsdam_monitor, '_fetch_last_result', side_effect=[
+                 {'ok': True, 'running': True, 'finished_at': None, 'listings': []},
+                 {'ok': True, 'running': False, 'finished_at': '2026-08-27T12:00:00+00:00',
+                  'listings': [{'listing_key': 'a'}]},
+             ]), \
+             mock.patch.object(propotsdam_monitor.time, 'sleep'):
+            listings = propotsdam_monitor._request_scan()
+
+        self.assertEqual(listings, [{'listing_key': 'a'}])
+        self.assertEqual(propotsdam_monitor._last_consumed_finished_at, '2026-08-27T12:00:00+00:00')
+
+    def test_scan_waits_instead_of_reconsuming_the_previous_result(self):
+        """The same `finished_at` must not be counted as a fresh scan."""
+        propotsdam_monitor._last_consumed_finished_at = '2026-08-27T12:00:00+00:00'
+        posted = mock.Mock(status_code=202)
+        posted.json.return_value = {'ok': True, 'started': True, 'running': True}
+        with mock.patch.object(propotsdam_monitor.requests, 'post', return_value=posted), \
+             mock.patch.object(propotsdam_monitor, 'PROPOTSDAM_SCAN_WAIT_SECONDS', 0), \
+             mock.patch.object(propotsdam_monitor, '_fetch_last_result', return_value={
+                 'ok': True, 'running': True, 'finished_at': '2026-08-27T12:00:00+00:00',
+                 'listings': [{'listing_key': 'a'}]}), \
+             mock.patch.object(propotsdam_monitor.time, 'sleep'):
+            with self.assertRaises(propotsdam_monitor.ScanPending):
+                propotsdam_monitor._request_scan()
+
+    def test_a_collector_reported_failure_still_alerts(self):
+        propotsdam_monitor._last_consumed_finished_at = None
+        posted = mock.Mock(status_code=202)
+        posted.json.return_value = {'ok': True, 'started': True, 'running': True}
+        with mock.patch.object(propotsdam_monitor.requests, 'post', return_value=posted), \
+             mock.patch.object(propotsdam_monitor, '_fetch_last_result', return_value={
+                 'ok': False, 'running': False, 'finished_at': '2026-08-27T12:05:00+00:00',
+                 'error': 'login required', 'listings': []}), \
+             mock.patch.object(propotsdam_monitor.time, 'sleep'):
+            with self.assertRaises(RuntimeError) as caught:
+                propotsdam_monitor._request_scan()
+
+        self.assertIn('login required', str(caught.exception))
+
     def _run_empty_scan(self, context, last_seen, last_alert=None):
         with mock.patch.object(propotsdam_monitor, 'PROPOTSDAM_CHECK_ENABLED', True), \
              mock.patch.object(propotsdam_monitor, 'ADMIN_ID', 312029534), \

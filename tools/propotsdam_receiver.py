@@ -10,9 +10,12 @@ import logging
 import os
 import re
 import sys
+import threading
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
+from urllib.parse import parse_qs, urlsplit
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -31,7 +34,10 @@ PORTAL_URL = propotsdam_parser.PORTAL_URL
 PROFILE_DIR = Path(os.getenv("PROPOTSDAM_PROFILE_DIR", str(Path.home() / "AppData" / "Local" / "PotsdamBot" / "propotsdam-browser")))
 BROWSER = os.getenv("PROPOTSDAM_BROWSER", r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 _scan_lock = Lock()
+_state_lock = Lock()
 _last_result = {"ok": False, "error": "no scan yet", "listings": []}
+_scan_running = False
+_scan_started_at = None
 
 
 def _click_text(page, patterns, timeout=5000):
@@ -167,6 +173,62 @@ def scan():
             return result
 
 
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _store_result(result):
+    global _last_result
+    result["finished_at"] = _now_iso()
+    with _state_lock:
+        _last_result = result
+    return result
+
+
+def _scan_to_result():
+    try:
+        return scan()
+    except Exception as exc:
+        logger.exception("scan failed")
+        return {"ok": False, "error": str(exc), "listings": []}
+
+
+def _background_scan():
+    global _scan_running
+    try:
+        _store_result(_scan_to_result())
+    finally:
+        with _state_lock:
+            _scan_running = False
+
+
+def _start_scan():
+    """Kick off a scan in the background. False when one is already running.
+
+    The scan drives a real browser: it usually finishes in about a minute, but a
+    slow portal or a long "mehr anzeigen" pagination can push it past any timeout
+    the caller is willing to wait. Blocking the caller for the whole scan meant a
+    single slow run was reported as a failure — and, because `scan()` serialises
+    on `_scan_lock`, the next 15-minute tick queued behind it and failed too.
+    """
+    global _scan_running, _scan_started_at
+    with _state_lock:
+        if _scan_running:
+            return False
+        _scan_running = True
+        _scan_started_at = _now_iso()
+    threading.Thread(target=_background_scan, name="propotsdam-scan", daemon=True).start()
+    return True
+
+
+def _snapshot():
+    with _state_lock:
+        payload = dict(_last_result)
+        payload["running"] = _scan_running
+        payload["started_at"] = _scan_started_at
+    return payload
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         logger.info(fmt, *args)
@@ -180,22 +242,39 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path == "/health":
-            self._json(200, {"ok": True, "last_ok": bool(_last_result.get("ok")), "count": len(_last_result.get("listings") or [])})
-        elif self.path == "/api/propotsdam/listings":
-            self._json(200, _last_result)
+        path = urlsplit(self.path).path
+        if path == "/health":
+            snapshot = _snapshot()
+            self._json(200, {
+                "ok": True,
+                "last_ok": bool(snapshot.get("ok")),
+                "count": len(snapshot.get("listings") or []),
+                "running": snapshot.get("running"),
+                "finished_at": snapshot.get("finished_at"),
+            })
+        elif path == "/api/propotsdam/listings":
+            self._json(200, _snapshot())
         else:
             self._json(404, {"ok": False, "error": "not found"})
 
     def do_POST(self):
-        global _last_result
-        if self.path == "/api/propotsdam/scan":
-            try:
-                _last_result = scan()
-            except Exception as exc:
-                logger.exception("scan failed")
-                _last_result = {"ok": False, "error": str(exc), "listings": []}
-            self._json(200 if _last_result.get("ok") else 500, _last_result)
+        parts = urlsplit(self.path)
+        if parts.path == "/api/propotsdam/scan":
+            # ?wait=1 keeps the original blocking behaviour for manual runs.
+            if parse_qs(parts.query).get("wait", ["0"])[0] == "1":
+                result = _store_result(_scan_to_result())
+                self._json(200 if result.get("ok") else 500, result)
+                return
+            started = _start_scan()
+            snapshot = _snapshot()
+            self._json(202, {
+                "ok": True,
+                "started": started,
+                "running": True,
+                "last_finished_at": snapshot.get("finished_at"),
+                "last_ok": bool(snapshot.get("ok")),
+                "last_count": len(snapshot.get("listings") or []),
+            })
         else:
             self._json(404, {"ok": False, "error": "not found"})
 
