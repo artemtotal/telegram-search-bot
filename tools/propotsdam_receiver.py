@@ -3,6 +3,19 @@
 Credentials are read from environment variables only:
 - PROPOTSDAM_USERNAME
 - PROPOTSDAM_PASSWORD
+
+Run this with its own interpreter, never a bare ``python`` off PATH. It used to
+resolve to Hermes' virtualenv, which left this service — and the Playwright
+driver it spawns out of that venv's site-packages — holding files inside it, and
+``hermes update`` aborts while anything locks them. The dedicated venv lives
+outside this repository on purpose: the repo doubles as a Docker build context
+with no .dockerignore, so a local .venv would be copied into the bot image.
+
+    uv venv C:\\opt\\propotsdam-receiver\\.venv --python 3.11
+    uv pip install --python C:\\opt\\propotsdam-receiver\\.venv\\Scripts\\python.exe "playwright>=1.54,<2"
+
+Playwright's bundled browsers are not needed: ``scan`` drives the system Chrome
+through ``PROPOTSDAM_BROWSER``.
 """
 
 import json
