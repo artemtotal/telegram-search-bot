@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import urlparse
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.error import NetworkError
 
 from database import DBSession, HousingDelivery, ImmoweltListing
@@ -19,6 +19,11 @@ from database import DBSession, HousingDelivery, ImmoweltListing
 logger = logging.getLogger(__name__)
 HOST = os.getenv("HOUSING_RECEIVER_HOST", "0.0.0.0")
 PORT = int(os.getenv("HOUSING_RECEIVER_PORT", "5012") or 5012)
+# Telegram кладёт в один альбом не больше 10 фото, сколько бы их ни было на карточке.
+GALLERY_ALBUM_MAX = 10
+# Подпись к фото Telegram обрезает жёстче обычного текста (1024 против 4096
+# символов) — раньше этого лимита текст уходит подписью, дальше отдельным сообщением.
+CAPTION_LIMIT = 1024
 # Подписи ошибок, при которых запрос до Telegram заведомо не дошёл: соединение
 # не открылось, значит сообщения человек не видел и повтор безопасен. Всё
 # остальное (оборванный ответ, таймаут чтения) неоднозначно — там запрос уже
@@ -167,14 +172,11 @@ def handle_immowelt_result(bot, payload):
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton("Відкрити на Immowelt", url=url)]]
     )
+    text = "\n".join(lines)
+    images = [str(u).strip() for u in (listing.get("images") or []) if str(u).strip()][:GALLERY_ALBUM_MAX]
+
     try:
-        bot.send_message(
-            chat_id=user_id,
-            text="\n".join(lines),
-            parse_mode="HTML",
-            reply_markup=keyboard,
-            disable_web_page_preview=True,
-        )
+        _send_immowelt_post(bot, user_id, images, text, keyboard, url)
     except NetworkError as exc:
         if _request_never_left(exc):
             raise
@@ -190,6 +192,44 @@ def handle_immowelt_result(bot, payload):
 
     _mark_delivered(user_id, listing_id)
     return {"ok": True}
+
+
+def _send_text_with_button(bot, chat_id, text, keyboard):
+    bot.send_message(
+        chat_id=chat_id, text=text, parse_mode="HTML",
+        reply_markup=keyboard, disable_web_page_preview=True,
+    )
+
+
+def _send_immowelt_post(bot, chat_id, images, text, keyboard, url):
+    """Шлёт квартиру фото с подписью, если фото есть, и текстом с кнопкой — если нет.
+
+    Кнопка "Відкрити на Immowelt" остаётся на одиночном фото и на голом тексте
+    (`send_photo`/`send_message` её поддерживают), но на альбоме
+    (`send_media_group`) Telegram кнопок вообще не показывает — ссылка тогда
+    идёт строкой в подписи. Если подпись всё равно не влезает в лимит фото
+    (1024 против 4096 у обычного текста), фото уходят без неё, а тот же текст
+    с кнопкой — отдельным сообщением следом, иначе объявление осталось бы
+    вовсе без текста.
+    """
+    if not images:
+        _send_text_with_button(bot, chat_id, text, keyboard)
+        return
+    if len(images) == 1:
+        if len(text) <= CAPTION_LIMIT:
+            bot.send_photo(chat_id=chat_id, photo=images[0], caption=text, parse_mode="HTML", reply_markup=keyboard)
+        else:
+            bot.send_photo(chat_id=chat_id, photo=images[0])
+            _send_text_with_button(bot, chat_id, text, keyboard)
+        return
+    album_caption = text + "\n\n🔗 " + _text(url)
+    if len(album_caption) <= CAPTION_LIMIT:
+        media = [InputMediaPhoto(media=images[0], caption=album_caption, parse_mode="HTML")]
+        media.extend(InputMediaPhoto(media=photo_url) for photo_url in images[1:])
+        bot.send_media_group(chat_id=chat_id, media=media)
+    else:
+        bot.send_media_group(chat_id=chat_id, media=[InputMediaPhoto(media=photo_url) for photo_url in images])
+        _send_text_with_button(bot, chat_id, text, keyboard)
 
 
 def handle_system_message(bot, payload):

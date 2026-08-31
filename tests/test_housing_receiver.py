@@ -12,27 +12,46 @@ from user_handlers import housing_receiver
 class FakeBot:
     def __init__(self, error=None):
         self.messages = []
+        self.photos = []
+        self.albums = []
+        self.calls = []
         self.error = error
 
     def send_message(self, **kwargs):
+        self.calls.append("message")
         if self.error is not None:
             raise self.error
         self.messages.append(kwargs)
 
+    def send_photo(self, **kwargs):
+        self.calls.append("photo")
+        if self.error is not None:
+            raise self.error
+        self.photos.append(kwargs)
 
-def _payload(listing_id="abc", user_id=544675510):
+    def send_media_group(self, **kwargs):
+        self.calls.append("album")
+        if self.error is not None:
+            raise self.error
+        self.albums.append(kwargs)
+
+
+def _payload(listing_id="abc", user_id=544675510, images=None):
+    listing = {
+        "listing_id": listing_id,
+        "url": "https://www.immowelt.de/expose/%s" % listing_id,
+        "title": "Wohnung zur Miete",
+        "price": "1.119 €",
+        "rooms": "3 Zimmer",
+        "address": "Brunnenallee 3 a, Waldstadt I, Potsdam (14478)",
+    }
+    if images is not None:
+        listing["images"] = images
     return {
         "source": "immowelt",
         "user_id": user_id,
         "filter_title": "Пошук Каті",
-        "listing": {
-            "listing_id": listing_id,
-            "url": "https://www.immowelt.de/expose/%s" % listing_id,
-            "title": "Wohnung zur Miete",
-            "price": "1.119 €",
-            "rooms": "3 Zimmer",
-            "address": "Brunnenallee 3 a, Waldstadt I, Potsdam (14478)",
-        },
+        "listing": listing,
     }
 
 
@@ -198,6 +217,79 @@ class HousingReceiverTests(unittest.TestCase):
         retry = FakeBot()
         self.assertEqual(housing_receiver.handle_immowelt_result(retry, _payload()), {"ok": True})
         self.assertEqual(len(retry.messages), 1)
+
+    def test_a_single_image_goes_out_as_a_photo_with_the_button(self):
+        bot = FakeBot()
+
+        result = housing_receiver.handle_immowelt_result(
+            bot, _payload(images=["https://mms.immowelt.de/a.jpg"]),
+        )
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(bot.calls, ["photo"])
+        self.assertEqual(bot.photos[0]["chat_id"], 544675510)
+        self.assertEqual(bot.photos[0]["photo"], "https://mms.immowelt.de/a.jpg")
+        self.assertIn("Нове житло на Immowelt", bot.photos[0]["caption"])
+        self.assertEqual(
+            bot.photos[0]["reply_markup"].inline_keyboard[0][0].url,
+            "https://www.immowelt.de/expose/abc",
+        )
+
+    def test_several_images_go_out_as_one_album_with_the_link_in_the_caption(self):
+        bot = FakeBot()
+
+        result = housing_receiver.handle_immowelt_result(
+            bot, _payload(images=["https://mms.immowelt.de/a.jpg", "https://mms.immowelt.de/b.jpg"]),
+        )
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(bot.calls, ["album"])
+        media = bot.albums[0]["media"]
+        self.assertEqual(len(media), 2)
+        self.assertIn("Нове житло на Immowelt", media[0].caption)
+        # Кнопки на альбоме Telegram не показывает — ссылка идёт в тексте подписи.
+        self.assertIn("https://www.immowelt.de/expose/abc", media[0].caption)
+        self.assertIsNone(getattr(media[1], "caption", None))
+
+    def test_more_images_than_an_album_holds_are_trimmed(self):
+        bot = FakeBot()
+        images = ["https://mms.immowelt.de/%s.jpg" % i for i in range(14)]
+
+        housing_receiver.handle_immowelt_result(bot, _payload(images=images))
+
+        self.assertEqual(len(bot.albums[0]["media"]), housing_receiver.GALLERY_ALBUM_MAX)
+
+    def test_a_listing_without_images_still_uses_text_and_the_button(self):
+        bot = FakeBot()
+
+        result = housing_receiver.handle_immowelt_result(bot, _payload(images=[]))
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(bot.calls, ["message"])
+
+    def test_an_oversized_single_photo_caption_falls_back_to_photo_plus_text(self):
+        bot = FakeBot()
+        payload = _payload(images=["https://mms.immowelt.de/a.jpg"])
+        payload["filter_title"] = "x" * (housing_receiver.CAPTION_LIMIT + 1)
+
+        housing_receiver.handle_immowelt_result(bot, payload)
+
+        self.assertEqual(bot.calls, ["photo", "message"])
+        self.assertNotIn("caption", bot.photos[0])
+        self.assertEqual(
+            bot.messages[0]["reply_markup"].inline_keyboard[0][0].url,
+            "https://www.immowelt.de/expose/abc",
+        )
+
+    def test_an_oversized_album_caption_falls_back_to_album_plus_text(self):
+        bot = FakeBot()
+        payload = _payload(images=["https://mms.immowelt.de/a.jpg", "https://mms.immowelt.de/b.jpg"])
+        payload["filter_title"] = "x" * (housing_receiver.CAPTION_LIMIT + 1)
+
+        housing_receiver.handle_immowelt_result(bot, payload)
+
+        self.assertEqual(bot.calls, ["album", "message"])
+        self.assertIsNone(getattr(bot.albums[0]["media"][0], "caption", None))
 
     def test_system_message_is_sent_as_html(self):
         bot = FakeBot()
