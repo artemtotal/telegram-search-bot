@@ -2607,45 +2607,182 @@ def _item_criteria_summary(item: Dict[str, object], source: str, lang: str = "uk
     return summary
 
 
-def _self_manage_keyboard(user_id: int, lang: str = "uk") -> InlineKeyboardMarkup:
-    """Список фільтрів, розбитий на розділи за джерелом.
+_SOURCE_ORDER = ("immowelt", "propotsdam", "semmelhaack", "schoba", "regiomakler", "kleinanzeigen", "locals", "karlmarx")
 
-    Immowelt і ProPotsdam малювали однакові на вигляд кнопки в одному
-    суцільному списку — назва фільтра каже, чий це пошук, а не який портал
-    він дивиться, тож два фільтри однієї людини були невідрізненні. Заголовок
-    розділу — теж кнопка (Telegram не має нейтральних рядків у клавіатурі),
-    але веде в нікуди: `housing:noop` лише гасить «годинник» на кнопці.
+
+def _group_signature(item: Dict[str, object]) -> Optional[tuple]:
+    """Кімнати/площа — єдине, що спільне для будь-яких джерел одного майстра
+    mode="multi" (ціну й райони питає по-різному, не всі джерела їх мають
+    узагалі). Немає жодного збереженого ідентифікатора, який пов'язував би
+    записи різних сховищ між собою — групуємо за збігом цих чотирьох чисел.
+
+    Повертає None, якщо всі чотири порожні (наприклад, людина зняла всі
+    галочки в пікері й лишила тільки ціну) — тоді надійного сигналу для
+    групування нема, і фільтр лишається окремим рядком, як і раніше.
+    """
+    def norm(value):
+        try:
+            return round(float(value), 2)
+        except (TypeError, ValueError):
+            return None
+
+    sig = (
+        norm(item.get("min_rooms")), norm(item.get("max_rooms")),
+        norm(item.get("min_area_m2")), norm(item.get("max_area_m2")),
+    )
+    return sig if any(value is not None for value in sig) else None
+
+
+def _encode_group_sig(sig: tuple) -> str:
+    return "_".join("x" if value is None else f"{value:g}" for value in sig)
+
+
+def _decode_group_sig(raw: str) -> tuple:
+    return tuple(None if part == "x" else float(part) for part in raw.split("_"))
+
+
+def _group_manageable_filters(user_id: int) -> list:
+    """Фільтри користувача, згруповані за _group_signature.
+
+    Кожен елемент результату — список пар (source, item): довжина 1 означає
+    самостійний фільтр (як і раніше), довжина 2+ — фільтри, заведені за один
+    прохід майстра mode="multi" через кілька джерел одразу.
+    """
+    by_sig: Dict[object, list] = {}
+    for item in manageable_filters(user_id):
+        source = _item_source(item)
+        sig = _group_signature(item)
+        key = sig if sig is not None else ("solo", source, int(item.get("filter_id") or 0))
+        by_sig.setdefault(key, []).append((source, item))
+
+    def sort_key(members: list):
+        source = members[0][0]
+        order = _SOURCE_ORDER.index(source) if source in _SOURCE_ORDER else len(_SOURCE_ORDER)
+        return (order, int(members[0][1].get("filter_id") or 0))
+
+    return sorted(by_sig.values(), key=sort_key)
+
+
+def _find_group(user_id: int, sig: tuple) -> Optional[list]:
+    for members in _group_manageable_filters(user_id):
+        if len(members) > 1 and _group_signature(members[0][1]) == sig:
+            return members
+    return None
+
+
+def _group_summary(members: list, lang: str = "uk") -> str:
+    """Стислий опис для об'єднаного рядка: райони беремо з першого-ліпшого
+    district-aware учасника (Immowelt/ProPotsdam), ціну не показуємо взагалі
+    — вона різна для кожного джерела, і впхнути її всю в один рядок було б
+    нечитабельно. Повна ціна кожного джерела лишається на екрані «Керувати»."""
+    districts: list = []
+    for source, item in members:
+        if source == "propotsdam":
+            ds = [d for d in str(item.get("districts") or "").split(",") if d]
+        elif source == "immowelt":
+            ds = list(item.get("districts") or [])
+        else:
+            ds = []
+        if ds:
+            districts = ds
+            break
+    _, sample = members[0]
+    criteria = {
+        "districts": districts,
+        "min_price_eur": None, "max_price_eur": None,
+        "min_rooms": sample.get("min_rooms"), "max_rooms": sample.get("max_rooms"),
+        "min_area_m2": sample.get("min_area_m2"), "max_area_m2": sample.get("max_area_m2"),
+    }
+    summary = html.unescape(_describe_criteria(criteria, lang))
+    if len(summary) > 40:
+        summary = summary[:39].rstrip(" ,·") + "…"
+    return summary
+
+
+def _self_manage_keyboard(user_id: int, lang: str = "uk") -> InlineKeyboardMarkup:
+    """Список фільтрів — один рядок на пошук, а не на запис у сховищі.
+
+    Один прохід майстра mode="multi" по кількох джерелах заводить окремий
+    запис у кожному сховищі (Immowelt і ProPotsdam живуть у різних таблицях
+    навіть між собою) — раніше це показувалось як стільки ж окремих рядків
+    під однойменними розділами джерел, і зрозуміти, що це один і той самий
+    пошук, а тим паче видалити його цілком, було майже неможливо. Тепер
+    _group_manageable_filters збирає такі записи в один рядок за кімнатами/
+    площею (єдине, що спільне для будь-яких джерел одного проходу майстра);
+    самостійні фільтри (group завдовжки 1) виглядають так само, як і раніше.
     """
     rows = []
-    items = manageable_filters(user_id)
-    for source in ("immowelt", "propotsdam", "semmelhaack", "schoba", "regiomakler", "kleinanzeigen", "locals", "karlmarx"):
-        group = [item for item in items if _item_source(item) == source]
-        if not group:
-            continue
-        rows.append([InlineKeyboardButton(
-            i18n.t("housing.selfmanage.section", lang, icon=SOURCE_ICON[source], label=SOURCE_LABEL[source]),
-            callback_data="housing:noop",
-        )])
-        for item in group:
+    for members in _group_manageable_filters(user_id):
+        if len(members) == 1:
+            source, item = members[0]
             filter_id = int(item.get("filter_id"))
             active = bool(item.get("active", True))
             mark = "✅" if active else "⏸"
             summary = _item_criteria_summary(item, source, lang)
             rows.append([InlineKeyboardButton(
-                f"{mark} {summary}",
+                f"{SOURCE_ICON.get(source, '🔹')} {mark} {summary}",
                 callback_data=f"housing:toggle:{source}:{filter_id}:{0 if active else 1}",
             )])
-            # Раніше ProPotsdam-фільтр можна було лише поставити на паузу чи
-            # видалити: одруківся в районі — і заводь новий фільтр з нуля.
             rows.append([
                 InlineKeyboardButton(i18n.t("housing.btn.edit", lang), callback_data=f"housing:edit:{source}:{filter_id}"),
                 InlineKeyboardButton(i18n.t("housing.btn.delete", lang), callback_data=f"housing:delete:{source}:{filter_id}"),
+            ])
+        else:
+            sig_key = _encode_group_sig(_group_signature(members[0][1]))
+            icons = "".join(SOURCE_ICON.get(source, "🔹") for source, _ in members)
+            active = any(bool(item.get("active", True)) for _, item in members)
+            mark = "✅" if active else "⏸"
+            summary = _group_summary(members, lang)
+            rows.append([InlineKeyboardButton(f"{icons} {mark} {summary}", callback_data="housing:noop")])
+            rows.append([
+                InlineKeyboardButton(i18n.t("housing.btn.group_manage", lang), callback_data=f"housing:group_manage:{sig_key}"),
+                InlineKeyboardButton(i18n.t("housing.btn.delete_all", lang), callback_data=f"housing:group_delete:{sig_key}"),
             ])
     # Кооперативи не мають розбору за критеріями (див. CoopWatchdogFilter),
     # тож не потрапляють у групи вище - їм тут своя окрема кнопка-вхід.
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.coops", lang), callback_data="housing:coops")])
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")])
     return InlineKeyboardMarkup(rows)
+
+
+def _group_detail_keyboard(members: list, lang: str = "uk") -> InlineKeyboardMarkup:
+    rows = []
+    for source, item in members:
+        filter_id = int(item.get("filter_id"))
+        active = bool(item.get("active", True))
+        mark = "✅" if active else "⏸"
+        summary = _item_criteria_summary(item, source, lang)
+        rows.append([InlineKeyboardButton(
+            f"{SOURCE_ICON.get(source, '🔹')} {mark} {summary}",
+            callback_data=f"housing:toggle:{source}:{filter_id}:{0 if active else 1}",
+        )])
+        rows.append([
+            InlineKeyboardButton(i18n.t("housing.btn.edit", lang), callback_data=f"housing:edit:{source}:{filter_id}"),
+            InlineKeyboardButton(i18n.t("housing.btn.delete", lang), callback_data=f"housing:delete:{source}:{filter_id}"),
+        ])
+    rows.append([InlineKeyboardButton("⬅ Назад", callback_data="housing:self_manage")])
+    return InlineKeyboardMarkup(rows)
+
+
+def show_group_detail(update: Update, context: CallbackContext, sig_key: str) -> None:
+    """Розгортає об'єднаний рядок назад у список окремих джерел — для
+    точкового редагування чи паузи саме одного з них, не всіх одразу."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    lang = i18n.get_lang(user.id)
+    members = _find_group(int(user.id), _decode_group_sig(sig_key))
+    if not members:
+        query.answer(i18n.t("housing.toast.not_your_filter", lang), show_alert=True)
+        show_self_manage(update, context, edit=True)
+        return
+    query.answer()
+    query.edit_message_text(
+        f"⚙️ <b>Джерела цього пошуку</b> ({len(members)})",
+        parse_mode="HTML",
+        reply_markup=_group_detail_keyboard(members, lang),
+    )
 
 
 def show_self_manage(update: Update, context: CallbackContext, edit: bool = False) -> None:
@@ -2783,6 +2920,58 @@ def toggle_news_subscription(update: Update, context: CallbackContext, enabled: 
     show_notify_settings(update, context, edit=True)
 
 
+def _set_one_filter_active(source: str, filter_id: int, active: bool, user_id: int) -> bool:
+    if source == "propotsdam":
+        ok = propotsdam_store.set_filter_active(filter_id, active, user_id=user_id)
+        if ok:
+            _sync_propot_filters()
+        return ok
+    if source == "semmelhaack":
+        return semmelhaack_store.set_filter_active(filter_id, active, user_id=user_id)
+    if source == "schoba":
+        return schoba_store.set_filter_active(filter_id, active, user_id=user_id)
+    if source == "regiomakler":
+        return regiomakler_store.set_filter_active(filter_id, active, user_id=user_id)
+    if source == "kleinanzeigen":
+        return kleinanzeigen_store.set_filter_active(filter_id, active, user_id=user_id)
+    if source == "locals":
+        return locals_store.set_filter_active(filter_id, active, user_id=user_id)
+    if source == "karlmarx":
+        return karlmarx_store.set_filter_active(filter_id, active, user_id=user_id)
+    try:
+        _request("PATCH", f"/api/housing/filters/{filter_id}/active", json={"active": active})
+        return True
+    except Exception:
+        logger.exception("Could not update owned housing filter")
+        return False
+
+
+def _delete_one_filter(source: str, filter_id: int, user_id: int) -> bool:
+    if source == "propotsdam":
+        ok = propotsdam_store.delete_filter(filter_id, user_id=user_id)
+        if ok:
+            _sync_propot_filters()
+        return ok
+    if source == "semmelhaack":
+        return semmelhaack_store.delete_filter(filter_id, user_id=user_id)
+    if source == "schoba":
+        return schoba_store.delete_filter(filter_id, user_id=user_id)
+    if source == "regiomakler":
+        return regiomakler_store.delete_filter(filter_id, user_id=user_id)
+    if source == "kleinanzeigen":
+        return kleinanzeigen_store.delete_filter(filter_id, user_id=user_id)
+    if source == "locals":
+        return locals_store.delete_filter(filter_id, user_id=user_id)
+    if source == "karlmarx":
+        return karlmarx_store.delete_filter(filter_id, user_id=user_id)
+    try:
+        _request("DELETE", f"/api/housing/filters/{filter_id}")
+        return True
+    except Exception:
+        logger.exception("Could not delete housing filter")
+        return False
+
+
 def _toggle_owned_filter(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     user = update.effective_user
@@ -2804,29 +2993,7 @@ def _toggle_owned_filter(update: Update, context: CallbackContext) -> None:
     if not own:
         query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
-    if source == "propotsdam":
-        ok = propotsdam_store.set_filter_active(filter_id, active, user_id=user.id)
-        if ok:
-            _sync_propot_filters()
-    elif source == "semmelhaack":
-        ok = semmelhaack_store.set_filter_active(filter_id, active, user_id=user.id)
-    elif source == "schoba":
-        ok = schoba_store.set_filter_active(filter_id, active, user_id=user.id)
-    elif source == "regiomakler":
-        ok = regiomakler_store.set_filter_active(filter_id, active, user_id=user.id)
-    elif source == "kleinanzeigen":
-        ok = kleinanzeigen_store.set_filter_active(filter_id, active, user_id=user.id)
-    elif source == "locals":
-        ok = locals_store.set_filter_active(filter_id, active, user_id=user.id)
-    elif source == "karlmarx":
-        ok = karlmarx_store.set_filter_active(filter_id, active, user_id=user.id)
-    else:
-        try:
-            _request("PATCH", f"/api/housing/filters/{filter_id}/active", json={"active": active})
-            ok = True
-        except Exception:
-            logger.exception("Could not update owned housing filter")
-            ok = False
+    ok = _set_one_filter_active(source, filter_id, active, int(user.id))
     if not ok:
         query.answer(i18n.t("housing.toast.filter_update_failed", i18n.get_lang(user.id)), show_alert=True)
         return
@@ -2880,33 +3047,55 @@ def confirm_delete_filter(update: Update, context: CallbackContext, source: str,
     if not _own_filter(int(user.id), source, filter_id):
         query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
-    if source == "propotsdam":
-        ok = propotsdam_store.delete_filter(filter_id, user_id=user.id)
-        if ok:
-            _sync_propot_filters()
-    elif source == "semmelhaack":
-        ok = semmelhaack_store.delete_filter(filter_id, user_id=user.id)
-    elif source == "schoba":
-        ok = schoba_store.delete_filter(filter_id, user_id=user.id)
-    elif source == "regiomakler":
-        ok = regiomakler_store.delete_filter(filter_id, user_id=user.id)
-    elif source == "kleinanzeigen":
-        ok = kleinanzeigen_store.delete_filter(filter_id, user_id=user.id)
-    elif source == "locals":
-        ok = locals_store.delete_filter(filter_id, user_id=user.id)
-    elif source == "karlmarx":
-        ok = karlmarx_store.delete_filter(filter_id, user_id=user.id)
-    else:
-        try:
-            _request("DELETE", f"/api/housing/filters/{filter_id}")
-            ok = True
-        except Exception:
-            logger.exception("Could not delete housing filter")
-            ok = False
+    ok = _delete_one_filter(source, filter_id, int(user.id))
     if not ok:
         query.answer(i18n.t("housing.toast.filter_delete_failed", i18n.get_lang(user.id)), show_alert=True)
         return
     query.answer(i18n.t("housing.toast.filter_deleted", i18n.get_lang(user.id)))
+    show_self_manage(update, context, edit=True)
+
+
+def start_group_delete_flow(update: Update, context: CallbackContext, sig_key: str) -> None:
+    """Один «Так, видалити всі» — і зникають усі записи цього пошуку одразу
+    в кожному сховищі, а не по одному з ризиком забути якесь джерело."""
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    members = _find_group(int(user.id), _decode_group_sig(sig_key))
+    if not members:
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
+        return
+    query.answer()
+    names = ", ".join(f"{SOURCE_ICON.get(source, '🔹')} {SOURCE_LABEL.get(source, source)}" for source, _ in members)
+    query.edit_message_text(
+        f"🗑 Видалити всі {len(members)} фільтри цього пошуку ({names})? Це не можна скасувати.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🗑 Так, видалити всі", callback_data=f"housing:group_delete_confirm:{sig_key}"),
+            InlineKeyboardButton(BTN_CANCEL, callback_data="housing:self_manage"),
+        ]]),
+    )
+
+
+def confirm_group_delete(update: Update, context: CallbackContext, sig_key: str) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    members = _find_group(int(user.id), _decode_group_sig(sig_key))
+    if not members:
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
+        return
+    lang = i18n.get_lang(user.id)
+    failed = [
+        source for source, item in members
+        if not _delete_one_filter(source, int(item.get("filter_id")), int(user.id))
+    ]
+    if failed:
+        query.answer(i18n.t("housing.toast.filter_delete_failed", lang), show_alert=True)
+    else:
+        query.answer(i18n.t("housing.toast.filter_deleted", lang))
     show_self_manage(update, context, edit=True)
 
 
@@ -4874,6 +5063,12 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
             start_delete_flow(update, context, source, int(raw_id))
         else:
             query.answer()
+    elif query.data.startswith("housing:group_manage:"):
+        show_group_detail(update, context, query.data.split(":", 2)[2])
+    elif query.data.startswith("housing:group_delete_confirm:"):
+        confirm_group_delete(update, context, query.data.split(":", 2)[2])
+    elif query.data.startswith("housing:group_delete:"):
+        start_group_delete_flow(update, context, query.data.split(":", 2)[2])
     elif query.data.startswith("housing:list"):
         query.answer()
         parts = query.data.split(":")

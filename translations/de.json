@@ -205,6 +205,8 @@
   "housing.selfmanage.section": "── {icon} Filter {label} ──",
   "housing.btn.edit": "✏️ Bearbeiten",
   "housing.btn.delete": "🗑 Löschen",
+  "housing.btn.group_manage": "⚙️ Verwalten",
+  "housing.btn.delete_all": "🗑 Alle löschen",
   "housing.selfmanage.text_with_filters": "⚙️ <b>Meine Filter</b>\n\nTippen Sie auf einen Filter, um ihn zu pausieren/aktivieren, und daneben auf „✏️ Bearbeiten“/„🗑 Löschen“, um die Kriterien zu ändern oder ihn ganz zu entfernen.",
   "housing.selfmanage.text_empty": "⚙️ <b>Meine Filter</b>\n\nSie haben noch keine Filter. Tippen Sie im Menü auf „➕ Filter hinzufügen“.",
 

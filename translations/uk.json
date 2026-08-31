@@ -205,6 +205,8 @@
   "housing.selfmanage.section": "── {icon} Фільтри {label} ──",
   "housing.btn.edit": "✏️ Редагувати",
   "housing.btn.delete": "🗑 Видалити",
+  "housing.btn.group_manage": "⚙️ Керувати",
+  "housing.btn.delete_all": "🗑 Видалити всі",
   "housing.selfmanage.text_with_filters": "⚙️ <b>Мої фільтри</b>\n\nНатисніть фільтр, щоб призупинити/увімкнути, а «✏️ Редагувати»/«🗑 Видалити» поруч — щоб змінити умови або прибрати зовсім.",
   "housing.selfmanage.text_empty": "⚙️ <b>Мої фільтри</b>\n\nУ вас ще немає фільтрів. Натисніть «➕ Додати фільтр» у меню.",
 
