@@ -3,10 +3,16 @@ import unittest
 from user_jobs import kleinanzeigen_parser
 
 
-def _card(adid, plz_city, title, href, tags, price):
+def _card(adid, plz_city, title, href, tags, price, image_url="https://img.kleinanzeigen.de/api/v1/prod-ads/images/x/y?rule=$_59.AUTO"):
+    image_block = f"""
+                        <script type="application/ld+json">
+                            {{"contentUrl":"{image_url}"}}
+                        </script>
+    """ if image_url else ""
     return f"""
     <article class="aditem" data-adid="{adid}"  data-href="{href}">
         <div class="aditem-image--badges"></div>
+        <div class="aditem-image">{image_block}</div>
         <div class="aditem-main">
             <div class="aditem-main--top">
                 <div class="aditem-main--top--left">
@@ -77,6 +83,20 @@ class KleinanzeigenParserTests(unittest.TestCase):
             "<html><body>" + _card("1", "14467 Potsdam", "X", "/s-anzeige/x/1", "40 m² &#183; 1,5 Zi.", "560 &#8364;") + "</body></html>"
         )
         self.assertEqual(listings[0]["rooms"], 1.5)
+
+    def test_extracts_the_cover_image_from_the_search_card(self):
+        listings = kleinanzeigen_parser.parse_listings(PAGE_HTML)
+        potsdam = next(item for item in listings if item["listing_key"] == "3368739590")
+        self.assertEqual(
+            potsdam["cover_image_url"],
+            "https://img.kleinanzeigen.de/api/v1/prod-ads/images/x/y?rule=$_59.AUTO",
+        )
+
+    def test_a_card_without_a_photo_gets_an_empty_cover(self):
+        listings = kleinanzeigen_parser.parse_listings(
+            "<html><body>" + _card("1", "14467 Potsdam", "X", "/s-anzeige/x/1", "40 m² &#183; 1 Zi.", "500 &#8364;", image_url="") + "</body></html>"
+        )
+        self.assertEqual(listings[0]["cover_image_url"], "")
 
     def test_empty_page_returns_no_listings(self):
         self.assertEqual(kleinanzeigen_parser.parse_listings("<html><body>Nothing</body></html>"), [])

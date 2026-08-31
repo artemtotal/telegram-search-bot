@@ -25,6 +25,13 @@ _LOCATION_RE = re.compile(r'icon-pin-gray"[^>]*></i>\s*([^<\n]+)', re.S)
 _TITLE_LINK_RE = re.compile(r'<a class="ellipsis"\s*href="([^"]+)">([^<]*)</a>', re.S)
 _TAGS_BLOCK_RE = re.compile(r'aditem-main--middle--tags">(.*?)</p>', re.S)
 _PRICE_RE = re.compile(r'aditem-main--middle--price-shipping--price">([^<]*)<')
+# Обкладинка з JSON-LD у самій картці пошуку — тут лише одне фото на
+# оголошення, повної галереї сторінка пошуку не показує. Детальну сторінку
+# заради решти фото свідомо не запитуємо: Kleinanzeigen — велика платформа,
+# чиї Умови використання забороняють автоматичний збір, і check_job.py вже й
+# так тримає інтервал перевірки помітно рідшим через це; другий запит на
+# кожне нове оголошення суперечив би цій обережності.
+_IMAGE_RE = re.compile(r'"contentUrl":"([^"]+)"')
 _AREA_TAG_RE = re.compile(r"(\d+(?:,\d+)?)\s*m²")
 _ROOMS_TAG_RE = re.compile(r"(\d+(?:,\d+)?)\s*Zi\.")
 _ADDRESS_RE = re.compile(r"^(\d{4,5})\s+(.+)$")
@@ -89,6 +96,9 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
         price_match = _PRICE_RE.search(chunk)
         price = parse_decimal(price_match.group(1)) if price_match else None
 
+        image_match = _IMAGE_RE.search(chunk)
+        cover_image_url = html_lib.unescape(image_match.group(1)) if image_match else ""
+
         if not listing_id and not title:
             continue
         listings.append({
@@ -100,6 +110,7 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
             "area_m2": parse_decimal(area_match.group(1)) if area_match else None,
             "price_eur": price,
             "detail_url": detail_url,
+            "cover_image_url": cover_image_url,
         })
     return listings
 

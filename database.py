@@ -464,6 +464,7 @@ class KleinanzeigenListing(Base):
     area_m2 = Column(FLOAT)
     price_eur = Column(FLOAT)
     detail_url = Column(TEXT)
+    cover_image_url = Column(TEXT)
     first_seen_at = Column(DATETIME, nullable=False)
     last_seen_at = Column(DATETIME, nullable=False)
     is_active = Column(BOOLEAN, nullable=False, default=True)
@@ -711,6 +712,7 @@ def _ensure_column(table_name: str, column_name: str, column_type: str) -> None:
 
 
 _ensure_column('propotsdam_filter', 'min_total_rent_eur', 'FLOAT')
+_ensure_column('kleinanzeigen_listing', 'cover_image_url', 'TEXT')
 _ensure_column('housing_access_user', 'expires_at', 'DATETIME')
 _ensure_column('housing_access_user', 'expiry_notice_sent', 'BOOLEAN')
 _ensure_column('housing_access_user', 'is_trial', 'BOOLEAN NOT NULL DEFAULT 0')

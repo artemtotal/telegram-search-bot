@@ -41,6 +41,9 @@ CHECK_INTERVAL_SECONDS = 20 * 60
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 ERROR_ALERT_COOLDOWN = timedelta(hours=2)
 _USER_AGENT = "Mozilla/5.0 (compatible; PotsdamHousingBot/1.0)"
+# Подпись к фото Telegram обрезает жёстче обычного текста (1024 против 4096
+# символов) — раньше этого лимита текст уходит подписью, дальше отдельным сообщением.
+CAPTION_LIMIT = 1024
 # Пошук по Потсдаму ніколи не буває порожнім — сторінка стабільно віддає 25-26
 # карток. Одиничний нуль (реально спостережений 2026-08-25 12:45 серед сусідніх
 # перевірок із 25-26) означає не зміну розмітки, а миттєвий збій на боці сайту,
@@ -77,6 +80,33 @@ def _fetch_listings() -> List[Dict]:
     # Порожньо і після всіх спроб — тоді це вже схоже на справжню зміну
     # розмітки, і про це має дізнатись адмін (_notify_admin_parse_broke).
     return []
+
+
+def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
+    """Шлёт квартиру одним постом: обложка объявления с текстом подписью снизу.
+
+    В отличие от остальных источников — без похода на страницу объявления за
+    полной галереей: Kleinanzeigen явно запрещает автоматический сбор в своих
+    Условиях использования, и check_job уже держит интервал проверки заметно
+    реже остальных источников именно из-за этого. Второй запрос на каждое
+    новое объявление противоречил бы этой осторожности — используется только
+    обложка, которая и так пришла бесплатно вместе со страницей поиска.
+
+    Возвращает True, если текст ушёл подписью — тогда отдельное текстовое
+    сообщение отправлять не нужно. False означает, что обложки нет или
+    подпись не влезла в лимит: вызывающий обязан отправить тот же текст
+    отдельным сообщением, иначе объявление осталось бы вовсе без текста.
+    """
+    cover = str(listing.get("cover_image_url") or "").strip()
+    if not cover:
+        return False
+    caption = text if len(text) <= CAPTION_LIMIT else None
+    try:
+        bot.send_photo(chat_id=chat_id, photo=cover, caption=caption, parse_mode="HTML" if caption else None)
+        return caption is not None
+    except Exception:
+        logger.exception("Could not send Kleinanzeigen post to %s", chat_id)
+        return False
 
 
 # Some swap-listing posters (e.g. the commercial account "Wohnungsswap.de")
@@ -182,7 +212,10 @@ def check_job(context) -> Dict[str, int]:
     sent = 0
     for filt, listing in matches:
         text = kleinanzeigen_matching.format_notification(listing)
-        bot.send_message(chat_id=int(filt["user_id"]), text=text, parse_mode="HTML", disable_web_page_preview=False)
+        chat_id = int(filt["user_id"])
+        posted_as_caption = _send_listing(bot, chat_id, listing, text)
+        if not posted_as_caption:
+            bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
         kleinanzeigen_store.mark_delivered(int(filt["filter_id"]), str(listing["listing_key"]))
         sent += 1
     logger.info(

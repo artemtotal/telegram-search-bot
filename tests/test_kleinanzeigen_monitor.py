@@ -10,9 +10,16 @@ from user_jobs import kleinanzeigen_monitor
 class FakeBot:
     def __init__(self):
         self.sent = []
+        self.photos = []
+        self.calls = []
 
     def send_message(self, chat_id, text, **kwargs):
+        self.calls.append('message')
         self.sent.append((chat_id, text, kwargs))
+
+    def send_photo(self, **kwargs):
+        self.calls.append('photo')
+        self.photos.append(kwargs)
 
 
 class FakeResponse:
@@ -23,11 +30,12 @@ class FakeResponse:
         pass
 
 
-def _listing(key, city="Potsdam", title="Wohnung", rooms=3.0, area=76.0, price=572.0):
+def _listing(key, city="Potsdam", title="Wohnung", rooms=3.0, area=76.0, price=572.0, cover_image_url=""):
     return {
         "listing_key": key, "title": title, "address": f"{city}", "city": city,
         "rooms": rooms, "area_m2": area, "price_eur": price,
         "detail_url": f"https://www.kleinanzeigen.de/s-anzeige/x/{key}",
+        "cover_image_url": cover_image_url,
     }
 
 
@@ -253,6 +261,96 @@ class KleinanzeigenParseAlertCooldownTests(unittest.TestCase):
             alerted = kleinanzeigen_monitor._notify_admin_parse_broke(bot, previous)
 
         self.assertTrue(alerted)
+
+
+class KleinanzeigenListingPostTests(unittest.TestCase):
+    """_send_listing: единый пост — уже собранная обложка с текстом объявления подписью.
+
+    Без похода на страницу объявления: Kleinanzeigen явно запрещает
+    автосбор, поэтому второго запроса на новое объявление тут нет вовсе.
+    """
+
+    TEXT = 'Нове оголошення Kleinanzeigen\n\nАдреса: Beispielstr. 1'
+
+    def test_a_cover_carries_the_text_as_its_caption(self):
+        bot = FakeBot()
+        listing = _listing('1', cover_image_url='https://img.kleinanzeigen.de/x.jpg')
+        with mock.patch('requests.get') as get:
+            posted_as_caption = kleinanzeigen_monitor._send_listing(bot, 312029534, listing, self.TEXT)
+
+        get.assert_not_called()
+        self.assertTrue(posted_as_caption)
+        self.assertEqual(bot.calls, ['photo'])
+        self.assertEqual(bot.photos[0]['caption'], self.TEXT)
+        self.assertEqual(bot.photos[0]['photo'], 'https://img.kleinanzeigen.de/x.jpg')
+
+    def test_a_listing_without_a_cover_sends_nothing(self):
+        bot = FakeBot()
+        listing = _listing('1', cover_image_url='')
+        posted_as_caption = kleinanzeigen_monitor._send_listing(bot, 312029534, listing, self.TEXT)
+
+        self.assertFalse(posted_as_caption)
+        self.assertEqual(bot.calls, [])
+
+    def test_text_over_the_caption_limit_still_goes_out_as_a_bare_photo(self):
+        bot = FakeBot()
+        listing = _listing('1', cover_image_url='https://img.kleinanzeigen.de/x.jpg')
+        long_text = 'x' * (kleinanzeigen_monitor.CAPTION_LIMIT + 1)
+        posted_as_caption = kleinanzeigen_monitor._send_listing(bot, 312029534, listing, long_text)
+
+        self.assertFalse(posted_as_caption)
+        self.assertEqual(bot.calls, ['photo'])
+        self.assertIsNone(bot.photos[0]['caption'])
+
+    def test_a_failed_send_is_swallowed(self):
+        bot = FakeBot()
+        bot.send_photo = mock.Mock(side_effect=RuntimeError('Telegram said no'))
+        listing = _listing('1', cover_image_url='https://img.kleinanzeigen.de/x.jpg')
+        posted_as_caption = kleinanzeigen_monitor._send_listing(bot, 312029534, listing, self.TEXT)
+
+        self.assertFalse(posted_as_caption)
+
+
+class KleinanzeigenDeliveryTests(unittest.TestCase):
+    def test_a_listing_with_a_cover_goes_out_as_a_single_post(self):
+        context = SimpleNamespace(bot=FakeBot())
+        potsdam = _listing('1', cover_image_url='https://img.kleinanzeigen.de/x.jpg')
+        filt = {'filter_id': 9, 'user_id': 544675510, 'max_price_eur': 1000.0}
+
+        with mock.patch.object(kleinanzeigen_monitor, 'CHECK_ENABLED', True), \
+             mock.patch('requests.get', return_value=FakeResponse('irrelevant')), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_parser.parse_listings', return_value=[potsdam]), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.record_status'), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.upsert_listings', return_value=1), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.list_active_listings', return_value=[potsdam]), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.list_filters', return_value=[filt]), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.delivered_pairs', return_value=set()), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.mark_delivered') as mark_delivered:
+            result = kleinanzeigen_monitor.check_job(context)
+
+        self.assertEqual(context.bot.calls, ['photo'])
+        self.assertIn('Kleinanzeigen', context.bot.photos[0]['caption'])
+        self.assertEqual(result['sent'], 1)
+        mark_delivered.assert_called_once_with(9, '1')
+
+    def test_a_listing_without_a_cover_is_still_delivered_as_text(self):
+        context = SimpleNamespace(bot=FakeBot())
+        potsdam = _listing('1', cover_image_url='')
+        filt = {'filter_id': 9, 'user_id': 544675510, 'max_price_eur': 1000.0}
+
+        with mock.patch.object(kleinanzeigen_monitor, 'CHECK_ENABLED', True), \
+             mock.patch('requests.get', return_value=FakeResponse('irrelevant')), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_parser.parse_listings', return_value=[potsdam]), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.record_status'), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.upsert_listings', return_value=1), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.list_active_listings', return_value=[potsdam]), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.list_filters', return_value=[filt]), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.delivered_pairs', return_value=set()), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.mark_delivered'):
+            result = kleinanzeigen_monitor.check_job(context)
+
+        self.assertEqual(context.bot.calls, ['message'])
+        self.assertEqual(result['sent'], 1)
 
 
 if __name__ == '__main__':
