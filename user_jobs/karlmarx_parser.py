@@ -43,6 +43,11 @@ _STREET_RE = re.compile(r'<div class="street">\s*([^<]*?)\s*</div>')
 _CITY_RE = re.compile(r'<div class="city">\s*([^<]*?)\s*</div>')
 _PLZ_CITY_RE = re.compile(r"(\d{4,5})\s+(.+)")
 _TAG_RE = re.compile(r"<[^>]+>")
+_COVER_IMAGE_RE = re.compile(r'<img[^>]*\ssrc="([^"]+)"')
+# Галерея сторінки оголошення — Bootstrap-карусель, кожен кадр промальовано
+# як background-image, а не звичайний <img>; поруч ще й Grundriss/Energieausweis
+# у тому самому форматі — залишаємо, як і в SEMMELHAACK.
+_GALLERY_IMAGE_RE = re.compile(r"background-image:\s*url\('([^']+)'\)")
 
 
 def clean_text(value: Any) -> str:
@@ -120,6 +125,9 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
         plz_city_match = _PLZ_CITY_RE.match(city_raw)
         city = plz_city_match.group(2) if plz_city_match else city_raw
 
+        cover_match = _COVER_IMAGE_RE.search(chunk)
+        cover_image_url = BASE_URL + cover_match.group(1) if cover_match else ""
+
         if not detail_url and not title:
             continue
         listings.append({
@@ -131,8 +139,24 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
             "area_m2": parse_decimal(area),
             "price_eur": parse_decimal(price),
             "detail_url": detail_url,
+            "cover_image_url": cover_image_url,
         })
     return listings
+
+
+def parse_gallery_urls(html: str) -> list[str]:
+    """Усі фото й плани поверху оголошення — зі сторінки самого оголошення.
+
+    Картка каталогу показує лише одну обкладинку; повна карусель є тільки на
+    сторінці оголошення, і кожен її кадр промальовано як background-image
+    (Bootstrap carousel), а не звичайний <img src>.
+    """
+    seen: list[str] = []
+    for path in _GALLERY_IMAGE_RE.findall(html):
+        url = BASE_URL + path
+        if url not in seen:
+            seen.append(url)
+    return seen
 
 
 def _line(label: str, value: Any) -> str | None:

@@ -98,6 +98,48 @@ class KarlmarxParserTests(unittest.TestCase):
         self.assertEqual(karlmarx_parser.parse_decimal("97 m²"), 97.0)
         self.assertIsNone(karlmarx_parser.parse_decimal(""))
 
+    def test_extracts_the_cover_image_from_the_search_card(self):
+        html = "<html><body>" + _card(
+            "Wohnung Miete", "/fuer-wohnungssucher/expose/x", "Wohnung",
+            "Wohnfläche", "78", "Warmmiete", "950,00", "3", "Alter Markt 5a", "14467 Potsdam",
+        ).replace('src="x.png"', 'src="/fileadmin/user_upload/wgkarlmarx/_processed_/csm_x.png"') + "</body></html>"
+
+        listing = karlmarx_parser.parse_listings(html)[0]
+
+        self.assertEqual(
+            listing["cover_image_url"],
+            "https://wgkarlmarx.de/fileadmin/user_upload/wgkarlmarx/_processed_/csm_x.png",
+        )
+
+    def test_parse_gallery_urls_extracts_every_carousel_frame(self):
+        detail_html = """
+        <div class="item carousel-item-type-background_image" style="background-image: url('/fileadmin/user_upload/wgkarlmarx/user_upload/Bild_1.jpg')"></div>
+        <div class="item carousel-item-type-background_image" style="background-image: url('/fileadmin/user_upload/wgkarlmarx/user_upload/Bild_2.jpg')"></div>
+        <div class="item carousel-item-type-background_image" style="background-image: url('/fileadmin/user_upload/wgkarlmarx/user_upload/Grundriss.png')"></div>
+        """
+
+        urls = karlmarx_parser.parse_gallery_urls(detail_html)
+
+        self.assertEqual(urls, [
+            "https://wgkarlmarx.de/fileadmin/user_upload/wgkarlmarx/user_upload/Bild_1.jpg",
+            "https://wgkarlmarx.de/fileadmin/user_upload/wgkarlmarx/user_upload/Bild_2.jpg",
+            "https://wgkarlmarx.de/fileadmin/user_upload/wgkarlmarx/user_upload/Grundriss.png",
+        ])
+
+    def test_parse_gallery_urls_drops_duplicates(self):
+        detail_html = (
+            "<div style=\"background-image: url('/fileadmin/a.jpg')\"></div>"
+            "<div style=\"background-image: url('/fileadmin/a.jpg')\"></div>"
+        )
+
+        self.assertEqual(
+            karlmarx_parser.parse_gallery_urls(detail_html),
+            ["https://wgkarlmarx.de/fileadmin/a.jpg"],
+        )
+
+    def test_parse_gallery_urls_on_a_page_without_a_gallery_yields_nothing(self):
+        self.assertEqual(karlmarx_parser.parse_gallery_urls("<html><body>Nothing here</body></html>"), [])
+
     def test_format_listing_message_includes_the_key_fields(self):
         text = karlmarx_parser.format_listing_message({
             "title": "Potsdamer Mitte - Gewerbe, Bürofläche zu vermieten",
