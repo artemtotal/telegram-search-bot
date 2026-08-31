@@ -2312,6 +2312,129 @@ class HousingWizardBackButtonTests(unittest.TestCase):
         self.assertEqual(context.user_data['housing_admin']['step'], 'sources')
 
 
+class HousingWizardPresetButtonTests(unittest.TestCase):
+    """Jobcenter Angemessenheitsgrenzen: швидкий вибір площі/ціни кнопками,
+    без відмови від ручного введення. Кнопка шле те саме число, яке людина
+    могла б набрати сама — через _PresetTextMessage, а не окрему логіку."""
+
+    def _update(self, text, user_id=544675510):
+        message = FakeMessage(text=text, user_id=user_id)
+        return SimpleNamespace(message=message, effective_message=message, effective_user=SimpleNamespace(id=user_id))
+
+    def _preset_cb_update(self, field_key, value, user_id=544675510):
+        message = FakeMessage(user_id=user_id)
+        query = SimpleNamespace(
+            data=f'housing:preset:{field_key}:{value}',
+            answer=mock.Mock(),
+            edit_message_reply_markup=mock.Mock(),
+            message=message,
+        )
+        return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id)), message
+
+    def test_area_step_offers_the_jobcenter_area_presets(self):
+        keyboard = housing_monitor._field_keyboard('uk', 'max_area_m2')
+        buttons = [b for row in keyboard.inline_keyboard for b in row]
+        callbacks = [b.callback_data for b in buttons]
+        for value in housing_monitor.JOBCENTER_AREA_PRESETS_M2:
+            self.assertIn(f'housing:preset:max_area_m2:{value}', callbacks)
+        self.assertIn(housing_monitor.BACK_CALLBACK, callbacks)
+
+    def test_price_step_offers_the_jobcenter_price_presets(self):
+        for field_key in ('max_price_eur', 'max_total_rent_eur'):
+            keyboard = housing_monitor._field_keyboard('uk', field_key)
+            callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+            for value in housing_monitor.JOBCENTER_PRICE_PRESETS_EUR:
+                self.assertIn(f'housing:preset:{field_key}:{value}', callbacks)
+
+    def test_unrelated_fields_get_no_preset_buttons(self):
+        keyboard = housing_monitor._field_keyboard('uk', 'min_rooms')
+        callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+        self.assertEqual(callbacks, [housing_monitor.BACK_CALLBACK])
+
+    def test_price_prompt_warns_the_presets_are_bruttokaltmiete(self):
+        text = housing_monitor._field_prompt({}, housing_monitor.SEMM_CRITERIA_FIELDS, 'max_price_eur', 'uk')
+        self.assertIn('Bruttokaltmiete', text)
+        self.assertIn('Kaltmiete', text)
+
+    def test_area_prompt_mentions_jobcenter_without_the_price_caveat(self):
+        text = housing_monitor._field_prompt({}, housing_monitor.SEMM_CRITERIA_FIELDS, 'max_area_m2', 'uk')
+        self.assertIn('Jobcenter', text)
+        self.assertNotIn('Bruttokaltmiete', text)
+
+    def test_rooms_prompt_has_no_preset_note_at_all(self):
+        text = housing_monitor._field_prompt({}, housing_monitor.SEMM_CRITERIA_FIELDS, 'min_rooms', 'uk')
+        self.assertNotIn('Jobcenter', text)
+
+    def test_tapping_a_preset_sets_the_value_and_advances_the_step(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'semmelhaack', 'step': 'max_area_m2', 'user_id': 544675510, 'min_area_m2': 40.0,
+        }})
+        update, query_message = self._preset_cb_update('max_area_m2', 65)
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            housing_monitor._handle_preset_tap(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['max_area_m2'], 65.0)
+        self.assertEqual(state['step'], 'min_price_eur')
+        update.callback_query.answer.assert_called_once()
+        self.assertEqual(len(query_message.replies), 1)
+        self.assertIn('Мінімальна холодна оренда', query_message.replies[0][0])
+
+    def test_a_stale_preset_tap_is_ignored(self):
+        """Стара кнопка на старому повідомленні лишається тапабельною — але
+        якщо крок майстра вже інший, натискання не повинно нічого міняти."""
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'semmelhaack', 'step': 'min_price_eur', 'user_id': 544675510,
+        }})
+        update, query_message = self._preset_cb_update('max_area_m2', 65)
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            housing_monitor._handle_preset_tap(update, context)
+
+        self.assertEqual(context.user_data['housing_admin']['step'], 'min_price_eur')
+        self.assertEqual(query_message.replies, [])
+        update.callback_query.answer.assert_called_once()
+
+    def test_a_preset_violating_the_sibling_bound_reprompts_instead_of_crashing(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'semmelhaack', 'step': 'max_area_m2', 'user_id': 544675510, 'min_area_m2': 90.0,
+        }})
+        update, query_message = self._preset_cb_update('max_area_m2', 65)
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            housing_monitor._handle_preset_tap(update, context)
+
+        self.assertEqual(context.user_data['housing_admin']['step'], 'max_area_m2')
+        self.assertEqual(len(query_message.replies), 1)
+        self.assertIn('Мінімум не може бути більшим за максимум', query_message.replies[0][0])
+
+    def test_a_disallowed_user_tapping_a_preset_is_a_no_op(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'semmelhaack', 'step': 'max_area_m2', 'user_id': 999,
+        }})
+        update, query_message = self._preset_cb_update('max_area_m2', 65, user_id=999)
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', set()):
+            housing_monitor._handle_preset_tap(update, context)
+
+        self.assertEqual(query_message.replies, [])
+        self.assertNotIn('max_area_m2', context.user_data['housing_admin'])
+
+    def test_manual_entry_still_works_on_a_field_that_also_has_presets(self):
+        """Кнопки — лише прискорення, не заміна ручного вводу."""
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'semmelhaack', 'step': 'max_area_m2', 'user_id': 544675510,
+        }})
+        update = self._update('73', user_id=544675510)
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        self.assertEqual(context.user_data['housing_admin']['max_area_m2'], 73.0)
+
+
 class HousingNotificationSettingsTests(unittest.TestCase):
     """Тиха ніч і денний дайджест — вибирає користувач, не адмін."""
 

@@ -321,22 +321,53 @@ PRICE_STEP_PROMPTS = {key: spec["prompt"] for key, spec in PRICE_STEP_FIELDS.ite
 # зайвим, бо крок завжди один: попереднє поле того самого списку.
 BACK_CALLBACK = "housing:field_back"
 
+# Jobcenter "Angemessenheitsgrenzen der Bruttokaltmieten" (Потсдам) — верхні
+# межі площі й ціни, у які Jobcenter готовий компенсувати оренду. Площа не
+# залежить від валюти й підходить як є; ціна в таблиці — Bruttokaltmiete
+# (холодна оренда + комунальні), тоді як більшість фільтрів питають
+# Kaltmiete/Nettokaltmiete (без комунальних) — тому справжня допустима
+# Kaltmiete зазвичай трохи нижче цих чисел. Про це попереджає підпис під
+# кнопками (_field_prompt), а не сама кнопка — цифри лишаються як у джерелі,
+# щоб не гадати з чиєїсь площі, скільки саме комуналки відняти.
+JOBCENTER_AREA_PRESETS_M2 = (50, 65, 80, 90, 100)
+JOBCENTER_PRICE_PRESETS_EUR = (550, 640, 720, 829)
+PRICE_PRESET_FIELD_KEYS = {"max_price_eur", "max_total_rent_eur"}
+PRESET_CALLBACK_PREFIX = "housing:preset:"
 
-def _field_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
+
+def _preset_values_for(field_key: Optional[str]):
+    if field_key == "max_area_m2":
+        return JOBCENTER_AREA_PRESETS_M2
+    if field_key in PRICE_PRESET_FIELD_KEYS:
+        return JOBCENTER_PRICE_PRESETS_EUR
+    return None
+
+
+def _field_keyboard(lang: str = "uk", field_key: Optional[str] = None) -> InlineKeyboardMarkup:
     # Просто «⬅ Назад» губилося серед тексту питання — люди не помічали, що
     # можна виправити попередню відповідь, і кидали майстер на середині.
-    return InlineKeyboardMarkup([[InlineKeyboardButton(i18n.t("housing.btn.field_back", lang), callback_data=BACK_CALLBACK)]])
+    rows = []
+    values = _preset_values_for(field_key)
+    if values:
+        unit = "м²" if field_key == "max_area_m2" else "€"
+        buttons = [
+            InlineKeyboardButton(f"{value} {unit}", callback_data=f"{PRESET_CALLBACK_PREFIX}{field_key}:{value}")
+            for value in values
+        ]
+        rows.extend(buttons[i:i + 3] for i in range(0, len(buttons), 3))
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.field_back", lang), callback_data=BACK_CALLBACK)])
+    return InlineKeyboardMarkup(rows)
 
 
-def _reply_field_prompt(message, text: str, lang: str = "uk") -> None:
+def _reply_field_prompt(message, text: str, lang: str = "uk", field_key: Optional[str] = None) -> None:
     """All wizard field prompts go through here — otherwise the bold/code
     formatting in `_numeric_prompt` shows up as literal `<b>` tags instead of
     rendering, since `reply_text` defaults to no parse mode."""
-    message.reply_text(text, parse_mode="HTML", reply_markup=_field_keyboard(lang))
+    message.reply_text(text, parse_mode="HTML", reply_markup=_field_keyboard(lang, field_key))
 
 
-def _edit_field_prompt(query, text: str, lang: str = "uk") -> None:
-    query.edit_message_text(text, parse_mode="HTML", reply_markup=_field_keyboard(lang))
+def _edit_field_prompt(query, text: str, lang: str = "uk", field_key: Optional[str] = None) -> None:
+    query.edit_message_text(text, parse_mode="HTML", reply_markup=_field_keyboard(lang, field_key))
 
 
 def _format_answer(value) -> str:
@@ -380,10 +411,23 @@ def _localized_field(spec: dict, lang: str = "uk") -> dict:
     }
 
 
+def _jobcenter_preset_note(next_key: str) -> str:
+    if next_key == "max_area_m2":
+        return "\n\n💡 Кнопки нижче — орієнтовні межі площі за нормами Jobcenter."
+    if next_key in PRICE_PRESET_FIELD_KEYS:
+        return (
+            "\n\n💡 Кнопки нижче — орієнтовні межі за нормами Jobcenter "
+            "(Angemessenheitsgrenzen), але це <b>Bruttokaltmiete</b> "
+            "(холодна оренда + комунальні), а не Kaltmiete — реальна допустима "
+            "Kaltmiete зазвичай трохи нижче цих чисел."
+        )
+    return ""
+
+
 def _field_prompt(state: dict, fields: list, next_key: str, lang: str = "uk") -> str:
     resolved = [_localized_field(spec, lang) for spec in fields]
     recap = _fields_recap(state, resolved, exclude_key=next_key)
-    prompt = next(spec["prompt"] for spec in resolved if spec["key"] == next_key)
+    prompt = next(spec["prompt"] for spec in resolved if spec["key"] == next_key) + _jobcenter_preset_note(next_key)
     return f"{recap}\n\n{prompt}" if recap else prompt
 
 
@@ -2883,7 +2927,7 @@ def _handle_semmelhaack_flow(update: Update, context: CallbackContext, state: di
         if index < len(SEMM_CRITERIA_KEYS) - 1:
             next_key = SEMM_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, SEMM_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+            _reply_field_prompt(update.message, _field_prompt(state, SEMM_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_key)
             return True
         _finalize_semmelhaack_filter(update.message, context, state)
         return True
@@ -2976,7 +3020,7 @@ def _handle_schoba_flow(update: Update, context: CallbackContext, state: dict, t
         if index < len(SCHOBA_CRITERIA_KEYS) - 1:
             next_key = SCHOBA_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, SCHOBA_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+            _reply_field_prompt(update.message, _field_prompt(state, SCHOBA_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_key)
             return True
         _finalize_schoba_filter(update.message, context, state)
         return True
@@ -3069,7 +3113,7 @@ def _handle_regiomakler_flow(update: Update, context: CallbackContext, state: di
         if index < len(REGIOMAKLER_CRITERIA_KEYS) - 1:
             next_key = REGIOMAKLER_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+            _reply_field_prompt(update.message, _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_key)
             return True
         _finalize_regiomakler_filter(update.message, context, state)
         return True
@@ -3162,7 +3206,7 @@ def _handle_kleinanzeigen_flow(update: Update, context: CallbackContext, state: 
         if index < len(KLEINANZEIGEN_CRITERIA_KEYS) - 1:
             next_key = KLEINANZEIGEN_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+            _reply_field_prompt(update.message, _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_key)
             return True
         _finalize_kleinanzeigen_filter(update.message, context, state)
         return True
@@ -3255,7 +3299,7 @@ def _handle_locals_flow(update: Update, context: CallbackContext, state: dict, t
         if index < len(LOCALS_CRITERIA_KEYS) - 1:
             next_key = LOCALS_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, LOCALS_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+            _reply_field_prompt(update.message, _field_prompt(state, LOCALS_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_key)
             return True
         _finalize_locals_filter(update.message, context, state)
         return True
@@ -3348,7 +3392,7 @@ def _handle_karlmarx_flow(update: Update, context: CallbackContext, state: dict,
         if index < len(KARLMARX_CRITERIA_KEYS) - 1:
             next_key = KARLMARX_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, KARLMARX_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+            _reply_field_prompt(update.message, _field_prompt(state, KARLMARX_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_key)
             return True
         _finalize_karlmarx_filter(update.message, context, state)
         return True
@@ -3583,7 +3627,7 @@ def _handle_immowelt_flow(update: Update, context: CallbackContext, state: dict,
         if index < len(IMMOWELT_CRITERIA_KEYS) - 1:
             next_key = IMMOWELT_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+            _reply_field_prompt(update.message, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_key)
             return True
         _show_immowelt_preview(update.message, state)
         return True
@@ -3614,7 +3658,7 @@ def _handle_immowelt_clone_price_step(
     if step == "clone_price_min":
         state["step"] = "clone_price_max"
         price_fields = [IMMOWELT_CRITERIA_BY_KEY["min_price_eur"], IMMOWELT_CRITERIA_BY_KEY["max_price_eur"]]
-        _reply_field_prompt(update.message, _field_prompt(state, price_fields, "max_price_eur", i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+        _reply_field_prompt(update.message, _field_prompt(state, price_fields, "max_price_eur", i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key="max_price_eur")
         return True
     _show_immowelt_preview(update.message, state)
     return True
@@ -3652,7 +3696,7 @@ def _finish_immowelt_districts(update: Update, context: CallbackContext, all_dis
     first_key = IMMOWELT_CRITERIA_KEYS[0]
     state["step"] = first_key
     query.answer()
-    _edit_field_prompt(query, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+    _edit_field_prompt(query, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=first_key)
 
 
 def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
@@ -3680,7 +3724,7 @@ def _handle_propot_flow(update: Update, context: CallbackContext, state: dict, t
         if index < len(PROPOT_CRITERIA_KEYS) - 1:
             next_key = PROPOT_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, PROPOT_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+            _reply_field_prompt(update.message, _field_prompt(state, PROPOT_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_key)
             return True
         _finalize_propot_filter(update.message, int(update.effective_user.id), context, state)
         return True
@@ -3705,7 +3749,7 @@ def _handle_propot_clone_price_step(
     if step == "clone_price_min":
         state["step"] = "clone_price_max"
         rent_fields = [PROPOT_CRITERIA_BY_KEY["min_total_rent_eur"], PROPOT_CRITERIA_BY_KEY["max_total_rent_eur"]]
-        _reply_field_prompt(update.message, _field_prompt(state, rent_fields, "max_total_rent_eur", i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+        _reply_field_prompt(update.message, _field_prompt(state, rent_fields, "max_total_rent_eur", i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key="max_total_rent_eur")
         return True
     _finalize_propot_filter(update.message, int(update.effective_user.id), context, state)
     return True
@@ -3927,7 +3971,7 @@ def _finish_districts(update: Update, context: CallbackContext, all_districts: b
     first_key = PROPOT_CRITERIA_KEYS[0]
     state["step"] = first_key
     query.answer()
-    _edit_field_prompt(query, _field_prompt(state, PROPOT_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+    _edit_field_prompt(query, _field_prompt(state, PROPOT_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=first_key)
 
 
 def _toggle_source(update: Update, context: CallbackContext, source_key: str) -> None:
@@ -3990,7 +4034,7 @@ def _finish_sources(update: Update, context: CallbackContext) -> None:
     # району тут нема сенсу показувати, він однаково нічого не відфільтрує.
     first_key = SHARED_CRITERIA_KEYS[0]
     state["step"] = first_key
-    _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+    _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=first_key)
 
 
 def _toggle_multi_district(update: Update, context: CallbackContext, district: str) -> None:
@@ -4022,7 +4066,7 @@ def _finish_multi_districts(update: Update, context: CallbackContext, all_distri
         state["districts_selected"] = []
     state["step"] = SHARED_CRITERIA_KEYS[0]
     query.answer()
-    _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, SHARED_CRITERIA_KEYS[0], i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+    _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, SHARED_CRITERIA_KEYS[0], i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=SHARED_CRITERIA_KEYS[0])
 
 
 def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> None:
@@ -4218,6 +4262,62 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
     )
 
 
+class _PresetTextMessage:
+    """Прикидається справжнім `update.message` з обраним числом як текстом.
+
+    Кнопка-пресет — не окрема логіка, а те саме число, яке людина могла б
+    набрати сама: `handle_private_text` і всі 9 майстрів `_handle_*_flow`
+    вміють обробляти лише текстове повідомлення (`update.message.text`), а
+    callback-запит його не має. Обгортка підміняє тільки `.text` і
+    `.reply_text`, решту атрибутів (chat, from_user тощо) віддає
+    оригінальному повідомленню — так один і той самий шлях валідації й
+    переходу кроку працює для введення руками і для кнопки, без дублювання
+    в кожному з майстрів.
+    """
+
+    def __init__(self, real_message, text: str) -> None:
+        self._real = real_message
+        self.text = text
+
+    def reply_text(self, *args, **kwargs):
+        return self._real.reply_text(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+def _handle_preset_tap(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(int(user.id)):
+        if query:
+            query.answer()
+        return
+    try:
+        _, _, field_key, raw_value = query.data.split(":", 3)
+    except ValueError:
+        query.answer()
+        return
+    state = context.user_data.get("housing_admin")
+    if not state or state.get("step") != field_key:
+        # Питання вже неактуальне — людина або відповіла вручну, або пішла
+        # далі своїм шляхом; стара кнопка на старому повідомленні лишається
+        # тапабельною, і без цієї перевірки натискання її зараз перезаписало
+        # б поточний, зовсім інший крок майстра.
+        query.answer("Це питання вже неактуальне.")
+        return
+    query.answer()
+    try:
+        query.edit_message_reply_markup(reply_markup=None)
+    except BadRequest as exc:
+        if "Message is not modified" not in str(exc):
+            raise
+    except Exception:
+        pass
+    update.message = _PresetTextMessage(query.message, raw_value)
+    handle_private_text(update, context)
+
+
 def _step_back(update: Update, context: CallbackContext) -> None:
     """Одна кнопка «⬅ Назад» на всі майстри числових питань.
 
@@ -4243,7 +4343,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = IMMOWELT_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, prev_key, lang), lang)
+        _edit_field_prompt(query, _field_prompt(state, IMMOWELT_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
         return
     if mode == "propotsdam" and step in PROPOT_CRITERIA_KEYS:
         idx = PROPOT_CRITERIA_KEYS.index(step)
@@ -4256,7 +4356,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = PROPOT_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, PROPOT_CRITERIA_FIELDS, prev_key, lang), lang)
+        _edit_field_prompt(query, _field_prompt(state, PROPOT_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
         return
     if mode == "semmelhaack" and step in SEMM_CRITERIA_KEYS:
         idx = SEMM_CRITERIA_KEYS.index(step)
@@ -4266,7 +4366,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = SEMM_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, SEMM_CRITERIA_FIELDS, prev_key, lang), lang)
+        _edit_field_prompt(query, _field_prompt(state, SEMM_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
         return
     if mode == "schoba" and step in SCHOBA_CRITERIA_KEYS:
         idx = SCHOBA_CRITERIA_KEYS.index(step)
@@ -4274,7 +4374,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = SCHOBA_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, SCHOBA_CRITERIA_FIELDS, prev_key, lang), lang)
+        _edit_field_prompt(query, _field_prompt(state, SCHOBA_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
         return
     if mode == "regiomakler" and step in REGIOMAKLER_CRITERIA_KEYS:
         idx = REGIOMAKLER_CRITERIA_KEYS.index(step)
@@ -4282,7 +4382,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = REGIOMAKLER_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, prev_key, lang), lang)
+        _edit_field_prompt(query, _field_prompt(state, REGIOMAKLER_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
         return
     if mode == "kleinanzeigen" and step in KLEINANZEIGEN_CRITERIA_KEYS:
         idx = KLEINANZEIGEN_CRITERIA_KEYS.index(step)
@@ -4290,7 +4390,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = KLEINANZEIGEN_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, prev_key, lang), lang)
+        _edit_field_prompt(query, _field_prompt(state, KLEINANZEIGEN_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
         return
     if mode == "locals" and step in LOCALS_CRITERIA_KEYS:
         idx = LOCALS_CRITERIA_KEYS.index(step)
@@ -4298,7 +4398,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = LOCALS_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, LOCALS_CRITERIA_FIELDS, prev_key, lang), lang)
+        _edit_field_prompt(query, _field_prompt(state, LOCALS_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
         return
     if mode == "karlmarx" and step in KARLMARX_CRITERIA_KEYS:
         idx = KARLMARX_CRITERIA_KEYS.index(step)
@@ -4306,7 +4406,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             return
         prev_key = KARLMARX_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
-        _edit_field_prompt(query, _field_prompt(state, KARLMARX_CRITERIA_FIELDS, prev_key, lang), lang)
+        _edit_field_prompt(query, _field_prompt(state, KARLMARX_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
         return
     if mode in ("immowelt", "propotsdam") and step in ("clone_price_min", "clone_price_max"):
         # Клон переносить район/кімнати/площу без питань — до них нема куди
@@ -4339,7 +4439,7 @@ def _step_back(update: Update, context: CallbackContext) -> None:
                 return
             prev_key = SHARED_CRITERIA_KEYS[idx - 1]
             state["step"] = prev_key
-            _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key, lang), lang)
+            _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
             return
         if step in PRICE_STEP_PROMPTS:
             price_steps = state.get("_price_steps") or []
@@ -4348,11 +4448,11 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             if idx == 0:
                 prev_key = SHARED_CRITERIA_KEYS[-1]
                 state["step"] = prev_key
-                _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key, lang), lang)
+                _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
                 return
             prev_key = price_steps[idx - 1]
             state["step"] = prev_key
-            _edit_field_prompt(query, _field_prompt(state, price_fields, prev_key, lang), lang)
+            _edit_field_prompt(query, _field_prompt(state, price_fields, prev_key, lang), lang, field_key=prev_key)
             return
         if step == "districts":
             state["step"] = "sources"
@@ -4386,7 +4486,7 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
         if index < len(SHARED_CRITERIA_KEYS) - 1:
             next_key = SHARED_CRITERIA_KEYS[index + 1]
             state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, SHARED_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+            _reply_field_prompt(update.message, _field_prompt(state, SHARED_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_key)
             return True
         price_steps = _price_steps_for(state.get("sources_selected") or [])
         if not price_steps:
@@ -4395,7 +4495,7 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
         state["_price_steps"] = price_steps
         state["step"] = price_steps[0]
         price_fields = SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_steps]
-        _reply_field_prompt(update.message, _field_prompt(state, price_fields, price_steps[0], i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+        _reply_field_prompt(update.message, _field_prompt(state, price_fields, price_steps[0], i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=price_steps[0])
         return True
     if step in PRICE_STEP_PROMPTS:
         value = _parse_single_number(text)
@@ -4413,7 +4513,7 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
             next_step = price_steps[idx + 1]
             state["step"] = next_step
             price_fields = SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_steps]
-            _reply_field_prompt(update.message, _field_prompt(state, price_fields, next_step, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id))
+            _reply_field_prompt(update.message, _field_prompt(state, price_fields, next_step, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_step)
             return True
         _finalize_multi_filter(update.message, context, state)
         return True
@@ -4542,6 +4642,8 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _show_cancelled(query, i18n.get_lang(update.effective_user.id))
     elif query.data == BACK_CALLBACK:
         _step_back(update, context)
+    elif query.data.startswith(PRESET_CALLBACK_PREFIX):
+        _handle_preset_tap(update, context)
     elif query.data == "housing:self_add":
         query.answer()
         start_self_add_flow(update, context, edit=True)
