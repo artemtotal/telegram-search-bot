@@ -85,6 +85,37 @@ class SchobaParserTests(unittest.TestCase):
     def test_empty_page_returns_no_listings(self):
         self.assertEqual(schoba_parser.parse_listings("<html><body>Nothing here</body></html>"), [])
 
+    def test_parse_gallery_urls_extracts_every_full_size_photo(self):
+        detail_html = """
+        <img src="bilder/objekt-id-bild-klein.jpg">
+        <img src="bilder/objekt-id-foto-galerie-1gr.jpg">
+        <img src="bilder/objekt-id-foto-galerie-1kl.jpg">
+        <img src="bilder/objekt-id-foto-galerie-2gr.jpg">
+        <img src="bilder/objekt-id-foto-galerie-2kl.jpg">
+        """
+
+        urls = schoba_parser.parse_gallery_urls(detail_html)
+
+        self.assertEqual(urls, [
+            "https://www.schoba.de/immobilien/angebote/bilder/objekt-id-foto-galerie-1gr.jpg",
+            "https://www.schoba.de/immobilien/angebote/bilder/objekt-id-foto-galerie-2gr.jpg",
+        ])
+
+    def test_parse_gallery_urls_drops_the_repeated_thumbnail_strip(self):
+        """Кожен кадр повторюється двічі на сторінці — вгорі й ще раз ближче до низу."""
+        detail_html = (
+            '<img src="bilder/objekt-id-foto-galerie-1gr.jpg">'
+            '<img src="bilder/objekt-id-foto-galerie-1gr.jpg">'
+        )
+
+        self.assertEqual(
+            schoba_parser.parse_gallery_urls(detail_html),
+            ["https://www.schoba.de/immobilien/angebote/bilder/objekt-id-foto-galerie-1gr.jpg"],
+        )
+
+    def test_parse_gallery_urls_on_a_page_without_a_gallery_yields_nothing(self):
+        self.assertEqual(schoba_parser.parse_gallery_urls("<html><body>Nothing here</body></html>"), [])
+
     def test_format_listing_message_includes_the_key_fields(self):
         text = schoba_parser.format_listing_message({
             "title": "Wohnen nahe Stern-Center Potsdam", "address": "14480 Potsdam, Babelsberg",

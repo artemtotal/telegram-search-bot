@@ -13,6 +13,7 @@ from datetime import timedelta
 from typing import Dict, List
 
 import requests
+from telegram import InputMediaPhoto
 
 from user_jobs import schoba_matching, schoba_parser, schoba_store
 
@@ -31,17 +32,20 @@ _USER_AGENT = "Mozilla/5.0 (compatible; PotsdamHousingBot/1.0)"
 # був цілком живий.
 _FETCH_ATTEMPTS = 3
 _RETRY_BACKOFF_SECONDS = (2, 5)
+# Telegram кладёт в один альбом не больше 10 фото, сколько бы их ни было в галерее.
+GALLERY_ALBUM_MAX = 10
+# Подпись к фото Telegram обрезает жёстче обычного текста (1024 против 4096
+# символов) — раньше этого лимита текст уходит подписью, дальше отдельным сообщением.
+CAPTION_LIMIT = 1024
 
 
-def _fetch_listings() -> List[Dict]:
+def _get_with_retries(url: str) -> requests.Response:
     last_error = None
     for attempt in range(_FETCH_ATTEMPTS):
         try:
-            response = requests.get(
-                schoba_parser.LISTINGS_URL, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT},
-            )
+            response = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT})
             response.raise_for_status()
-            return schoba_parser.parse_listings(response.text)
+            return response
         except requests.RequestException as exc:
             last_error = exc
             if attempt + 1 < _FETCH_ATTEMPTS:
@@ -51,6 +55,64 @@ def _fetch_listings() -> List[Dict]:
                 )
                 time.sleep(_RETRY_BACKOFF_SECONDS[attempt])
     raise last_error
+
+
+def _fetch_listings() -> List[Dict]:
+    response = _get_with_retries(schoba_parser.LISTINGS_URL)
+    return schoba_parser.parse_listings(response.text)
+
+
+def _fetch_gallery(listing: Dict) -> List[str]:
+    """Все фото объявления — со страницы самого объявления.
+
+    Каталожная карточка SCHOBA — обычная таблица характеристик, фото в ней нет
+    вовсе (в отличие от SEMMELHAACK, где есть обложка про запас). Домен
+    публичный, без логина, поэтому Telegram может забрать эти URL сам —
+    скачивать и кешировать байты, как для ProPotsdam, не нужно.
+    """
+    detail_url = str(listing.get("detail_url") or "").strip()
+    if not detail_url:
+        return []
+    try:
+        response = _get_with_retries(detail_url)
+        return schoba_parser.parse_gallery_urls(response.text)[:GALLERY_ALBUM_MAX]
+    except Exception as exc:
+        logger.warning("Could not fetch SCHOBA gallery for %s: %s", detail_url, exc)
+        return []
+
+
+def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
+    """Шлёт квартиру одним постом: галерея фото с текстом объявления подписью снизу.
+
+    Возвращает True, если текст ушёл подписью — тогда отдельное текстовое
+    сообщение отправлять не нужно. False означает, что фото не набралось или
+    подпись не влезла в лимит: вызывающий обязан отправить тот же текст
+    отдельным сообщением, иначе объявление осталось бы вовсе без текста.
+    """
+    photos = _fetch_gallery(listing)
+    if not photos:
+        return False
+    caption = text if len(text) <= CAPTION_LIMIT else None
+    try:
+        if len(photos) == 1:
+            bot.send_photo(
+                chat_id=chat_id, photo=photos[0],
+                caption=caption, parse_mode="HTML" if caption else None,
+            )
+        else:
+            media = []
+            for index, url in enumerate(photos, start=1):
+                item_kwargs = {"media": url}
+                # Telegram показывает подписью всей группы только подпись первого элемента.
+                if index == 1 and caption:
+                    item_kwargs["caption"] = caption
+                    item_kwargs["parse_mode"] = "HTML"
+                media.append(InputMediaPhoto(**item_kwargs))
+            bot.send_media_group(chat_id=chat_id, media=media)
+        return caption is not None
+    except Exception:
+        logger.exception("Could not send SCHOBA post to %s", chat_id)
+        return False
 
 
 def _notify_admin_parse_broke(bot) -> None:
@@ -114,7 +176,10 @@ def check_job(context) -> Dict[str, int]:
     sent = 0
     for filt, listing in matches:
         text = schoba_matching.format_notification(listing)
-        bot.send_message(chat_id=int(filt["user_id"]), text=text, parse_mode="HTML", disable_web_page_preview=False)
+        chat_id = int(filt["user_id"])
+        posted_as_caption = _send_listing(bot, chat_id, listing, text)
+        if not posted_as_caption:
+            bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
         schoba_store.mark_delivered(int(filt["filter_id"]), str(listing["listing_key"]))
         sent += 1
     logger.info(

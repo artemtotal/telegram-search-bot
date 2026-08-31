@@ -21,6 +21,10 @@ _ROW_RE = re.compile(r"<td[^>]*>([^<]+):</td>\s*<td[^>]*>([^<]*)</td>")
 _LINK_RE = re.compile(r'<a href="([^"]+)"[^>]*title="Obj')
 _PLZ_CITY_DISTRICT_RE = re.compile(r"(\d{4,5})\s+([^(]+?)(?:\s*\(([^)]+)\))?$")
 _TAG_RE = re.compile(r"<[^>]+>")
+# "-Ngr.jpg" — полноразмерная фотография галереи; у неё есть маленькая пара
+# "-Nkl.jpg" (миниатюра) и отдельные "bild-klein"/"bild-objekt"/"bild-liste" —
+# те же кадры или обрезки для карточки каталога, не дополнительные фото.
+_GALLERY_IMAGE_RE = re.compile(r'src="(bilder/[^"]*?-\d+gr\.jpg)"')
 
 
 def clean_text(value: Any) -> str:
@@ -103,6 +107,25 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
             "detail_url": detail_url,
         })
     return listings
+
+
+def parse_gallery_urls(html: str) -> list[str]:
+    """Усі фотографії оголошення в повному розмірі — зі сторінки самого оголошення.
+
+    Каталожна картка не містить жодного фото взагалі: там лише таблиця з
+    характеристиками. Галерея є тільки на сторінці кожного оголошення — там
+    кожен кадр повторюється двічі (велике фото "-Ngr.jpg" у верхній частині
+    сторінки й ще раз ближче до низу), тому дублікати відкидаються, а порядок
+    номерів зберігається таким, у якому кадри вперше зустрілись у розмітці.
+    Усі детальні сторінки лежать прямо під ``BASE_URL`` без підкаталогів,
+    тому відносний шлях "bilder/..." завжди дописується до нього.
+    """
+    seen: list[str] = []
+    for relative_path in _GALLERY_IMAGE_RE.findall(html):
+        url = BASE_URL + relative_path
+        if url not in seen:
+            seen.append(url)
+    return seen
 
 
 def _line(label: str, value: Any) -> str | None:
