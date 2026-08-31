@@ -117,6 +117,39 @@ class RegiomaklerParserTests(unittest.TestCase):
     def test_empty_page_returns_no_listings(self):
         self.assertEqual(regiomakler_parser.parse_listings("<html><body>Nothing</body></html>", "immoteam"), [])
 
+    def test_parse_gallery_urls_extracts_full_size_photos_deduped(self):
+        detail_html = """
+        <img src="https://immoteam-potsdam.de/wp-content/uploads/immomakler/attachments/abc123/photo1-360x270.jpg" srcset="https://immoteam-potsdam.de/wp-content/uploads/immomakler/attachments/abc123/photo1.jpg 1280w, https://immoteam-potsdam.de/wp-content/uploads/immomakler/attachments/abc123/photo1-360x270.jpg 360w">
+        <img src="https://immoteam-potsdam.de/wp-content/uploads/immomakler/attachments/abc123/photo2.jpg">
+        """
+
+        urls = regiomakler_parser.parse_gallery_urls(detail_html)
+
+        self.assertEqual(urls, [
+            "https://immoteam-potsdam.de/wp-content/uploads/immomakler/attachments/abc123/photo1.jpg",
+            "https://immoteam-potsdam.de/wp-content/uploads/immomakler/attachments/abc123/photo2.jpg",
+        ])
+
+    def test_parse_gallery_urls_ignores_prev_next_navigation_thumbnails(self):
+        """Сторінка оголошення показує ще один-два кадри з навігації
+        "попереднє/наступне оголошення" — це вже тека ІНШОГО оголошення, і
+        вона завжди рідше згадується, ніж справжня галерея."""
+        this_listing = "".join(
+            f'<img src="https://potsdam-immobilien.de/wp-content/uploads/immomakler/attachments/dominant/p{i}.jpg">'
+            for i in range(5)
+        )
+        nav_prev = '<img src="https://potsdam-immobilien.de/wp-content/uploads/immomakler/attachments/otherprev/x.jpg">'
+        nav_next = '<img src="https://potsdam-immobilien.de/wp-content/uploads/immomakler/attachments/othernext/y.jpg">'
+        detail_html = nav_prev + this_listing + nav_next
+
+        urls = regiomakler_parser.parse_gallery_urls(detail_html)
+
+        self.assertEqual(len(urls), 5)
+        self.assertTrue(all("/dominant/" in url for url in urls))
+
+    def test_parse_gallery_urls_on_a_page_without_a_gallery_yields_nothing(self):
+        self.assertEqual(regiomakler_parser.parse_gallery_urls("<html><body>Nothing</body></html>"), [])
+
     def test_format_listing_message_includes_the_key_fields(self):
         text = regiomakler_parser.format_listing_message({
             "title": "Maisonettewohnung", "address": "14482 Potsdam-Babelsberg, Maisonettewohnung",

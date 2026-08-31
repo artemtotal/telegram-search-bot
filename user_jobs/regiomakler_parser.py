@@ -27,6 +27,12 @@ _ROW_RE = re.compile(r'<div class="row[^"]*\b(data-[a-z_]+)"[^>]*role="listitem"
 _STATUS_RE = re.compile(r'property-status property-status-([a-z-]+)"[^>]*>([^<]*)<')
 _ADDRESS_RE = re.compile(r"^(\d{4,5})\s+([^,]+),\s*(.*)$")
 _TAG_RE = re.compile(r"<[^>]+>")
+# immomakler хранит фото каждого объявления в своей "attachments/<hash>" папке
+# на домене конкретного сайта (у immoteam и alpha — разные копии одних фото).
+_GALLERY_IMAGE_RE = re.compile(
+    r'src="(https://[^"]+/wp-content/uploads/immomakler/attachments/([a-z0-9]+)/[^"]+\.jpg)"'
+)
+_GALLERY_SIZE_SUFFIX_RE = re.compile(r"-\d+x\d+\.jpg$")
 _STATUS_WINDOW = 1500
 _NOT_VACANT_STATUSES = {"vermietet", "reserviert", "verkauft"}
 
@@ -105,6 +111,35 @@ def parse_listings(html: str, source: str) -> list[dict[str, Any]]:
             "source": source,
         })
     return listings
+
+
+def parse_gallery_urls(html: str) -> list[str]:
+    """Усі фото оголошення в повному розмірі — зі сторінки самого оголошення.
+
+    Immomakler зберігає фото кожного оголошення в окремій теці
+    "attachments/<hash>" на домені конкретного сайту (immoteam-potsdam.de або
+    potsdam-immobilien.de — кожен хостить свою копію тих самих фото). На
+    сторінці оголошення трапляються ще один-два кадри з навігації
+    "попереднє/наступне оголошення" — це вже тека ІНШОГО оголошення. Справжня
+    галерея завжди домінує кількістю згадувань (кожен її кадр повторюється у
+    ``src`` і кількох ``srcset``-варіантах розміру), тому береться тека з
+    найбільшою кількістю входжень, а не перша-ліпша.
+    """
+    matches = _GALLERY_IMAGE_RE.findall(html)
+    if not matches:
+        return []
+    counts: dict[str, int] = {}
+    for _url, folder in matches:
+        counts[folder] = counts.get(folder, 0) + 1
+    dominant_folder = max(counts, key=counts.get)
+    seen: list[str] = []
+    for url, folder in matches:
+        if folder != dominant_folder:
+            continue
+        full_size = _GALLERY_SIZE_SUFFIX_RE.sub(".jpg", url)
+        if full_size not in seen:
+            seen.append(full_size)
+    return seen
 
 
 def _line(label: str, value: Any) -> str | None:

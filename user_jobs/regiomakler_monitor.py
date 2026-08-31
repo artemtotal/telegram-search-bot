@@ -18,6 +18,7 @@ from datetime import timedelta
 from typing import Dict, List
 
 import requests
+from telegram import InputMediaPhoto
 
 from user_jobs import regiomakler_matching, regiomakler_parser, regiomakler_store
 
@@ -29,6 +30,11 @@ CHECK_INTERVAL_SECONDS = 15 * 60
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 ERROR_ALERT_COOLDOWN = timedelta(hours=2)
 _USER_AGENT = "Mozilla/5.0 (compatible; PotsdamHousingBot/1.0)"
+# Telegram кладёт в один альбом не больше 10 фото, сколько бы их ни было в галерее.
+GALLERY_ALBUM_MAX = 10
+# Подпись к фото Telegram обрезает жёстче обычного текста (1024 против 4096
+# символов) — раньше этого лимита текст уходит подписью, дальше отдельным сообщением.
+CAPTION_LIMIT = 1024
 
 _IMMOTEAM_URLS = [
     "https://immoteam-potsdam.de/immobilienangebote/?vermarktungsart=miete&ort=potsdam",
@@ -64,6 +70,59 @@ def _dedupe(listings: List[Dict]) -> List[Dict]:
         seen.add(key)
         unique.append(listing)
     return unique
+
+
+def _fetch_gallery(listing: Dict) -> List[str]:
+    """Все фото объявления — со страницы самого объявления.
+
+    Ни каталог immoteam, ни каталог alpha не показывают фото на карточке —
+    только на странице конкретного объявления. Оба домена публичные, без
+    логина, поэтому Telegram может забрать эти URL сам — скачивать и
+    кешировать байты, как для ProPotsdam, не нужно.
+    """
+    detail_url = str(listing.get("detail_url") or "").strip()
+    if not detail_url:
+        return []
+    try:
+        html_text = _fetch(detail_url)
+        return regiomakler_parser.parse_gallery_urls(html_text)[:GALLERY_ALBUM_MAX]
+    except Exception as exc:
+        logger.warning("Could not fetch ImmoTeam/alpha gallery for %s: %s", detail_url, exc)
+        return []
+
+
+def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
+    """Шлёт квартиру одним постом: галерея фото с текстом объявления подписью снизу.
+
+    Возвращает True, если текст ушёл подписью — тогда отдельное текстовое
+    сообщение отправлять не нужно. False означает, что фото не набралось или
+    подпись не влезла в лимит: вызывающий обязан отправить тот же текст
+    отдельным сообщением, иначе объявление осталось бы вовсе без текста.
+    """
+    photos = _fetch_gallery(listing)
+    if not photos:
+        return False
+    caption = text if len(text) <= CAPTION_LIMIT else None
+    try:
+        if len(photos) == 1:
+            bot.send_photo(
+                chat_id=chat_id, photo=photos[0],
+                caption=caption, parse_mode="HTML" if caption else None,
+            )
+        else:
+            media = []
+            for index, url in enumerate(photos, start=1):
+                item_kwargs = {"media": url}
+                # Telegram показывает подписью всей группы только подпись первого элемента.
+                if index == 1 and caption:
+                    item_kwargs["caption"] = caption
+                    item_kwargs["parse_mode"] = "HTML"
+                media.append(InputMediaPhoto(**item_kwargs))
+            bot.send_media_group(chat_id=chat_id, media=media)
+        return caption is not None
+    except Exception:
+        logger.exception("Could not send ImmoTeam/alpha post to %s", chat_id)
+        return False
 
 
 def _is_relevant(listing: Dict) -> bool:
@@ -131,7 +190,10 @@ def check_job(context) -> Dict[str, int]:
     sent = 0
     for filt, listing in matches:
         text = regiomakler_matching.format_notification(listing)
-        bot.send_message(chat_id=int(filt["user_id"]), text=text, parse_mode="HTML", disable_web_page_preview=False)
+        chat_id = int(filt["user_id"])
+        posted_as_caption = _send_listing(bot, chat_id, listing, text)
+        if not posted_as_caption:
+            bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
         regiomakler_store.mark_delivered(int(filt["filter_id"]), str(listing["listing_key"]))
         sent += 1
     logger.info(
