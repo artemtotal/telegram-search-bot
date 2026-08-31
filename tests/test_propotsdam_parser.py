@@ -106,6 +106,79 @@ class ProPotsdamParserTests(unittest.TestCase):
         }
         self.assertEqual(keys, {'872F068F-FE11-BB52-C157-C3145E5825C8'})
 
+    def test_every_image_is_kept_not_only_the_cover(self):
+        """Оголошення з трьома фото має віддавати три, а не саму обкладинку."""
+        xml = '''<?xml version="1.0" encoding="utf-8"?>
+        <boxlist xmlns="http://www.openpromos.com/OPPC/XMLForms">
+          <section title="Immobilien">
+            <box boxid="ESQ_VM_REOBJ_ALL" title="Immobilien">
+              <head>
+                <id>ABC</id>
+                <originalId>ORIG</originalId>
+                <address city="Potsdam" postcode="14480" street="Wolfgang-Staudte-Str. 3"/>
+                <title>Wohnen in der Gartenstadt Drewitz</title>
+                <image resourceId="707C13F6-743D-744E-F05B-26541CFC470D"/>
+                <image resourceId="790A6B78-172E-460C-BCEA-EE355B49537C"/>
+                <image resourceId="3A2FDA42-680E-5A45-74B3-73D6408B6DAE"/>
+              </head>
+            </box>
+          </section>
+        </boxlist>'''
+
+        listing = propotsdam_parser.parse_boxlist_xml(xml)[0]
+
+        self.assertEqual(propotsdam_parser.image_resource_ids(listing), [
+            '707C13F6-743D-744E-F05B-26541CFC470D',
+            '790A6B78-172E-460C-BCEA-EE355B49537C',
+            '3A2FDA42-680E-5A45-74B3-73D6408B6DAE',
+        ])
+        urls = propotsdam_parser.image_urls(listing)
+        self.assertEqual(len(urls), 3)
+        # Обкладинка лишається першою: підпис і прев'ю мають не з'їхати.
+        self.assertEqual(urls[0], listing['image_url'])
+
+    def test_image_ids_survive_a_round_trip_through_storage(self):
+        """Сховище тримає extra в raw_json, тож старі оголошення теж дають усі фото."""
+        stored = propotsdam_parser.normalize_listing({
+            'title': 'Helle 3-Raum-Wohnung',
+            'image_url': propotsdam_parser.IMAGE_URL_TEMPLATE.format(resource_id='F39EA718-C883-DBAE-33EE-A602DB15D3CA'),
+            'extra': {'image_resource_ids': 'F39EA718-C883-DBAE-33EE-A602DB15D3CA,54561F8A-A8D6-7D5B-5FF3-E238A0AC478E'},
+        })
+
+        self.assertEqual(len(propotsdam_parser.image_resource_ids(stored)), 2)
+
+    def test_a_listing_without_resource_ids_falls_back_to_the_cover(self):
+        """DOM-розбір resourceId не бачить — лишається одна обкладинка."""
+        listing = propotsdam_parser.normalize_listing({
+            'title': 'Wohnung',
+            'image_url': 'https://portal.example/img/1.jpg',
+        })
+
+        self.assertEqual(propotsdam_parser.image_resource_ids(listing), [])
+        self.assertEqual(propotsdam_parser.image_urls(listing), ['https://portal.example/img/1.jpg'])
+
+    def test_a_listing_without_any_image_yields_nothing(self):
+        listing = propotsdam_parser.normalize_listing({'title': 'Wohnung'})
+
+        self.assertEqual(propotsdam_parser.image_urls(listing), [])
+
+    def test_unusable_resource_ids_are_dropped(self):
+        """Id доходить до імені файла й до HTTP-шляху, тож сміття туди не пускаємо."""
+        listing = propotsdam_parser.normalize_listing({
+            'title': 'Wohnung',
+            'extra': {'image_resource_ids': '../../etc/passwd,,short,GOOD-RESOURCE-ID-0001'},
+        })
+
+        self.assertEqual(propotsdam_parser.image_resource_ids(listing), ['GOOD-RESOURCE-ID-0001'])
+
+    def test_a_repeated_resource_id_is_listed_once(self):
+        listing = propotsdam_parser.normalize_listing({
+            'title': 'Wohnung',
+            'extra': {'image_resource_ids': 'GOOD-RESOURCE-ID-0001,GOOD-RESOURCE-ID-0001'},
+        })
+
+        self.assertEqual(propotsdam_parser.image_resource_ids(listing), ['GOOD-RESOURCE-ID-0001'])
+
     def test_format_all_listing_data_keeps_unknown_extra_fields(self):
         listing = propotsdam_parser.normalize_listing({
             'title': 'Wohnung mit Balkon',

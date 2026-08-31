@@ -11,6 +11,9 @@ from typing import Any
 
 PORTAL_URL = "https://propotsdam-kundenportal.easysquare.com/propotsdam-kundenportal/index.html#/formlist/%252Fsection%252F0%252Fbox%252F0"
 IMAGE_URL_TEMPLATE = "https://propotsdam-kundenportal.easysquare.com/propotsdam-kundenportal/api5/accndocs2/{resource_id}"
+# resourceId у фіді — це GUID. Перевіряємо його форму, бо далі він стає і
+# імʼям файла в кеші колектора, і шматком HTTP-шляху до нього.
+RESOURCE_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{7,63}")
 
 
 def clean_text(value: Any) -> str:
@@ -71,6 +74,38 @@ def normalize_listing(payload: dict[str, Any]) -> dict[str, Any]:
         "image_url": clean_text(payload.get("image_url")),
         "extra": {clean_text(k): clean_text(v) for k, v in extra.items() if clean_text(k) and clean_text(v)},
     }
+
+
+def image_resource_ids(listing: dict[str, Any]) -> list[str]:
+    """Ідентифікатори всіх фото оголошення, а не лише обкладинки.
+
+    Фід easysquare віддає окремий <image resourceId="..."> на кожне фото, але
+    ``image_url`` завжди тримав тільки перше з них — решта осідала в
+    ``extra['image_resource_ids']`` і нікому не показувалась. Звідси їх і
+    дістаємо: рядок пережив і запис у ``raw_json``, і зворотнє читання зі
+    сховища, тож старі оголошення теж віддають повний список.
+    """
+    extra = listing.get("extra") if isinstance(listing.get("extra"), dict) else {}
+    resource_ids: list[str] = []
+    for part in str(extra.get("image_resource_ids") or "").split(","):
+        candidate = clean_text(part)
+        if RESOURCE_ID_RE.fullmatch(candidate) and candidate not in resource_ids:
+            resource_ids.append(candidate)
+    return resource_ids
+
+
+def image_urls(listing: dict[str, Any]) -> list[str]:
+    """Посилання на всі фото; обкладинка — запасний варіант.
+
+    Порожній список означає «фото немає», а не «щось зламалось»: DOM-розбір
+    (запасний шлях, коли XML нічого не дав) resourceId не бачить взагалі й
+    приносить саму лише обкладинку.
+    """
+    urls = [IMAGE_URL_TEMPLATE.format(resource_id=rid) for rid in image_resource_ids(listing)]
+    if urls:
+        return urls
+    cover = clean_text(listing.get("image_url"))
+    return [cover] if cover else []
 
 
 def _local_name(tag: str) -> str:

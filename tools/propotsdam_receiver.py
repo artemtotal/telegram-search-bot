@@ -16,6 +16,18 @@ with no .dockerignore, so a local .venv would be copied into the bot image.
 
 Playwright's bundled browsers are not needed: ``scan`` drives the system Chrome
 through ``PROPOTSDAM_BROWSER``.
+
+Photos are cached here rather than linked. ``api5/accndocs2/<resourceId>`` only
+opens under a portal login, so Telegram cannot fetch one by URL and the bot —
+which runs in a container with neither the session nor the Chrome profile —
+cannot either. ``scan`` therefore downloads every listing's photos through the
+browser's own session and serves them as bytes on
+``GET /api/propotsdam/photo/<resourceId>``:
+
+- ``PROPOTSDAM_PHOTO_DIR`` — cache directory (default: next to the profile)
+- ``PROPOTSDAM_PHOTO_KEEP_DAYS`` — drop photos unseen for this long, 0 disables
+- ``PROPOTSDAM_PHOTO_MAX_BYTES`` — refuse anything larger
+- ``PROPOTSDAM_PHOTO_TIMEOUT_MS`` — per-photo download timeout
 """
 
 import json
@@ -24,11 +36,12 @@ import os
 import re
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
@@ -46,6 +59,10 @@ PORT = int(os.getenv("PROPOTSDAM_RECEIVER_PORT", "18766") or 18766)
 PORTAL_URL = propotsdam_parser.PORTAL_URL
 PROFILE_DIR = Path(os.getenv("PROPOTSDAM_PROFILE_DIR", str(Path.home() / "AppData" / "Local" / "PotsdamBot" / "propotsdam-browser")))
 BROWSER = os.getenv("PROPOTSDAM_BROWSER", r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+PHOTO_DIR = Path(os.getenv("PROPOTSDAM_PHOTO_DIR", str(PROFILE_DIR.parent / "propotsdam-photos")))
+PHOTO_MAX_BYTES = int(os.getenv("PROPOTSDAM_PHOTO_MAX_BYTES", str(12 * 1024 * 1024)) or 12 * 1024 * 1024)
+PHOTO_KEEP_DAYS = int(os.getenv("PROPOTSDAM_PHOTO_KEEP_DAYS", "30") or 30)
+PHOTO_TIMEOUT_MS = int(os.getenv("PROPOTSDAM_PHOTO_TIMEOUT_MS", "30000") or 30000)
 _scan_lock = Lock()
 _state_lock = Lock()
 _last_result = {"ok": False, "error": "no scan yet", "listings": []}
@@ -152,6 +169,103 @@ def _extract_cards_from_dom(page):
     return listings
 
 
+PHOTO_ROUTE = "/api/propotsdam/photo/"
+
+
+def _content_type(body):
+    if body.startswith(b"\xff\xd8"):
+        return "image/jpeg"
+    if body.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if body.startswith(b"RIFF") and body[8:12] == b"WEBP":
+        return "image/webp"
+    return "application/octet-stream"
+
+
+def _photo_path(resource_id):
+    """Файл кеша для resourceId — или None, если id непохож на настоящий.
+
+    Проверка не косметическая: этот же id приходит снаружи HTTP-запросом за
+    фото, и без неё «../..» в пути превратился бы в чтение чужого файла.
+    """
+    candidate = unquote(str(resource_id or "")).strip()
+    if not propotsdam_parser.RESOURCE_ID_RE.fullmatch(candidate):
+        return None
+    return PHOTO_DIR / "{}.bin".format(candidate)
+
+
+def _cache_photos(page, listings):
+    """Скачивает все фото объявлений сессией самого браузера.
+
+    Ссылка api5/accndocs2/<id> открывается только под логином портала, поэтому
+    Telegram по URL её не заберёт, а бот в контейнере не имеет ни сессии, ни
+    доступа к профилю Chrome. Качаем здесь, где сессия уже есть, и отдаём боту
+    байтами через /api/propotsdam/photo/<id>.
+
+    Уже скачанное не перекачивается: в устоявшемся состоянии новых файлов
+    столько же, сколько новых квартир, — обычно ноль.
+    """
+    wanted = []
+    for listing in listings:
+        for resource_id in propotsdam_parser.image_resource_ids(listing):
+            if resource_id not in wanted:
+                wanted.append(resource_id)
+    if not wanted:
+        return {"wanted": 0, "saved": 0, "cached": 0, "failed": 0}
+
+    PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+    saved = cached = failed = 0
+    for resource_id in wanted:
+        path = _photo_path(resource_id)
+        if path is None:
+            failed += 1
+            logger.warning("Skipping ProPotsdam photo with an unusable resourceId: %r", resource_id)
+            continue
+        if path.exists() and path.stat().st_size:
+            # Пока фото есть в выдаче, оно не должно устареть до удаления.
+            path.touch()
+            cached += 1
+            continue
+        url = propotsdam_parser.IMAGE_URL_TEMPLATE.format(resource_id=resource_id)
+        try:
+            response = page.request.get(url, timeout=PHOTO_TIMEOUT_MS)
+            if not response.ok:
+                raise RuntimeError("HTTP {}".format(response.status))
+            body = response.body()
+            if not body:
+                raise RuntimeError("empty body")
+            if len(body) > PHOTO_MAX_BYTES:
+                raise RuntimeError("{} bytes is over the cap".format(len(body)))
+            path.write_bytes(body)
+            saved += 1
+        except Exception as exc:
+            failed += 1
+            logger.warning("Could not cache ProPotsdam photo %s: %s", resource_id, exc)
+    logger.info(
+        "ProPotsdam photos wanted=%s saved=%s already_cached=%s failed=%s",
+        len(wanted), saved, cached, failed,
+    )
+    return {"wanted": len(wanted), "saved": saved, "cached": cached, "failed": failed}
+
+
+def _prune_photos():
+    """Удаляет фото, которых давно нет в выдаче: снятая квартира не вернётся."""
+    if PHOTO_KEEP_DAYS <= 0 or not PHOTO_DIR.exists():
+        return 0
+    deadline = time.time() - PHOTO_KEEP_DAYS * 86400
+    removed = 0
+    for path in PHOTO_DIR.glob("*.bin"):
+        try:
+            if path.stat().st_mtime < deadline:
+                path.unlink()
+                removed += 1
+        except OSError as exc:
+            logger.warning("Could not prune cached photo %s: %s", path.name, exc)
+    if removed:
+        logger.info("Pruned %s cached ProPotsdam photos", removed)
+    return removed
+
+
 def scan():
     with _scan_lock:
         PROFILE_DIR.mkdir(parents=True, exist_ok=True)
@@ -181,9 +295,19 @@ def scan():
                 listings.extend(propotsdam_parser.parse_boxlist_xml(xml_text))
             if not listings:
                 listings = _extract_cards_from_dom(page)
-            result = {"ok": True, "url": page.url, "listings": listings, "count": len(listings), "xmlforms": responses[-20:]}
+            # Пока браузер жив: только у него есть сессия портала.
+            photos = _cache_photos(page, listings)
+            result = {
+                "ok": True,
+                "url": page.url,
+                "listings": listings,
+                "count": len(listings),
+                "photos": photos,
+                "xmlforms": responses[-20:],
+            }
             context.close()
-            return result
+        _prune_photos()
+        return result
 
 
 def _now_iso():
@@ -254,9 +378,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _photo(self, resource_id):
+        path = _photo_path(resource_id)
+        if path is None or not path.exists():
+            self._json(404, {"ok": False, "error": "unknown photo"})
+            return
+        try:
+            body = path.read_bytes()
+        except OSError as exc:
+            logger.warning("Could not read cached photo %s: %s", resource_id, exc)
+            self._json(500, {"ok": False, "error": "photo unreadable"})
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", _content_type(body))
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         path = urlsplit(self.path).path
-        if path == "/health":
+        if path.startswith(PHOTO_ROUTE):
+            self._photo(path[len(PHOTO_ROUTE):])
+        elif path == "/health":
             snapshot = _snapshot()
             self._json(200, {
                 "ok": True,

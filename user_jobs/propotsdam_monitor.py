@@ -9,8 +9,9 @@ from threading import Lock
 from typing import Dict, List, Optional
 
 import requests
+from telegram import InputMediaPhoto
 
-from user_jobs import propotsdam_matching, propotsdam_store
+from user_jobs import propotsdam_matching, propotsdam_parser, propotsdam_store
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,10 @@ PROPOTSDAM_PORTAL_URL = os.getenv(
 )
 PROPOTSDAM_CHECK_ENABLED = os.getenv("PROPOTSDAM_CHECK_ENABLED", "0") == "1"
 PROPOTSDAM_TIMEOUT = int(os.getenv("PROPOTSDAM_TIMEOUT", "60") or 60)
+# Telegram кладёт в один альбом не больше 10 фото, сколько бы их ни было в фиде.
+PROPOTSDAM_ALBUM_MAX = 10
+PROPOTSDAM_PHOTO_LIMIT = int(os.getenv("PROPOTSDAM_PHOTO_LIMIT", str(PROPOTSDAM_ALBUM_MAX)) or PROPOTSDAM_ALBUM_MAX)
+PROPOTSDAM_PHOTO_TIMEOUT = int(os.getenv("PROPOTSDAM_PHOTO_TIMEOUT", "30") or 30)
 # How long a tick waits for a scan it just started before leaving the result to
 # the next tick. Only bounds the wait — it is never reported as a failure.
 PROPOTSDAM_SCAN_WAIT_SECONDS = int(os.getenv("PROPOTSDAM_SCAN_WAIT_SECONDS", "100") or 100)
@@ -104,6 +109,67 @@ def _request_scan() -> List[Dict]:
         if time.monotonic() >= deadline:
             raise ScanPending()
         time.sleep(PROPOTSDAM_POLL_SECONDS)
+
+
+def _fetch_photos(listing: Dict) -> List[bytes]:
+    """Байты всех фото квартиры — из кеша коллектора, по одному запросу на фото.
+
+    Ходим за ними только здесь, для квартиры, которую прямо сейчас отправляем:
+    качать фото всей выдачи ради пары совпадений незачем.
+    """
+    limit = max(0, min(PROPOTSDAM_PHOTO_LIMIT, PROPOTSDAM_ALBUM_MAX))
+    photos: List[bytes] = []
+    for resource_id in propotsdam_parser.image_resource_ids(listing)[:limit]:
+        try:
+            response = requests.get(
+                f"{PROPOTSDAM_RECEIVER_URL}/api/propotsdam/photo/{resource_id}",
+                timeout=PROPOTSDAM_PHOTO_TIMEOUT,
+            )
+            response.raise_for_status()
+            if response.content:
+                photos.append(response.content)
+        except Exception as exc:
+            logger.warning("Could not fetch ProPotsdam photo %s: %s", resource_id, exc)
+    return photos
+
+
+def _photo_filename(body: bytes, index: int) -> str:
+    """Имя файла по сигнатуре самих байт.
+
+    Без него python-telegram-bot угадывает тип через imghdr и на всём, что тот
+    не опознал, подставляет application.octet-stream — Telegram такую «фотку»
+    может и не принять.
+    """
+    if body.startswith(b"\x89PNG\r\n\x1a\n"):
+        suffix = "png"
+    elif body.startswith(b"RIFF") and body[8:12] == b"WEBP":
+        suffix = "webp"
+    else:
+        suffix = "jpg"
+    return f"propotsdam-{index}.{suffix}"
+
+
+def _send_photos(bot, chat_id: int, listing: Dict) -> int:
+    """Шлёт альбом перед текстом объявления. Молчит, если фото не отдались.
+
+    Сорвавшееся фото не должно стоить человеку самого объявления, поэтому текст
+    остаётся единственным, чей провал отменяет доставку.
+    """
+    try:
+        photos = _fetch_photos(listing)
+        if not photos:
+            return 0
+        if len(photos) == 1:
+            bot.send_photo(chat_id=chat_id, photo=photos[0], filename=_photo_filename(photos[0], 1))
+        else:
+            bot.send_media_group(chat_id=chat_id, media=[
+                InputMediaPhoto(media=photo, filename=_photo_filename(photo, index))
+                for index, photo in enumerate(photos, start=1)
+            ])
+        return len(photos)
+    except Exception:
+        logger.exception("Could not send ProPotsdam photos to %s", chat_id)
+        return 0
 
 
 def _should_alert_error(previous_status: Dict) -> bool:
@@ -201,14 +267,16 @@ def _check_job_locked(context) -> Dict[str, int]:
     filters = propotsdam_store.list_filters(active_only=True)
     matches = propotsdam_store.select_unsent_matches(active_listings, filters, propotsdam_store.delivered_pairs())
     sent = 0
+    photos_sent = 0
     for filt, listing in matches:
         text = propotsdam_matching.format_notification(listing, PROPOTSDAM_PORTAL_URL)
+        photos_sent += _send_photos(bot, int(filt["user_id"]), listing)
         bot.send_message(chat_id=int(filt["user_id"]), text=text, parse_mode="HTML", disable_web_page_preview=False)
         propotsdam_store.mark_delivered(int(filt["filter_id"]), str(listing["listing_key"]))
         sent += 1
     logger.info(
-        "ProPotsdam scan stored=%s filters=%s matches=%s sent=%s empty_alerted=%s",
-        stored, len(filters), len(matches), sent, int(empty_alerted),
+        "ProPotsdam scan stored=%s filters=%s matches=%s sent=%s photos=%s empty_alerted=%s",
+        stored, len(filters), len(matches), sent, photos_sent, int(empty_alerted),
     )
     return {
         "ok": 1,
@@ -216,5 +284,6 @@ def _check_job_locked(context) -> Dict[str, int]:
         "stored": stored,
         "filters": len(filters),
         "sent": sent,
+        "photos": photos_sent,
         "empty_alerted": int(empty_alerted),
     }
