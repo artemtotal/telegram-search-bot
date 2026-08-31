@@ -221,25 +221,6 @@ class ProPotsdamPhotoTests(unittest.TestCase):
         self.assertEqual(len(photos), propotsdam_monitor.PROPOTSDAM_ALBUM_MAX)
         self.assertEqual(get.call_count, propotsdam_monitor.PROPOTSDAM_ALBUM_MAX)
 
-    def test_several_photos_go_out_as_one_album(self):
-        bot = FakeBot()
-        with mock.patch.object(propotsdam_monitor, '_fetch_photos', return_value=[b'a', b'b']):
-            count = propotsdam_monitor._send_photos(bot, 312029534, self.LISTING)
-
-        self.assertEqual(count, 2)
-        self.assertEqual(bot.calls, ['album'])
-        self.assertEqual(bot.albums[0]['chat_id'], 312029534)
-        self.assertEqual(len(bot.albums[0]['media']), 2)
-
-    def test_a_single_photo_is_not_wrapped_in_an_album(self):
-        bot = FakeBot()
-        with mock.patch.object(propotsdam_monitor, '_fetch_photos', return_value=[b'a']):
-            count = propotsdam_monitor._send_photos(bot, 312029534, self.LISTING)
-
-        self.assertEqual(count, 1)
-        self.assertEqual(bot.calls, ['photo'])
-        self.assertEqual(bot.photos[0]['filename'], 'propotsdam-1.jpg')
-
     def test_photos_are_named_after_their_own_bytes(self):
         """python-telegram-bot без имени зовёт файл application.octet-stream,
         и такую «фотку» Telegram может не принять."""
@@ -251,29 +232,101 @@ class ProPotsdamPhotoTests(unittest.TestCase):
         self.assertEqual(propotsdam_monitor._photo_filename(webp, 2), 'propotsdam-2.webp')
         self.assertEqual(propotsdam_monitor._photo_filename(jpeg, 3), 'propotsdam-3.jpg')
 
-    def test_a_listing_without_photos_sends_nothing(self):
-        bot = FakeBot()
-        with mock.patch.object(propotsdam_monitor, '_fetch_photos', return_value=[]):
-            count = propotsdam_monitor._send_photos(bot, 312029534, self.LISTING)
-
-        self.assertEqual(count, 0)
-        self.assertEqual(bot.calls, [])
-
     def test_an_unreachable_collector_does_not_raise(self):
         with mock.patch.object(propotsdam_monitor.requests, 'get',
                                side_effect=RuntimeError('connection refused')):
             self.assertEqual(propotsdam_monitor._fetch_photos(self.LISTING), [])
 
+
+class ProPotsdamListingPostTests(unittest.TestCase):
+    """_send_listing: единый пост — альбом фото с текстом объявления подписью."""
+
+    LISTING = {
+        'listing_key': 'ORIG',
+        'title': 'Helle 3-Raum-Wohnung',
+        'image_url': 'https://portal.example/api5/accndocs2/GOOD-RESOURCE-ID-0001',
+        'extra': {'image_resource_ids': 'GOOD-RESOURCE-ID-0001,GOOD-RESOURCE-ID-0002'},
+    }
+    TEXT = 'Нова квартира ProPotsdam\n\nАдреса: Beispielstr. 1'
+
+    def test_several_photos_go_out_as_one_album_with_the_text_as_caption(self):
+        bot = FakeBot()
+        with mock.patch.object(propotsdam_monitor, '_fetch_photos', return_value=[b'a', b'b']):
+            count, posted_as_caption = propotsdam_monitor._send_listing(
+                bot, 312029534, self.LISTING, self.TEXT)
+
+        self.assertEqual(count, 2)
+        self.assertTrue(posted_as_caption)
+        self.assertEqual(bot.calls, ['album'])
+        self.assertEqual(bot.albums[0]['chat_id'], 312029534)
+        media = bot.albums[0]['media']
+        self.assertEqual(len(media), 2)
+        # Telegram показывает подписью всей группы только подпись первого элемента.
+        self.assertEqual(media[0].caption, self.TEXT)
+        self.assertEqual(media[0].parse_mode, 'HTML')
+        # PTB 13 не выставляет атрибут вовсе, если caption не передан (falsy) —
+        # getattr(..., None), а не .caption, иначе AttributeError на реальной библиотеке.
+        self.assertIsNone(getattr(media[1], 'caption', None))
+
+    def test_a_single_photo_carries_the_text_as_its_caption(self):
+        bot = FakeBot()
+        with mock.patch.object(propotsdam_monitor, '_fetch_photos', return_value=[b'a']):
+            count, posted_as_caption = propotsdam_monitor._send_listing(
+                bot, 312029534, self.LISTING, self.TEXT)
+
+        self.assertEqual(count, 1)
+        self.assertTrue(posted_as_caption)
+        self.assertEqual(bot.calls, ['photo'])
+        self.assertEqual(bot.photos[0]['caption'], self.TEXT)
+        self.assertEqual(bot.photos[0]['parse_mode'], 'HTML')
+        self.assertEqual(bot.photos[0]['filename'], 'propotsdam-1.jpg')
+
+    def test_a_listing_without_photos_sends_nothing_and_leaves_the_text_to_the_caller(self):
+        bot = FakeBot()
+        with mock.patch.object(propotsdam_monitor, '_fetch_photos', return_value=[]):
+            count, posted_as_caption = propotsdam_monitor._send_listing(
+                bot, 312029534, self.LISTING, self.TEXT)
+
+        self.assertEqual(count, 0)
+        self.assertFalse(posted_as_caption)
+        self.assertEqual(bot.calls, [])
+
+    def test_text_over_the_caption_limit_still_goes_out_as_a_bare_album(self):
+        """Подпись Telegram обрезает жёстче обычного текста: фото уходят,
+        а сам текст — отдельным сообщением, которое досылает вызывающий."""
+        bot = FakeBot()
+        long_text = 'x' * (propotsdam_monitor.PROPOTSDAM_CAPTION_LIMIT + 1)
+        with mock.patch.object(propotsdam_monitor, '_fetch_photos', return_value=[b'a', b'b']):
+            count, posted_as_caption = propotsdam_monitor._send_listing(
+                bot, 312029534, self.LISTING, long_text)
+
+        self.assertEqual(count, 2)
+        self.assertFalse(posted_as_caption)
+        self.assertEqual(bot.calls, ['album'])
+        self.assertIsNone(getattr(bot.albums[0]['media'][0], 'caption', None))
+
     def test_a_failed_album_is_swallowed(self):
-        """Сорвавшееся фото не должно стоить человеку самого объявления."""
+        """Сорвавшийся пост не должен стоить человеку самого объявления."""
         bot = FakeBot()
         bot.send_media_group = mock.Mock(side_effect=RuntimeError('Telegram said no'))
         with mock.patch.object(propotsdam_monitor, '_fetch_photos', return_value=[b'a', b'b']):
-            count = propotsdam_monitor._send_photos(bot, 312029534, self.LISTING)
+            count, posted_as_caption = propotsdam_monitor._send_listing(
+                bot, 312029534, self.LISTING, self.TEXT)
 
         self.assertEqual(count, 0)
+        self.assertFalse(posted_as_caption)
 
-    def test_photos_arrive_before_the_listing_text(self):
+
+class ProPotsdamDeliveryTests(unittest.TestCase):
+    LISTING = {
+        'listing_key': 'ORIG',
+        'title': 'Helle 3-Raum-Wohnung',
+        'image_url': 'https://portal.example/api5/accndocs2/GOOD-RESOURCE-ID-0001',
+        'extra': {'image_resource_ids': 'GOOD-RESOURCE-ID-0001,GOOD-RESOURCE-ID-0002'},
+    }
+
+    def test_a_listing_with_photos_goes_out_as_a_single_post(self):
+        """Ничего похожего на голую ссылку в тексте: фото и подпись — один пост."""
         context = FakeContext()
         filt = {'filter_id': 7, 'user_id': 312029534}
         with mock.patch.object(propotsdam_monitor, 'PROPOTSDAM_CHECK_ENABLED', True), \
@@ -289,12 +342,14 @@ class ProPotsdamPhotoTests(unittest.TestCase):
              mock.patch.object(propotsdam_store, 'mark_delivered') as mark_delivered:
             result = propotsdam_monitor.check_job(context)
 
-        self.assertEqual(context.bot.calls, ['album', 'message'])
+        self.assertEqual(context.bot.calls, ['album'])
         self.assertEqual(result['sent'], 1)
         self.assertEqual(result['photos'], 2)
+        caption = context.bot.albums[0]['media'][0].caption
+        self.assertIn('ProPotsdam', caption)
         mark_delivered.assert_called_once_with(7, 'ORIG')
 
-    def test_a_listing_is_still_delivered_when_its_photos_fail(self):
+    def test_a_listing_is_still_delivered_as_text_when_its_photos_fail(self):
         context = FakeContext()
         filt = {'filter_id': 7, 'user_id': 312029534}
         with mock.patch.object(propotsdam_monitor, 'PROPOTSDAM_CHECK_ENABLED', True), \

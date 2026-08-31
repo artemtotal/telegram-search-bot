@@ -29,6 +29,10 @@ PROPOTSDAM_TIMEOUT = int(os.getenv("PROPOTSDAM_TIMEOUT", "60") or 60)
 PROPOTSDAM_ALBUM_MAX = 10
 PROPOTSDAM_PHOTO_LIMIT = int(os.getenv("PROPOTSDAM_PHOTO_LIMIT", str(PROPOTSDAM_ALBUM_MAX)) or PROPOTSDAM_ALBUM_MAX)
 PROPOTSDAM_PHOTO_TIMEOUT = int(os.getenv("PROPOTSDAM_PHOTO_TIMEOUT", "30") or 30)
+# Подпись к фото Telegram обрезает жёстче, чем обычный текст (1024 против 4096
+# символов). Оценка по сырой длине текста с HTML-тегами — с запасом в плюс,
+# настоящий лимит считается уже после разбора тегов.
+PROPOTSDAM_CAPTION_LIMIT = 1024
 # How long a tick waits for a scan it just started before leaving the result to
 # the next tick. Only bounds the wait — it is never reported as a failure.
 PROPOTSDAM_SCAN_WAIT_SECONDS = int(os.getenv("PROPOTSDAM_SCAN_WAIT_SECONDS", "100") or 100)
@@ -149,27 +153,38 @@ def _photo_filename(body: bytes, index: int) -> str:
     return f"propotsdam-{index}.{suffix}"
 
 
-def _send_photos(bot, chat_id: int, listing: Dict) -> int:
-    """Шлёт альбом перед текстом объявления. Молчит, если фото не отдались.
+def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> tuple[int, bool]:
+    """Шлёт квартиру одним постом: альбом фото с текстом объявления подписью снизу.
 
-    Сорвавшееся фото не должно стоить человеку самого объявления, поэтому текст
-    остаётся единственным, чей провал отменяет доставку.
+    Возвращает (сколько фото ушло, ушёл ли текст подписью). Если подпись не
+    ушла — из-за отсутствия фото или превышения лимита в 1024 символа —
+    вызывающий обязан отправить тот же текст отдельным сообщением, как раньше;
+    без этого длинное объявление осталось бы без текста вовсе.
     """
+    photos = _fetch_photos(listing)
+    if not photos:
+        return 0, False
+    caption = text if len(text) <= PROPOTSDAM_CAPTION_LIMIT else None
     try:
-        photos = _fetch_photos(listing)
-        if not photos:
-            return 0
         if len(photos) == 1:
-            bot.send_photo(chat_id=chat_id, photo=photos[0], filename=_photo_filename(photos[0], 1))
+            bot.send_photo(
+                chat_id=chat_id, photo=photos[0], filename=_photo_filename(photos[0], 1),
+                caption=caption, parse_mode="HTML" if caption else None,
+            )
         else:
-            bot.send_media_group(chat_id=chat_id, media=[
-                InputMediaPhoto(media=photo, filename=_photo_filename(photo, index))
-                for index, photo in enumerate(photos, start=1)
-            ])
-        return len(photos)
+            media = []
+            for index, photo in enumerate(photos, start=1):
+                item_kwargs = {"media": photo, "filename": _photo_filename(photo, index)}
+                # Telegram показывает подписью всей группы только подпись первого элемента.
+                if index == 1 and caption:
+                    item_kwargs["caption"] = caption
+                    item_kwargs["parse_mode"] = "HTML"
+                media.append(InputMediaPhoto(**item_kwargs))
+            bot.send_media_group(chat_id=chat_id, media=media)
+        return len(photos), caption is not None
     except Exception:
-        logger.exception("Could not send ProPotsdam photos to %s", chat_id)
-        return 0
+        logger.exception("Could not send ProPotsdam post to %s", chat_id)
+        return 0, False
 
 
 def _should_alert_error(previous_status: Dict) -> bool:
@@ -270,8 +285,13 @@ def _check_job_locked(context) -> Dict[str, int]:
     photos_sent = 0
     for filt, listing in matches:
         text = propotsdam_matching.format_notification(listing, PROPOTSDAM_PORTAL_URL)
-        photos_sent += _send_photos(bot, int(filt["user_id"]), listing)
-        bot.send_message(chat_id=int(filt["user_id"]), text=text, parse_mode="HTML", disable_web_page_preview=False)
+        chat_id = int(filt["user_id"])
+        photos, posted_as_caption = _send_listing(bot, chat_id, listing, text)
+        photos_sent += photos
+        # Фото без подписи (нет фото вообще, или текст не влез в лимит подписи)
+        # оставляют текст неотправленным — досылаем его отдельным сообщением.
+        if not posted_as_caption:
+            bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
         propotsdam_store.mark_delivered(int(filt["filter_id"]), str(listing["listing_key"]))
         sent += 1
     logger.info(
