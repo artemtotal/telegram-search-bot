@@ -164,6 +164,8 @@
   "housing.district.title_propot": "🏢 <b>Районы ProPotsdam</b>",
   "housing.district.title_multi": "🏙 <b>Районы</b>",
 
+  "housing.criteria_picker.text": "🧾 <b>Что для вас важно?</b>\n\nСнимите галочку с тех границ, которые вам не важны — мастер не будет о них спрашивать и не будет ограничивать поиск по ним.\n\n{body}",
+
   "housing.sources.none_selected": "не выбрано",
   "housing.sources.text": "🔎 <b>Новый фильтр</b>\n\nВыберите, где искать — можно несколько порталов сразу. Список порталов со временем будет пополняться.\nТекущий выбор: <b>{selection}</b>",
 
@@ -176,6 +178,7 @@
   "housing.preview.new_listings_note": "Новые объявления будут приходить по мере появления.",
 
   "housing.wizard.pick_districts_hint": "Выберите районы кнопками ниже и нажмите «Готово».",
+  "housing.wizard.pick_criteria_hint": "Выберите нужные границы кнопками ниже и нажмите «Готово».",
   "housing.wizard.pick_sources_hint": "Выберите порталы кнопками ниже и нажмите «Далее».",
   "housing.wizard.preview_hint": "Нажмите «Сохранить фильтр», «Назад» или «Отменить».",
 

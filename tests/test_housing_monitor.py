@@ -324,6 +324,8 @@ class HousingAdminFlowTests(unittest.TestCase):
             housing_monitor._toggle_source(self._cb_update(), context, 'schoba')
             housing_monitor._finish_sources(self._cb_update(), context)
             # SCHOBA не знає районів — крок вибору району тут пропускається.
+            self.assertEqual(state['step'], 'criteria_picker')
+            housing_monitor._finish_criteria_picker(self._cb_update(), context)
             self.assertEqual(state['step'], 'min_rooms')
 
             with mock.patch('user_handlers.housing_monitor.schoba_store.create_filter', return_value=42) as create_filter:
@@ -770,6 +772,8 @@ class HousingAdminFlowTests(unittest.TestCase):
             housing_monitor._finish_sources(self._cb_update(), context)
             self.assertEqual(state['step'], 'districts')
             housing_monitor._finish_multi_districts(self._cb_update(), context, all_districts=True)
+            self.assertEqual(state['step'], 'criteria_picker')
+            housing_monitor._finish_criteria_picker(self._cb_update(), context)
             self.assertEqual(state['step'], 'min_rooms')
 
             for text in ['2', '3', '50', '80', '800', '1000']:
@@ -1405,9 +1409,9 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
 
         state = context.user_data['housing_admin']
         self.assertEqual(state['mode'], 'multi')
-        self.assertEqual(state['step'], 'min_rooms')
-        prompt = query.edit_message_text.call_args.args[0]
-        self.assertIn('кімнат', prompt)
+        # District step skipped straight to the criteria picker (not directly
+        # into "min_rooms" any more — that screen now sits in between).
+        self.assertEqual(state['step'], 'criteria_picker')
 
     def test_immowelt_and_semmelhaack_together_ask_kaltmiete_only_once(self):
         """Обидва джерела рахують ту саму холодну оренду — не варто питати двічі поспіль."""
@@ -2160,12 +2164,17 @@ class HousingWizardBackButtonTests(unittest.TestCase):
         literal tags)."""
         context = SimpleNamespace(user_data={})
         finish_update = self._cb_update(user_id=544675510)
+        picker_done_update = self._cb_update(user_id=544675510)
         with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
             housing_monitor.start_self_add_flow(self._update(''), context)
             housing_monitor._toggle_source(self._cb_update(user_id=544675510), context, 'schoba')
             housing_monitor._finish_sources(finish_update, context)
+            # No district-aware source picked — src_done lands on the
+            # criteria picker, click "Готово" there to reach the first field.
+            self.assertEqual(context.user_data['housing_admin']['step'], 'criteria_picker')
+            housing_monitor._finish_criteria_picker(picker_done_update, context)
 
-        query = finish_update.callback_query
+        query = picker_done_update.callback_query
         query.edit_message_text.assert_called_once()
         text = query.edit_message_text.call_args.args[0]
         kwargs = query.edit_message_text.call_args.kwargs
@@ -2247,7 +2256,7 @@ class HousingWizardBackButtonTests(unittest.TestCase):
         callbacks = [b.callback_data for row in kwargs['reply_markup'].inline_keyboard for b in row]
         self.assertIn(housing_monitor.BACK_CALLBACK, callbacks)
 
-    def test_back_from_first_shared_multi_field_returns_to_districts_when_district_aware_source_picked(self):
+    def test_back_from_first_shared_multi_field_returns_to_the_criteria_picker(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
             'sources_selected': ['immowelt'], 'districts_selected': ['Golm'],
@@ -2256,11 +2265,22 @@ class HousingWizardBackButtonTests(unittest.TestCase):
 
         housing_monitor._step_back(update, context)
 
+        self.assertEqual(context.user_data['housing_admin']['step'], 'criteria_picker')
+
+    def test_back_from_criteria_picker_returns_to_districts_when_district_aware_source_picked(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'criteria_picker', 'user_id': 544675510,
+            'sources_selected': ['immowelt'], 'districts_selected': ['Golm'],
+        }})
+        update = self._cb_update()
+
+        housing_monitor._step_back(update, context)
+
         self.assertEqual(context.user_data['housing_admin']['step'], 'districts')
 
-    def test_back_from_first_shared_multi_field_returns_to_sources_when_only_semmelhaack_picked(self):
+    def test_back_from_criteria_picker_returns_to_sources_when_only_semmelhaack_picked(self):
         context = SimpleNamespace(user_data={'housing_admin': {
-            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'mode': 'multi', 'step': 'criteria_picker', 'user_id': 544675510,
             'sources_selected': ['semmelhaack'], 'districts_selected': [],
         }})
         update = self._cb_update()
@@ -2433,6 +2453,168 @@ class HousingWizardPresetButtonTests(unittest.TestCase):
             self.assertTrue(housing_monitor.handle_private_text(update, context))
 
         self.assertEqual(context.user_data['housing_admin']['max_area_m2'], 73.0)
+
+
+class HousingCriteriaPickerTests(unittest.TestCase):
+    """Чекліст перед майстром mode="multi": користувач знімає позначку з тих
+    меж, які його не цікавлять, і майстер просто не питає про них — відсутній
+    ключ у стані вже й так означає «без обмеження» для всієї логіки нижче."""
+
+    def _update(self, text, user_id=544675510):
+        message = FakeMessage(text=text, user_id=user_id)
+        return SimpleNamespace(message=message, effective_message=message, effective_user=SimpleNamespace(id=user_id))
+
+    def _cb_update(self, data, user_id=544675510):
+        query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_text=mock.Mock(), message=mock.Mock())
+        return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
+
+    def test_finishing_sources_with_a_district_aware_source_still_shows_the_picker_after_districts(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'districts', 'user_id': 544675510,
+            'sources_selected': ['immowelt'], 'districts_selected': [],
+        }})
+        update = self._cb_update('housing:multi_district_done')
+
+        housing_monitor.handle_callback(update, context)
+
+        self.assertEqual(context.user_data['housing_admin']['step'], 'criteria_picker')
+        keyboard = update.callback_query.edit_message_text.call_args.kwargs['reply_markup']
+        callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+        self.assertIn('housing:crit_done', callbacks)
+        for opt in housing_monitor.CRITERIA_PICKER_KEYS:
+            self.assertIn(f'housing:crit_toggle:{opt}', callbacks)
+
+    def test_all_boxes_checked_by_default(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'criteria_picker', 'user_id': 544675510,
+            'sources_selected': ['semmelhaack'],
+        }})
+        text = housing_monitor._criteria_picker_text(context.user_data['housing_admin'], 'uk')
+        self.assertNotIn('☐', text)
+        self.assertEqual(text.count('✅'), len(housing_monitor.CRITERIA_PICKER_KEYS))
+
+    def test_toggling_a_box_off_and_on_updates_the_screen(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'criteria_picker', 'user_id': 544675510,
+            'sources_selected': ['semmelhaack'],
+        }})
+        update = self._cb_update('housing:crit_toggle:max_rooms')
+
+        housing_monitor.handle_callback(update, context)
+        self.assertNotIn('max_rooms', context.user_data['housing_admin']['criteria_selected'])
+
+        housing_monitor.handle_callback(self._cb_update('housing:crit_toggle:max_rooms'), context)
+        self.assertIn('max_rooms', context.user_data['housing_admin']['criteria_selected'])
+
+    def test_unchecking_max_rooms_skips_straight_past_it_in_the_wizard(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'criteria_picker', 'user_id': 544675510,
+            'sources_selected': ['semmelhaack'],
+            'criteria_selected': [k for k in housing_monitor.CRITERIA_PICKER_KEYS if k != 'max_rooms'],
+        }})
+        update = self._cb_update('housing:crit_done')
+
+        housing_monitor.handle_callback(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'min_rooms')
+        # Answering min_rooms must jump straight to min_area_m2, never asking max_rooms at all.
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            self.assertTrue(housing_monitor.handle_private_text(self._update('2'), context))
+        self.assertEqual(state['step'], 'min_area_m2')
+        self.assertNotIn('max_rooms', state)
+
+    def test_unchecking_both_price_boxes_skips_the_entire_price_phase_and_saves(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'criteria_picker', 'user_id': 544675510,
+            'sources_selected': ['semmelhaack'],
+            'criteria_selected': ['min_rooms', 'max_rooms', 'min_area_m2', 'max_area_m2'],
+        }})
+        housing_monitor.handle_callback(self._cb_update('housing:crit_done'), context)
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'min_rooms')
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter', return_value=7) as create_filter:
+            for text in ['2', '-', '-', '-']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        create_filter.assert_called_once_with(
+            user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=None, max_price_eur=None,
+        )
+        self.assertNotIn('housing_admin', context.user_data)
+
+    def test_unchecking_everything_saves_immediately_from_the_picker_screen(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'criteria_picker', 'user_id': 544675510,
+            'sources_selected': ['semmelhaack'], 'criteria_selected': [],
+        }})
+        update = self._cb_update('housing:crit_done')
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter', return_value=8) as create_filter:
+            housing_monitor.handle_callback(update, context)
+
+        create_filter.assert_called_once_with(
+            user_id=544675510, title=mock.ANY,
+            min_rooms=None, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=None, max_price_eur=None,
+        )
+        self.assertNotIn('housing_admin', context.user_data)
+
+    def test_unchecking_min_price_only_skips_min_but_still_asks_max(self):
+        """Ціну кількох джерел (Kaltmiete/Kleinanzeigen/...) пікер вимикає
+        однією галочкою на всі — тут перевіряємо саме той факт, що min/max
+        перемикаються незалежно один від одного."""
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'criteria_picker', 'user_id': 544675510,
+            'sources_selected': ['semmelhaack'],
+            'criteria_selected': [k for k in housing_monitor.CRITERIA_PICKER_KEYS if k != 'min_price'],
+        }})
+        housing_monitor.handle_callback(self._cb_update('housing:crit_done'), context)
+        state = context.user_data['housing_admin']
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            for text in ['-', '-', '-', '-']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        self.assertEqual(state['step'], 'max_price_eur')
+
+    def test_recap_keeps_showing_an_earlier_price_answer_across_multiple_price_groups(self):
+        """immowelt (Kaltmiete) і kleinanzeigen мають різні ключі ціни в стані
+        — обидві пари питає той самий пікер-крок «Ціна», по черзі. Відповідь
+        на першу пару має лишатись видимою в рецапі другої."""
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_price_eur', 'user_id': 544675510,
+            'sources_selected': ['immowelt', 'kleinanzeigen'], 'districts_selected': ['Golm'],
+        }})
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            self.assertTrue(housing_monitor.handle_private_text(self._update('800'), context))
+            self.assertTrue(housing_monitor.handle_private_text(self._update('1200'), context))
+            update = self._update('600')
+            self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        text = update.message.replies[-1][0]
+        self.assertIn('800', text)
+        self.assertIn('1200', text)
+        self.assertEqual(context.user_data['housing_admin']['step'], 'max_ka_price_eur')
+
+    def test_back_from_criteria_picker_and_forward_again_preserves_the_selection(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'criteria_picker', 'user_id': 544675510,
+            'sources_selected': ['semmelhaack'],
+            'criteria_selected': [k for k in housing_monitor.CRITERIA_PICKER_KEYS if k != 'max_rooms'],
+        }})
+        housing_monitor.handle_callback(self._cb_update('housing:crit_done'), context)
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'min_rooms')
+
+        housing_monitor._step_back(self._cb_update(housing_monitor.BACK_CALLBACK), context)
+
+        self.assertEqual(state['step'], 'criteria_picker')
+        self.assertNotIn('max_rooms', state['criteria_selected'])
 
 
 class HousingNotificationSettingsTests(unittest.TestCase):

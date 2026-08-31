@@ -316,6 +316,106 @@ PRICE_STEP_FIELDS = {
     },
 }
 PRICE_STEP_PROMPTS = {key: spec["prompt"] for key, spec in PRICE_STEP_FIELDS.items()}
+
+# Опційний екран-чекліст перед «Кімнати/площа/ціна»: користувач може зняти
+# позначку з тих меж, які його не цікавлять, і майстер просто не питатиме
+# про них — відсутній ключ у стані означає «без обмеження», як і завжди.
+# Лише для майстра СТВОРЕННЯ фільтра (mode="multi"); окремі майстри
+# редагування одного джерела цей екран не показують.
+CRITERIA_PICKER_OPTIONS = [
+    {"key": "min_rooms", "label_key": "housing.field.label.rooms_min"},
+    {"key": "max_rooms", "label_key": "housing.field.label.rooms_max"},
+    {"key": "min_area_m2", "label_key": "housing.field.label.area_min"},
+    {"key": "max_area_m2", "label_key": "housing.field.label.area_max"},
+    {"key": "min_price", "label_key": "housing.field.label.price_min"},
+    {"key": "max_price", "label_key": "housing.field.label.price_max"},
+]
+CRITERIA_PICKER_KEYS = [opt["key"] for opt in CRITERIA_PICKER_OPTIONS]
+# Ціну майстер питає під різними ключами стану залежно від джерела
+# (Kaltmiete/Gesamtmiete/Warmmiete/Kleinanzeigen) — чекбокс "Ціна" в пікері
+# один на всіх, тож звіряємо кожен реальний крок ціни з цими двома групами.
+MIN_PRICE_STEP_KEYS = {"min_price_eur", "min_total_rent_eur", "min_ka_price_eur", "min_km_price_eur"}
+MAX_PRICE_STEP_KEYS = {"max_price_eur", "max_total_rent_eur", "max_ka_price_eur", "max_km_price_eur"}
+
+
+def _price_step_picker_key(step_key: str) -> Optional[str]:
+    if step_key in MIN_PRICE_STEP_KEYS:
+        return "min_price"
+    if step_key in MAX_PRICE_STEP_KEYS:
+        return "max_price"
+    return None
+
+
+def _selected_criteria(state: dict) -> set:
+    """`criteria_selected` absent (picker never visited yet) means "everything
+    on" — but once present, an EMPTY list is a deliberate "user unchecked
+    every box", not the same thing. `[] or CRITERIA_PICKER_KEYS` would wrongly
+    collapse those two cases (empty list is falsy), so check for None instead."""
+    raw = state.get("criteria_selected")
+    return set(raw) if raw is not None else set(CRITERIA_PICKER_KEYS)
+
+
+def _visible_multi_keys(state: dict) -> list:
+    """Впорядкований список реальних кроків майстра mode="multi" після
+    врахування пікера: спільні поля (кімнати/площа), потім ціна — лише ті,
+    що лишились позначені в state["criteria_selected"]."""
+    selected = _selected_criteria(state)
+    keys = [key for key in SHARED_CRITERIA_KEYS if key in selected]
+    for step in _price_steps_for(state.get("sources_selected") or []):
+        if _price_step_picker_key(step) in selected:
+            keys.append(step)
+    return keys
+
+
+def _next_multi_key(state: dict, current_key: str) -> Optional[str]:
+    keys = _visible_multi_keys(state)
+    if current_key == "criteria_picker":
+        return keys[0] if keys else None
+    if current_key not in keys:
+        return None
+    idx = keys.index(current_key)
+    return keys[idx + 1] if idx + 1 < len(keys) else None
+
+
+def _prev_multi_key(state: dict, current_key: str) -> Optional[str]:
+    keys = _visible_multi_keys(state)
+    if current_key not in keys:
+        return None
+    idx = keys.index(current_key)
+    return keys[idx - 1] if idx > 0 else None
+
+
+def _multi_key_fields(state: dict, step_key: str) -> list:
+    """Fields shown in the recap above a question. For a price step this
+    includes every price step visible in this session (not just the current
+    one), so answers to earlier price questions keep showing as you move
+    through several price groups (e.g. Kaltmiete then Kleinanzeigen)."""
+    if step_key in PRICE_STEP_FIELDS:
+        price_keys = [key for key in _visible_multi_keys(state) if key in PRICE_STEP_FIELDS]
+        return SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_keys]
+    return SHARED_CRITERIA_FIELDS
+
+
+def _criteria_picker_text(state: dict, lang: str = "uk") -> str:
+    selected = _selected_criteria(state)
+    lines = []
+    for opt in CRITERIA_PICKER_OPTIONS:
+        mark = "✅" if opt["key"] in selected else "☐"
+        lines.append(f"{mark} {i18n.t(opt['label_key'], lang)}")
+    return i18n.t("housing.criteria_picker.text", lang, body="\n".join(lines))
+
+
+def _criteria_picker_keyboard(state: dict, lang: str = "uk") -> InlineKeyboardMarkup:
+    selected = _selected_criteria(state)
+    rows = []
+    for opt in CRITERIA_PICKER_OPTIONS:
+        mark = "✅" if opt["key"] in selected else "☐"
+        rows.append([InlineKeyboardButton(f"{mark} {i18n.t(opt['label_key'], lang)}", callback_data=f"housing:crit_toggle:{opt['key']}")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.done", lang), callback_data="housing:crit_done")])
+    rows.append([InlineKeyboardButton(BTN_CANCEL, callback_data="housing:multi_cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
 # Одна кнопка на всі майстри: куди саме веде «Назад» вирішує сам обробник,
 # дивлячись на `mode`/`step` у стані — окремий callback на кожен крок був би
 # зайвим, бо крок завжди один: попереднє поле того самого списку.
@@ -4032,9 +4132,8 @@ def _finish_sources(update: Update, context: CallbackContext) -> None:
         return
     # Жодне обране джерело не знає районів (лише SEMMELHAACK) — крок вибору
     # району тут нема сенсу показувати, він однаково нічого не відфільтрує.
-    first_key = SHARED_CRITERIA_KEYS[0]
-    state["step"] = first_key
-    _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, first_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=first_key)
+    state["step"] = "criteria_picker"
+    query.edit_message_text(_criteria_picker_text(state, lang), parse_mode="HTML", reply_markup=_criteria_picker_keyboard(state, lang))
 
 
 def _toggle_multi_district(update: Update, context: CallbackContext, district: str) -> None:
@@ -4064,9 +4163,44 @@ def _finish_multi_districts(update: Update, context: CallbackContext, all_distri
         return
     if all_districts:
         state["districts_selected"] = []
-    state["step"] = SHARED_CRITERIA_KEYS[0]
+    state["step"] = "criteria_picker"
     query.answer()
-    _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, SHARED_CRITERIA_KEYS[0], i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=SHARED_CRITERIA_KEYS[0])
+    lang = i18n.get_lang(update.effective_user.id)
+    query.edit_message_text(_criteria_picker_text(state, lang), parse_mode="HTML", reply_markup=_criteria_picker_keyboard(state, lang))
+
+
+def _toggle_criteria_field(update: Update, context: CallbackContext, field_key: str) -> None:
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    if state.get("mode") != "multi" or state.get("step") != "criteria_picker" or field_key not in CRITERIA_PICKER_KEYS:
+        query.answer()
+        return
+    selected = _selected_criteria(state)
+    if field_key in selected:
+        selected.discard(field_key)
+    else:
+        selected.add(field_key)
+    state["criteria_selected"] = list(selected)
+    query.answer()
+    lang = i18n.get_lang(update.effective_user.id)
+    query.edit_message_text(_criteria_picker_text(state, lang), parse_mode="HTML", reply_markup=_criteria_picker_keyboard(state, lang))
+
+
+def _finish_criteria_picker(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    if state.get("mode") != "multi" or state.get("step") != "criteria_picker":
+        query.answer()
+        return
+    lang = i18n.get_lang(update.effective_user.id)
+    state["criteria_selected"] = list(_selected_criteria(state))
+    next_key = _next_multi_key(state, "criteria_picker")
+    query.answer()
+    if next_key is None:
+        _finalize_multi_filter(query.message, context, state)
+        return
+    state["step"] = next_key
+    _edit_field_prompt(query, _field_prompt(state, _multi_key_fields(state, next_key), next_key, lang), lang, field_key=next_key)
 
 
 def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> None:
@@ -4420,39 +4554,29 @@ def _step_back(update: Update, context: CallbackContext) -> None:
             query.edit_message_text(_field_prompt(state, fields, fields[0]["key"], lang), parse_mode="HTML")
         return
     if mode == "multi":
-        if step in SHARED_CRITERIA_KEYS:
-            idx = SHARED_CRITERIA_KEYS.index(step)
-            if idx == 0:
-                sources = state.get("sources_selected") or []
-                if any(source in DISTRICT_AWARE_SOURCES for source in sources):
-                    state["step"] = "districts"
-                    query.edit_message_text(
-                        _multi_district_text(state.get("districts_selected"), lang), parse_mode="HTML",
-                        reply_markup=_multi_district_keyboard(state, state.get("districts_selected"), lang),
-                    )
-                else:
-                    state["step"] = "sources"
-                    query.edit_message_text(
-                        _sources_text(state.get("sources_selected"), lang), parse_mode="HTML",
-                        reply_markup=_sources_keyboard(state.get("sources_selected"), lang),
-                    )
+        if step in SHARED_CRITERIA_KEYS or step in PRICE_STEP_PROMPTS:
+            prev_key = _prev_multi_key(state, step)
+            if prev_key is None:
+                state["step"] = "criteria_picker"
+                query.edit_message_text(_criteria_picker_text(state, lang), parse_mode="HTML", reply_markup=_criteria_picker_keyboard(state, lang))
                 return
-            prev_key = SHARED_CRITERIA_KEYS[idx - 1]
             state["step"] = prev_key
-            _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
+            _edit_field_prompt(query, _field_prompt(state, _multi_key_fields(state, prev_key), prev_key, lang), lang, field_key=prev_key)
             return
-        if step in PRICE_STEP_PROMPTS:
-            price_steps = state.get("_price_steps") or []
-            idx = price_steps.index(step) if step in price_steps else 0
-            price_fields = SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_steps]
-            if idx == 0:
-                prev_key = SHARED_CRITERIA_KEYS[-1]
-                state["step"] = prev_key
-                _edit_field_prompt(query, _field_prompt(state, SHARED_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
-                return
-            prev_key = price_steps[idx - 1]
-            state["step"] = prev_key
-            _edit_field_prompt(query, _field_prompt(state, price_fields, prev_key, lang), lang, field_key=prev_key)
+        if step == "criteria_picker":
+            sources = state.get("sources_selected") or []
+            if any(source in DISTRICT_AWARE_SOURCES for source in sources):
+                state["step"] = "districts"
+                query.edit_message_text(
+                    _multi_district_text(state.get("districts_selected"), lang), parse_mode="HTML",
+                    reply_markup=_multi_district_keyboard(state, state.get("districts_selected"), lang),
+                )
+            else:
+                state["step"] = "sources"
+                query.edit_message_text(
+                    _sources_text(state.get("sources_selected"), lang), parse_mode="HTML",
+                    reply_markup=_sources_keyboard(state.get("sources_selected"), lang),
+                )
             return
         if step == "districts":
             state["step"] = "sources"
@@ -4472,50 +4596,30 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
             reply_markup=_multi_district_keyboard(state, state.get("districts_selected"), lang),
         )
         return True
-    if step in SHARED_CRITERIA_BY_KEY:
-        spec = SHARED_CRITERIA_BY_KEY[step]
+    if step == "criteria_picker":
+        lang = i18n.get_lang(update.effective_user.id)
+        update.message.reply_text(
+            i18n.t("housing.wizard.pick_criteria_hint", lang),
+            reply_markup=_criteria_picker_keyboard(state, lang),
+        )
+        return True
+    if step in SHARED_CRITERIA_BY_KEY or step in PRICE_STEP_PROMPTS:
+        spec = SHARED_CRITERIA_BY_KEY.get(step) or PRICE_STEP_FIELDS[step]
+        lang = i18n.get_lang(update.effective_user.id)
         value = _parse_single_number(text)
         if value is _INVALID_NUMBER:
-            update.message.reply_text(_invalid_number_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
+            update.message.reply_text(_invalid_number_text(spec, lang), parse_mode="HTML")
             return True
         if _violates_sibling_bound(state, step, value):
-            update.message.reply_text(_min_over_max_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
+            update.message.reply_text(_min_over_max_text(spec, lang), parse_mode="HTML")
             return True
         state[step] = value
-        index = SHARED_CRITERIA_KEYS.index(step)
-        if index < len(SHARED_CRITERIA_KEYS) - 1:
-            next_key = SHARED_CRITERIA_KEYS[index + 1]
-            state["step"] = next_key
-            _reply_field_prompt(update.message, _field_prompt(state, SHARED_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_key)
-            return True
-        price_steps = _price_steps_for(state.get("sources_selected") or [])
-        if not price_steps:
+        next_key = _next_multi_key(state, step)
+        if next_key is None:
             _finalize_multi_filter(update.message, context, state)
             return True
-        state["_price_steps"] = price_steps
-        state["step"] = price_steps[0]
-        price_fields = SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_steps]
-        _reply_field_prompt(update.message, _field_prompt(state, price_fields, price_steps[0], i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=price_steps[0])
-        return True
-    if step in PRICE_STEP_PROMPTS:
-        value = _parse_single_number(text)
-        lang = i18n.get_lang(update.effective_user.id)
-        if value is _INVALID_NUMBER:
-            update.message.reply_text(_invalid_number_text(PRICE_STEP_FIELDS[step], lang), parse_mode="HTML")
-            return True
-        if _violates_sibling_bound(state, step, value):
-            update.message.reply_text(_min_over_max_text(PRICE_STEP_FIELDS[step], lang), parse_mode="HTML")
-            return True
-        state[step] = value
-        price_steps = state.get("_price_steps") or []
-        idx = price_steps.index(step)
-        if idx < len(price_steps) - 1:
-            next_step = price_steps[idx + 1]
-            state["step"] = next_step
-            price_fields = SHARED_CRITERIA_FIELDS + [PRICE_STEP_FIELDS[key] for key in price_steps]
-            _reply_field_prompt(update.message, _field_prompt(state, price_fields, next_step, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_step)
-            return True
-        _finalize_multi_filter(update.message, context, state)
+        state["step"] = next_key
+        _reply_field_prompt(update.message, _field_prompt(state, _multi_key_fields(state, next_key), next_key, lang), lang, field_key=next_key)
         return True
     return False
 
@@ -4660,6 +4764,10 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _finish_multi_districts(update, context)
     elif query.data == "housing:multi_district_all":
         _finish_multi_districts(update, context, all_districts=True)
+    elif query.data.startswith("housing:crit_toggle:"):
+        _toggle_criteria_field(update, context, query.data.split(":", 2)[2])
+    elif query.data == "housing:crit_done":
+        _finish_criteria_picker(update, context)
     elif query.data == "housing:multi_cancel":
         context.user_data.pop("housing_admin", None)
         _show_cancelled(query, i18n.get_lang(update.effective_user.id))

@@ -164,6 +164,8 @@
   "housing.district.title_propot": "🏢 <b>Stadtteile ProPotsdam</b>",
   "housing.district.title_multi": "🏙 <b>Stadtteile</b>",
 
+  "housing.criteria_picker.text": "🧾 <b>Was ist Ihnen wichtig?</b>\n\nEntfernen Sie das Häkchen bei den Grenzen, die Sie nicht interessieren — der Assistent fragt dann nicht danach und schränkt die Suche nicht danach ein.\n\n{body}",
+
   "housing.sources.none_selected": "nicht ausgewählt",
   "housing.sources.text": "🔎 <b>Neuer Filter</b>\n\nWählen Sie aus, wo gesucht werden soll — mehrere Portale gleichzeitig sind möglich. Die Liste der Portale wird mit der Zeit erweitert.\nAktuelle Auswahl: <b>{selection}</b>",
 
@@ -176,6 +178,7 @@
   "housing.preview.new_listings_note": "Neue Angebote treffen ein, sobald sie erscheinen.",
 
   "housing.wizard.pick_districts_hint": "Wählen Sie die Stadtteile mit den Schaltflächen unten und tippen Sie auf „Fertig“.",
+  "housing.wizard.pick_criteria_hint": "Wählen Sie die gewünschten Grenzen mit den Schaltflächen unten und tippen Sie auf „Fertig“.",
   "housing.wizard.pick_sources_hint": "Wählen Sie die Portale mit den Schaltflächen unten und tippen Sie auf „Weiter“.",
   "housing.wizard.preview_hint": "Tippen Sie auf „Filter speichern“, „Zurück“ oder „Abbrechen“.",
 
