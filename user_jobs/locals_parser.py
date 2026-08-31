@@ -23,6 +23,12 @@ _ARIA_LABEL_RE = re.compile(r'aria-label="([^"]*)"')
 _TAGLINE_RE = re.compile(r'<p class="h6 fw500 tagline">([^<]*)</p>')
 _FIELD_RE = re.compile(r'>{label}</p>\s*<h3[^>]*>([^<]*)</h3>')
 _TAG_RE = re.compile(r"<[^>]+>")
+# Кожне фото галереї — це посилання glightbox, підтверджено на двох різних
+# оголошеннях, що воно завжди веде на власне фото цього самого оголошення, а
+# не сусіднього — id "data-gallery" у розмітці спільний для всіх оголошень
+# сайту (це просто ім'я групи для JS-плагіна), а не унікальний на оголошення.
+_GALLERY_IMAGE_RE = re.compile(r'href="(https://live-files\.ynfinite\.de/[^"]+)"\s+class="glightbox"')
+_COVER_IMAGE_RE = re.compile(r'class="yn-image[^"]*"[^>]*\ssrc="([^"?]+)')
 
 
 def clean_text(value: Any) -> str:
@@ -81,6 +87,9 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
         area = _field(chunk, "Wohnfläche")
         price = _field(chunk, "Kaltmiete")
 
+        cover_match = _COVER_IMAGE_RE.search(chunk)
+        cover_image_url = cover_match.group(1) if cover_match else ""
+
         if not detail_url and not title:
             continue
         listings.append({
@@ -92,8 +101,24 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
             "area_m2": parse_decimal(area),
             "price_eur": parse_decimal(price),
             "detail_url": detail_url,
+            "cover_image_url": cover_image_url,
         })
     return listings
+
+
+def parse_gallery_urls(html: str) -> list[str]:
+    """Усі фото й плани поверху оголошення — зі сторінки самого оголошення.
+
+    Картка каталогу показує лише одну обкладинку (``titelbild.jpg``); повна
+    галерея є тільки на сторінці конкретного оголошення, в елементах
+    glightbox. Реальні фото йдуть у розмітці раніше плану поверху, тому обрізка
+    до ліміту альбому Telegram природно лишає саме фото, а не план.
+    """
+    seen: list[str] = []
+    for url in _GALLERY_IMAGE_RE.findall(html):
+        if url not in seen:
+            seen.append(url)
+    return seen
 
 
 def _line(label: str, value: Any) -> str | None:

@@ -92,6 +92,40 @@ class LocalsParserTests(unittest.TestCase):
     def test_empty_page_returns_no_listings(self):
         self.assertEqual(locals_parser.parse_listings("<html><body>Nothing here</body></html>"), [])
 
+    def test_extracts_the_cover_image_from_the_search_card(self):
+        listings = locals_parser.parse_listings(PAGE_HTML)
+        penthouse = next(item for item in listings if "loc14178" in item["listing_key"])
+        self.assertEqual(penthouse["cover_image_url"], "https://live-files.ynfinite.de/x.jpg")
+
+    def test_parse_gallery_urls_extracts_every_glightbox_photo(self):
+        detail_html = """
+        <a href="https://live-files.ynfinite.de/v1/image/a/wohnzimmer.jpg" class="glightbox" data-gallery="g1">öffnen</a>
+        <a href="https://live-files.ynfinite.de/v1/image/b/kueche.jpg" class="glightbox" data-gallery="g1">öffnen</a>
+        <a href="https://live-files.ynfinite.de/v1/image/c/grundriss.jpg" class="glightbox" data-gallery="g2">öffnen</a>
+        """
+
+        urls = locals_parser.parse_gallery_urls(detail_html)
+
+        self.assertEqual(urls, [
+            "https://live-files.ynfinite.de/v1/image/a/wohnzimmer.jpg",
+            "https://live-files.ynfinite.de/v1/image/b/kueche.jpg",
+            "https://live-files.ynfinite.de/v1/image/c/grundriss.jpg",
+        ])
+
+    def test_parse_gallery_urls_drops_duplicates(self):
+        detail_html = (
+            '<a href="https://live-files.ynfinite.de/v1/image/a/x.jpg" class="glightbox" data-gallery="g1">öffnen</a>'
+            '<a href="https://live-files.ynfinite.de/v1/image/a/x.jpg" class="glightbox" data-gallery="g1">öffnen</a>'
+        )
+
+        self.assertEqual(
+            locals_parser.parse_gallery_urls(detail_html),
+            ["https://live-files.ynfinite.de/v1/image/a/x.jpg"],
+        )
+
+    def test_parse_gallery_urls_on_a_page_without_a_gallery_yields_nothing(self):
+        self.assertEqual(locals_parser.parse_gallery_urls("<html><body>Nothing here</body></html>"), [])
+
     def test_format_listing_message_includes_the_key_fields(self):
         text = locals_parser.format_listing_message({
             "title": "Traumhaftes 4-Zimmer-Penthouse", "address": "14469 Potsdam - Wohnung zu mieten",
