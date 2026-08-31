@@ -152,6 +152,7 @@
   "housing.trial.stopped": "⏸ Der kostenlose Testzeitraum ist beendet, das Monitoring wurde gestoppt. Ihre Filter bleiben noch ein paar Tage gespeichert — wenn Sie fortfahren möchten, beantragen Sie vollen Zugang, und alles läuft wieder, ohne dass Sie die Filter neu anlegen müssen.",
 
   "housing.btn.field_back": "⬅️ Zurück — Antwort korrigieren",
+  "housing.btn.skip_field": "➖ Überspringen — keine Einschränkung",
 
   "housing.btn.done": "✅ Fertig",
   "housing.btn.all_districts": "🌍 Alle Stadtteile",

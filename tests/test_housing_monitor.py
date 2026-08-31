@@ -235,8 +235,23 @@ class HousingAdminFlowTests(unittest.TestCase):
         self.assertEqual(context.user_data['housing_admin'], {
             'step': 'sources',
             'user_id': 544675510,
-            'sources_selected': [],
+            'sources_selected': list(housing_monitor.AVAILABLE_SOURCE_KEYS),
         })
+
+    def test_new_filter_sources_screen_starts_with_every_portal_checked(self):
+        context = SimpleNamespace(user_data={})
+        update = self._update('', user_id=544675510)
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            housing_monitor.start_self_add_flow(update, context)
+
+        text = update.effective_message.replies[-1][0]
+        self.assertNotIn('☐', text)
+        self.assertNotIn(housing_monitor.i18n.t('housing.sources.none_selected', 'uk'), text)
+        kwargs = update.effective_message.replies[-1][1]
+        labels = [b.text for row in kwargs['reply_markup'].inline_keyboard for b in row]
+        checked = [label for label in labels if label.startswith('✅')]
+        self.assertEqual(len(checked), len(housing_monitor.AVAILABLE_SOURCE_KEYS))
 
     def test_allowed_user_can_toggle_only_own_filter(self):
         own_filter = {
@@ -320,8 +335,10 @@ class HousingAdminFlowTests(unittest.TestCase):
             state = context.user_data['housing_admin']
             self.assertEqual(state['step'], 'sources')
             self.assertEqual(state['user_id'], 987654321)
+            # Усі портали позначені за замовчуванням — лишаємо тільки SCHOBA.
+            self.assertEqual(state['sources_selected'], list(housing_monitor.AVAILABLE_SOURCE_KEYS))
+            state['sources_selected'] = ['schoba']
 
-            housing_monitor._toggle_source(self._cb_update(), context, 'schoba')
             housing_monitor._finish_sources(self._cb_update(), context)
             # SCHOBA не знає районів — крок вибору району тут пропускається.
             self.assertEqual(state['step'], 'criteria_picker')
@@ -767,8 +784,9 @@ class HousingAdminFlowTests(unittest.TestCase):
             housing_monitor.handle_private_text(self._update('123456789'), context)
             state = context.user_data['housing_admin']
             self.assertEqual(state['step'], 'sources')
+            # Усі портали позначені за замовчуванням — лишаємо тільки ProPotsdam.
+            state['sources_selected'] = ['propotsdam']
 
-            housing_monitor._toggle_source(self._cb_update(), context, 'propotsdam')
             housing_monitor._finish_sources(self._cb_update(), context)
             self.assertEqual(state['step'], 'districts')
             housing_monitor._finish_multi_districts(self._cb_update(), context, all_districts=True)
@@ -2162,12 +2180,12 @@ class HousingWizardBackButtonTests(unittest.TestCase):
         out and uses <b>/<code> markup, which only renders if the message is
         actually sent with parse_mode="HTML" (otherwise Telegram shows the
         literal tags)."""
-        context = SimpleNamespace(user_data={})
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'step': 'sources', 'user_id': 544675510, 'sources_selected': ['schoba'],
+        }})
         finish_update = self._cb_update(user_id=544675510)
         picker_done_update = self._cb_update(user_id=544675510)
         with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
-            housing_monitor.start_self_add_flow(self._update(''), context)
-            housing_monitor._toggle_source(self._cb_update(user_id=544675510), context, 'schoba')
             housing_monitor._finish_sources(finish_update, context)
             # No district-aware source picked — src_done lands on the
             # criteria picker, click "Готово" there to reach the first field.
@@ -2367,9 +2385,32 @@ class HousingWizardPresetButtonTests(unittest.TestCase):
                 self.assertIn(f'housing:preset:{field_key}:{value}', callbacks)
 
     def test_unrelated_fields_get_no_preset_buttons(self):
-        keyboard = housing_monitor._field_keyboard('uk', 'min_rooms')
+        keyboard = housing_monitor._field_keyboard('uk', None)
         callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
         self.assertEqual(callbacks, [housing_monitor.BACK_CALLBACK])
+
+    def test_rooms_fields_offer_1_to_4_presets_plus_a_skip_button(self):
+        for field_key in ('min_rooms', 'max_rooms'):
+            keyboard = housing_monitor._field_keyboard('uk', field_key)
+            callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+            for value in housing_monitor.ROOM_PRESETS:
+                self.assertIn(f'housing:preset:{field_key}:{value}', callbacks)
+            self.assertIn(f'housing:preset:{field_key}:-', callbacks)
+            self.assertIn(housing_monitor.BACK_CALLBACK, callbacks)
+
+    def test_min_area_now_also_offers_jobcenter_presets(self):
+        keyboard = housing_monitor._field_keyboard('uk', 'min_area_m2')
+        callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+        for value in housing_monitor.JOBCENTER_AREA_PRESETS_M2:
+            self.assertIn(f'housing:preset:min_area_m2:{value}', callbacks)
+
+    def test_every_price_step_key_across_every_source_offers_presets_and_a_skip_button(self):
+        for field_key in housing_monitor.PRICE_PRESET_FIELD_KEYS:
+            keyboard = housing_monitor._field_keyboard('uk', field_key)
+            callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+            for value in housing_monitor.JOBCENTER_PRICE_PRESETS_EUR:
+                self.assertIn(f'housing:preset:{field_key}:{value}', callbacks)
+            self.assertIn(f'housing:preset:{field_key}:-', callbacks)
 
     def test_price_prompt_warns_the_presets_are_bruttokaltmiete(self):
         text = housing_monitor._field_prompt({}, housing_monitor.SEMM_CRITERIA_FIELDS, 'max_price_eur', 'uk')
@@ -2400,6 +2441,20 @@ class HousingWizardPresetButtonTests(unittest.TestCase):
         update.callback_query.answer.assert_called_once()
         self.assertEqual(len(query_message.replies), 1)
         self.assertIn('Мінімальна холодна оренда', query_message.replies[0][0])
+
+    def test_tapping_skip_leaves_the_field_unanswered_and_advances(self):
+        """Кнопка-пропуск шле те саме "-", що й ручне введення — не окрема логіка."""
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'semmelhaack', 'step': 'max_area_m2', 'user_id': 544675510, 'min_area_m2': 40.0,
+        }})
+        update, query_message = self._preset_cb_update('max_area_m2', '-')
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            housing_monitor._handle_preset_tap(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertIsNone(state['max_area_m2'])
+        self.assertEqual(state['step'], 'min_price_eur')
 
     def test_a_stale_preset_tap_is_ignored(self):
         """Стара кнопка на старому повідомленні лишається тапабельною — але

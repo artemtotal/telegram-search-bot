@@ -431,16 +431,39 @@ BACK_CALLBACK = "housing:field_back"
 # щоб не гадати з чиєїсь площі, скільки саме комуналки відняти.
 JOBCENTER_AREA_PRESETS_M2 = (50, 65, 80, 90, 100)
 JOBCENTER_PRICE_PRESETS_EUR = (550, 640, 720, 829)
-PRICE_PRESET_FIELD_KEYS = {"max_price_eur", "max_total_rent_eur"}
+# Кімнати — не з таблиці Jobcenter, просто найпоширеніші варіанти, щоб не
+# набирати вручну кожен раз.
+ROOM_PRESETS = (1, 2, 3, 4)
+ROOM_PRESET_FIELD_KEYS = {"min_rooms", "max_rooms"}
+AREA_PRESET_FIELD_KEYS = {"min_area_m2", "max_area_m2"}
+# Ціна: та сама Jobcenter-таблиця пропонується під усіма варіантами оренди,
+# що їх питає майстер — але підпис під кнопками (_jobcenter_preset_note)
+# розрізняє їх, бо Kaltmiete/Warmmiete/довільна ціна Kleinanzeigen
+# співвідносяться з Bruttokaltmiete по-різному.
+KALTMIETE_PRICE_PRESET_KEYS = {"min_price_eur", "max_price_eur", "min_total_rent_eur", "max_total_rent_eur"}
+WARMMIETE_PRICE_PRESET_KEYS = {"min_km_price_eur", "max_km_price_eur"}
+KLEINANZEIGEN_PRICE_PRESET_KEYS = {"min_ka_price_eur", "max_ka_price_eur"}
+PRICE_PRESET_FIELD_KEYS = KALTMIETE_PRICE_PRESET_KEYS | WARMMIETE_PRICE_PRESET_KEYS | KLEINANZEIGEN_PRICE_PRESET_KEYS
 PRESET_CALLBACK_PREFIX = "housing:preset:"
+SKIP_PRESET_VALUE = "-"
 
 
 def _preset_values_for(field_key: Optional[str]):
-    if field_key == "max_area_m2":
+    if field_key in ROOM_PRESET_FIELD_KEYS:
+        return ROOM_PRESETS
+    if field_key in AREA_PRESET_FIELD_KEYS:
         return JOBCENTER_AREA_PRESETS_M2
     if field_key in PRICE_PRESET_FIELD_KEYS:
         return JOBCENTER_PRICE_PRESETS_EUR
     return None
+
+
+def _preset_unit_for(field_key: Optional[str]) -> str:
+    if field_key in AREA_PRESET_FIELD_KEYS:
+        return "м²"
+    if field_key in PRICE_PRESET_FIELD_KEYS:
+        return "€"
+    return ""
 
 
 def _field_keyboard(lang: str = "uk", field_key: Optional[str] = None) -> InlineKeyboardMarkup:
@@ -449,12 +472,17 @@ def _field_keyboard(lang: str = "uk", field_key: Optional[str] = None) -> Inline
     rows = []
     values = _preset_values_for(field_key)
     if values:
-        unit = "м²" if field_key == "max_area_m2" else "€"
+        unit = _preset_unit_for(field_key)
         buttons = [
-            InlineKeyboardButton(f"{value} {unit}", callback_data=f"{PRESET_CALLBACK_PREFIX}{field_key}:{value}")
+            InlineKeyboardButton(f"{value} {unit}".strip(), callback_data=f"{PRESET_CALLBACK_PREFIX}{field_key}:{value}")
             for value in values
         ]
         rows.extend(buttons[i:i + 3] for i in range(0, len(buttons), 3))
+        # Кнопка-пропуск шле те саме "-", що людина могла б набрати вручну —
+        # той самий шлях через _PresetTextMessage, жодної окремої логіки.
+        rows.append([InlineKeyboardButton(
+            i18n.t("housing.btn.skip_field", lang), callback_data=f"{PRESET_CALLBACK_PREFIX}{field_key}:{SKIP_PRESET_VALUE}",
+        )])
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.field_back", lang), callback_data=BACK_CALLBACK)])
     return InlineKeyboardMarkup(rows)
 
@@ -512,14 +540,25 @@ def _localized_field(spec: dict, lang: str = "uk") -> dict:
 
 
 def _jobcenter_preset_note(next_key: str) -> str:
-    if next_key == "max_area_m2":
+    if next_key in AREA_PRESET_FIELD_KEYS:
         return "\n\n💡 Кнопки нижче — орієнтовні межі площі за нормами Jobcenter."
-    if next_key in PRICE_PRESET_FIELD_KEYS:
+    if next_key in KALTMIETE_PRICE_PRESET_KEYS:
         return (
             "\n\n💡 Кнопки нижче — орієнтовні межі за нормами Jobcenter "
             "(Angemessenheitsgrenzen), але це <b>Bruttokaltmiete</b> "
             "(холодна оренда + комунальні), а не Kaltmiete — реальна допустима "
             "Kaltmiete зазвичай трохи нижче цих чисел."
+        )
+    if next_key in WARMMIETE_PRICE_PRESET_KEYS:
+        return (
+            "\n\n💡 Кнопки нижче — орієнтовні межі Jobcenter для холодної оренди "
+            "(<b>Bruttokaltmiete</b>); тепла оренда (Warmmiete, з опаленням) "
+            "зазвичай трохи вища за ці числа."
+        )
+    if next_key in KLEINANZEIGEN_PRICE_PRESET_KEYS:
+        return (
+            "\n\n💡 Кнопки нижче — орієнтовні межі Jobcenter (<b>Bruttokaltmiete</b>); "
+            "тип оренди в конкретному оголошенні може відрізнятись, звірте самостійно."
         )
     return ""
 
@@ -2335,7 +2374,7 @@ def start_admin_add_flow(update: Update, context: CallbackContext, edit: bool = 
     if not user or int(user.id) != ADMIN_ID:
         return
     context.user_data["housing_admin"] = {
-        "mode": "multi", "step": "admin_target_user_id", "sources_selected": [],
+        "mode": "multi", "step": "admin_target_user_id", "sources_selected": list(AVAILABLE_SOURCE_KEYS),
     }
     text = "➕ <b>Додати користувача</b>\n\nНадішліть Telegram ID користувача."
     if edit and update.callback_query:
@@ -2497,11 +2536,11 @@ def start_self_add_flow(update: Update, context: CallbackContext, edit: bool = F
     if not user or not is_allowed(user.id):
         return
     context.user_data["housing_admin"] = {
-        "step": "sources", "user_id": int(user.id), "sources_selected": [],
+        "step": "sources", "user_id": int(user.id), "sources_selected": list(AVAILABLE_SOURCE_KEYS),
     }
     lang = i18n.get_lang(user.id)
-    text = _sources_text([], lang)
-    keyboard = _sources_keyboard([], lang)
+    text = _sources_text(AVAILABLE_SOURCE_KEYS, lang)
+    keyboard = _sources_keyboard(AVAILABLE_SOURCE_KEYS, lang)
     if edit and update.callback_query:
         update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
     else:
@@ -4013,8 +4052,9 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
             return True
         state["user_id"] = int(text)
         state["step"] = "sources"
+        state["sources_selected"] = list(AVAILABLE_SOURCE_KEYS)
         update.message.reply_text(
-            _sources_text([]), parse_mode="HTML", reply_markup=_sources_keyboard([]),
+            _sources_text(AVAILABLE_SOURCE_KEYS), parse_mode="HTML", reply_markup=_sources_keyboard(AVAILABLE_SOURCE_KEYS),
         )
         return True
     if state.get("step") == "sources":
