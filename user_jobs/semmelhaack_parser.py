@@ -22,6 +22,10 @@ _TITLE_RE = re.compile(r"<h3>(.*?)</h3>", re.S)
 _ROW_VALUE_RE = re.compile(r'"label">\s*([^<]+?):\s*</span>.*?"value">(.*?)</span>', re.S)
 _DETAIL_LINK_RE = re.compile(r'<a href="([^"]+)"[^>]*class="[^"]*zur-objektbeschreibung')
 _IMAGE_RE = re.compile(r'data-src="([^"]+)"')
+# Домен обслуживает только фото объявлений (лого и прочая графика сайта лежат
+# в wp-content/uploads), поэтому достаточно фильтра по домену — без привязки
+# к конкретному блоку разметки, который может смениться от смены темы.
+_GALLERY_IMAGE_RE = re.compile(r'data-src="(https://api\.semmelhaack\.de/bilder/objekte/[^"]+)"')
 _ADDRESS_RE = re.compile(r"^(.*?),\s*(\d{4,5})\s+(.+)$")
 _TAG_RE = re.compile(r"<[^>]+>")
 
@@ -101,6 +105,21 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
             "image_url": image_url,
         })
     return listings
+
+
+def parse_gallery_urls(html: str) -> list[str]:
+    """Всі фото і планування (Grundriss) з окремої сторінки оголошення.
+
+    Сторінка каталогу віддає лише одну обкладинку на об'єкт — саму галерею
+    (Swiper-слайдер) рендерить тільки сторінка самого оголошення (``detail_url``).
+    Слайдер і його мініатюри дублюють одні й ті самі URL, тому порядок
+    зберігається по першій появі, а дублікати відкидаються.
+    """
+    seen: list[str] = []
+    for url in _GALLERY_IMAGE_RE.findall(html):
+        if url not in seen:
+            seen.append(url)
+    return seen
 
 
 def _line(label: str, value: Any) -> str | None:

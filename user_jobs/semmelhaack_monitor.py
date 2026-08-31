@@ -11,6 +11,7 @@ from datetime import timedelta
 from typing import Dict, List
 
 import requests
+from telegram import InputMediaPhoto
 
 from user_jobs import semmelhaack_matching, semmelhaack_parser, semmelhaack_store
 
@@ -22,6 +23,11 @@ CHECK_INTERVAL_SECONDS = 15 * 60
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 ERROR_ALERT_COOLDOWN = timedelta(hours=2)
 _USER_AGENT = "Mozilla/5.0 (compatible; PotsdamHousingBot/1.0)"
+# Telegram кладёт в один альбом не больше 10 фото, сколько бы их ни было в галерее.
+GALLERY_ALBUM_MAX = 10
+# Подпись к фото Telegram обрезает жёстче обычного текста (1024 против 4096
+# символов) — раньше этого лимита текст уходит подписью, дальше отдельным сообщением.
+CAPTION_LIMIT = 1024
 
 
 def _fetch_listings() -> List[Dict]:
@@ -30,6 +36,67 @@ def _fetch_listings() -> List[Dict]:
     )
     response.raise_for_status()
     return semmelhaack_parser.parse_listings(response.text)
+
+
+def _cover_only(listing: Dict) -> List[str]:
+    cover = str(listing.get("image_url") or "").strip()
+    return [cover] if cover else []
+
+
+def _fetch_gallery(listing: Dict) -> List[str]:
+    """Все фото и планировки объявления — со страницы самого объявления.
+
+    Домен api.semmelhaack.de/bilder/objekte публичный, без логина, поэтому
+    Telegram может забрать эти URL сам — скачивать байты, как для ProPotsdam
+    (закрытого логином), тут не нужно. Если страница объявления не открылась
+    или на ней не нашлось ни одной фотографии, используем обложку из каталога:
+    она уже есть бесплатно, вторым запросом её добывать незачем.
+    """
+    detail_url = str(listing.get("detail_url") or "").strip()
+    if not detail_url:
+        return _cover_only(listing)
+    try:
+        response = requests.get(detail_url, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT})
+        response.raise_for_status()
+        urls = semmelhaack_parser.parse_gallery_urls(response.text)[:GALLERY_ALBUM_MAX]
+    except Exception as exc:
+        logger.warning("Could not fetch SEMMELHAACK gallery for %s: %s", detail_url, exc)
+        urls = []
+    return urls or _cover_only(listing)
+
+
+def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
+    """Шлёт квартиру одним постом: галерея фото с текстом объявления подписью снизу.
+
+    Возвращает True, если текст ушёл подписью — тогда отдельное текстовое
+    сообщение отправлять не нужно. False означает, что фото не набралось или
+    подпись не влезла в лимит: вызывающий обязан отправить тот же текст
+    отдельным сообщением, иначе объявление осталось бы вовсе без текста.
+    """
+    photos = _fetch_gallery(listing)
+    if not photos:
+        return False
+    caption = text if len(text) <= CAPTION_LIMIT else None
+    try:
+        if len(photos) == 1:
+            bot.send_photo(
+                chat_id=chat_id, photo=photos[0],
+                caption=caption, parse_mode="HTML" if caption else None,
+            )
+        else:
+            media = []
+            for index, url in enumerate(photos, start=1):
+                item_kwargs = {"media": url}
+                # Telegram показывает подписью всей группы только подпись первого элемента.
+                if index == 1 and caption:
+                    item_kwargs["caption"] = caption
+                    item_kwargs["parse_mode"] = "HTML"
+                media.append(InputMediaPhoto(**item_kwargs))
+            bot.send_media_group(chat_id=chat_id, media=media)
+        return caption is not None
+    except Exception:
+        logger.exception("Could not send SEMMELHAACK post to %s", chat_id)
+        return False
 
 
 def _notify_admin_parse_broke(bot, total_parsed: int) -> None:
@@ -94,7 +161,10 @@ def check_job(context) -> Dict[str, int]:
     sent = 0
     for filt, listing in matches:
         text = semmelhaack_matching.format_notification(listing)
-        bot.send_message(chat_id=int(filt["user_id"]), text=text, parse_mode="HTML", disable_web_page_preview=False)
+        chat_id = int(filt["user_id"])
+        posted_as_caption = _send_listing(bot, chat_id, listing, text)
+        if not posted_as_caption:
+            bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
         semmelhaack_store.mark_delivered(int(filt["filter_id"]), str(listing["listing_key"]))
         sent += 1
     logger.info(

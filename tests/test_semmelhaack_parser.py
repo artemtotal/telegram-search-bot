@@ -91,6 +91,41 @@ class SemmelhaackParserTests(unittest.TestCase):
     def test_empty_page_returns_no_listings(self):
         self.assertEqual(semmelhaack_parser.parse_listings("<html><body>Nothing here</body></html>"), [])
 
+    def test_parse_gallery_urls_extracts_every_photo_from_a_detail_page(self):
+        html_page = """
+        <html><body>
+        <div class="swiper-container details-wohnobjekt-slider">
+          <div class="swiper-slide"><img data-src="https://api.semmelhaack.de/bilder/objekte/1001.jpg"/></div>
+          <div class="swiper-slide"><img data-src="https://api.semmelhaack.de/bilder/objekte/1002.jpg"/></div>
+          <div class="swiper-slide"><img data-src="https://api.semmelhaack.de/bilder/objekte/1003.jpeg" alt="Grundriss"/></div>
+        </div>
+        <img data-src="https://semmelhaack.de/wp-content/uploads/2024/03/Semmelhaack.png" alt="Logo"/>
+        </body></html>
+        """
+
+        urls = semmelhaack_parser.parse_gallery_urls(html_page)
+
+        self.assertEqual(urls, [
+            "https://api.semmelhaack.de/bilder/objekte/1001.jpg",
+            "https://api.semmelhaack.de/bilder/objekte/1002.jpg",
+            "https://api.semmelhaack.de/bilder/objekte/1003.jpeg",
+        ])
+
+    def test_parse_gallery_urls_drops_duplicates_from_the_thumbnail_strip(self):
+        """Слайдер і смуга мініатюр посилаються на ті самі URL — рахуємо кожне фото один раз."""
+        html_page = """
+        <div><img data-src="https://api.semmelhaack.de/bilder/objekte/1001.jpg"/></div>
+        <div><img data-src="https://api.semmelhaack.de/bilder/objekte/1001.jpg"/></div>
+        """
+
+        self.assertEqual(
+            semmelhaack_parser.parse_gallery_urls(html_page),
+            ["https://api.semmelhaack.de/bilder/objekte/1001.jpg"],
+        )
+
+    def test_parse_gallery_urls_on_a_page_without_a_gallery_yields_nothing(self):
+        self.assertEqual(semmelhaack_parser.parse_gallery_urls("<html><body>Nothing here</body></html>"), [])
+
     def test_format_listing_message_includes_the_key_fields(self):
         text = semmelhaack_parser.format_listing_message({
             "title": "4-Zimmer-DHH", "address": "Gärtner-Schmidt-Str. 10, 14476 Potsdam",
