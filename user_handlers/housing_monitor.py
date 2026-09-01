@@ -466,17 +466,6 @@ def _preset_unit_for(field_key: Optional[str]) -> str:
     return ""
 
 
-def _preset_field_label(field_key: Optional[str], lang: str = "uk") -> str:
-    """Label for the confirmation toast after a preset/skip tap. field_key is
-    always one of the shared rooms/area keys or one of the price-step keys —
-    every mode (multi-wizard or a single source's own edit flow) defines the
-    exact same label text for these, so one lookup covers every mode."""
-    spec = SHARED_CRITERIA_BY_KEY.get(field_key) or PRICE_STEP_FIELDS.get(field_key)
-    if not spec:
-        return field_key or ""
-    return _localized_field(spec, lang)["label"]
-
-
 def _field_keyboard(lang: str = "uk", field_key: Optional[str] = None) -> InlineKeyboardMarkup:
     # Просто «⬅ Назад» губилося серед тексту питання — люди не помічали, що
     # можна виправити попередню відповідь, і кидали майстер на середині.
@@ -4660,6 +4649,31 @@ class _PresetTextMessage:
         return getattr(self._real, name)
 
 
+class _PresetUpdate:
+    """Підставний Update лише для внутрішнього виклику `handle_private_text`.
+
+    Раніше тап писав `update.message` прямо в справжній Update — і цим
+    ламав диспетчер: наш `callback_handler` живе в групі 0, а
+    `anonymous_posts.private_text_handler` (звичайний MessageHandler на
+    приватний текст) — у групі 1. Диспетчер після групи 0 бере ТОЙ САМИЙ,
+    уже змінений нами update, бачить у ньому справжнє текстове
+    повідомлення «-» у приватному чаті, фільтр збігається — і той самий
+    «-» проганявся майстром ДРУГИЙ раз, уже по наступному кроку. Через це
+    один тап «Пропустити» на мінімумі пропускав заразом і максимум.
+
+    Тому справжній Update не чіпаємо взагалі: підміна живе тільки тут і
+    далі групи 0 не потрапляє.
+    """
+
+    def __init__(self, real_update, message) -> None:
+        self._real = real_update
+        self.message = message
+        self.effective_message = message
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
 def _handle_preset_tap(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     user = update.effective_user
@@ -4680,17 +4694,7 @@ def _handle_preset_tap(update: Update, context: CallbackContext) -> None:
         # б поточний, зовсім інший крок майстра.
         query.answer("Це питання вже неактуальне.")
         return
-    # Наступне питання показує кнопку "Пропустити" в тому самому місці
-    # екрана, де щойно була ця сама кнопка — швидкий повторний тап (людина
-    # не встигла прочитати, що з'явилось нове питання) легко влучає вже в
-    # чужу кнопку. Явний тост із назвою поля, яке щойно записалось, дає
-    # людині момент прочитати, що саме сталося, перш ніж тапати далі.
-    label = _preset_field_label(field_key, i18n.get_lang(int(user.id)))
-    if raw_value == SKIP_PRESET_VALUE:
-        query.answer(f"✅ {label}: без обмеження")
-    else:
-        unit = _preset_unit_for(field_key)
-        query.answer(f"✅ {label}: {raw_value}{(' ' + unit) if unit else ''}")
+    query.answer()
     try:
         query.edit_message_reply_markup(reply_markup=None)
     except BadRequest as exc:
@@ -4698,8 +4702,10 @@ def _handle_preset_tap(update: Update, context: CallbackContext) -> None:
             raise
     except Exception:
         pass
-    update.message = _PresetTextMessage(query.message, raw_value)
-    handle_private_text(update, context)
+    # Саме _PresetUpdate, а не запис у справжній `update` — інакше наступна
+    # група обробників побачить цей же update як звичайне текстове
+    # повідомлення й прожене відповідь удруге (див. _PresetUpdate).
+    handle_private_text(_PresetUpdate(update, _PresetTextMessage(query.message, raw_value)), context)
 
 
 def _step_back(update: Update, context: CallbackContext) -> None:
