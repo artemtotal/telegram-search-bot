@@ -6,6 +6,7 @@
 лишнего.
 """
 
+import inspect
 import os
 import time
 import unittest
@@ -334,7 +335,7 @@ class CaptureDetailsTests(unittest.TestCase):
         with TemporaryDirectory() as tmp, \
              mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
              mock.patch.object(propotsdam_receiver, '_open_offer_list', lambda page: True):
-            result = propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
+            result = propotsdam_receiver._capture_details(page, [LISTING])
 
             self.assertEqual(result['opened'], 1)
             self.assertEqual(len(result['resource_ids']), 2)
@@ -347,8 +348,8 @@ class CaptureDetailsTests(unittest.TestCase):
         with TemporaryDirectory() as tmp, \
              mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
              mock.patch.object(propotsdam_receiver, '_open_offer_list', lambda page: True):
-            propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
-            again = propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
+            propotsdam_receiver._capture_details(page, [LISTING])
+            again = propotsdam_receiver._capture_details(page, [LISTING])
 
             self.assertEqual(page.opened, 1)
             self.assertEqual(again['opened'], 0)
@@ -359,7 +360,7 @@ class CaptureDetailsTests(unittest.TestCase):
         with TemporaryDirectory() as tmp, \
              mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
              mock.patch.object(propotsdam_receiver, '_open_offer_list', lambda page: True):
-            result = propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
+            result = propotsdam_receiver._capture_details(page, [LISTING])
 
             self.assertEqual(result['opened'], 0)
             self.assertEqual(result['resource_ids'], [])
@@ -367,7 +368,7 @@ class CaptureDetailsTests(unittest.TestCase):
     def test_the_step_can_be_switched_off(self):
         page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555'])
         with mock.patch.object(propotsdam_receiver, 'DETAIL_ENABLED', False):
-            result = propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
+            result = propotsdam_receiver._capture_details(page, [LISTING])
 
         self.assertEqual(page.opened, 0)
         self.assertEqual(result['opened'], 0)
@@ -403,19 +404,16 @@ class DetailTabIsolationTests(unittest.TestCase):
     завантажені.
     """
 
-    def test_the_snapshot_runs_in_its_own_tab(self):
-        page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555'])
-        context = FakeDetailContext(page)
+    def test_the_snapshot_never_touches_the_page_before_photos_are_cached(self):
+        """Знімок робиться останнім кроком обходу — саме тому він більше не
+        може відібрати в квартири фотографії, як сталось першого ж разу."""
+        source = inspect.getsource(propotsdam_receiver.scan)
+        photos_at = source.index("_cache_photos(page, listings)")
+        details_at = source.index("_capture_details(page, listings)")
 
-        with TemporaryDirectory() as tmp, \
-             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
-             mock.patch.object(propotsdam_receiver, '_open_offer_list', lambda page: True):
-            propotsdam_receiver._capture_details(context, [LISTING])
+        self.assertLess(photos_at, details_at)
 
-        self.assertEqual(context.pages_opened, 1)
-        self.assertTrue(page.closed, "вкладку зі знімком треба закривати за собою")
-
-    def test_a_tab_that_cannot_reach_the_list_gives_up_quietly(self):
+    def test_a_view_that_cannot_reach_the_list_gives_up_quietly(self):
         page = FakeDetailPage()
         context = FakeDetailContext(page)
 
@@ -425,8 +423,7 @@ class DetailTabIsolationTests(unittest.TestCase):
         with TemporaryDirectory() as tmp, \
              mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
              mock.patch.object(propotsdam_receiver, '_open_offer_list', refuse):
-            result = propotsdam_receiver._capture_details(context, [LISTING])
+            result = propotsdam_receiver._capture_details(page, [LISTING])
 
         self.assertEqual(result, {"opened": 0, "skipped": 0, "resource_ids": []})
-        self.assertTrue(page.closed)
         self.assertEqual(page.opened, 0)

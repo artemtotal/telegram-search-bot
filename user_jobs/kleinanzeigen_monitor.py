@@ -213,10 +213,10 @@ def _add_full_rent(listings: List[Dict]) -> int:
     використання не дозволяють; сам список і далі опитується рідше за решту
     джерел. Збій на одному оголошенні не псує обхід.
     """
-    priced = kleinanzeigen_store.keys_with_full_rent()
+    enriched_keys = kleinanzeigen_store.keys_already_enriched()
     filled = 0
     for listing in listings:
-        if str(listing.get("listing_key") or "") in priced:
+        if str(listing.get("listing_key") or "") in enriched_keys:
             continue
         detail_url = str(listing.get("detail_url") or "").strip()
         if not detail_url:

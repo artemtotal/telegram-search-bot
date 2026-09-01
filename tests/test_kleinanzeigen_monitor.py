@@ -437,3 +437,38 @@ class KleinanzeigenGalleryDeliveryTests(unittest.TestCase):
 
         self.assertFalse(sent)
         self.assertEqual(bot.calls, [])
+
+
+class KleinanzeigenEnrichmentScopeTests(unittest.TestCase):
+    """За чим саме йдемо на сторінку оголошення."""
+
+    DETAIL_HTML = (
+        '{"Nebenkosten":"150","Warmmiete":"1540","ExactPreis":"1390"}'
+        '<img data-imgsrc="https://img.kleinanzeigen.de/a.jpg">'
+        '<img data-imgsrc="https://img.kleinanzeigen.de/b.jpg">'
+    )
+
+    def _listing(self, key='new-1'):
+        return {'listing_key': key, 'detail_url': f'https://www.kleinanzeigen.de/s-anzeige/x/{key}'}
+
+    def test_a_listing_with_a_price_but_no_photos_is_still_fetched(self):
+        """Ціна вже є, галереї немає — по фото однаково треба сходити,
+        інакше оголошення назавжди лишиться з однією обкладинкою."""
+        listings = [self._listing()]
+
+        with mock.patch('requests.get', return_value=FakeResponse(self.DETAIL_HTML)) as get,              mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.keys_already_enriched',
+                        return_value=set()):
+            kleinanzeigen_monitor._add_full_rent(listings)
+
+        get.assert_called_once()
+        self.assertEqual(len(listings[0]['gallery_urls']), 2)
+        self.assertEqual(listings[0]['price_warm_eur'], 1540.0)
+
+    def test_a_listing_with_both_is_left_alone(self):
+        listings = [self._listing('done-1')]
+
+        with mock.patch('requests.get') as get,              mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.keys_already_enriched',
+                        return_value={'done-1'}):
+            kleinanzeigen_monitor._add_full_rent(listings)
+
+        get.assert_not_called()

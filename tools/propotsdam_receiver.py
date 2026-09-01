@@ -271,12 +271,19 @@ def _open_offer_list(page):
     anzeigen» і взяти ОСТАННІЙ збіг «Immobilien». Перший — заголовок розділу,
     він нікуди не веде; клік по самому боксу відкриває натомість «Anfragen».
     """
+    # Портал — SPA з хеш-адресою: goto на ту саму адресу нічого не перезавантажує,
+    # і меню лишається в тому стані, в якому його покинув попередній крок обходу.
+    # Саме тому знімок працював у свіжій вкладці й мовчки не працював у обході.
     page.goto(PORTAL_URL, wait_until="domcontentloaded", timeout=60000)
+    page.reload(wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(3000)
     _login_if_needed(page)
     page.wait_for_timeout(1500)
-    for pattern in ("Immobiliensuche", "mehr anzeigen"):
-        _click_text(page, [pattern], timeout=4000)
+    # Тільки «Immobiliensuche»: вона й розкриває підменю. Додатковий клік по
+    # «MEHR ANZEIGEN» тут шкідливий — після розкриття перша така кнопка вже
+    # належить розділу «Anfragen», і обхід їхав саме туди.
+    _click_text(page, ["Immobiliensuche"], timeout=4000)
+    page.wait_for_timeout(1500)
     items = page.get_by_text(re.compile(r"^\s*Immobilien\s*$", re.I))
     for index in range(items.count() - 1, -1, -1):
         candidate = items.nth(index)
@@ -311,7 +318,7 @@ def _open_listing(page, listing):
     return False
 
 
-def _capture_details(context, listings):
+def _capture_details(page, listings):
     """Открывает карточки объявлений и забирает то, чего нет в списке.
 
     В списке портал показывает только Gesamtmiete и пару обложек, хотя сам
@@ -327,21 +334,18 @@ def _capture_details(context, listings):
     """
     if not DETAIL_ENABLED or not listings:
         return {"opened": 0, "resource_ids": [], "skipped": 0}
-    # Своя вкладка: перший же знімок посеред обходу збив список і залишив
-    # квартиру без фотографій. Тут ламатись нема чому — вкладку закриваємо,
-    # а сторінка зі списком навіть не знає, що поруч щось відкривали.
-    page = context.new_page()
+    # Знімок робиться в тій самій вкладці, але ОСТАННІМ кроком обходу — коли
+    # список уже зібрано, а фото завантажено. Окрема вкладка виглядала
+    # безпечнішою, та портал у ній просто не відкриває перелік квартир:
+    # друга «сесія перегляду» отримує урізаний інтерфейс. Тож захистом
+    # служить порядок кроків, а не ізоляція.
 
     DETAIL_DIR.mkdir(parents=True, exist_ok=True)
     try:
         if not _open_offer_list(page):
             raise RuntimeError("перелік квартир не відкрився")
     except Exception as exc:
-        logger.warning("Could not open the ProPotsdam list in the detail tab: %s", exc)
-        try:
-            page.close()
-        except Exception:
-            pass
+        logger.warning("Could not open the ProPotsdam listing view for a snapshot: %s", exc)
         return {"opened": 0, "skipped": 0, "resource_ids": []}
     opened = 0
     skipped = 0
@@ -409,10 +413,6 @@ def _capture_details(context, listings):
                     logger.warning("Could not return to the ProPotsdam list: %s", exc)
                     break
 
-    try:
-        page.close()
-    except Exception:
-        pass
     logger.info("ProPotsdam details opened=%s skipped=%s extra photos=%s", opened, skipped, len(resource_ids))
     return {"opened": opened, "skipped": skipped, "resource_ids": resource_ids}
 
@@ -527,7 +527,7 @@ def scan():
             # и первая же попытка открыть карточку показала, почему это важно —
             # неудачный клик увёл страницу со списка, и фото не скачались вовсе.
             photos = _cache_photos(page, listings)
-            details = _capture_details(context, listings)
+            details = _capture_details(page, listings)
             if details["resource_ids"]:
                 extra = _cache_photos(page, [], details["resource_ids"])
                 for key in photos:

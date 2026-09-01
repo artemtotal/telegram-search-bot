@@ -207,20 +207,25 @@ def delete_filter(filter_id: int, user_id: Optional[int] = None) -> bool:
         session.close()
 
 
-def keys_with_full_rent() -> Set[str]:
-    """Оголошення, для яких повна ціна вже відома.
+def keys_already_enriched() -> Set[str]:
+    """Оголошення, для яких зі сторінки вже забрано все потрібне.
 
-    Саме вони, а не «всі, що вже в базі»: спершу тут стояла перевірка на
-    новизну — і оголошення, збережені до появи цієї колонки, не отримали б
-    повної ціни ніколи, бо новими вже не стануть. Тепер сторінку відвідують
-    доти, доки ціни немає, і рівно один раз на оголошення.
+    Саме «все», а не «повну ціну»: спершу тут стояла перевірка лише на ціну,
+    і оголошення, збережені до появи галереї, лишились би з однією обкладинкою
+    назавжди — ціна в них уже є, тож на сторінку по фото ніхто б не пішов.
     """
     session = DBSession()
     try:
-        rows = session.query(KleinanzeigenListing.listing_key).filter(
-            KleinanzeigenListing.price_warm_eur.isnot(None)
+        rows = session.query(
+            KleinanzeigenListing.listing_key,
+            KleinanzeigenListing.price_warm_eur,
+            KleinanzeigenListing.gallery_urls,
         ).all()
-        return {str(row.listing_key) for row in rows}
+        return {
+            str(row.listing_key)
+            for row in rows
+            if row.price_warm_eur is not None and str(row.gallery_urls or "").strip()
+        }
     finally:
         session.close()
 
