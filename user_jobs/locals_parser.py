@@ -121,6 +121,34 @@ def parse_gallery_urls(html: str) -> list[str]:
     return seen
 
 
+# Назва й число стоять сусідніми вузлами («<p>Kaltmiete</p> <p>2.100 €</p>»),
+# але скільки саме тегів між ними — залежить від верстки, тож пропускаємо будь-яку
+# їх кількість, а не рівно один чи два.
+_DETAIL_FIELD_RE = re.compile(
+    r">\s*(Kaltmiete|Nebenkosten|Warmmiete)\s*<[^>]*>\s*(?:<[^>]*>\s*)*([\d.,]+)\s*€", re.I | re.S,
+)
+
+
+def parse_detail_prices(html: str) -> dict[str, float | None]:
+    """Ціни зі сторінки оголошення: холодна, комуналка й повна.
+
+    Каталог друкує саму лише Kaltmiete. Готової повної ціни сторінка не дає —
+    поруч стоїть «Nebenkosten», тож повна виходить їх сумою. Якщо сторінка
+    називає Warmmiete прямо, беремо назване число, а не власну арифметику.
+    """
+    # Нижче на сторінці стоять «схожі об'єкти» з їхніми власними цінами, тож
+    # береться перше входження кожної назви — те, що належить самому оголошенню.
+    values: dict[str, str] = {}
+    for label, value in _DETAIL_FIELD_RE.findall(html):
+        values.setdefault(clean_text(label).casefold(), value)
+    cold = parse_decimal(values.get("kaltmiete"))
+    extra = parse_decimal(values.get("nebenkosten"))
+    warm = parse_decimal(values.get("warmmiete"))
+    if warm is None and cold is not None and extra is not None:
+        warm = round(cold + extra, 2)
+    return {"price_eur": cold, "price_warm_eur": warm, "nebenkosten_eur": extra}
+
+
 def _line(label: str, value: Any) -> str | None:
     if value is None or value == "":
         return None
@@ -135,6 +163,7 @@ def format_listing_message(listing: dict[str, Any]) -> str:
         ("Кімнати", "rooms"),
         ("Площа м²", "area_m2"),
         ("Kaltmiete EUR", "price_eur"),
+        ("Warmmiete EUR", "price_warm_eur"),
     ]:
         line = _line(label, listing.get(key))
         if line:

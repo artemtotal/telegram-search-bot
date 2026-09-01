@@ -297,5 +297,7 @@
   "housing.price.basis.kalt": "Kaltmiete (холодная аренда)",
   "housing.price.basis.warm": "Warmmiete (тёплая аренда, с коммунальными)",
   "housing.field.label.warm_min": "Полная аренда: минимум (от)",
-  "housing.field.label.warm_max": "Полная аренда: максимум (до)"
+  "housing.field.label.warm_max": "Полная аренда: максимум (до)",
+  "housing.describe.price_cold": "холодная",
+  "housing.describe.price_warm": "полная"
 }

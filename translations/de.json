@@ -297,5 +297,7 @@
   "housing.price.basis.kalt": "Kaltmiete",
   "housing.price.basis.warm": "Warmmiete (inkl. Nebenkosten)",
   "housing.field.label.warm_min": "Warmmiete: Minimum (ab)",
-  "housing.field.label.warm_max": "Warmmiete: Maximum (bis)"
+  "housing.field.label.warm_max": "Warmmiete: Maximum (bis)",
+  "housing.describe.price_cold": "kalt",
+  "housing.describe.price_warm": "warm"
 }

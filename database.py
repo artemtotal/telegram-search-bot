@@ -359,6 +359,9 @@ class SchobaListing(Base):
     rooms = Column(FLOAT)
     area_m2 = Column(FLOAT)
     price_eur = Column(FLOAT)
+    # Повна оренда з комуналкою — з сторінки самого оголошення:
+    # каталог друкує лише холодну.
+    price_warm_eur = Column(FLOAT)
     detail_url = Column(TEXT)
     first_seen_at = Column(DATETIME, nullable=False)
     last_seen_at = Column(DATETIME, nullable=False)
@@ -485,6 +488,9 @@ class KleinanzeigenListing(Base):
     rooms = Column(FLOAT)
     area_m2 = Column(FLOAT)
     price_eur = Column(FLOAT)
+    # Повна оренда з комуналкою — з сторінки самого оголошення:
+    # каталог друкує лише холодну.
+    price_warm_eur = Column(FLOAT)
     detail_url = Column(TEXT)
     cover_image_url = Column(TEXT)
     first_seen_at = Column(DATETIME, nullable=False)
@@ -546,6 +552,9 @@ class LocalsListing(Base):
     rooms = Column(FLOAT)
     area_m2 = Column(FLOAT)
     price_eur = Column(FLOAT)
+    # Повна оренда з комуналкою — з сторінки самого оголошення:
+    # каталог друкує лише холодну.
+    price_warm_eur = Column(FLOAT)
     detail_url = Column(TEXT)
     cover_image_url = Column(TEXT)
     first_seen_at = Column(DATETIME, nullable=False)
@@ -769,6 +778,9 @@ _ensure_column('karlmarx_filter', 'min_price_warm_eur', 'FLOAT')
 _ensure_column('karlmarx_filter', 'max_price_warm_eur', 'FLOAT')
 _ensure_column('regiomakler_listing', 'price_warm_eur', 'FLOAT')
 _ensure_column('karlmarx_listing', 'price_warm_eur', 'FLOAT')
+_ensure_column('schoba_listing', 'price_warm_eur', 'FLOAT')
+_ensure_column('locals_listing', 'price_warm_eur', 'FLOAT')
+_ensure_column('kleinanzeigen_listing', 'price_warm_eur', 'FLOAT')
 
 
 def _move_karlmarx_bounds_to_the_warm_column() -> None:

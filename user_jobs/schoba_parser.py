@@ -128,6 +128,28 @@ def parse_gallery_urls(html: str) -> list[str]:
     return seen
 
 
+_DETAIL_PRICE_RE = re.compile(
+    r"(Nettokaltmiete|Nebenkosten|Gesamtmietpreis|Bruttowarmmiete)\s*:?\s*</td>\s*<td[^>]*>\s*([^<]+?)\s*<",
+    re.I | re.S,
+)
+
+
+def parse_detail_prices(html: str) -> dict[str, float | None]:
+    """Розбивка ціни зі сторінки оголошення.
+
+    Каталог друкує лише Nettokaltmiete; повну ціну сторінка оголошення дає
+    готовою — «Gesamtmietpreis: 942,37 EUR», поруч із «Nebenkosten». Рахувати
+    самим нічого не треба.
+    """
+    values = {clean_text(label).casefold(): value for label, value in _DETAIL_PRICE_RE.findall(html)}
+    warm = values.get("gesamtmietpreis") or values.get("bruttowarmmiete")
+    return {
+        "price_eur": parse_decimal(values.get("nettokaltmiete")),
+        "price_warm_eur": parse_decimal(warm),
+        "nebenkosten_eur": parse_decimal(values.get("nebenkosten")),
+    }
+
+
 def _line(label: str, value: Any) -> str | None:
     if value is None or value == "":
         return None
@@ -142,6 +164,7 @@ def format_listing_message(listing: dict[str, Any]) -> str:
         ("Кімнати", "rooms"),
         ("Площа м²", "area_m2"),
         ("Nettokaltmiete EUR", "price_eur"),
+        ("Gesamtmietpreis EUR", "price_warm_eur"),
     ]:
         line = _line(label, listing.get(key))
         if line:

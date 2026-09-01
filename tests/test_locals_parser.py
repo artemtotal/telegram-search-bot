@@ -139,3 +139,43 @@ class LocalsParserTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LocalsDetailPriceTests(unittest.TestCase):
+    """Повна ціна — з сторінки оголошення: каталог друкує лише холодну."""
+
+    # Розмітка як на живій сторінці: назва й число — сусідні <p> в одному <li>.
+    DETAIL_HTML = """
+    <ul><li class="flex flex-row justify-between gap">
+      <p class="m0">Kaltmiete</p> <p class="m0 text-right">2.100 €</p>
+    </li>
+    <li class="flex flex-row justify-between gap">
+      <p class="m0">Nebenkosten</p> <p class="m0 text-right">305 €</p>
+    </li></ul>"""
+
+    def test_the_full_rent_is_the_cold_rent_plus_the_extras(self):
+        prices = locals_parser.parse_detail_prices(self.DETAIL_HTML)
+
+        self.assertEqual(prices["price_eur"], 2100.0)
+        self.assertEqual(prices["nebenkosten_eur"], 305.0)
+        self.assertEqual(prices["price_warm_eur"], 2405.0)
+
+    def test_similar_listings_further_down_the_page_are_ignored(self):
+        """Нижче стоять «схожі об'єкти» зі своїми цінами — беремо перше
+        входження, те, що належить самому оголошенню."""
+        html = self.DETAIL_HTML + """
+        <li><p class="m0">Kaltmiete</p> <p class="m0">1.800 €</p></li>
+        <li><p class="m0">Nebenkosten</p> <p class="m0">120 €</p></li>"""
+
+        prices = locals_parser.parse_detail_prices(html)
+
+        self.assertEqual(prices["price_eur"], 2100.0)
+        self.assertEqual(prices["price_warm_eur"], 2405.0)
+
+    def test_a_page_without_extras_reports_no_full_rent(self):
+        html = '<div><span>Kaltmiete</span><span><span>990 €</span></span></div>'
+
+        prices = locals_parser.parse_detail_prices(html)
+
+        self.assertEqual(prices["price_eur"], 990.0)
+        self.assertIsNone(prices["price_warm_eur"])

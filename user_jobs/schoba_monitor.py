@@ -62,6 +62,35 @@ def _fetch_listings() -> List[Dict]:
     return schoba_parser.parse_listings(response.text)
 
 
+def _add_full_rent(listings: List[Dict]) -> int:
+    """Дозабирає повну ціну зі сторінок оголошень.
+
+    Каталог друкує лише Nettokaltmiete, а «Gesamtmietpreis» лежить усередині
+    оголошення. Ходимо туди тільки за новим оголошенням — повна ціна не
+    змінюється щопівгодини, і зайвий запит нічого б не дав. Помилка на
+    одному оголошенні не має псувати весь обхід: без повної ціни фільтр
+    просто не застосує до нього теплу межу.
+    """
+    known = schoba_store.known_listing_keys()
+    filled = 0
+    for listing in listings:
+        if str(listing.get("listing_key") or "") in known:
+            continue
+        detail_url = str(listing.get("detail_url") or "").strip()
+        if not detail_url:
+            continue
+        try:
+            response = _get_with_retries(detail_url)
+            prices = schoba_parser.parse_detail_prices(response.text)
+        except Exception as exc:
+            logger.warning("Could not read SCHOBA prices for %s: %s", detail_url, exc)
+            continue
+        if prices.get("price_warm_eur") is not None:
+            listing["price_warm_eur"] = prices["price_warm_eur"]
+            filled += 1
+    return filled
+
+
 def _fetch_gallery(listing: Dict) -> List[str]:
     """Все фото объявления — со страницы самого объявления.
 
@@ -168,6 +197,7 @@ def check_job(context) -> Dict[str, int]:
     if not all_listings:
         _notify_admin_parse_broke(bot)
     vacant_listings = [item for item in all_listings if item.get("is_vacant")]
+    enriched = _add_full_rent(vacant_listings)
     stored = schoba_store.upsert_listings(vacant_listings)
     schoba_store.record_status("ok", listings_count=stored)
     active_listings = schoba_store.list_active_listings()
@@ -183,7 +213,7 @@ def check_job(context) -> Dict[str, int]:
         schoba_store.mark_delivered(int(filt["filter_id"]), str(listing["listing_key"]))
         sent += 1
     logger.info(
-        "SCHOBA scan total=%s vacant=%s stored=%s filters=%s sent=%s",
-        len(all_listings), len(vacant_listings), stored, len(filters), sent,
+        "SCHOBA scan total=%s vacant=%s stored=%s full_rent=%s filters=%s sent=%s",
+        len(all_listings), len(vacant_listings), stored, enriched, len(filters), sent,
     )
     return {"ok": 1, "enabled": 1, "stored": stored, "filters": len(filters), "sent": sent}

@@ -191,6 +191,37 @@ def _notify_admin_fetch_failed(bot, error: Exception, previous_status: Dict) -> 
         return False
 
 
+def _add_full_rent(listings: List[Dict]) -> int:
+    """Дозабирає повну ціну зі сторінок оголошень.
+
+    Площадка тримає її готовим числом серед атрибутів оголошення, поруч із
+    Nebenkosten. Запит іде лише за НОВИМ оголошенням — таких одиниці на добу,
+    тож це не перетворює обхід на систематичний збір, якого Умови
+    використання не дозволяють; сам список і далі опитується рідше за решту
+    джерел. Збій на одному оголошенні не псує обхід.
+    """
+    known = kleinanzeigen_store.known_listing_keys()
+    filled = 0
+    for listing in listings:
+        if str(listing.get("listing_key") or "") in known:
+            continue
+        detail_url = str(listing.get("detail_url") or "").strip()
+        if not detail_url:
+            continue
+        try:
+            response = requests.get(detail_url, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT})
+            response.raise_for_status()
+            response.encoding = response.apparent_encoding or "utf-8"
+            prices = kleinanzeigen_parser.parse_detail_prices(response.text)
+        except Exception as exc:
+            logger.warning("Could not read Kleinanzeigen prices for %s: %s", detail_url, exc)
+            continue
+        if prices.get("price_warm_eur") is not None:
+            listing["price_warm_eur"] = prices["price_warm_eur"]
+            filled += 1
+    return filled
+
+
 def check_job(context) -> Dict[str, int]:
     if not CHECK_ENABLED:
         kleinanzeigen_store.record_status("disabled", listings_count=0)
@@ -207,6 +238,7 @@ def check_job(context) -> Dict[str, int]:
     if not all_listings:
         _notify_admin_parse_broke(bot, kleinanzeigen_store.latest_status())
     relevant = [item for item in all_listings if _is_relevant(item)]
+    enriched = _add_full_rent(relevant)
     stored = kleinanzeigen_store.upsert_listings(relevant)
     kleinanzeigen_store.record_status("ok", listings_count=stored)
     active_listings = kleinanzeigen_store.list_active_listings()
@@ -224,7 +256,7 @@ def check_job(context) -> Dict[str, int]:
         kleinanzeigen_store.mark_delivered(int(filt["filter_id"]), str(listing["listing_key"]))
         sent += 1
     logger.info(
-        "Kleinanzeigen scan total=%s relevant=%s stored=%s filters=%s sent=%s",
-        len(all_listings), len(relevant), stored, len(filters), sent,
+        "Kleinanzeigen scan total=%s relevant=%s stored=%s full_rent=%s filters=%s sent=%s",
+        len(all_listings), len(relevant), stored, enriched, len(filters), sent,
     )
     return {"ok": 1, "enabled": 1, "stored": stored, "filters": len(filters), "sent": sent}

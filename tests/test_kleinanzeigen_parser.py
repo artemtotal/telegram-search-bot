@@ -150,3 +150,29 @@ class KleinanzeigenParserTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KleinanzeigenDetailPriceTests(unittest.TestCase):
+    """Площадка тримає ціни готовими числами в атрибутах оголошення."""
+
+    DETAIL_HTML = '{"Nebenkosten":"150","Wohnflaeche":"80","Warmmiete":"1540","Preis":"1500","ExactPreis":"1390"}'
+
+    def test_both_rents_are_read_from_the_ad_attributes(self):
+        prices = kleinanzeigen_parser.parse_detail_prices(self.DETAIL_HTML)
+
+        self.assertEqual(prices["price_eur"], 1390.0)
+        self.assertEqual(prices["nebenkosten_eur"], 150.0)
+        self.assertEqual(prices["price_warm_eur"], 1540.0)
+
+    def test_the_full_rent_is_computed_when_the_page_omits_it(self):
+        html = '{"Nebenkosten":"200","ExactPreis":"800"}'
+
+        prices = kleinanzeigen_parser.parse_detail_prices(html)
+
+        self.assertEqual(prices["price_warm_eur"], 1000.0)
+
+    def test_a_page_without_prices_reports_nothing(self):
+        prices = kleinanzeigen_parser.parse_detail_prices('{"Wohnflaeche":"80"}')
+
+        self.assertIsNone(prices["price_eur"])
+        self.assertIsNone(prices["price_warm_eur"])

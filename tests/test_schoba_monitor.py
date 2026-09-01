@@ -351,3 +351,51 @@ class SchobaDeliveryTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SchobaFullRentTests(unittest.TestCase):
+    """Повну ціну беремо зі сторінки оголошення — і лише за новим оголошенням."""
+
+    DETAIL_HTML = (
+        '<table><tr><td>Nettokaltmiete:</td><td>700,37 &euro;</td></tr>'
+        '<tr><td>Gesamtmietpreis:</td><td>942,37 EUR</td></tr></table>'
+    )
+
+    def _listing(self, key='new-1'):
+        return {
+            'listing_key': key, 'price_eur': 700.37,
+            'detail_url': f'https://www.schoba.de/immobilien/angebote/{key}.htm',
+        }
+
+    def test_a_new_listing_gets_its_full_rent_from_the_detail_page(self):
+        listings = [self._listing()]
+
+        with mock.patch('requests.get', return_value=FakeResponse(self.DETAIL_HTML)), \
+             mock.patch('user_jobs.schoba_monitor.schoba_store.known_listing_keys', return_value=set()):
+            filled = schoba_monitor._add_full_rent(listings)
+
+        self.assertEqual(filled, 1)
+        self.assertEqual(listings[0]['price_warm_eur'], 942.37)
+
+    def test_a_listing_already_in_the_catalogue_is_not_fetched_again(self):
+        """Повна ціна не змінюється щопівгодини — зайвий запит лише слід на сайті."""
+        listings = [self._listing('old-1')]
+
+        with mock.patch('requests.get') as get, \
+             mock.patch('user_jobs.schoba_monitor.schoba_store.known_listing_keys',
+                        return_value={'old-1'}):
+            filled = schoba_monitor._add_full_rent(listings)
+
+        get.assert_not_called()
+        self.assertEqual(filled, 0)
+        self.assertNotIn('price_warm_eur', listings[0])
+
+    def test_a_failing_detail_page_does_not_break_the_scan(self):
+        listings = [self._listing()]
+
+        with mock.patch('requests.get', side_effect=RuntimeError('502')), \
+             mock.patch('user_jobs.schoba_monitor.schoba_store.known_listing_keys', return_value=set()):
+            filled = schoba_monitor._add_full_rent(listings)
+
+        self.assertEqual(filled, 0)
+        self.assertEqual(listings[0]['price_eur'], 700.37)

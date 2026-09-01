@@ -743,12 +743,21 @@ def _describe_criteria(criteria: Dict[str, object], lang: str = "uk") -> str:
         ", ".join(str(item) for item in districts) if districts
         else i18n.t("housing.describe.all_districts", lang)
     ]
+    # Дві ціни поруч — холодна й повна. Позначаємо обидві навіть коли задано
+    # лише одну: уся ця плутанина й почалась із того, що «800 €» у різних
+    # порталах означало різні величини, а в описі фільтра було не видно, яку.
     price = _describe_range(
         criteria.get("min_price_eur"), criteria.get("max_price_eur"),
         unit=i18n.t("housing.unit.eur", lang), is_int=True, lang=lang,
     )
     if price:
-        parts.append(price)
+        parts.append(f'{price} {i18n.t("housing.describe.price_cold", lang)}')
+    price_warm = _describe_range(
+        criteria.get("min_price_warm_eur"), criteria.get("max_price_warm_eur"),
+        unit=i18n.t("housing.unit.eur", lang), is_int=True, lang=lang,
+    )
+    if price_warm:
+        parts.append(f'{price_warm} {i18n.t("housing.describe.price_warm", lang)}')
     rooms = _describe_range(
         criteria.get("min_rooms"), criteria.get("max_rooms"), unit=i18n.t("housing.unit.rooms", lang), lang=lang,
     )
@@ -2595,8 +2604,9 @@ def _item_criteria_summary(item: Dict[str, object], source: str, lang: str = "uk
         districts = [d for d in str(item.get("districts") or "").split(",") if d]
         criteria = {
             "districts": districts,
-            "min_price_eur": item.get("min_total_rent_eur"),
-            "max_price_eur": item.get("max_total_rent_eur"),
+            # Gesamtmiete порталу — це повна оренда, тож і показуємо її як повну.
+            "min_price_warm_eur": item.get("min_total_rent_eur"),
+            "max_price_warm_eur": item.get("max_total_rent_eur"),
             "min_rooms": item.get("min_rooms"),
             "max_rooms": item.get("max_rooms"),
             "min_area_m2": item.get("min_area_m2"),

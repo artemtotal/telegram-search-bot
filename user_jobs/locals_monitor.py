@@ -40,6 +40,35 @@ def _fetch_listings() -> List[Dict]:
     return locals_parser.parse_listings(response.text)
 
 
+def _add_full_rent(listings: List[Dict]) -> int:
+    """Дозабирає повну ціну зі сторінок оголошень.
+
+    Каталог locals® показує лише Kaltmiete; поруч із нею всередині оголошення
+    стоїть Nebenkosten, з яких і виходить повна. Ходимо туди лише за новим
+    оголошенням, а збій на одному не має псувати весь обхід — без повної ціни
+    фільтр просто не застосує до нього теплу межу.
+    """
+    known = locals_store.known_listing_keys()
+    filled = 0
+    for listing in listings:
+        if str(listing.get("listing_key") or "") in known:
+            continue
+        detail_url = str(listing.get("detail_url") or "").strip()
+        if not detail_url:
+            continue
+        try:
+            response = requests.get(detail_url, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT})
+            response.raise_for_status()
+            prices = locals_parser.parse_detail_prices(response.text)
+        except Exception as exc:
+            logger.warning("Could not read locals® prices for %s: %s", detail_url, exc)
+            continue
+        if prices.get("price_warm_eur") is not None:
+            listing["price_warm_eur"] = prices["price_warm_eur"]
+            filled += 1
+    return filled
+
+
 def _cover_only(listing: Dict) -> List[str]:
     cover = str(listing.get("cover_image_url") or "").strip()
     return [cover] if cover else []
@@ -134,6 +163,7 @@ def check_job(context) -> Dict[str, int]:
         locals_store.record_status("error", listings_count=0, error=str(exc))
         logger.warning("locals® scan failed; admin_alerted=%s: %s", alerted, exc)
         return {"ok": 0, "enabled": 1, "sent": 0, "admin_alerted": int(alerted)}
+    enriched = _add_full_rent(all_listings)
     stored = locals_store.upsert_listings(all_listings)
     locals_store.record_status("ok", listings_count=stored)
     active_listings = locals_store.list_active_listings()
@@ -149,7 +179,7 @@ def check_job(context) -> Dict[str, int]:
         locals_store.mark_delivered(int(filt["filter_id"]), str(listing["listing_key"]))
         sent += 1
     logger.info(
-        "locals® scan total=%s stored=%s filters=%s sent=%s",
-        len(all_listings), stored, len(filters), sent,
+        "locals® scan total=%s stored=%s full_rent=%s filters=%s sent=%s",
+        len(all_listings), stored, enriched, len(filters), sent,
     )
     return {"ok": 1, "enabled": 1, "stored": stored, "filters": len(filters), "sent": sent}

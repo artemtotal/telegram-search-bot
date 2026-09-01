@@ -144,6 +144,28 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
     return listings
 
 
+_DETAIL_ATTR_RE = re.compile(r'"(Warmmiete|Nebenkosten|ExactPreis)"\s*:\s*"([^"]*)"')
+
+
+def parse_detail_prices(html: str) -> dict[str, float | None]:
+    """Ціни зі сторінки оголошення.
+
+    Сама площадка тримає їх готовими числами серед атрибутів оголошення:
+    «ExactPreis» — це ціна з поля категорії (Kaltmiete), поруч лежать
+    «Nebenkosten» і вже порахована «Warmmiete». Перевірено на живому
+    оголошенні: 1390 + 150 = 1540.
+    """
+    values: dict[str, str] = {}
+    for name, value in _DETAIL_ATTR_RE.findall(html):
+        values.setdefault(name, value)
+    cold = parse_decimal(values.get("ExactPreis"))
+    extra = parse_decimal(values.get("Nebenkosten"))
+    warm = parse_decimal(values.get("Warmmiete"))
+    if warm is None and cold is not None and extra is not None:
+        warm = round(cold + extra, 2)
+    return {"price_eur": cold, "price_warm_eur": warm, "nebenkosten_eur": extra}
+
+
 def _line(label: str, value: Any) -> str | None:
     if value is None or value == "":
         return None
@@ -158,6 +180,7 @@ def format_listing_message(listing: dict[str, Any]) -> str:
         ("Кімнати", "rooms"),
         ("Площа м²", "area_m2"),
         ("Ціна EUR", "price_eur"),
+        ("Warmmiete EUR", "price_warm_eur"),
     ]:
         line = _line(label, listing.get(key))
         if line:

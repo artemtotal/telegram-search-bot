@@ -129,3 +129,34 @@ class SchobaParserTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SchobaDetailPriceTests(unittest.TestCase):
+    """Повна ціна лежить на сторінці оголошення готовою — рахувати не треба."""
+
+    DETAIL_HTML = """
+    <table><tr><td>Nettokaltmiete:</td><td class="v">700,37 &euro;</td></tr>
+    <tr><td>Nebenkosten:</td><td class="v">242,00 &euro;</td></tr>
+    <tr><td>Gesamtmietpreis:</td><td class="v">942,37 EUR</td></tr></table>
+    """
+
+    def test_the_full_rent_is_read_from_the_detail_page(self):
+        prices = schoba_parser.parse_detail_prices(self.DETAIL_HTML)
+
+        self.assertEqual(prices["price_eur"], 700.37)
+        self.assertEqual(prices["price_warm_eur"], 942.37)
+        self.assertEqual(prices["nebenkosten_eur"], 242.0)
+
+    def test_a_wg_room_priced_as_bruttowarmmiete_counts_as_the_full_rent(self):
+        """Кімнати у WG сторінка показує вже теплою ціною, під іншою назвою."""
+        html = '<table><tr><td>Bruttowarmmiete:</td><td>614,00 &euro;</td></tr></table>'
+
+        prices = schoba_parser.parse_detail_prices(html)
+
+        self.assertEqual(prices["price_warm_eur"], 614.0)
+
+    def test_a_page_without_prices_returns_nothing_rather_than_guessing(self):
+        prices = schoba_parser.parse_detail_prices("<html><body>Kein Preis</body></html>")
+
+        self.assertIsNone(prices["price_warm_eur"])
+        self.assertIsNone(prices["price_eur"])
