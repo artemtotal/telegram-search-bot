@@ -20,11 +20,22 @@ from typing import Any
 LISTINGS_URL = "https://www.kleinanzeigen.de/s-wohnung-mieten/potsdam/k0c203"
 BASE_URL = "https://www.kleinanzeigen.de"
 
-_CARD_RE = re.compile(r'<article class="aditem" data-adid="(\d+)"')
-_LOCATION_RE = re.compile(r'icon-pin-gray"[^>]*></i>\s*([^<\n]+)', re.S)
-_TITLE_LINK_RE = re.compile(r'<a class="ellipsis"\s*href="([^"]+)">([^<]*)</a>', re.S)
-_TAGS_BLOCK_RE = re.compile(r'aditem-main--middle--tags">(.*?)</p>', re.S)
-_PRICE_RE = re.compile(r'aditem-main--middle--price-shipping--price">([^<]*)<')
+# Прив'язуємось до того, що переживає перевёрстку: data-атрибути картки й самі
+# текстові вузли. 2026-09-01 сайт перейшов на службові класи в стилі Tailwind
+# («aditem», «aditem-main--middle--tags» тощо зникли за одну ніч), і розбір,
+# який спирався на назви класів, віддав нуль оголошень при живій сторінці.
+_CARD_RE = re.compile(r'<article[^>]*\sdata-adid="(\d+)"')
+_DETAIL_HREF_RE = re.compile(r'\sdata-href="([^"]+)"')
+_LOCATION_RE = re.compile(r">\s*(\d{5}\s+[^<>]{2,60}?)\s*<")
+_TITLE_LINK_RE = re.compile(r'<a[^>]+href="(/s-anzeige/[^"]+)"[^>]*>\s*([^<>]+?)\s*</a>', re.S)
+# Характеристики стоять одним вузлом: «80 m² · 2,5 Zi.». Просто «вузол, де є
+# m²» брати не можна — опис оголошення теж повний метрів («Ruhige 120 m²
+# Maisonette…»), і саме він трапляється першим. Тому вузол розбиваємо по «·» і
+# вимагаємо, щоб хоч одна частина була рівно числом з одиницею.
+_TEXT_NODE_RE = re.compile(r">([^<>]+)<")
+_SPEC_PART_RE = re.compile(r"^\d+(?:[.,]\d+)?\s*(?:m²|Zi\.)$")
+_PRICE_RE = re.compile(r">\s*(\d[\d.]*(?:,\d+)?)\s*(?:€|&euro;|&#8364;)(?:\s*VB)?\s*<")
+_SCRIPT_RE = re.compile(r"<script.*?</script>", re.S | re.I)
 # Обкладинка з JSON-LD у самій картці пошуку — тут лише одне фото на
 # оголошення, повної галереї сторінка пошуку не показує. Детальну сторінку
 # заради решти фото свідомо не запитуємо: Kleinanzeigen — велика платформа,
@@ -68,6 +79,17 @@ def parse_decimal(value: Any) -> float | None:
         return None
 
 
+def _specs_text(body: str) -> str:
+    """Текст вузла з характеристиками картки, а не з опису оголошення."""
+    for node in _TEXT_NODE_RE.finditer(body):
+        text = clean_text(node.group(1))
+        if not text:
+            continue
+        if any(_SPEC_PART_RE.match(part.strip()) for part in text.split("·")):
+            return text
+    return ""
+
+
 def parse_listings(html: str) -> list[dict[str, Any]]:
     """Extracts every card on the page. Filtering, if any, is the caller's job."""
     listings: list[dict[str, Any]] = []
@@ -78,26 +100,33 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
         chunk_end = matches[index + 1].start() if index + 1 < len(matches) else len(html)
         chunk = html[chunk_start:chunk_end]
 
-        location_match = _LOCATION_RE.search(chunk)
+        image_match = _IMAGE_RE.search(chunk)
+        cover_image_url = html_lib.unescape(image_match.group(1)) if image_match else ""
+
+        # Обкладинку беремо до вирізання <script> — вона живе в JSON-LD, — а
+        # решту шукаємо вже без нього: опис оголошення всередині JSON-LD теж
+        # містить і «m²», і ціну, і перехопив би їх у характеристик картки.
+        body = _SCRIPT_RE.sub(" ", chunk)
+
+        location_match = _LOCATION_RE.search(body)
         address = clean_text(location_match.group(1)) if location_match else ""
         address_match = _ADDRESS_RE.match(address)
         plz, city = address_match.groups() if address_match else ("", address)
 
-        title_match = _TITLE_LINK_RE.search(chunk)
+        title_match = _TITLE_LINK_RE.search(body)
         detail_path = title_match.group(1) if title_match else ""
         title = clean_text(title_match.group(2)) if title_match else ""
+        if not detail_path:
+            href_match = _DETAIL_HREF_RE.search(match.group(0) + body[:200])
+            detail_path = href_match.group(1) if href_match else ""
         detail_url = BASE_URL + detail_path if detail_path.startswith("/") else detail_path
 
-        tags_match = _TAGS_BLOCK_RE.search(chunk)
-        tags_text = clean_text(tags_match.group(1)) if tags_match else ""
-        area_match = _AREA_TAG_RE.search(tags_text)
-        rooms_match = _ROOMS_TAG_RE.search(tags_text)
+        specs_text = _specs_text(body)
+        area_match = _AREA_TAG_RE.search(specs_text)
+        rooms_match = _ROOMS_TAG_RE.search(specs_text)
 
-        price_match = _PRICE_RE.search(chunk)
+        price_match = _PRICE_RE.search(body)
         price = parse_decimal(price_match.group(1)) if price_match else None
-
-        image_match = _IMAGE_RE.search(chunk)
-        cover_image_url = html_lib.unescape(image_match.group(1)) if image_match else ""
 
         if not listing_id and not title:
             continue

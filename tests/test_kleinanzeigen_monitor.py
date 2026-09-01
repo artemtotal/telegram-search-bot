@@ -23,8 +23,17 @@ class FakeBot:
 
 
 class FakeResponse:
-    def __init__(self, text):
+    """Двійник відповіді requests.
+
+    `encoding`/`apparent_encoding` тут не для краси: сторінка Kleinanzeigen
+    віддається без charset у заголовку, і монітор мусить перевизначати
+    кодування сам — двійник без цих полів не помітив би, якби той крок зник.
+    """
+
+    def __init__(self, text, apparent_encoding="utf-8"):
         self.text = text
+        self.encoding = "ISO-8859-1"
+        self.apparent_encoding = apparent_encoding
 
     def raise_for_status(self):
         pass
@@ -202,6 +211,22 @@ class KleinanzeigenEmptyPageTests(unittest.TestCase):
 
         self.assertEqual(get.call_count, 1)
         sleep.assert_not_called()
+
+    def test_the_page_is_decoded_as_utf8_even_without_a_charset_header(self):
+        """Сторінка — UTF-8, але з 2026-09-01 сервер не називає кодування в
+        Content-Type. requests тоді бере ISO-8859-1, «m²» стає «mÂ²», і розбір
+        повертає нуль оголошень при цілком живій сторінці."""
+        response = FakeResponse('irrelevant')
+
+        with mock.patch('requests.get', return_value=response), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.time.sleep'), \
+             mock.patch(
+                 'user_jobs.kleinanzeigen_monitor.kleinanzeigen_parser.parse_listings',
+                 return_value=[_listing('1')],
+             ):
+            kleinanzeigen_monitor._fetch_listings()
+
+        self.assertEqual(response.encoding, 'utf-8')
 
     def test_a_transient_network_error_is_retried_too(self):
         error = requests.exceptions.SSLError('flaky')

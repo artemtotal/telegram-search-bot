@@ -60,6 +60,11 @@ def _fetch_listings() -> List[Dict]:
                 kleinanzeigen_parser.LISTINGS_URL, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT},
             )
             response.raise_for_status()
+            # Сторінка віддається як UTF-8, але з 2026-09-01 заголовок
+            # Content-Type більше не називає кодування — requests за стандартом
+            # відкочується на ISO-8859-1, і «m²» перетворюється на «mÂ²».
+            # Розбір після цього не знаходить ані площі, ані ціни.
+            response.encoding = response.apparent_encoding or "utf-8"
             listings = kleinanzeigen_parser.parse_listings(response.text)
             if listings:
                 return listings
