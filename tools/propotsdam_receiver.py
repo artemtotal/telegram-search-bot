@@ -407,10 +407,15 @@ def _capture_details(page, listings):
             except Exception:
                 back_on_list = False
             if not back_on_list and opened < DETAIL_MAX_PER_SCAN:
+                # Саме _open_offer_list, а не _navigate_to_list: другий доходить
+                # лише до підменю, тож після першої ж картки обхід упирався і
+                # решта оголошень за один прохід не відкривалась узагалі.
                 try:
-                    _navigate_to_list(page)
+                    if not _open_offer_list(page):
+                        logger.warning("Could not return to the ProPotsdam listing view")
+                        break
                 except Exception as exc:
-                    logger.warning("Could not return to the ProPotsdam list: %s", exc)
+                    logger.warning("Could not return to the ProPotsdam listing view: %s", exc)
                     break
 
     logger.info("ProPotsdam details opened=%s skipped=%s extra photos=%s", opened, skipped, len(resource_ids))

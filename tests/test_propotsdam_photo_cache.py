@@ -427,3 +427,58 @@ class DetailTabIsolationTests(unittest.TestCase):
 
         self.assertEqual(result, {"opened": 0, "skipped": 0, "resource_ids": []})
         self.assertEqual(page.opened, 0)
+
+@unittest.skipIf(
+    propotsdam_receiver is None,
+    f"колектор ProPotsdam доступний лише на хості: {_IMPORT_ERROR}",
+)
+class SecondCardTests(unittest.TestCase):
+    """Після першої картки обхід має повернутись до переліку й відкрити наступну.
+
+    Повернення йшло через `_navigate_to_list`, який доводить лише до підменю —
+    і другу квартиру за той самий прохід не відкривали взагалі: користувач
+    побачив на екрані, що портал відкрив рівно одну картку й пішов.
+    """
+
+    def _listings(self):
+        return [
+            {"listing_key": "AAAA1111-BBBB-2222-CCCC-333344445555",
+             "title": "1-Zimmer-Wohnung", "address": "Alt Nowawes 84, 14482 Potsdam"},
+            {"listing_key": "DDDD9999-EEEE-8888-FFFF-777766665555",
+             "title": "Babelsberg", "address": "Großbeerenstr. 43, 14482 Potsdam"},
+        ]
+
+    def test_the_run_returns_to_the_list_and_opens_the_next_card(self):
+        page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555'])
+        page.evaluate = lambda script: (  # після картки на екрані вже не перелік
+            ['https://portal/cover.jpg'] if 'img' in script else 'Kosten\nKaltmiete\n326,48 EUR'
+        )
+        returns = []
+
+        with TemporaryDirectory() as tmp, \
+             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
+             mock.patch.object(propotsdam_receiver, '_open_offer_list',
+                               lambda page: returns.append(1) or True):
+            result = propotsdam_receiver._capture_details(page, self._listings())
+
+        self.assertEqual(result['opened'], 2)
+        # Один раз — щоб узагалі дійти до переліку, ще раз — щоб повернутись.
+        self.assertGreaterEqual(len(returns), 2)
+
+    def test_a_list_that_will_not_reopen_stops_the_run_instead_of_looping(self):
+        page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555'])
+        page.evaluate = lambda script: (
+            ['https://portal/cover.jpg'] if 'img' in script else 'Kosten\nKaltmiete\n326,48 EUR'
+        )
+        calls = []
+
+        def reopen(_page):
+            calls.append(1)
+            return len(calls) == 1  # перший раз відкрився, далі — ні
+
+        with TemporaryDirectory() as tmp, \
+             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
+             mock.patch.object(propotsdam_receiver, '_open_offer_list', reopen):
+            result = propotsdam_receiver._capture_details(page, self._listings())
+
+        self.assertEqual(result['opened'], 1)
