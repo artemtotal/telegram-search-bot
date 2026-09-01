@@ -104,6 +104,10 @@ def parse_listings(html: str, source: str) -> list[dict[str, Any]]:
             "rooms": parse_decimal(rows.get("data-anzahl_zimmer")),
             "area_m2": parse_decimal(rows.get("data-wohnflaeche") or rows.get("data-nutzflaeche")),
             "price_eur": parse_decimal(rows.get("data-kaltmiete")),
+            # Тепла оренда стоїть у тій самій картці окремим рядком («Warmmiete:
+            # 1.250,00 EUR (Heizkosten enthalten)») — у 8 оголошень із 9.
+            # Другого запиту не потрібно, просто беремо обидві.
+            "price_warm_eur": parse_decimal(rows.get("data-warmmiete")),
             "is_rental": "data-kaltmiete" in rows,
             "status": status,
             "is_vacant": status.casefold() not in _NOT_VACANT_STATUSES,
@@ -156,6 +160,7 @@ def format_listing_message(listing: dict[str, Any]) -> str:
         ("Кімнати", "rooms"),
         ("Площа м²", "area_m2"),
         ("Kaltmiete EUR", "price_eur"),
+        ("Warmmiete EUR", "price_warm_eur"),
     ]:
         line = _line(label, listing.get(key))
         if line:

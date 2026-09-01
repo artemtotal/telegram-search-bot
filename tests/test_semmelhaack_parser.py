@@ -55,7 +55,12 @@ PAGE_HTML = "<html><body>" + _card(
     "Kompakte 1-Zi. Wohnung", "Hermannstraße 22, 38114 Braunschweig",
     "Wohnfläche", "38,49 m²", "Zimmer", "1", "450,00 €",
     "/vermietung/wohnobjekte/details-wohnobjekt/24361/",
-) + "</body></html>"
+) + """
+<script>
+  var ddata = [{"lat":"52.44","lon":"13.04","titel":"4-Zimmer-DHH mit Terrasse","plz":"14476","ort":"Potsdam","id":63860,"gesamtmiete":1950},
+               {"lat":"52.27","lon":"10.50","titel":"Kompakte 1-Zi. Wohnung","plz":"38114","ort":"Braunschweig","id":24361,"gesamtmiete":610}];
+</script>
+</body></html>"""
 
 
 class SemmelhaackParserTests(unittest.TestCase):
@@ -140,3 +145,34 @@ class SemmelhaackParserTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SemmelhaackTotalRentTests(unittest.TestCase):
+    """Повна оренда лежить у JSON карти поруч із картками.
+
+    Раніше це число вважали зіпсованою копією Kaltmiete й викидали; насправді
+    це інша величина — холодна плюс комуналка, стабільно приблизно +4 €/м².
+    """
+
+    def test_a_card_carries_both_its_cold_and_its_full_rent(self):
+        listings = semmelhaack_parser.parse_listings(PAGE_HTML)
+        potsdam = next(item for item in listings if item["listing_key"] == "63860")
+
+        self.assertEqual(potsdam["price_eur"], 1850.0)
+        self.assertEqual(potsdam["price_warm_eur"], 1950.0)
+
+    def test_the_full_rent_is_matched_by_object_id_not_by_position(self):
+        listings = semmelhaack_parser.parse_listings(PAGE_HTML)
+        by_key = {item["listing_key"]: item["price_warm_eur"] for item in listings}
+
+        self.assertEqual(by_key["63860"], 1950.0)
+        self.assertEqual(by_key["24361"], 610.0)
+
+    def test_a_page_without_the_map_blob_still_parses(self):
+        """JSON карти може зникнути зі сторінки — картки від цього не гірші."""
+        without_blob = PAGE_HTML[:PAGE_HTML.index("<script>")] + "</body></html>"
+        listings = semmelhaack_parser.parse_listings(without_blob)
+
+        self.assertEqual(len(listings), 2)
+        self.assertIsNone(listings[0]["price_warm_eur"])
+        self.assertEqual(listings[0]["price_eur"], 1850.0)

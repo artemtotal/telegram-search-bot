@@ -2,15 +2,22 @@
 
 No login and no JavaScript rendering needed — every listing already sits in the
 initial HTML as a `<div class="objekt-single">` card with labelled rows
-(Adresse/Wohnfläche or Nutzfläche/Zimmer or Räume/Kaltmiete). The page also embeds a
-`ddata = [...]` JSON blob for the map widget, but its `gesamtmiete` field does not
-match the rendered `Kaltmiete` value shown to visitors — the rendered cards are the
-only trustworthy source for price.
+(Adresse/Wohnfläche or Nutzfläche/Zimmer or Räume/Kaltmiete).
+
+The page also embeds a `ddata = [...]` JSON blob for the map widget, whose
+`gesamtmiete` disagrees with the rendered `Kaltmiete` — not because it is
+unreliable, as this file used to claim, but because it is a different figure:
+the full rent, cold plus utilities. Checked against 25 listings on 2026-09-01,
+the gap is a steady ~4,00 €/m² (median 3,99; warm/cold ≈ 1,36). Both numbers
+are therefore taken, matched by the object id the card's detail URL already
+carries — 63 of 64 cards line up with a blob entry, the odd one out having no
+id at all.
 """
 
 from __future__ import annotations
 
 import html as html_lib
+import json
 import re
 from typing import Any
 
@@ -27,6 +34,7 @@ _IMAGE_RE = re.compile(r'data-src="([^"]+)"')
 # к конкретному блоку разметки, который может смениться от смены темы.
 _GALLERY_IMAGE_RE = re.compile(r'data-src="(https://api\.semmelhaack\.de/bilder/objekte/[^"]+)"')
 _ADDRESS_RE = re.compile(r"^(.*?),\s*(\d{4,5})\s+(.+)$")
+_DDATA_RE = re.compile(r"ddata\s*=\s*(\[.*?\]);", re.S)
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -66,6 +74,30 @@ def _listing_id_from_url(url: str) -> str:
     return match.group(1) if match else ""
 
 
+def parse_total_rents(html: str) -> dict[str, float]:
+    """Повна оренда (Kaltmiete + комуналка) по кожному об'єкту.
+
+    Картка показує лише холодну; повна лежить поруч, у JSON карти, і
+    ключується тим самим id об'єкта, що стоїть у посиланні картки.
+    """
+    match = _DDATA_RE.search(html)
+    if not match:
+        return {}
+    try:
+        entries = json.loads(match.group(1))
+    except ValueError:
+        return {}
+    rents: dict[str, float] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        object_id = str(entry.get("id") or "").strip()
+        total = parse_decimal(entry.get("gesamtmiete"))
+        if object_id and total is not None:
+            rents[object_id] = total
+    return rents
+
+
 def parse_listings(html: str) -> list[dict[str, Any]]:
     """Extracts every `objekt-single` card from the page, residential and commercial alike.
 
@@ -74,6 +106,7 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
     against a fixed fixture without depending on today's live inventory.
     """
     listings: list[dict[str, Any]] = []
+    total_rents = parse_total_rents(html)
     chunks = _CARD_SPLIT_RE.split(html)[1:]
     for chunk in chunks:
         title_match = _TITLE_RE.search(chunk)
@@ -101,6 +134,7 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
             "rooms": parse_decimal(rooms),
             "area_m2": parse_decimal(area),
             "price_eur": parse_decimal(price),
+            "price_warm_eur": total_rents.get(listing_id),
             "detail_url": detail_url,
             "image_url": image_url,
         })
@@ -136,6 +170,7 @@ def format_listing_message(listing: dict[str, Any]) -> str:
         ("Кімнати", "rooms"),
         ("Площа м²", "area_m2"),
         ("Kaltmiete EUR", "price_eur"),
+        ("Warmmiete EUR", "price_warm_eur"),
     ]:
         line = _line(label, listing.get(key))
         if line:

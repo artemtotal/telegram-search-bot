@@ -294,6 +294,9 @@ class SemmelhaackListing(Base):
     rooms = Column(FLOAT)
     area_m2 = Column(FLOAT)
     price_eur = Column(FLOAT)
+    # Повна оренда (з комуналкою). Обидва джерела дають її на тій самій
+    # сторінці, що й холодну, тож другого запиту це не коштує.
+    price_warm_eur = Column(FLOAT)
     detail_url = Column(TEXT)
     image_url = Column(TEXT)
     first_seen_at = Column(DATETIME, nullable=False)
@@ -407,6 +410,9 @@ class RegiomaklerListing(Base):
     rooms = Column(FLOAT)
     area_m2 = Column(FLOAT)
     price_eur = Column(FLOAT)
+    # Повна оренда (з комуналкою). Обидва джерела дають її на тій самій
+    # сторінці, що й холодну, тож другого запиту це не коштує.
+    price_warm_eur = Column(FLOAT)
     detail_url = Column(TEXT)
     source = Column(TEXT)
     first_seen_at = Column(DATETIME, nullable=False)
@@ -714,6 +720,8 @@ def _ensure_column(table_name: str, column_name: str, column_type: str) -> None:
 
 
 _ensure_column('propotsdam_filter', 'min_total_rent_eur', 'FLOAT')
+_ensure_column('semmelhaack_listing', 'price_warm_eur', 'FLOAT')
+_ensure_column('regiomakler_listing', 'price_warm_eur', 'FLOAT')
 _ensure_column('kleinanzeigen_listing', 'cover_image_url', 'TEXT')
 _ensure_column('locals_listing', 'cover_image_url', 'TEXT')
 _ensure_column('karlmarx_listing', 'cover_image_url', 'TEXT')

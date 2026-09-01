@@ -51,6 +51,7 @@ def listing_to_dict(row: SemmelhaackListing) -> Dict:
         "rooms": row.rooms,
         "area_m2": row.area_m2,
         "price_eur": row.price_eur,
+        "price_warm_eur": row.price_warm_eur,
         "detail_url": row.detail_url,
         "image_url": row.image_url,
     }
@@ -215,6 +216,7 @@ def upsert_listings(listings: Iterable[Dict]) -> int:
             row.rooms = listing.get("rooms")
             row.area_m2 = listing.get("area_m2")
             row.price_eur = listing.get("price_eur")
+            row.price_warm_eur = listing.get("price_warm_eur")
             row.detail_url = listing.get("detail_url")
             row.image_url = listing.get("image_url")
             row.last_seen_at = now

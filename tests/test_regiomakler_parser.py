@@ -163,3 +163,32 @@ class RegiomaklerParserTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RegiomaklerWarmRentTests(unittest.TestCase):
+    """Тепла оренда стоїть у тій самій картці — другого запиту не треба."""
+
+    def _card_with(self, price_rows):
+        return _immoteam_card(
+            "", "Wohnung mit Warmmiete", "https://immoteam-potsdam.de/x-1/",
+            "14469 Potsdam, Etagenwohnung", "77_1", "3", "67,00", price_rows,
+        )
+
+    def test_both_rents_are_taken_from_one_card(self):
+        html = self._card_with(
+            _price_row("kaltmiete", "1.070,00") + _price_row("warmmiete", "1.250,00")
+        )
+
+        listing = regiomakler_parser.parse_listings(html, source="immoteam")[0]
+
+        self.assertEqual(listing["price_eur"], 1070.0)
+        self.assertEqual(listing["price_warm_eur"], 1250.0)
+
+    def test_a_card_without_a_warm_rent_keeps_the_cold_one(self):
+        """Приблизно кожне дев'яте оголошення теплої ціни не називає."""
+        html = self._card_with(_price_row("kaltmiete", "1.140,00"))
+
+        listing = regiomakler_parser.parse_listings(html, source="immoteam")[0]
+
+        self.assertEqual(listing["price_eur"], 1140.0)
+        self.assertIsNone(listing["price_warm_eur"])
