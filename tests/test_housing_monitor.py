@@ -23,6 +23,21 @@ class FakeMessage:
 
 
 class HousingAdminFlowTests(unittest.TestCase):
+    """Мова тут не декорація: майстер тягне її з налаштувань користувача, і без
+    власної бази ці тести читали робочу — у справжнього адміна там стоїть
+    російська, тож перевірки українських рядків падали не через код, а через
+    те, чия саме база опинилась поруч."""
+
+    def setUp(self):
+        self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self.original_session = housing_monitor.user_settings_store.DBSession
+        housing_monitor.user_settings_store.DBSession = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        housing_monitor.user_settings_store.DBSession = self.original_session
+        self.engine.dispose()
+
     def _update(self, text, user_id=312029534):
         message = FakeMessage(text=text, user_id=user_id)
         return SimpleNamespace(
@@ -395,6 +410,41 @@ class HousingAdminFlowTests(unittest.TestCase):
         self.assertEqual(state['step'], 'preview')
         for key in ('min_price_eur', 'max_price_eur', 'min_rooms', 'max_rooms', 'min_area_m2', 'max_area_m2'):
             self.assertIsNone(state[key])
+
+    def test_the_wizard_speaks_the_language_of_whoever_is_typing(self):
+        """Адмін заводить фільтр іншій людині — питання та помилки читає він.
+
+        Мова бралась у майбутнього власника фільтра, тож адмін посеред власної
+        української розмови отримував підсумок чужою мовою.
+        """
+        housing_monitor.user_settings_store.set_language(312029534, 'uk')
+        housing_monitor.user_settings_store.set_language(123456789, 'de')
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'immowelt', 'step': 'min_rooms', 'user_id': 123456789,
+            'title': 'Іван', 'districts_selected': ['Golm'],
+        }})
+        update = self._update('дуже дорого')
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            housing_monitor.handle_private_text(update, context)
+
+        self.assertIn('Незрозуміле значення', update.message.replies[-1][0])
+        self.assertEqual(context.user_data['housing_admin']['dialog_lang'], 'uk')
+
+    def test_a_filter_created_for_someone_else_is_summarised_to_the_admin_in_his_language(self):
+        message = FakeMessage(text='', user_id=312029534)
+        context = SimpleNamespace(user_data={}, bot_data={}, bot=mock.Mock())
+        housing_monitor.user_settings_store.set_language(123456789, 'de')
+        state = {
+            'user_id': 123456789, 'dialog_lang': 'uk',
+            'min_rooms': None, 'max_rooms': None, 'min_area_m2': None,
+            'max_area_m2': None, 'min_price_eur': None, 'max_price_eur': 800,
+        }
+
+        with mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter', return_value=1):
+            housing_monitor._finalize_semmelhaack_filter(message, context, state)
+
+        self.assertIn('Фільтр', message.replies[-1][0])
 
     def test_invalid_text_reprompts_the_same_field(self):
         context = SimpleNamespace(user_data={'housing_admin': {

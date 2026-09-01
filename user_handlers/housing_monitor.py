@@ -342,6 +342,20 @@ MIN_PRICE_STEP_KEYS = {"min_price_eur", "min_total_rent_eur", "min_ka_price_eur"
 MAX_PRICE_STEP_KEYS = {"max_price_eur", "max_total_rent_eur", "max_ka_price_eur", "max_km_price_eur"}
 
 
+def _dialog_lang(state: dict) -> str:
+    """Мова того, хто веде діалог майстра, а не того, кому належатиме фільтр.
+
+    Збігаються вони майже завжди — крім адмінського додавання фільтра іншій
+    людині, де підсумкові повідомлення йдуть у чат адміна, а не власника.
+    Якщо крок дійшов сюди в обхід `handle_private_text` (наприклад, одразу з
+    кнопки), лишається давня поведінка — мова власника.
+    """
+    lang = state.get("dialog_lang")
+    if lang in i18n.SUPPORTED_LANGS:
+        return lang
+    return i18n.get_lang(int(state["user_id"]))
+
+
 def _price_step_picker_key(step_key: str) -> Optional[str]:
     if step_key in MIN_PRICE_STEP_KEYS:
         return "min_price"
@@ -3226,7 +3240,7 @@ def _finalize_semmelhaack_filter(message, context: CallbackContext, state: dict)
         filter_id = semmelhaack_store.create_filter(user_id=state["user_id"], **common)
         ok = True
     context.user_data.pop("housing_admin", None)
-    lang = i18n.get_lang(int(state["user_id"]))
+    lang = _dialog_lang(state)
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
@@ -3319,7 +3333,7 @@ def _finalize_schoba_filter(message, context: CallbackContext, state: dict) -> N
         filter_id = schoba_store.create_filter(user_id=state["user_id"], **common)
         ok = True
     context.user_data.pop("housing_admin", None)
-    lang = i18n.get_lang(int(state["user_id"]))
+    lang = _dialog_lang(state)
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
@@ -3412,7 +3426,7 @@ def _finalize_regiomakler_filter(message, context: CallbackContext, state: dict)
         filter_id = regiomakler_store.create_filter(user_id=state["user_id"], **common)
         ok = True
     context.user_data.pop("housing_admin", None)
-    lang = i18n.get_lang(int(state["user_id"]))
+    lang = _dialog_lang(state)
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
@@ -3505,7 +3519,7 @@ def _finalize_kleinanzeigen_filter(message, context: CallbackContext, state: dic
         filter_id = kleinanzeigen_store.create_filter(user_id=state["user_id"], **common)
         ok = True
     context.user_data.pop("housing_admin", None)
-    lang = i18n.get_lang(int(state["user_id"]))
+    lang = _dialog_lang(state)
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
@@ -3598,7 +3612,7 @@ def _finalize_locals_filter(message, context: CallbackContext, state: dict) -> N
         filter_id = locals_store.create_filter(user_id=state["user_id"], **common)
         ok = True
     context.user_data.pop("housing_admin", None)
-    lang = i18n.get_lang(int(state["user_id"]))
+    lang = _dialog_lang(state)
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
@@ -3691,7 +3705,7 @@ def _finalize_karlmarx_filter(message, context: CallbackContext, state: dict) ->
         filter_id = karlmarx_store.create_filter(user_id=state["user_id"], **common)
         ok = True
     context.user_data.pop("housing_admin", None)
-    lang = i18n.get_lang(int(state["user_id"]))
+    lang = _dialog_lang(state)
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
@@ -3901,13 +3915,13 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
             filter_id = payload.get("filter_id")
     except Exception as exc:
         logger.exception("Could not save housing filter")
-        error_lang = i18n.get_lang(int(state["user_id"]))
+        error_lang = _dialog_lang(state)
         query.answer(i18n.t("housing.toast.save_failed", error_lang), show_alert=True)
         query.edit_message_text(i18n.t("housing.error.save_failed_detail", error_lang, error=html.escape(str(exc))))
         context.user_data.pop("housing_admin", None)
         return
     context.user_data.pop("housing_admin", None)
-    lang = i18n.get_lang(int(state["user_id"]))
+    lang = _dialog_lang(state)
     heading = (
         i18n.t("housing.finalize.immowelt_updated", lang) if edit_filter_id
         else i18n.t("housing.finalize.immowelt_added", lang)
@@ -4236,6 +4250,10 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
     state = context.user_data.get("housing_admin")
     if not state:
         return False
+    # Мову діалогу задає той, хто його веде. Коли адмін заводить фільтр іншій
+    # людині, `state["user_id"]` — то вже не він, і підсумок майстра приходив
+    # адміну чужою мовою посеред розмови його власною.
+    state["dialog_lang"] = i18n.get_lang(user_id)
     if text == BTN_CANCEL:
         context.user_data.pop("housing_admin", None)
         update.message.reply_text(i18n.t("housing.cancel.msg", i18n.get_lang(user_id)))
@@ -4602,7 +4620,7 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
         )
         results.append(("karlmarx", filter_id, criteria, None))
     context.user_data.pop("housing_admin", None)
-    lang = i18n.get_lang(int(state["user_id"]))
+    lang = _dialog_lang(state)
     lines = [i18n.t("housing.finalize.multi_title", lang), ""]
     for source, filter_id, criteria, error in results:
         icon = SOURCE_ICON[source]

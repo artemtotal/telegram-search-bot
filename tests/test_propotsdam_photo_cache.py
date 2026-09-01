@@ -13,7 +13,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
-from tools import propotsdam_receiver
+try:
+    from tools import propotsdam_receiver
+except ModuleNotFoundError as exc:  # playwright живе на хості, не в контейнері бота
+    propotsdam_receiver = None
+    _IMPORT_ERROR = exc
+else:
+    _IMPORT_ERROR = None
+
 from user_jobs import propotsdam_parser
 
 JPEG = b'\xff\xd8\xff\xe0' + b'\x00' * 32
@@ -55,6 +62,10 @@ def listing_with(*resource_ids):
     })
 
 
+@unittest.skipIf(
+    propotsdam_receiver is None,
+    f"колектор ProPotsdam доступний лише на хості: {_IMPORT_ERROR}",
+)
 class PhotoPathTests(unittest.TestCase):
     def test_a_resource_id_maps_to_one_cache_file(self):
         with TemporaryDirectory() as tmp:
@@ -73,6 +84,10 @@ class PhotoPathTests(unittest.TestCase):
         self.assertIsNone(propotsdam_receiver._photo_path('..%2F..%2Fsecret'))
 
 
+@unittest.skipIf(
+    propotsdam_receiver is None,
+    f"колектор ProPotsdam доступний лише на хості: {_IMPORT_ERROR}",
+)
 class ContentTypeTests(unittest.TestCase):
     def test_types_come_from_the_bytes_themselves(self):
         self.assertEqual(propotsdam_receiver._content_type(JPEG), 'image/jpeg')
@@ -82,6 +97,10 @@ class ContentTypeTests(unittest.TestCase):
         self.assertEqual(propotsdam_receiver._content_type(b'nonsense'), 'application/octet-stream')
 
 
+@unittest.skipIf(
+    propotsdam_receiver is None,
+    f"колектор ProPotsdam доступний лише на хості: {_IMPORT_ERROR}",
+)
 class CachePhotosTests(unittest.TestCase):
     def test_every_photo_of_a_listing_is_downloaded(self):
         page = FakePage()
@@ -155,6 +174,10 @@ class CachePhotosTests(unittest.TestCase):
             self.assertFalse(missing.exists())
 
 
+@unittest.skipIf(
+    propotsdam_receiver is None,
+    f"колектор ProPotsdam доступний лише на хості: {_IMPORT_ERROR}",
+)
 class PrunePhotosTests(unittest.TestCase):
     def test_photos_long_gone_from_the_feed_are_removed(self):
         with TemporaryDirectory() as tmp:
@@ -266,6 +289,10 @@ LISTING = {
 }
 
 
+@unittest.skipIf(
+    propotsdam_receiver is None,
+    f"колектор ProPotsdam доступний лише на хості: {_IMPORT_ERROR}",
+)
 class CaptureDetailsTests(unittest.TestCase):
     """Открытие карточки объявления: список показывает одну обложку и
     Gesamtmiete, а внутри лежат и вся галерея, и разбивка цены."""
