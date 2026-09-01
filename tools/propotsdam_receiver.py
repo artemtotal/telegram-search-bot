@@ -130,7 +130,10 @@ def _login_if_needed(page):
     ))
     password_field = _first_visible(page, ("input[name='login-password']", "input[type='password']"))
     if email is None or password_field is None:
-        raise RuntimeError("Не знайшов полів входу на порталі ProPotsdam")
+        # Слово «Anmelden» трапляється і в уже відкритому порталі, тож сюди
+        # можна дійти залогіненим — тоді полів просто немає, і це не помилка.
+        logger.info("ProPotsdam: форми входу немає, вважаємо, що сесія вже є")
+        return
     email.fill(username, timeout=7000)
     password_field.fill(password, timeout=7000)
     # Кнопка отправки формы называется так же, как та, что форму открыла, —
@@ -259,6 +262,23 @@ def _listing_detail_path(listing):
     return DETAIL_DIR / "{}.json".format(key)
 
 
+def _open_offer_list(page):
+    """Доводить сторінку до самого переліку квартир.
+
+    Плитка «Immobiliensuche» лише розкриває підменю, у якому «Immobilien»
+    трапляється двічі: перший раз — заголовком розділу, і клік по ньому нікуди
+    не веде. Потрібен останній збіг — сам пункт переліку.
+    """
+    _navigate_to_list(page)
+    items = page.get_by_text(re.compile(r"^\s*Immobilien\s*$", re.I))
+    count = items.count()
+    if not count:
+        return False
+    items.nth(count - 1).click(timeout=5000, force=True)
+    page.wait_for_timeout(4000)
+    return bool(re.search(r"Zimmer|Gesamtmiete|EINTR", page.evaluate("() => document.body.innerText") or "", re.I))
+
+
 def _open_listing(page, listing):
     """Раскрывает карточку объявления в списке портала.
 
@@ -301,7 +321,8 @@ def _capture_details(context, listings):
 
     DETAIL_DIR.mkdir(parents=True, exist_ok=True)
     try:
-        _navigate_to_list(page)
+        if not _open_offer_list(page):
+            raise RuntimeError("перелік квартир не відкрився")
     except Exception as exc:
         logger.warning("Could not open the ProPotsdam list in the detail tab: %s", exc)
         try:
@@ -344,14 +365,17 @@ def _capture_details(context, listings):
                 for resource_id in RESOURCE_ID_ATTR_RE.findall(xml_text):
                     if propotsdam_parser.RESOURCE_ID_RE.fullmatch(resource_id) and resource_id not in resource_ids:
                         resource_ids.append(resource_id)
-            labels = [
-                label for label in ("Kaltmiete", "Nettokaltmiete", "Grundmiete", "Betriebskosten",
-                                    "Nebenkosten", "Heizkosten", "Gesamtmiete")
-                if label.casefold() in snapshot["text"].casefold()
-            ]
+            # Головне, заради чого картку взагалі відкривають: у списку є лише
+            # Gesamtmiete, а всередині — повна розбивка, включно з холодною
+            # орендою, яку портал нібито «не публікує».
+            prices = propotsdam_parser.parse_card_prices(snapshot["text"])
+            for key, value in prices.items():
+                if value is not None:
+                    listing[key] = value
             logger.info(
-                "ProPotsdam detail %s: цены %s, фото в детали %s",
-                listing.get("listing_key"), labels or "не найдены", len(resource_ids),
+                "ProPotsdam detail %s: Kaltmiete=%s Betriebskosten=%s Heizkosten=%s Gesamtmiete=%s, фото %s",
+                listing.get("listing_key"), prices.get("price_eur"), prices.get("nebenkosten_eur"),
+                prices.get("heizkosten_eur"), prices.get("total_rent_eur"), len(resource_ids),
             )
         except Exception as exc:
             logger.warning("ProPotsdam detail capture failed for %s: %s", listing.get("listing_key"), exc)

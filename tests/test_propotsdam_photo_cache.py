@@ -333,7 +333,7 @@ class CaptureDetailsTests(unittest.TestCase):
                                'DDDD9999-EEEE-8888-FFFF-777766665555'])
         with TemporaryDirectory() as tmp, \
              mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
-             mock.patch.object(propotsdam_receiver, '_navigate_to_list', lambda page: None):
+             mock.patch.object(propotsdam_receiver, '_open_offer_list', lambda page: True):
             result = propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
 
             self.assertEqual(result['opened'], 1)
@@ -346,7 +346,7 @@ class CaptureDetailsTests(unittest.TestCase):
         page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555'])
         with TemporaryDirectory() as tmp, \
              mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
-             mock.patch.object(propotsdam_receiver, '_navigate_to_list', lambda page: None):
+             mock.patch.object(propotsdam_receiver, '_open_offer_list', lambda page: True):
             propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
             again = propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
 
@@ -358,7 +358,7 @@ class CaptureDetailsTests(unittest.TestCase):
         page = FakeDetailPage(openable=False)
         with TemporaryDirectory() as tmp, \
              mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
-             mock.patch.object(propotsdam_receiver, '_navigate_to_list', lambda page: None):
+             mock.patch.object(propotsdam_receiver, '_open_offer_list', lambda page: True):
             result = propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
 
             self.assertEqual(result['opened'], 0)
@@ -409,7 +409,7 @@ class DetailTabIsolationTests(unittest.TestCase):
 
         with TemporaryDirectory() as tmp, \
              mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
-             mock.patch.object(propotsdam_receiver, '_navigate_to_list', lambda page: None):
+             mock.patch.object(propotsdam_receiver, '_open_offer_list', lambda page: True):
             propotsdam_receiver._capture_details(context, [LISTING])
 
         self.assertEqual(context.pages_opened, 1)
@@ -420,11 +420,11 @@ class DetailTabIsolationTests(unittest.TestCase):
         context = FakeDetailContext(page)
 
         def refuse(_page):
-            raise RuntimeError("портал не відкрив список")
+            raise RuntimeError("портал не відкрив перелік квартир")
 
         with TemporaryDirectory() as tmp, \
              mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
-             mock.patch.object(propotsdam_receiver, '_navigate_to_list', refuse):
+             mock.patch.object(propotsdam_receiver, '_open_offer_list', refuse):
             result = propotsdam_receiver._capture_details(context, [LISTING])
 
         self.assertEqual(result, {"opened": 0, "skipped": 0, "resource_ids": []})

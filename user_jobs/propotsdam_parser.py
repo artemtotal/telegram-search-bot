@@ -195,6 +195,34 @@ def parse_dom_cards(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return listings
 
 
+_CARD_PRICE_LABELS = {
+    "price_eur": "Kaltmiete",
+    "nebenkosten_eur": "Betriebskosten",
+    "heizkosten_eur": "Heizkosten",
+    "total_rent_eur": "Gesamtmiete",
+}
+
+
+def parse_card_prices(text: str) -> dict[str, float | None]:
+    """Розбивка ціни зі сторінки самого оголошення.
+
+    Список порталу друкує лише Gesamtmiete, і довго вважалось, що холодної
+    оренди він не публікує взагалі. Насправді вона є — просто всередині
+    картки, у блоці «Kosten», поруч із Betriebskosten і Heizkosten (сума
+    трьох і дає Gesamtmiete: 326,48 + 81,24 + 77,80 = 485,52). Те, що портал
+    знає холодну оренду, видно й з його власної форми пошуку — там окреме
+    поле «Kaltmiete bis».
+    """
+    prices: dict[str, float | None] = {}
+    for key, label in _CARD_PRICE_LABELS.items():
+        match = re.search(
+            r"(?:^|\n)\s*" + label + r"\s*\n\s*([\d.,]+)\s*EUR",
+            text or "", re.I,
+        )
+        prices[key] = parse_decimal(match.group(1)) if match else None
+    return prices
+
+
 def dumps_raw(listing: dict[str, Any]) -> str:
     return json.dumps(listing, ensure_ascii=False, sort_keys=True)
 

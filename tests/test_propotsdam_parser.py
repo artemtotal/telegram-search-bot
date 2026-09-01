@@ -206,3 +206,57 @@ class ProPotsdamParserTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CardPriceTests(unittest.TestCase):
+    """Розбивка ціни зі сторінки оголошення.
+
+    Список порталу друкує саму лише Gesamtmiete, і довго вважалось, що
+    холодної оренди ProPotsdam не публікує взагалі. Вона є — усередині
+    картки, у блоці «Kosten».
+    """
+
+    CARD_TEXT = """DetailKarte
+1-Zimmer-Wohnung mit separater Küche
+Wohnfläche
+37,44 m²
+Gesamtmiete
+485,52 EUR
+Kosten
+Kaltmiete
+326,48 EUR
+Betriebskosten
+81,24 EUR
+Heizkosten
+77,80 EUR
+Gesamtmiete
+485,52 EUR
+Kaution
+3 Nettokaltmieten
+"""
+
+    def test_every_part_of_the_rent_is_read(self):
+        prices = propotsdam_parser.parse_card_prices(self.CARD_TEXT)
+
+        self.assertEqual(prices["price_eur"], 326.48)
+        self.assertEqual(prices["nebenkosten_eur"], 81.24)
+        self.assertEqual(prices["heizkosten_eur"], 77.80)
+        self.assertEqual(prices["total_rent_eur"], 485.52)
+
+    def test_the_parts_add_up_to_the_total(self):
+        prices = propotsdam_parser.parse_card_prices(self.CARD_TEXT)
+        total = prices["price_eur"] + prices["nebenkosten_eur"] + prices["heizkosten_eur"]
+
+        self.assertEqual(round(total, 2), prices["total_rent_eur"])
+
+    def test_a_card_without_a_cost_block_reports_nothing(self):
+        prices = propotsdam_parser.parse_card_prices("Wohnfläche\n50 m²\nZimmer\n2\n")
+
+        self.assertIsNone(prices["price_eur"])
+        self.assertIsNone(prices["total_rent_eur"])
+
+    def test_the_word_kaution_is_not_mistaken_for_a_price(self):
+        """«Kaution: 3 Nettokaltmieten» — не сума, і в ціну потрапити не має."""
+        prices = propotsdam_parser.parse_card_prices(self.CARD_TEXT)
+
+        self.assertEqual(prices["price_eur"], 326.48)
