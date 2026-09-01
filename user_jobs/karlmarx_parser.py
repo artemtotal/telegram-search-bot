@@ -115,7 +115,12 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
 
         fields = {clean_text(label).casefold(): value for value, label in _FIELD_RE.findall(chunk)}
         area = fields.get("wohnfläche") or fields.get("hauptfläche")
-        price = fields.get("warmmiete") or fields.get("kaltmiete") or fields.get("miete pro monat")
+        # Картка називає ціну "Warmmiete" — це повна оренда, і зберігати її
+        # треба саме як повну: тоді її звіряють з тією межею фільтра, яку
+        # людина й задавала для повної ціни. Холодну ця сторінка не друкує
+        # (вона є лише всередині оголошення), тож здебільшого лишається порожньою.
+        price_warm = fields.get("warmmiete") or fields.get("miete pro monat")
+        price_cold = fields.get("kaltmiete")
         rooms = fields.get("zimmer")
 
         street_match = _STREET_RE.search(chunk)
@@ -137,7 +142,8 @@ def parse_listings(html: str) -> list[dict[str, Any]]:
             "city": city,
             "rooms": parse_decimal(rooms),
             "area_m2": parse_decimal(area),
-            "price_eur": parse_decimal(price),
+            "price_eur": parse_decimal(price_cold),
+            "price_warm_eur": parse_decimal(price_warm),
             "detail_url": detail_url,
             "cover_image_url": cover_image_url,
         })
@@ -172,7 +178,8 @@ def format_listing_message(listing: dict[str, Any]) -> str:
         ("Адреса", "address"),
         ("Кімнати", "rooms"),
         ("Площа м²", "area_m2"),
-        ("Warmmiete EUR", "price_eur"),
+        ("Kaltmiete EUR", "price_eur"),
+        ("Warmmiete EUR", "price_warm_eur"),
     ]:
         line = _line(label, listing.get(key))
         if line:

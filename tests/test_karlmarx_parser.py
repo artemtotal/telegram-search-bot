@@ -64,7 +64,11 @@ class KarlmarxParserTests(unittest.TestCase):
         self.assertEqual(listing["title"], "Helle 3-Zimmer-Wohnung am Alten Markt")
         self.assertEqual(listing["rooms"], 3.0)
         self.assertEqual(listing["area_m2"], 78.0)
-        self.assertEqual(listing["price_eur"], 950.0)
+        # Картка називає ціну Warmmiete — це повна оренда, і зберігається вона
+        # як повна: інакше її звіряли б із межею для холодної, якої портал не
+        # публікує взагалі.
+        self.assertEqual(listing["price_warm_eur"], 950.0)
+        self.assertIsNone(listing["price_eur"])
         self.assertEqual(listing["city"], "Potsdam")
         self.assertEqual(
             listing["detail_url"],

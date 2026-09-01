@@ -287,32 +287,18 @@ SHARED_CRITERIA_BY_KEY = {spec["key"]: spec for spec in SHARED_CRITERIA_FIELDS}
 PRICE_STEP_FIELDS = {
     "min_price_eur": IMMOWELT_CRITERIA_BY_KEY["min_price_eur"],
     "max_price_eur": IMMOWELT_CRITERIA_BY_KEY["max_price_eur"],
-    "min_total_rent_eur": PROPOT_CRITERIA_BY_KEY["min_total_rent_eur"],
-    "max_total_rent_eur": PROPOT_CRITERIA_BY_KEY["max_total_rent_eur"],
-    # Kleinanzeigen дістає власні ключі стану (не "min_price_eur") — його ціна
-    # не той самий Kaltmiete, що в Immowelt/SEMMELHAACK/SCHOBA/regiomakler, і
-    # об'єднувати їх у спільне запитання було б помилково.
-    "min_ka_price_eur": {
-        "key": "min_ka_price_eur", "label": "Ціна: мінімум (від)",
-        "prompt": _numeric_prompt("Мінімальна ціна, €", "600"),
-        "label_key": "housing.field.label.price_min", "question_key": "housing.field.q.price_min", "example": "600",
+    # Друге питання про ціну — повна оренда з комуналкою. Портали називають
+    # її по-різному (Warmmiete, Gesamtmiete, Bruttowarmmiete), але величина
+    # одна, тож і питання одне на всіх, а не окреме під кожен портал.
+    "min_price_warm_eur": {
+        "key": "min_price_warm_eur", "label": "Повна оренда: мінімум (від)",
+        "prompt": _numeric_prompt("Мінімальна повна оренда з комунальними (Warmmiete), €", "700"),
+        "label_key": "housing.field.label.warm_min", "question_key": "housing.field.q.warmmiete_min", "example": "700",
     },
-    "max_ka_price_eur": {
-        "key": "max_ka_price_eur", "label": "Ціна: максимум (до)",
-        "prompt": _numeric_prompt("Максимальна ціна, €", "1200"),
-        "label_key": "housing.field.label.price_max", "question_key": "housing.field.q.price_max", "example": "1200",
-    },
-    # Karl Marx рахує теплу оренду (Warmmiete), а не Kaltmiete — теж окремі
-    # ключі стану, щоб не змішувати з холодною орендою інших джерел.
-    "min_km_price_eur": {
-        "key": "min_km_price_eur", "label": "Ціна: мінімум (від)",
-        "prompt": _numeric_prompt("Мінімальна тепла оренда (Warmmiete), €", "700"),
-        "label_key": "housing.field.label.price_min", "question_key": "housing.field.q.warmmiete_min", "example": "700",
-    },
-    "max_km_price_eur": {
-        "key": "max_km_price_eur", "label": "Ціна: максимум (до)",
-        "prompt": _numeric_prompt("Максимальна тепла оренда (Warmmiete), €", "1400"),
-        "label_key": "housing.field.label.price_max", "question_key": "housing.field.q.warmmiete_max", "example": "1400",
+    "max_price_warm_eur": {
+        "key": "max_price_warm_eur", "label": "Повна оренда: максимум (до)",
+        "prompt": _numeric_prompt("Максимальна повна оренда з комунальними (Warmmiete), €", "1400"),
+        "label_key": "housing.field.label.warm_max", "question_key": "housing.field.q.warmmiete_max", "example": "1400",
     },
 }
 PRICE_STEP_PROMPTS = {key: spec["prompt"] for key, spec in PRICE_STEP_FIELDS.items()}
@@ -338,8 +324,8 @@ CRITERIA_PICKER_DEFAULT_SELECTED = {"min_rooms", "min_area_m2", "max_price"}
 # Ціну майстер питає під різними ключами стану залежно від джерела
 # (Kaltmiete/Gesamtmiete/Warmmiete/Kleinanzeigen) — чекбокс "Ціна" в пікері
 # один на всіх, тож звіряємо кожен реальний крок ціни з цими двома групами.
-MIN_PRICE_STEP_KEYS = {"min_price_eur", "min_total_rent_eur", "min_ka_price_eur", "min_km_price_eur"}
-MAX_PRICE_STEP_KEYS = {"max_price_eur", "max_total_rent_eur", "max_ka_price_eur", "max_km_price_eur"}
+MIN_PRICE_STEP_KEYS = {"min_price_eur", "min_price_warm_eur"}
+MAX_PRICE_STEP_KEYS = {"max_price_eur", "max_price_warm_eur"}
 
 
 def _dialog_lang(state: dict) -> str:
@@ -459,10 +445,9 @@ AREA_PRESET_FIELD_KEYS = {"min_area_m2", "max_area_m2"}
 # що їх питає майстер — але підпис під кнопками (_jobcenter_preset_note)
 # розрізняє їх, бо Kaltmiete/Warmmiete/довільна ціна Kleinanzeigen
 # співвідносяться з Bruttokaltmiete по-різному.
-KALTMIETE_PRICE_PRESET_KEYS = {"min_price_eur", "max_price_eur", "min_total_rent_eur", "max_total_rent_eur"}
-WARMMIETE_PRICE_PRESET_KEYS = {"min_km_price_eur", "max_km_price_eur"}
-KLEINANZEIGEN_PRICE_PRESET_KEYS = {"min_ka_price_eur", "max_ka_price_eur"}
-PRICE_PRESET_FIELD_KEYS = KALTMIETE_PRICE_PRESET_KEYS | WARMMIETE_PRICE_PRESET_KEYS | KLEINANZEIGEN_PRICE_PRESET_KEYS
+KALTMIETE_PRICE_PRESET_KEYS = {"min_price_eur", "max_price_eur"}
+WARMMIETE_PRICE_PRESET_KEYS = {"min_price_warm_eur", "max_price_warm_eur"}
+PRICE_PRESET_FIELD_KEYS = KALTMIETE_PRICE_PRESET_KEYS | WARMMIETE_PRICE_PRESET_KEYS
 PRESET_CALLBACK_PREFIX = "housing:preset:"
 SKIP_PRESET_VALUE = "-"
 
@@ -574,11 +559,6 @@ def _jobcenter_preset_note(next_key: str) -> str:
             "(<b>Bruttokaltmiete</b>); тепла оренда (Warmmiete, з опаленням) "
             "зазвичай трохи вища за ці числа."
         )
-    if next_key in KLEINANZEIGEN_PRICE_PRESET_KEYS:
-        return (
-            "\n\n💡 Кнопки нижче — орієнтовні межі Jobcenter (<b>Bruttokaltmiete</b>); "
-            "тип оренди в конкретному оголошенні може відрізнятись, звірте самостійно."
-        )
     return ""
 
 
@@ -607,22 +587,28 @@ def _min_over_max_text(spec: dict, lang: str = "uk") -> str:
     return i18n.t("housing.validation.min_over_max", lang, prompt=_localized_field(spec, lang)["prompt"])
 
 
-KALTMIETE_SOURCES = {"immowelt", "semmelhaack", "schoba", "regiomakler", "locals"}
+KALTMIETE_SOURCES = {"immowelt", "semmelhaack", "schoba", "regiomakler", "locals", "kleinanzeigen"}
+# Повну оренду (з комуналкою) сьогодні публікують ці джерела: ProPotsdam —
+# як Gesamtmiete, Karl Marx — як Warmmiete, SEMMELHAACK і ImmoTeam/alpha —
+# поруч із холодною на тій самій сторінці.
+WARMMIETE_SOURCES = {"propotsdam", "karlmarx", "semmelhaack", "regiomakler"}
 
 
 def _price_steps_for(sources_selected) -> list:
+    """Дві межі ціни: холодна оренда і повна з комуналкою.
+
+    Раніше питань про ціну було до чотирьох — окреме під Kaltmiete, під
+    Gesamtmiete ProPotsdam, під ціну Kleinanzeigen і під Warmmiete Karl Marx,
+    бо кожен портал називає свою величину. Насправді величин дві, і кожен
+    портал вміє щонайменше одну з них, тож питаємо їх, а не портали.
+    Питання показується лише тоді, коли хоч одне з обраних джерел справді
+    публікує цю величину — інакше воно нічого б не фільтрувало.
+    """
     steps = []
-    # Immowelt, SEMMELHAACK і SCHOBA всі рахують холодну оренду (Kaltmiete/
-    # Nettokaltmiete) — те саме число підходить для всіх трьох, тож питання
-    # одне на всіх, а не окремо для кожного джерела.
     if any(source in KALTMIETE_SOURCES for source in sources_selected):
         steps += ["min_price_eur", "max_price_eur"]
-    if "propotsdam" in sources_selected:
-        steps += ["min_total_rent_eur", "max_total_rent_eur"]
-    if "kleinanzeigen" in sources_selected:
-        steps += ["min_ka_price_eur", "max_ka_price_eur"]
-    if "karlmarx" in sources_selected:
-        steps += ["min_km_price_eur", "max_km_price_eur"]
+    if any(source in WARMMIETE_SOURCES for source in sources_selected):
+        steps += ["min_price_warm_eur", "max_price_warm_eur"]
     return steps
 
 
@@ -4492,8 +4478,8 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
         )
         criteria = {
             "districts": propot_districts,
-            "min_price_eur": state.get("min_total_rent_eur"),
-            "max_price_eur": state.get("max_total_rent_eur"),
+            "min_price_eur": state.get("min_price_warm_eur"),
+            "max_price_eur": state.get("max_price_warm_eur"),
             "min_rooms": state.get("min_rooms"),
             "max_rooms": state.get("max_rooms"),
             "min_area_m2": state.get("min_area_m2"),
@@ -4505,7 +4491,8 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             districts=propotsdam_store.normalize_districts(",".join(propot_districts)),
             min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
             min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
-            min_total_rent_eur=state.get("min_total_rent_eur"), max_total_rent_eur=state.get("max_total_rent_eur"),
+            # Gesamtmiete порталу — та сама повна оренда, яку майстер питає один раз.
+            min_total_rent_eur=state.get("min_price_warm_eur"), max_total_rent_eur=state.get("max_price_warm_eur"),
         )
         _sync_propot_filters()
         results.append(("propotsdam", filter_id, criteria, None))
@@ -4515,6 +4502,8 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
         criteria = {
             "min_price_eur": state.get("min_price_eur"),
             "max_price_eur": state.get("max_price_eur"),
+            "min_price_warm_eur": state.get("min_price_warm_eur"),
+            "max_price_warm_eur": state.get("max_price_warm_eur"),
             "min_rooms": state.get("min_rooms"),
             "max_rooms": state.get("max_rooms"),
             "min_area_m2": state.get("min_area_m2"),
@@ -4526,6 +4515,9 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
             min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
             min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+            # Джерело публікує обидві ціни, тож застосовує обидві межі.
+            min_price_warm_eur=state.get("min_price_warm_eur"),
+            max_price_warm_eur=state.get("max_price_warm_eur"),
         )
         results.append(("semmelhaack", filter_id, criteria, None))
     if "schoba" in sources:
@@ -4552,6 +4544,8 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
         criteria = {
             "min_price_eur": state.get("min_price_eur"),
             "max_price_eur": state.get("max_price_eur"),
+            "min_price_warm_eur": state.get("min_price_warm_eur"),
+            "max_price_warm_eur": state.get("max_price_warm_eur"),
             "min_rooms": state.get("min_rooms"),
             "max_rooms": state.get("max_rooms"),
             "min_area_m2": state.get("min_area_m2"),
@@ -4563,6 +4557,9 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
             min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
             min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+            # Джерело публікує обидві ціни, тож застосовує обидві межі.
+            min_price_warm_eur=state.get("min_price_warm_eur"),
+            max_price_warm_eur=state.get("max_price_warm_eur"),
         )
         results.append(("regiomakler", filter_id, criteria, None))
     if "locals" in sources:
@@ -4584,10 +4581,11 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
         )
         results.append(("locals", filter_id, criteria, None))
     if "kleinanzeigen" in sources:
-        # Власні ключі ціни (min_ka_price_eur), не спільне запитання Kaltmiete.
+        # Ціна оголошення тут — поле категорії «Kaltmiete» самої площадки
+        # (видно з її ж фільтра пошуку), тож це те саме холодне питання.
         criteria = {
-            "min_price_eur": state.get("min_ka_price_eur"),
-            "max_price_eur": state.get("max_ka_price_eur"),
+            "min_price_eur": state.get("min_price_eur"),
+            "max_price_eur": state.get("max_price_eur"),
             "min_rooms": state.get("min_rooms"),
             "max_rooms": state.get("max_rooms"),
             "min_area_m2": state.get("min_area_m2"),
@@ -4598,14 +4596,14 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             user_id=state["user_id"], title=title,
             min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
             min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
-            min_price_eur=state.get("min_ka_price_eur"), max_price_eur=state.get("max_ka_price_eur"),
+            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
         )
         results.append(("kleinanzeigen", filter_id, criteria, None))
     if "karlmarx" in sources:
-        # Власні ключі ціни (min_km_price_eur) — Warmmiete, не Kaltmiete.
+        # Картка називає ціну Warmmiete — це повна оренда, спільне друге питання.
         criteria = {
-            "min_price_eur": state.get("min_km_price_eur"),
-            "max_price_eur": state.get("max_km_price_eur"),
+            "min_price_warm_eur": state.get("min_price_warm_eur"),
+            "max_price_warm_eur": state.get("max_price_warm_eur"),
             "min_rooms": state.get("min_rooms"),
             "max_rooms": state.get("max_rooms"),
             "min_area_m2": state.get("min_area_m2"),
@@ -4616,7 +4614,7 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             user_id=state["user_id"], title=title,
             min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
             min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
-            min_price_eur=state.get("min_km_price_eur"), max_price_eur=state.get("max_km_price_eur"),
+            min_price_warm_eur=state.get("min_price_warm_eur"), max_price_warm_eur=state.get("max_price_warm_eur"),
         )
         results.append(("karlmarx", filter_id, criteria, None))
     context.user_data.pop("housing_admin", None)

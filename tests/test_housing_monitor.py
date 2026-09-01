@@ -1641,8 +1641,13 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
         # into "min_rooms" any more — that screen now sits in between).
         self.assertEqual(state['step'], 'criteria_picker')
 
-    def test_immowelt_and_semmelhaack_together_ask_kaltmiete_only_once(self):
-        """Обидва джерела рахують ту саму холодну оренду — не варто питати двічі поспіль."""
+    def test_immowelt_and_semmelhaack_together_ask_each_price_only_once(self):
+        """Питань про ціну два — холодна й повна, — і кожне ставиться один раз
+        на всі обрані джерела, а не окремо під кожен портал.
+
+        SEMMELHAACK публікує обидві ціни, Immowelt — холодну; тож холодна межа
+        йде обом, а повна лише тому, хто її розуміє.
+        """
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
             'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
@@ -1650,13 +1655,9 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
             'districts_selected': ['Golm'],
         }})
 
-        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
-             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
-             mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 11}) as request, \
-             mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter', return_value=33) as create_filter:
-            # 4 shared fields (rooms/area) + exactly 2 price answers, not 4 —
-            # confirms the Kaltmiete question was not repeated for the second source.
-            for text in ['2', '-', '-', '-', '800', '1200']:
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534),              mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}),              mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 11}) as request,              mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter', return_value=33) as create_filter:
+            # 4 спільні поля + 2 відповіді про холодну ціну + 2 про повну = 8.
+            for text in ['2', '-', '-', '-', '800', '1200', '1000', '1600']:
                 self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
 
         self.assertNotIn('housing_admin', context.user_data)
@@ -1672,6 +1673,7 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
             user_id=544675510, title=mock.ANY,
             min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
             min_price_eur=800.0, max_price_eur=1200.0,
+            min_price_warm_eur=1000.0, max_price_warm_eur=1600.0,
         )
 
     def test_semmelhaack_edit_flow_prefills_current_bounds_and_skips_straight_to_rooms(self):
@@ -1771,7 +1773,9 @@ class HousingSchobaWizardTests(unittest.TestCase):
              mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 11}), \
              mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter', return_value=22), \
              mock.patch('user_handlers.housing_monitor.schoba_store.create_filter', return_value=33) as create_filter:
-            for text in ['2', '-', '-', '-', '800', '1200']:
+            # SEMMELHAACK публікує ще й повну оренду, тож після холодної ціни
+            # майстер питає й про неї — SCHOBA цю межу просто не отримує.
+            for text in ['2', '-', '-', '-', '800', '1200', '1000', '1600']:
                 self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
 
         self.assertNotIn('housing_admin', context.user_data)
@@ -1866,7 +1870,9 @@ class HousingRegiomaklerWizardTests(unittest.TestCase):
     def test_available_sources_include_regiomakler(self):
         self.assertIn('regiomakler', housing_monitor.AVAILABLE_SOURCE_KEYS)
 
-    def test_regiomakler_joins_the_shared_kaltmiete_question(self):
+    def test_regiomakler_joins_both_shared_price_questions(self):
+        """ImmoTeam/alpha друкує обидві ціни в одній картці, тож отримує обидві
+        межі; SCHOBA поки називає лише холодну — і бере тільки її."""
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
             'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
@@ -1874,11 +1880,8 @@ class HousingRegiomaklerWizardTests(unittest.TestCase):
             'districts_selected': [],
         }})
 
-        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
-             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
-             mock.patch('user_handlers.housing_monitor.schoba_store.create_filter', return_value=1), \
-             mock.patch('user_handlers.housing_monitor.regiomakler_store.create_filter', return_value=2) as create_filter:
-            for text in ['2', '-', '-', '-', '800', '1200']:
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534),              mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}),              mock.patch('user_handlers.housing_monitor.schoba_store.create_filter', return_value=1) as schoba_filter,              mock.patch('user_handlers.housing_monitor.regiomakler_store.create_filter', return_value=2) as create_filter:
+            for text in ['2', '-', '-', '-', '800', '1200', '1000', '1500']:
                 self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
 
         self.assertNotIn('housing_admin', context.user_data)
@@ -1886,7 +1889,10 @@ class HousingRegiomaklerWizardTests(unittest.TestCase):
             user_id=544675510, title=mock.ANY,
             min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
             min_price_eur=800.0, max_price_eur=1200.0,
+            min_price_warm_eur=1000.0, max_price_warm_eur=1500.0,
         )
+        self.assertEqual(schoba_filter.call_args.kwargs['min_price_eur'], 800.0)
+        self.assertNotIn('min_price_warm_eur', schoba_filter.call_args.kwargs)
 
     def test_regiomakler_edit_flow_prefills_current_bounds(self):
         own_filter = {
@@ -1961,9 +1967,10 @@ class HousingKleinanzeigenWizardTests(unittest.TestCase):
     def test_available_sources_include_kleinanzeigen(self):
         self.assertIn('kleinanzeigen', housing_monitor.AVAILABLE_SOURCE_KEYS)
 
-    def test_kleinanzeigen_price_is_asked_separately_even_alongside_a_kaltmiete_source(self):
-        """Kleinanzeigen's price has no reliable Kalt/Warm label — it must NOT
-        share Immowelt/SEMMELHAACK/SCHOBA/regiomakler's Kaltmiete question."""
+    def test_kleinanzeigen_joins_the_shared_cold_price_question(self):
+        """Ціна оголошення тут — поле категорії «Kaltmiete» самої площадки
+        (видно з її ж фільтра пошуку), тобто та сама холодна оренда, що й у
+        решти. Окреме питання про неї було зайвим кроком майстра."""
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
             'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
@@ -1971,21 +1978,17 @@ class HousingKleinanzeigenWizardTests(unittest.TestCase):
             'districts_selected': ['Golm'],
         }})
 
-        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
-             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
-             mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 1}) as request, \
-             mock.patch('user_handlers.housing_monitor.kleinanzeigen_store.create_filter', return_value=2) as create_filter:
-            # 4 shared fields, then Immowelt's Kaltmiete (2), then Kleinanzeigen's own price (2) = 8 answers.
-            for text in ['2', '-', '-', '-', '800', '1200', '500', '900']:
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534),              mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}),              mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 1}) as request,              mock.patch('user_handlers.housing_monitor.kleinanzeigen_store.create_filter', return_value=2) as create_filter:
+            # 4 спільні поля, далі одна холодна ціна на обидва джерела = 6 відповідей.
+            for text in ['2', '-', '-', '-', '800', '1200']:
                 self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
 
         self.assertNotIn('housing_admin', context.user_data)
         self.assertEqual(request.call_args.kwargs['json']['min_price_eur'], 800.0)
-        self.assertEqual(request.call_args.kwargs['json']['max_price_eur'], 1200.0)
         create_filter.assert_called_once_with(
             user_id=544675510, title=mock.ANY,
             min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
-            min_price_eur=500.0, max_price_eur=900.0,
+            min_price_eur=800.0, max_price_eur=1200.0,
         )
 
     def test_kleinanzeigen_edit_flow_prefills_current_bounds(self):
@@ -2061,9 +2064,10 @@ class HousingKarlmarxWizardTests(unittest.TestCase):
     def test_available_sources_include_karlmarx(self):
         self.assertIn('karlmarx', housing_monitor.AVAILABLE_SOURCE_KEYS)
 
-    def test_karlmarx_price_is_asked_separately_even_alongside_a_kaltmiete_source(self):
-        """Karl Marx counts Warmmiete, not Kaltmiete — it must NOT share
-        Immowelt/SEMMELHAACK/SCHOBA/regiomakler/locals's Kaltmiete question."""
+    def test_karlmarx_joins_the_shared_warm_price_question(self):
+        """Karl Marx називає ціну Warmmiete — це повна оренда, і питання про
+        неї одне на всі портали, що її публікують. Окремого кроку під один
+        лише Karl Marx більше немає."""
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
             'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
@@ -2071,12 +2075,9 @@ class HousingKarlmarxWizardTests(unittest.TestCase):
             'districts_selected': ['Golm'],
         }})
 
-        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
-             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
-             mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 1}) as request, \
-             mock.patch('user_handlers.housing_monitor.karlmarx_store.create_filter', return_value=2) as create_filter:
-            # 4 shared fields, then Immowelt's Kaltmiete (2), then Karl Marx's own price (2) = 8 answers.
-            for text in ['2', '-', '-', '-', '800', '1200', '500', '900']:
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534),              mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}),              mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 1}) as request,              mock.patch('user_handlers.housing_monitor.karlmarx_store.create_filter', return_value=2) as create_filter:
+            # 4 спільні поля, холодна ціна для Immowelt (2), повна для Karl Marx (2).
+            for text in ['2', '-', '-', '-', '800', '1200', '900', '1500']:
                 self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
 
         self.assertNotIn('housing_admin', context.user_data)
@@ -2085,7 +2086,7 @@ class HousingKarlmarxWizardTests(unittest.TestCase):
         create_filter.assert_called_once_with(
             user_id=544675510, title=mock.ANY,
             min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
-            min_price_eur=500.0, max_price_eur=900.0,
+            min_price_warm_eur=900.0, max_price_warm_eur=1500.0,
         )
 
     def test_karlmarx_edit_flow_prefills_current_bounds(self):
@@ -2598,7 +2599,7 @@ class HousingWizardPresetButtonTests(unittest.TestCase):
         self.assertIn(housing_monitor.BACK_CALLBACK, callbacks)
 
     def test_price_step_offers_the_jobcenter_price_presets(self):
-        for field_key in ('max_price_eur', 'max_total_rent_eur'):
+        for field_key in ('max_price_eur', 'max_price_warm_eur'):
             keyboard = housing_monitor._field_keyboard('uk', field_key)
             callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
             for value in housing_monitor.JOBCENTER_PRICE_PRESETS_EUR:
@@ -2871,6 +2872,7 @@ class HousingCriteriaPickerTests(unittest.TestCase):
             user_id=544675510, title=mock.ANY,
             min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
             min_price_eur=None, max_price_eur=None,
+            min_price_warm_eur=None, max_price_warm_eur=None,
         )
         self.assertNotIn('housing_admin', context.user_data)
 
@@ -2889,6 +2891,7 @@ class HousingCriteriaPickerTests(unittest.TestCase):
             user_id=544675510, title=mock.ANY,
             min_rooms=None, max_rooms=None, min_area_m2=None, max_area_m2=None,
             min_price_eur=None, max_price_eur=None,
+            min_price_warm_eur=None, max_price_warm_eur=None,
         )
         self.assertNotIn('housing_admin', context.user_data)
 
@@ -2910,25 +2913,24 @@ class HousingCriteriaPickerTests(unittest.TestCase):
 
         self.assertEqual(state['step'], 'max_price_eur')
 
-    def test_recap_keeps_showing_an_earlier_price_answer_across_multiple_price_groups(self):
-        """immowelt (Kaltmiete) і kleinanzeigen мають різні ключі ціни в стані
-        — обидві пари питає той самий пікер-крок «Ціна», по черзі. Відповідь
-        на першу пару має лишатись видимою в рецапі другої."""
+    def test_recap_keeps_showing_an_earlier_price_answer_across_both_price_groups(self):
+        """Холодна й повна ціна — дві пари питань під одним чекбоксом «Ціна».
+        Відповідь на першу пару має лишатись видимою в рецапі другої."""
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_price_eur', 'user_id': 544675510,
-            'sources_selected': ['immowelt', 'kleinanzeigen'], 'districts_selected': ['Golm'],
+            'sources_selected': ['immowelt', 'semmelhaack'], 'districts_selected': ['Golm'],
             'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
         }})
         with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
             self.assertTrue(housing_monitor.handle_private_text(self._update('800'), context))
             self.assertTrue(housing_monitor.handle_private_text(self._update('1200'), context))
-            update = self._update('600')
+            update = self._update('1000')
             self.assertTrue(housing_monitor.handle_private_text(update, context))
 
         text = update.message.replies[-1][0]
         self.assertIn('800', text)
         self.assertIn('1200', text)
-        self.assertEqual(context.user_data['housing_admin']['step'], 'max_ka_price_eur')
+        self.assertEqual(context.user_data['housing_admin']['step'], 'max_price_warm_eur')
 
     def test_back_from_criteria_picker_and_forward_again_preserves_the_selection(self):
         context = SimpleNamespace(user_data={'housing_admin': {

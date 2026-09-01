@@ -1,4 +1,5 @@
 # coding: utf-8
+import logging
 import os
 
 from sqlalchemy import Column, INTEGER, TEXT, BOOLEAN, DATETIME, FLOAT, create_engine, UniqueConstraint
@@ -664,6 +665,9 @@ class KarlmarxListing(Base):
     rooms = Column(FLOAT)
     area_m2 = Column(FLOAT)
     price_eur = Column(FLOAT)
+    # Картка друкує Warmmiete; холодна є лише всередині оголошення, тож
+    # здебільшого порожня — доки її звідти не забираємо.
+    price_warm_eur = Column(FLOAT)
     detail_url = Column(TEXT)
     cover_image_url = Column(TEXT)
     first_seen_at = Column(DATETIME, nullable=False)
@@ -764,6 +768,47 @@ _ensure_column('locals_filter', 'max_price_warm_eur', 'FLOAT')
 _ensure_column('karlmarx_filter', 'min_price_warm_eur', 'FLOAT')
 _ensure_column('karlmarx_filter', 'max_price_warm_eur', 'FLOAT')
 _ensure_column('regiomakler_listing', 'price_warm_eur', 'FLOAT')
+_ensure_column('karlmarx_listing', 'price_warm_eur', 'FLOAT')
+
+
+def _move_karlmarx_bounds_to_the_warm_column() -> None:
+    """Ціна у фільтрах Karl Marx завжди означала повну оренду.
+
+    Портал друкує Warmmiete, і парсер клав її в price_eur — єдину колонку, що
+    тоді існувала. Тепер повна ціна має власну колонку, тож старі межі треба
+    перенести туди, інакше вони мовчки порівнювалися б із холодною ціною,
+    якої Karl Marx не публікує, і фільтр перестав би обмежувати ціну взагалі.
+
+    Переносяться лише записи, де нова колонка ще порожня, — повторний запуск
+    нічого не робить.
+    """
+    fairy = engine.raw_connection()
+    try:
+        dbapi_con = getattr(fairy, "driver_connection", None) or fairy.connection
+        cur = dbapi_con.cursor()
+        cur.execute(
+            """
+            UPDATE karlmarx_filter
+               SET min_price_warm_eur = min_price_eur,
+                   max_price_warm_eur = max_price_eur,
+                   min_price_eur = NULL,
+                   max_price_eur = NULL
+             WHERE min_price_warm_eur IS NULL
+               AND max_price_warm_eur IS NULL
+               AND (min_price_eur IS NOT NULL OR max_price_eur IS NOT NULL)
+            """
+        )
+        moved = cur.rowcount
+        dbapi_con.commit()
+        if moved:
+            logging.getLogger(__name__).info(
+                "Karl Marx: %s фільтрів переведено на межу повної оренди", moved,
+            )
+    finally:
+        fairy.close()
+
+
+_move_karlmarx_bounds_to_the_warm_column()
 _ensure_column('kleinanzeigen_listing', 'cover_image_url', 'TEXT')
 _ensure_column('locals_listing', 'cover_image_url', 'TEXT')
 _ensure_column('karlmarx_listing', 'cover_image_url', 'TEXT')

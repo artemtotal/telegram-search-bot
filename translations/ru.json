@@ -52,8 +52,8 @@
   "housing.field.q.nettokaltmiete_max": "Максимальная холодная аренда (Nettokaltmiete), €",
   "housing.field.q.price_min": "Минимальная цена, €",
   "housing.field.q.price_max": "Максимальная цена, €",
-  "housing.field.q.warmmiete_min": "Минимальная тёплая аренда (Warmmiete), €",
-  "housing.field.q.warmmiete_max": "Максимальная тёплая аренда (Warmmiete), €",
+  "housing.field.q.warmmiete_min": "Минимальная полная аренда с коммунальными (Warmmiete), €",
+  "housing.field.q.warmmiete_max": "Максимальная полная аренда с коммунальными (Warmmiete), €",
   "housing.field.label.price_min": "Цена: минимум (от)",
   "housing.field.label.price_max": "Цена: максимум (до)",
   "housing.field.label.rooms_min": "Комнаты: минимум (от)",
@@ -295,5 +295,7 @@
   "housing.stats.axis_price": "Цена, €",
   "housing.stats.axis_rooms": "Комнаты",
   "housing.price.basis.kalt": "Kaltmiete (холодная аренда)",
-  "housing.price.basis.warm": "Warmmiete (тёплая аренда, с коммунальными)"
+  "housing.price.basis.warm": "Warmmiete (тёплая аренда, с коммунальными)",
+  "housing.field.label.warm_min": "Полная аренда: минимум (от)",
+  "housing.field.label.warm_max": "Полная аренда: максимум (до)"
 }

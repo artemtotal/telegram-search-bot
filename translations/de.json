@@ -52,8 +52,8 @@
   "housing.field.q.nettokaltmiete_max": "Höchst-Nettokaltmiete, €",
   "housing.field.q.price_min": "Mindestpreis, €",
   "housing.field.q.price_max": "Höchstpreis, €",
-  "housing.field.q.warmmiete_min": "Mindest-Warmmiete, €",
-  "housing.field.q.warmmiete_max": "Höchst-Warmmiete, €",
+  "housing.field.q.warmmiete_min": "Mindest-Warmmiete (inkl. Nebenkosten), €",
+  "housing.field.q.warmmiete_max": "Höchst-Warmmiete (inkl. Nebenkosten), €",
   "housing.field.label.price_min": "Preis: minimum (ab)",
   "housing.field.label.price_max": "Preis: maximum (bis)",
   "housing.field.label.rooms_min": "Zimmer: minimum (ab)",
@@ -295,5 +295,7 @@
   "housing.stats.axis_price": "Preis, €",
   "housing.stats.axis_rooms": "Zimmer",
   "housing.price.basis.kalt": "Kaltmiete",
-  "housing.price.basis.warm": "Warmmiete (inkl. Nebenkosten)"
+  "housing.price.basis.warm": "Warmmiete (inkl. Nebenkosten)",
+  "housing.field.label.warm_min": "Warmmiete: Minimum (ab)",
+  "housing.field.label.warm_max": "Warmmiete: Maximum (bis)"
 }
