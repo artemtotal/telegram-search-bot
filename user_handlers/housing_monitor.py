@@ -466,6 +466,17 @@ def _preset_unit_for(field_key: Optional[str]) -> str:
     return ""
 
 
+def _preset_field_label(field_key: Optional[str], lang: str = "uk") -> str:
+    """Label for the confirmation toast after a preset/skip tap. field_key is
+    always one of the shared rooms/area keys or one of the price-step keys —
+    every mode (multi-wizard or a single source's own edit flow) defines the
+    exact same label text for these, so one lookup covers every mode."""
+    spec = SHARED_CRITERIA_BY_KEY.get(field_key) or PRICE_STEP_FIELDS.get(field_key)
+    if not spec:
+        return field_key or ""
+    return _localized_field(spec, lang)["label"]
+
+
 def _field_keyboard(lang: str = "uk", field_key: Optional[str] = None) -> InlineKeyboardMarkup:
     # Просто «⬅ Назад» губилося серед тексту питання — люди не помічали, що
     # можна виправити попередню відповідь, і кидали майстер на середині.
@@ -4669,7 +4680,17 @@ def _handle_preset_tap(update: Update, context: CallbackContext) -> None:
         # б поточний, зовсім інший крок майстра.
         query.answer("Це питання вже неактуальне.")
         return
-    query.answer()
+    # Наступне питання показує кнопку "Пропустити" в тому самому місці
+    # екрана, де щойно була ця сама кнопка — швидкий повторний тап (людина
+    # не встигла прочитати, що з'явилось нове питання) легко влучає вже в
+    # чужу кнопку. Явний тост із назвою поля, яке щойно записалось, дає
+    # людині момент прочитати, що саме сталося, перш ніж тапати далі.
+    label = _preset_field_label(field_key, i18n.get_lang(int(user.id)))
+    if raw_value == SKIP_PRESET_VALUE:
+        query.answer(f"✅ {label}: без обмеження")
+    else:
+        unit = _preset_unit_for(field_key)
+        query.answer(f"✅ {label}: {raw_value}{(' ' + unit) if unit else ''}")
     try:
         query.edit_message_reply_markup(reply_markup=None)
     except BadRequest as exc:

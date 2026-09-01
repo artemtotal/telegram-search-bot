@@ -2611,6 +2611,31 @@ class HousingWizardPresetButtonTests(unittest.TestCase):
         self.assertIsNone(state['max_area_m2'])
         self.assertEqual(state['step'], 'min_price_eur')
 
+    def test_tapping_a_value_preset_shows_a_confirmation_toast_naming_the_field(self):
+        """Наступне питання показує свою кнопку "Пропустити" в тому самому
+        місці екрана — без явного підтвердження легко не помітити, що
+        відповідь щойно записалась саме на ЦЕ поле, а не на наступне."""
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'semmelhaack', 'step': 'max_area_m2', 'user_id': 544675510, 'min_area_m2': 40.0,
+        }})
+        update, _ = self._preset_cb_update('max_area_m2', 65)
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            housing_monitor._handle_preset_tap(update, context)
+
+        update.callback_query.answer.assert_called_once_with('✅ Площа: максимум (до): 65 м²')
+
+    def test_tapping_skip_shows_a_confirmation_toast_naming_the_field(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'semmelhaack', 'step': 'min_rooms', 'user_id': 544675510,
+        }})
+        update, _ = self._preset_cb_update('min_rooms', '-')
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+            housing_monitor._handle_preset_tap(update, context)
+
+        update.callback_query.answer.assert_called_once_with('✅ Кімнати: мінімум (від): без обмеження')
+
     def test_a_stale_preset_tap_is_ignored(self):
         """Стара кнопка на старому повідомленні лишається тапабельною — але
         якщо крок майстра вже інший, натискання не повинно нічого міняти."""
