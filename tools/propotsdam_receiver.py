@@ -30,6 +30,7 @@ browser's own session and serves them as bytes on
 - ``PROPOTSDAM_PHOTO_TIMEOUT_MS`` — per-photo download timeout
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -63,6 +64,9 @@ PHOTO_DIR = Path(os.getenv("PROPOTSDAM_PHOTO_DIR", str(PROFILE_DIR.parent / "pro
 PHOTO_MAX_BYTES = int(os.getenv("PROPOTSDAM_PHOTO_MAX_BYTES", str(12 * 1024 * 1024)) or 12 * 1024 * 1024)
 PHOTO_KEEP_DAYS = int(os.getenv("PROPOTSDAM_PHOTO_KEEP_DAYS", "30") or 30)
 PHOTO_TIMEOUT_MS = int(os.getenv("PROPOTSDAM_PHOTO_TIMEOUT_MS", "30000") or 30000)
+DETAIL_DIR = Path(os.getenv("PROPOTSDAM_DETAIL_DIR", str(PROFILE_DIR.parent / "propotsdam-details")))
+DETAIL_MAX_PER_SCAN = int(os.getenv("PROPOTSDAM_DETAIL_MAX", "3") or 3)
+DETAIL_ENABLED = os.getenv("PROPOTSDAM_DETAIL_ENABLED", "1").strip() not in {"", "0", "false", "no"}
 _scan_lock = Lock()
 _state_lock = Lock()
 _last_result = {"ok": False, "error": "no scan yet", "listings": []}
@@ -194,7 +198,126 @@ def _photo_path(resource_id):
     return PHOTO_DIR / "{}.bin".format(candidate)
 
 
-def _cache_photos(page, listings):
+RESOURCE_ID_ATTR_RE = re.compile(r'resourceId="([^"]+)"')
+
+
+def _listing_detail_path(listing):
+    """Имя файла снимка. Ключом бывает и GUID портала, и — на DOM-пути —
+    целый URL, из которого имя файла не сделать; такие сводим к хешу, чтобы
+    объявление не осталось без снимка вовсе."""
+    key = str(listing.get("listing_key") or "").strip()
+    if not key:
+        return None
+    if not propotsdam_parser.RESOURCE_ID_RE.fullmatch(key):
+        key = hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
+    return DETAIL_DIR / "{}.json".format(key)
+
+
+def _open_listing(page, listing):
+    """Раскрывает карточку объявления в списке портала.
+
+    Обычный click тут не работает: поверх карточки лежит собственный
+    контейнер портала и перехватывает указатель, поэтому событие шлём
+    элементу напрямую — так же, как приходится добираться до самого списка.
+    """
+    needles = [str(listing.get("title") or "").strip()[:40], str(listing.get("address") or "").strip()]
+    for needle in [item for item in needles if len(item) > 6]:
+        try:
+            target = page.get_by_text(needle, exact=False).first
+            target.dispatch_event("click")
+            page.wait_for_timeout(3500)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def _capture_details(page, listings):
+    """Открывает карточки объявлений и забирает то, чего нет в списке.
+
+    В списке портал показывает только Gesamtmiete и пару обложек, хотя сам
+    знает и Kaltmiete (в его форме поиска есть отдельные поля "Kaltmiete bis"
+    и "Gesamtmiete bis"), и полную галерею. Сюда же попадает всё остальное
+    содержимое карточки: пока неизвестно, как именно портал верстает деталь,
+    поэтому снимок сохраняется целиком — по нему потом пишется точный разбор,
+    а не наугад.
+
+    Каждое объявление открывается один раз за всю его жизнь: снимок уже есть —
+    значит и фото из него уже забраны. Шаг целиком необязательный, любая его
+    ошибка не должна ронять сам обход.
+    """
+    if not DETAIL_ENABLED or not listings:
+        return {"opened": 0, "resource_ids": [], "skipped": 0}
+
+    DETAIL_DIR.mkdir(parents=True, exist_ok=True)
+    opened = 0
+    skipped = 0
+    resource_ids = []
+    for listing in listings:
+        if opened >= DETAIL_MAX_PER_SCAN:
+            break
+        path = _listing_detail_path(listing)
+        if path is None or path.exists():
+            skipped += 1
+            continue
+
+        detail_xml = []
+        collect = lambda response: (
+            detail_xml.append(response.text()) if "xmlforms" in response.url else None
+        )
+        page.on("response", collect)
+        try:
+            if not _open_listing(page, listing):
+                logger.warning("Could not open ProPotsdam listing %s", listing.get("listing_key"))
+                continue
+            snapshot = {
+                "listing_key": listing.get("listing_key"),
+                "captured_at": _now_iso(),
+                "url": page.url,
+                "text": page.evaluate("() => document.body.innerText") or "",
+                "html": page.content(),
+                "images": page.evaluate("() => [...document.querySelectorAll('img[src]')].map(i => i.src)"),
+                "xmlforms": detail_xml,
+            }
+            path.write_text(json.dumps(snapshot, ensure_ascii=False), encoding="utf-8")
+            opened += 1
+            for xml_text in detail_xml:
+                for resource_id in RESOURCE_ID_ATTR_RE.findall(xml_text):
+                    if propotsdam_parser.RESOURCE_ID_RE.fullmatch(resource_id) and resource_id not in resource_ids:
+                        resource_ids.append(resource_id)
+            labels = [
+                label for label in ("Kaltmiete", "Nettokaltmiete", "Grundmiete", "Betriebskosten",
+                                    "Nebenkosten", "Heizkosten", "Gesamtmiete")
+                if label.casefold() in snapshot["text"].casefold()
+            ]
+            logger.info(
+                "ProPotsdam detail %s: цены %s, фото в детали %s",
+                listing.get("listing_key"), labels or "не найдены", len(resource_ids),
+            )
+        except Exception as exc:
+            logger.warning("ProPotsdam detail capture failed for %s: %s", listing.get("listing_key"), exc)
+        finally:
+            page.remove_listener("response", collect)
+            # Деталь открыта поверх списка: без возврата следующее объявление
+            # искать уже негде.
+            try:
+                page.go_back(timeout=15000)
+                page.wait_for_timeout(2000)
+                back_on_list = "Zimmer" in (page.evaluate("() => document.body.innerText") or "")
+            except Exception:
+                back_on_list = False
+            if not back_on_list:
+                try:
+                    _navigate_to_list(page)
+                except Exception as exc:
+                    logger.warning("Could not return to the ProPotsdam list: %s", exc)
+                    break
+
+    logger.info("ProPotsdam details opened=%s skipped=%s extra photos=%s", opened, skipped, len(resource_ids))
+    return {"opened": opened, "skipped": skipped, "resource_ids": resource_ids}
+
+
+def _cache_photos(page, listings, extra_resource_ids=()):
     """Скачивает все фото объявлений сессией самого браузера.
 
     Ссылка api5/accndocs2/<id> открывается только под логином портала, поэтому
@@ -210,6 +333,10 @@ def _cache_photos(page, listings):
         for resource_id in propotsdam_parser.image_resource_ids(listing):
             if resource_id not in wanted:
                 wanted.append(resource_id)
+    # Карточка объявления показывает всю галерею, список — одну-две обложки.
+    for resource_id in extra_resource_ids:
+        if resource_id not in wanted:
+            wanted.append(resource_id)
     if not wanted:
         return {"wanted": 0, "saved": 0, "cached": 0, "failed": 0}
 
@@ -296,13 +423,15 @@ def scan():
             if not listings:
                 listings = _extract_cards_from_dom(page)
             # Пока браузер жив: только у него есть сессия портала.
-            photos = _cache_photos(page, listings)
+            details = _capture_details(page, listings)
+            photos = _cache_photos(page, listings, details["resource_ids"])
             result = {
                 "ok": True,
                 "url": page.url,
                 "listings": listings,
                 "count": len(listings),
                 "photos": photos,
+                "details": {"opened": details["opened"], "skipped": details["skipped"]},
                 "xmlforms": responses[-20:],
             }
             context.close()

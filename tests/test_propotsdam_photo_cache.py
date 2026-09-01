@@ -203,5 +203,128 @@ class PrunePhotosTests(unittest.TestCase):
             self.assertTrue(path.exists())
 
 
+class FakeDetailResponse:
+    url = 'https://portal/prorex/xmlforms?command=detail'
+
+    def __init__(self, resource_ids):
+        self._resource_ids = resource_ids
+
+    def text(self):
+        return ''.join('<image resourceId="{}"/>'.format(rid) for rid in self._resource_ids)
+
+
+class FakeDetailPage:
+    """Портал, который послушно открывает карточку и отдаёт её галерею."""
+
+    url = 'https://portal/detail'
+
+    def __init__(self, resource_ids=(), openable=True):
+        self._resource_ids = list(resource_ids)
+        self._openable = openable
+        self._handlers = []
+        self.opened = 0
+
+    def on(self, event, handler):
+        self._handlers.append(handler)
+
+    def remove_listener(self, event, handler):
+        self._handlers.remove(handler)
+
+    def get_by_text(self, needle, exact=False):
+        if not self._openable:
+            raise RuntimeError('такого текста на странице нет')
+        return self
+
+    @property
+    def first(self):
+        return self
+
+    def dispatch_event(self, name):
+        self.opened += 1
+        for handler in list(self._handlers):
+            handler(FakeDetailResponse(self._resource_ids))
+
+    def wait_for_timeout(self, ms):
+        pass
+
+    def evaluate(self, script):
+        if 'img' in script:
+            return ['https://portal/cover.jpg']
+        return 'Kaltmiete 700,00 EUR Betriebskosten 180,00 EUR Gesamtmiete 880,00 EUR Zimmer 3'
+
+    def content(self):
+        return '<html>деталь</html>'
+
+    def go_back(self, timeout=None):
+        pass
+
+
+LISTING = {
+    'listing_key': '8151604D-B656-690E-6DDC-347467A96C0E',
+    'title': 'sanierter Altbau mit Weitblick ins Grüne',
+    'address': 'Ribbeckstr. 27, 14469 Potsdam',
+}
+
+
+class CaptureDetailsTests(unittest.TestCase):
+    """Открытие карточки объявления: список показывает одну обложку и
+    Gesamtmiete, а внутри лежат и вся галерея, и разбивка цены."""
+
+    def test_the_gallery_inside_the_listing_is_collected(self):
+        page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555',
+                               'DDDD9999-EEEE-8888-FFFF-777766665555'])
+        with TemporaryDirectory() as tmp, \
+             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)):
+            result = propotsdam_receiver._capture_details(page, [LISTING])
+
+            self.assertEqual(result['opened'], 1)
+            self.assertEqual(len(result['resource_ids']), 2)
+            self.assertTrue((Path(tmp) / '{}.json'.format(LISTING['listing_key'])).exists())
+
+    def test_a_listing_is_opened_only_once_ever(self):
+        """Снимок уже есть — значит фото из него давно забраны, лезть в портал
+        второй раз не за чем."""
+        page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555'])
+        with TemporaryDirectory() as tmp, \
+             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)):
+            propotsdam_receiver._capture_details(page, [LISTING])
+            again = propotsdam_receiver._capture_details(page, [LISTING])
+
+            self.assertEqual(page.opened, 1)
+            self.assertEqual(again['opened'], 0)
+            self.assertEqual(again['skipped'], 1)
+
+    def test_a_portal_that_refuses_to_open_the_card_does_not_break_the_scan(self):
+        page = FakeDetailPage(openable=False)
+        with TemporaryDirectory() as tmp, \
+             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
+             mock.patch.object(propotsdam_receiver, '_navigate_to_list', lambda page: None):
+            result = propotsdam_receiver._capture_details(page, [LISTING])
+
+            self.assertEqual(result['opened'], 0)
+            self.assertEqual(result['resource_ids'], [])
+
+    def test_the_step_can_be_switched_off(self):
+        page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555'])
+        with mock.patch.object(propotsdam_receiver, 'DETAIL_ENABLED', False):
+            result = propotsdam_receiver._capture_details(page, [LISTING])
+
+        self.assertEqual(page.opened, 0)
+        self.assertEqual(result['opened'], 0)
+
+    def test_photos_found_inside_the_card_are_cached_too(self):
+        """Ради этого карточка и открывается: в списке обложка одна, а в
+        объявлении — вся галерея."""
+        with TemporaryDirectory() as tmp, \
+             mock.patch.object(propotsdam_receiver, 'PHOTO_DIR', Path(tmp)):
+            page = FakePage(FakeRequest())
+            stats = propotsdam_receiver._cache_photos(
+                page, [], ['AAAA1111-BBBB-2222-CCCC-333344445555'],
+            )
+
+            self.assertEqual(stats['wanted'], 1)
+            self.assertEqual(stats['saved'], 1)
+
+
 if __name__ == '__main__':
     unittest.main()
