@@ -7,6 +7,7 @@
 """
 
 import inspect
+import json
 import os
 import time
 import unittest
@@ -291,7 +292,14 @@ class FakeDetailPage:
     def evaluate(self, script):
         if 'img' in script:
             return ['https://portal/cover.jpg']
-        return 'Kaltmiete 700,00 EUR Betriebskosten 180,00 EUR Gesamtmiete 880,00 EUR Zimmer 3'
+        # Адреса оголошення тут не для краси: за нею перевіряють, що
+        # відкрилась саме його картка, а не сусідська.
+        return (
+            'Zimmer\n2\nDetailKarte\nsanierter Altbau mit Weitblick\n'
+            'Ribbeckstr. 27, 14469 Potsdam, 2. OG\n'
+            'Kosten\nKaltmiete\n700,00 EUR\nBetriebskosten\n180,00 EUR\n'
+            'Gesamtmiete\n880,00 EUR\nKaution\n3 Nettokaltmieten\n'
+        )
 
     def content(self):
         return '<html>деталь</html>'
@@ -482,3 +490,52 @@ class SecondCardTests(unittest.TestCase):
             result = propotsdam_receiver._capture_details(page, self._listings())
 
         self.assertEqual(result['opened'], 1)
+
+@unittest.skipIf(
+    propotsdam_receiver is None,
+    f"колектор ProPotsdam доступний лише на хості: {_IMPORT_ERROR}",
+)
+class SnapshotOwnershipTests(unittest.TestCase):
+    """Ціни з картки належать саме тій квартирі, для якої її знімали.
+
+    Поки повернення до переліку не працювало, друга «картка» знімалась із того
+    самого екрана — і два різні оголошення отримали однакові ціни. Тепер
+    знімок звіряється з адресою оголошення, а сама картка лежить нижче
+    переліку, тож звіряти можна лише її частину.
+    """
+
+    CARD = (
+        "Babelsberg\nGroßbeerenstr. 43, 14482 Potsdam\nGesamtmiete\n753,65 EUR\n"
+        "DetailKarte\n1-Zimmer-Wohnung\nAlt Nowawes 84, 14482 Potsdam, EG Nr. 1\n"
+        "Kosten\nKaltmiete\n326,48 EUR\nBetriebskosten\n81,24 EUR\n"
+        "Heizkosten\n77,80 EUR\nGesamtmiete\n485,52 EUR\nKaution\n3 Nettokaltmieten\n"
+    )
+
+    def _snapshot(self, tmp, name="x"):
+        path = Path(tmp) / f"{name}.json"
+        path.write_text(json.dumps({"text": self.CARD}), encoding="utf-8")
+        return path
+
+    def test_prices_are_taken_when_the_card_is_the_right_flat(self):
+        listing = {"address": "Alt Nowawes 84, 14482 Potsdam"}
+
+        with TemporaryDirectory() as tmp:
+            applied = propotsdam_receiver._prices_from_snapshot(self._snapshot(tmp), listing)
+
+        self.assertTrue(applied)
+        self.assertEqual(listing["price_eur"], 326.48)
+
+    def test_a_snapshot_of_another_flat_is_refused(self):
+        """Адреса цієї квартири є в переліку над карткою — але не в самій картці."""
+        listing = {"address": "Großbeerenstr. 43, 14482 Potsdam"}
+
+        with TemporaryDirectory() as tmp:
+            applied = propotsdam_receiver._prices_from_snapshot(self._snapshot(tmp), listing)
+
+        self.assertFalse(applied)
+        self.assertNotIn("price_eur", listing)
+
+    def test_a_district_name_alone_does_not_count_as_a_match(self):
+        """«Babelsberg» — це район, він стоїть у кожній тутешній картці."""
+        self.assertFalse(propotsdam_receiver._card_belongs_to(
+            self.CARD, {"title": "Babelsberg", "address": "Großbeerenstr. 43"}))

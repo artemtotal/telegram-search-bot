@@ -318,6 +318,53 @@ def _open_listing(page, listing):
     return False
 
 
+def _card_belongs_to(text, listing):
+    """Чи це картка саме цього оголошення.
+
+    Перевірка не зайва: коли повернення до переліку ще не працювало, друга
+    «картка» знімалась із того самого екрана — і два різні оголошення дістали
+    однакові ціни. Ознака — адреса (або назва) оголошення в тексті картки.
+    """
+    # Тільки та частина, що належить відкритій картці: над нею лишається
+    # перелік решти квартир з їхніми адресами, і перевірка по всьому тексту
+    # приймала будь-який знімок як «свій».
+    body = text or ""
+    marker = body.rfind("DetailKarte")
+    haystack = (body[marker:] if marker >= 0 else body).casefold()
+    # Тільки адреса: назва оголошення часто-густо є просто районом
+    # («Babelsberg»), а він трапляється в кожній тутешній картці й приймав
+    # чужий знімок як свій. Беремо вулицю з номером — у картці вона ще
+    # доповнена поверхом, тож звіряємо частину до першої коми.
+    street = str(listing.get("address") or "").split(",")[0].strip().casefold()
+    return len(street) > 5 and street in haystack
+
+
+def _prices_from_snapshot(path, listing):
+    """Дістає ціни з уже знятої картки.
+
+    Знімок робиться один раз на оголошення, а ціни з нього досі
+    застосовувались лише в ту саму мить. Тож коли знімок уже лежав на диску,
+    обхід чесно його пропускав — і квартира лишалась із самою Gesamtmiete зі
+    списку, хоча холодна оренда була записана поруч, у файлі.
+    """
+    try:
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("Could not reuse the ProPotsdam snapshot %s: %s", path.name, exc)
+        return False
+    text = str(snapshot.get("text") or "")
+    if not _card_belongs_to(text, listing):
+        logger.warning("ProPotsdam snapshot %s belongs to another flat; ignoring it", path.name)
+        return False
+    prices = propotsdam_parser.parse_card_prices(text)
+    applied = False
+    for key, value in prices.items():
+        if value is not None:
+            listing[key] = value
+            applied = True
+    return applied
+
+
 def _capture_details(page, listings):
     """Открывает карточки объявлений и забирает то, чего нет в списке.
 
@@ -354,7 +401,11 @@ def _capture_details(page, listings):
         if opened >= DETAIL_MAX_PER_SCAN:
             break
         path = _listing_detail_path(listing)
-        if path is None or path.exists():
+        if path is None:
+            skipped += 1
+            continue
+        if path.exists():
+            _prices_from_snapshot(path, listing)
             skipped += 1
             continue
 
@@ -385,6 +436,15 @@ def _capture_details(page, listings):
             # Головне, заради чого картку взагалі відкривають: у списку є лише
             # Gesamtmiete, а всередині — повна розбивка, включно з холодною
             # орендою, яку портал нібито «не публікує».
+            if not _card_belongs_to(snapshot["text"], listing):
+                # Відкрилась не та картка — краще не записати нічого, ніж
+                # приписати квартирі сусідську ціну.
+                logger.warning(
+                    "ProPotsdam opened a different flat than %s; prices not taken",
+                    listing.get("listing_key"),
+                )
+                path.unlink(missing_ok=True)
+                continue
             prices = propotsdam_parser.parse_card_prices(snapshot["text"])
             for key, value in prices.items():
                 if value is not None:
