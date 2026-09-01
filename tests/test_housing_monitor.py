@@ -342,6 +342,7 @@ class HousingAdminFlowTests(unittest.TestCase):
             housing_monitor._finish_sources(self._cb_update(), context)
             # SCHOBA не знає районів — крок вибору району тут пропускається.
             self.assertEqual(state['step'], 'criteria_picker')
+            state['criteria_selected'] = list(housing_monitor.CRITERIA_PICKER_KEYS)
             housing_monitor._finish_criteria_picker(self._cb_update(), context)
             self.assertEqual(state['step'], 'min_rooms')
 
@@ -791,6 +792,7 @@ class HousingAdminFlowTests(unittest.TestCase):
             self.assertEqual(state['step'], 'districts')
             housing_monitor._finish_multi_districts(self._cb_update(), context, all_districts=True)
             self.assertEqual(state['step'], 'criteria_picker')
+            state['criteria_selected'] = list(housing_monitor.CRITERIA_PICKER_KEYS)
             housing_monitor._finish_criteria_picker(self._cb_update(), context)
             self.assertEqual(state['step'], 'min_rooms')
 
@@ -1493,6 +1495,7 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
     def test_both_sources_selected_creates_two_filters_with_separate_rent_answers(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             'sources_selected': ['immowelt', 'propotsdam'],
             'districts_selected': ['Waldstadt I', 'Golm'],
         }})
@@ -1528,6 +1531,7 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
     def test_creating_two_sources_at_once_sends_the_first_filter_congrats_only_once(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             'sources_selected': ['immowelt', 'propotsdam'],
             'districts_selected': ['Waldstadt I', 'Golm'],
         }}, bot_data={}, bot=mock.Mock())
@@ -1550,6 +1554,7 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
     def test_only_propotsdam_selected_skips_immowelt_entirely(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             'sources_selected': ['propotsdam'],
             'districts_selected': ['Babelsberg Nord'],
         }})
@@ -1590,6 +1595,7 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
         """Обидва джерела рахують ту саму холодну оренду — не варто питати двічі поспіль."""
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             'sources_selected': ['immowelt', 'semmelhaack'],
             'districts_selected': ['Golm'],
         }})
@@ -1705,6 +1711,7 @@ class HousingSchobaWizardTests(unittest.TestCase):
         """Всі три джерела рахують ту саму холодну оренду — питання одне на всіх."""
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             'sources_selected': ['immowelt', 'semmelhaack', 'schoba'],
             'districts_selected': ['Golm'],
         }})
@@ -1812,6 +1819,7 @@ class HousingRegiomaklerWizardTests(unittest.TestCase):
     def test_regiomakler_joins_the_shared_kaltmiete_question(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             'sources_selected': ['schoba', 'regiomakler'],
             'districts_selected': [],
         }})
@@ -1908,6 +1916,7 @@ class HousingKleinanzeigenWizardTests(unittest.TestCase):
         share Immowelt/SEMMELHAACK/SCHOBA/regiomakler's Kaltmiete question."""
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             'sources_selected': ['immowelt', 'kleinanzeigen'],
             'districts_selected': ['Golm'],
         }})
@@ -2007,6 +2016,7 @@ class HousingKarlmarxWizardTests(unittest.TestCase):
         Immowelt/SEMMELHAACK/SCHOBA/regiomakler/locals's Kaltmiete question."""
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             'sources_selected': ['immowelt', 'karlmarx'],
             'districts_selected': ['Golm'],
         }})
@@ -2145,6 +2155,7 @@ class HousingRecentMatchesOfferTests(unittest.TestCase):
     def test_multi_source_creation_stashes_every_created_filter(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             'sources_selected': ['schoba', 'locals'],
             'districts_selected': [],
         }})
@@ -2216,6 +2227,7 @@ class HousingLocalsWizardTests(unittest.TestCase):
     def test_locals_joins_the_shared_kaltmiete_question(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             'sources_selected': ['schoba', 'locals'],
             'districts_selected': [],
         }})
@@ -2432,6 +2444,7 @@ class HousingWizardBackButtonTests(unittest.TestCase):
     def test_back_from_first_shared_multi_field_returns_to_the_criteria_picker(self):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             'sources_selected': ['immowelt'], 'districts_selected': ['Golm'],
         }})
         update = self._cb_update()
@@ -2466,6 +2479,7 @@ class HousingWizardBackButtonTests(unittest.TestCase):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_price_eur', 'user_id': 544675510,
             'sources_selected': ['immowelt'], 'districts_selected': ['Golm'],
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             '_price_steps': ['min_price_eur', 'max_price_eur'],
             'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': 80.0,
         }})
@@ -2482,6 +2496,7 @@ class HousingWizardBackButtonTests(unittest.TestCase):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'max_price_eur', 'user_id': 544675510,
             'sources_selected': ['immowelt'], 'districts_selected': ['Golm'],
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
             '_price_steps': ['min_price_eur', 'max_price_eur'],
             'min_rooms': None, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
             'min_price_eur': 800.0,
@@ -2732,16 +2747,31 @@ class HousingCriteriaPickerTests(unittest.TestCase):
         for opt in housing_monitor.CRITERIA_PICKER_KEYS:
             self.assertIn(f'housing:crit_toggle:{opt}', callbacks)
 
-    def test_all_boxes_checked_by_default(self):
+    def test_default_selection_is_min_rooms_min_area_and_max_price_only(self):
+        """Найчастіше людей цікавить «від скількох кімнат», «від якої площі»
+        й «до якої ціни» — решта межі рідше важливі, тож стартують знятими."""
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'criteria_picker', 'user_id': 544675510,
             'sources_selected': ['semmelhaack'],
         }})
-        text = housing_monitor._criteria_picker_text(context.user_data['housing_admin'], 'uk')
-        self.assertNotIn('☐', text)
-        self.assertEqual(text.count('✅'), len(housing_monitor.CRITERIA_PICKER_KEYS))
+        state = context.user_data['housing_admin']
+        self.assertEqual(
+            housing_monitor._selected_criteria(state),
+            {'min_rooms', 'min_area_m2', 'max_price'},
+        )
+        text = housing_monitor._criteria_picker_text(state, 'uk')
+        self.assertEqual(text.count('✅'), 3)
+        self.assertEqual(text.count('☐'), 3)
+        self.assertIn('✅ Кімнати: мінімум (від)', text)
+        self.assertIn('☐ Кімнати: максимум (до)', text)
+        self.assertIn('✅ Площа: мінімум (від)', text)
+        self.assertIn('☐ Площа: максимум (до)', text)
+        self.assertIn('☐ Ціна: мінімум (від)', text)
+        self.assertIn('✅ Ціна: максимум (до)', text)
 
     def test_toggling_a_box_off_and_on_updates_the_screen(self):
+        # max_rooms не входить до типового набору — перший тап позначає
+        # його, другий знімає позначку назад.
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'criteria_picker', 'user_id': 544675510,
             'sources_selected': ['semmelhaack'],
@@ -2749,10 +2779,10 @@ class HousingCriteriaPickerTests(unittest.TestCase):
         update = self._cb_update('housing:crit_toggle:max_rooms')
 
         housing_monitor.handle_callback(update, context)
-        self.assertNotIn('max_rooms', context.user_data['housing_admin']['criteria_selected'])
+        self.assertIn('max_rooms', context.user_data['housing_admin']['criteria_selected'])
 
         housing_monitor.handle_callback(self._cb_update('housing:crit_toggle:max_rooms'), context)
-        self.assertIn('max_rooms', context.user_data['housing_admin']['criteria_selected'])
+        self.assertNotIn('max_rooms', context.user_data['housing_admin']['criteria_selected'])
 
     def test_unchecking_max_rooms_skips_straight_past_it_in_the_wizard(self):
         context = SimpleNamespace(user_data={'housing_admin': {
@@ -2837,6 +2867,7 @@ class HousingCriteriaPickerTests(unittest.TestCase):
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_price_eur', 'user_id': 544675510,
             'sources_selected': ['immowelt', 'kleinanzeigen'], 'districts_selected': ['Golm'],
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
         }})
         with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
             self.assertTrue(housing_monitor.handle_private_text(self._update('800'), context))

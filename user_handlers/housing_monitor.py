@@ -331,6 +331,10 @@ CRITERIA_PICKER_OPTIONS = [
     {"key": "max_price", "label_key": "housing.field.label.price_max"},
 ]
 CRITERIA_PICKER_KEYS = [opt["key"] for opt in CRITERIA_PICKER_OPTIONS]
+# Типовий вибір на екрані: людей найчастіше цікавить "від скількох кімнат",
+# "від якої площі" і "до якої ціни" — решта межі рідше важливі й лише
+# звужують пошук, тож стартують знятими, а не позначеними.
+CRITERIA_PICKER_DEFAULT_SELECTED = {"min_rooms", "min_area_m2", "max_price"}
 # Ціну майстер питає під різними ключами стану залежно від джерела
 # (Kaltmiete/Gesamtmiete/Warmmiete/Kleinanzeigen) — чекбокс "Ціна" в пікері
 # один на всіх, тож звіряємо кожен реальний крок ціни з цими двома групами.
@@ -347,12 +351,13 @@ def _price_step_picker_key(step_key: str) -> Optional[str]:
 
 
 def _selected_criteria(state: dict) -> set:
-    """`criteria_selected` absent (picker never visited yet) means "everything
-    on" — but once present, an EMPTY list is a deliberate "user unchecked
-    every box", not the same thing. `[] or CRITERIA_PICKER_KEYS` would wrongly
-    collapse those two cases (empty list is falsy), so check for None instead."""
+    """`criteria_selected` absent (picker never visited yet) means the default
+    preset (CRITERIA_PICKER_DEFAULT_SELECTED) — but once present, an EMPTY
+    list is a deliberate "user unchecked every box", not the same thing.
+    `[] or ...` would wrongly collapse those two cases (empty list is
+    falsy), so check for None instead."""
     raw = state.get("criteria_selected")
-    return set(raw) if raw is not None else set(CRITERIA_PICKER_KEYS)
+    return set(raw) if raw is not None else set(CRITERIA_PICKER_DEFAULT_SELECTED)
 
 
 def _visible_multi_keys(state: dict) -> list:
