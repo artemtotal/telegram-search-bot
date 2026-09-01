@@ -232,7 +232,7 @@ def _open_listing(page, listing):
     return False
 
 
-def _capture_details(page, listings):
+def _capture_details(context, listings):
     """Открывает карточки объявлений и забирает то, чего нет в списке.
 
     В списке портал показывает только Gesamtmiete и пару обложек, хотя сам
@@ -248,8 +248,21 @@ def _capture_details(page, listings):
     """
     if not DETAIL_ENABLED or not listings:
         return {"opened": 0, "resource_ids": [], "skipped": 0}
+    # Своя вкладка: перший же знімок посеред обходу збив список і залишив
+    # квартиру без фотографій. Тут ламатись нема чому — вкладку закриваємо,
+    # а сторінка зі списком навіть не знає, що поруч щось відкривали.
+    page = context.new_page()
 
     DETAIL_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        _navigate_to_list(page)
+    except Exception as exc:
+        logger.warning("Could not open the ProPotsdam list in the detail tab: %s", exc)
+        try:
+            page.close()
+        except Exception:
+            pass
+        return {"opened": 0, "skipped": 0, "resource_ids": []}
     opened = 0
     skipped = 0
     resource_ids = []
@@ -306,13 +319,17 @@ def _capture_details(page, listings):
                 back_on_list = "Zimmer" in (page.evaluate("() => document.body.innerText") or "")
             except Exception:
                 back_on_list = False
-            if not back_on_list:
+            if not back_on_list and opened < DETAIL_MAX_PER_SCAN:
                 try:
                     _navigate_to_list(page)
                 except Exception as exc:
                     logger.warning("Could not return to the ProPotsdam list: %s", exc)
                     break
 
+    try:
+        page.close()
+    except Exception:
+        pass
     logger.info("ProPotsdam details opened=%s skipped=%s extra photos=%s", opened, skipped, len(resource_ids))
     return {"opened": opened, "skipped": skipped, "resource_ids": resource_ids}
 
@@ -423,8 +440,15 @@ def scan():
             if not listings:
                 listings = _extract_cards_from_dom(page)
             # Пока браузер жив: только у него есть сессия портала.
-            details = _capture_details(page, listings)
-            photos = _cache_photos(page, listings, details["resource_ids"])
+            # Фото — раньше снимков карточек: снимок необязателен, а фото нет,
+            # и первая же попытка открыть карточку показала, почему это важно —
+            # неудачный клик увёл страницу со списка, и фото не скачались вовсе.
+            photos = _cache_photos(page, listings)
+            details = _capture_details(context, listings)
+            if details["resource_ids"]:
+                extra = _cache_photos(page, [], details["resource_ids"])
+                for key in photos:
+                    photos[key] += extra[key]
             result = {
                 "ok": True,
                 "url": page.url,

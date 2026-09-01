@@ -236,6 +236,22 @@ class FakeDetailResponse:
         return ''.join('<image resourceId="{}"/>'.format(rid) for rid in self._resource_ids)
 
 
+class FakeDetailContext:
+    """Браузер, у которого снимок карточки просит собственную вкладку.
+
+    Своя вкладка тут не деталь реализации: первый же снимок посреди обхода
+    сбил страницу со списком, и квартира осталась без фотографий.
+    """
+
+    def __init__(self, page):
+        self._page = page
+        self.pages_opened = 0
+
+    def new_page(self):
+        self.pages_opened += 1
+        return self._page
+
+
 class FakeDetailPage:
     """Портал, который послушно открывает карточку и отдаёт её галерею."""
 
@@ -246,6 +262,7 @@ class FakeDetailPage:
         self._openable = openable
         self._handlers = []
         self.opened = 0
+        self.closed = False
 
     def on(self, event, handler):
         self._handlers.append(handler)
@@ -281,6 +298,20 @@ class FakeDetailPage:
     def go_back(self, timeout=None):
         pass
 
+    def goto(self, url, **kwargs):
+        pass
+
+    def wait_for_load_state(self, *args, **kwargs):
+        pass
+
+    def get_by_text(self, needle, exact=False):
+        if not self._openable:
+            raise RuntimeError("такого тексту на сторінці немає")
+        return self
+
+    def close(self):
+        self.closed = True
+
 
 LISTING = {
     'listing_key': '8151604D-B656-690E-6DDC-347467A96C0E',
@@ -301,8 +332,9 @@ class CaptureDetailsTests(unittest.TestCase):
         page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555',
                                'DDDD9999-EEEE-8888-FFFF-777766665555'])
         with TemporaryDirectory() as tmp, \
-             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)):
-            result = propotsdam_receiver._capture_details(page, [LISTING])
+             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
+             mock.patch.object(propotsdam_receiver, '_navigate_to_list', lambda page: None):
+            result = propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
 
             self.assertEqual(result['opened'], 1)
             self.assertEqual(len(result['resource_ids']), 2)
@@ -313,9 +345,10 @@ class CaptureDetailsTests(unittest.TestCase):
         второй раз не за чем."""
         page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555'])
         with TemporaryDirectory() as tmp, \
-             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)):
-            propotsdam_receiver._capture_details(page, [LISTING])
-            again = propotsdam_receiver._capture_details(page, [LISTING])
+             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
+             mock.patch.object(propotsdam_receiver, '_navigate_to_list', lambda page: None):
+            propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
+            again = propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
 
             self.assertEqual(page.opened, 1)
             self.assertEqual(again['opened'], 0)
@@ -326,7 +359,7 @@ class CaptureDetailsTests(unittest.TestCase):
         with TemporaryDirectory() as tmp, \
              mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
              mock.patch.object(propotsdam_receiver, '_navigate_to_list', lambda page: None):
-            result = propotsdam_receiver._capture_details(page, [LISTING])
+            result = propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
 
             self.assertEqual(result['opened'], 0)
             self.assertEqual(result['resource_ids'], [])
@@ -334,7 +367,7 @@ class CaptureDetailsTests(unittest.TestCase):
     def test_the_step_can_be_switched_off(self):
         page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555'])
         with mock.patch.object(propotsdam_receiver, 'DETAIL_ENABLED', False):
-            result = propotsdam_receiver._capture_details(page, [LISTING])
+            result = propotsdam_receiver._capture_details(FakeDetailContext(page), [LISTING])
 
         self.assertEqual(page.opened, 0)
         self.assertEqual(result['opened'], 0)
@@ -355,3 +388,45 @@ class CaptureDetailsTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipIf(
+    propotsdam_receiver is None,
+    f"колектор ProPotsdam доступний лише на хості: {_IMPORT_ERROR}",
+)
+class DetailTabIsolationTests(unittest.TestCase):
+    """Знімок картки не має заважати основній роботі обходу.
+
+    Перша ж спроба зняти картку на живому порталі клацнула повз, збила
+    сторінку зі списку — і квартира приїхала до людини без жодного фото.
+    Тому знімок робиться у власній вкладці й лише після того, як фото вже
+    завантажені.
+    """
+
+    def test_the_snapshot_runs_in_its_own_tab(self):
+        page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555'])
+        context = FakeDetailContext(page)
+
+        with TemporaryDirectory() as tmp, \
+             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
+             mock.patch.object(propotsdam_receiver, '_navigate_to_list', lambda page: None):
+            propotsdam_receiver._capture_details(context, [LISTING])
+
+        self.assertEqual(context.pages_opened, 1)
+        self.assertTrue(page.closed, "вкладку зі знімком треба закривати за собою")
+
+    def test_a_tab_that_cannot_reach_the_list_gives_up_quietly(self):
+        page = FakeDetailPage()
+        context = FakeDetailContext(page)
+
+        def refuse(_page):
+            raise RuntimeError("портал не відкрив список")
+
+        with TemporaryDirectory() as tmp, \
+             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
+             mock.patch.object(propotsdam_receiver, '_navigate_to_list', refuse):
+            result = propotsdam_receiver._capture_details(context, [LISTING])
+
+        self.assertEqual(result, {"opened": 0, "skipped": 0, "resource_ids": []})
+        self.assertTrue(page.closed)
+        self.assertEqual(page.opened, 0)
