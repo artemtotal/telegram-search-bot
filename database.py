@@ -497,6 +497,10 @@ class KleinanzeigenListing(Base):
     rooms = Column(FLOAT)
     area_m2 = Column(FLOAT)
     price_eur = Column(FLOAT)
+    # Уся галерея оголошення, по одному URL на рядок. Забирається тим
+    # самим запитом, що й повна ціна, тож зайвих походів на площадку
+    # це не додає.
+    gallery_urls = Column(TEXT)
     # Повна оренда з комуналкою — з сторінки самого оголошення:
     # каталог друкує лише холодну.
     price_warm_eur = Column(FLOAT)
@@ -795,6 +799,7 @@ _ensure_column('karlmarx_listing', 'price_warm_eur', 'FLOAT')
 _ensure_column('schoba_listing', 'price_warm_eur', 'FLOAT')
 _ensure_column('locals_listing', 'price_warm_eur', 'FLOAT')
 _ensure_column('kleinanzeigen_listing', 'price_warm_eur', 'FLOAT')
+_ensure_column('kleinanzeigen_listing', 'gallery_urls', 'TEXT')
 
 
 def _move_karlmarx_bounds_to_the_warm_column() -> None:

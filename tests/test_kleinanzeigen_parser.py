@@ -176,3 +176,30 @@ class KleinanzeigenDetailPriceTests(unittest.TestCase):
 
         self.assertIsNone(prices["price_eur"])
         self.assertIsNone(prices["price_warm_eur"])
+
+
+class KleinanzeigenGalleryTests(unittest.TestCase):
+    """Уся галерея — зі сторінки оголошення, тим самим запитом, що й ціна."""
+
+    DETAIL_HTML = """
+    <div id="viewad-image"><img data-imgsrc="https://img.kleinanzeigen.de/api/v1/prod-ads/images/09/a.jpg?rule=$_59.AUTO"></div>
+    <div id="viewad-image"><img data-imgsrc="https://img.kleinanzeigen.de/api/v1/prod-ads/images/b0/b.jpg?rule=$_59.AUTO"></div>
+    <div class="galleryimage-element"><img data-imgsrc="https://img.kleinanzeigen.de/api/v1/prod-ads/images/09/a.jpg?rule=$_59.AUTO"></div>
+    """
+
+    def test_every_photo_of_the_listing_is_collected(self):
+        urls = kleinanzeigen_parser.parse_gallery_urls(self.DETAIL_HTML)
+
+        self.assertEqual(urls, [
+            "https://img.kleinanzeigen.de/api/v1/prod-ads/images/09/a.jpg?rule=$_59.AUTO",
+            "https://img.kleinanzeigen.de/api/v1/prod-ads/images/b0/b.jpg?rule=$_59.AUTO",
+        ])
+
+    def test_thumbnails_repeating_the_same_photo_are_not_duplicated(self):
+        """Мініатюри знизу дублюють ті самі кадри — в альбом вони не потрібні."""
+        urls = kleinanzeigen_parser.parse_gallery_urls(self.DETAIL_HTML)
+
+        self.assertEqual(len(urls), len(set(urls)))
+
+    def test_a_page_without_photos_returns_nothing(self):
+        self.assertEqual(kleinanzeigen_parser.parse_gallery_urls("<html>Kein Bild</html>"), [])

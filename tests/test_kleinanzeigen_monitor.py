@@ -11,6 +11,7 @@ class FakeBot:
     def __init__(self):
         self.sent = []
         self.photos = []
+        self.albums = []
         self.calls = []
 
     def send_message(self, chat_id, text, **kwargs):
@@ -20,6 +21,11 @@ class FakeBot:
     def send_photo(self, **kwargs):
         self.calls.append('photo')
         self.photos.append(kwargs)
+
+    def send_media_group(self, **kwargs):
+        # Оголошення з кількома фото йде альбомом, а не однією обкладинкою.
+        self.calls.append('album')
+        self.albums.append(kwargs)
 
 
 class FakeResponse:
@@ -380,3 +386,54 @@ class KleinanzeigenDeliveryTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class KleinanzeigenGalleryDeliveryTests(unittest.TestCase):
+    """Оголошення приходить з усіма фото, а не з однією обкладинкою.
+
+    Довгий час слалась саме одна: галерея лежить на сторінці оголошення, а
+    зайвий запит до цієї площадки бот навмисне не робив. Тепер ту сторінку
+    однаково відкривають раз — заради повної ціни, — і фото беруться звідти ж.
+    """
+
+    def _listing(self, **kwargs):
+        base = {
+            "listing_key": "1", "title": "Wohnung", "address": "14467 Potsdam",
+            "city": "Potsdam", "rooms": 2.0, "area_m2": 60.0, "price_eur": 900.0,
+            "detail_url": "https://www.kleinanzeigen.de/s-anzeige/x/1",
+            "cover_image_url": "https://img.kleinanzeigen.de/cover.jpg",
+        }
+        base.update(kwargs)
+        return base
+
+    def test_the_whole_gallery_goes_out_as_one_album(self):
+        bot = FakeBot()
+        listing = self._listing(gallery_urls=[
+            "https://img.kleinanzeigen.de/a.jpg",
+            "https://img.kleinanzeigen.de/b.jpg",
+            "https://img.kleinanzeigen.de/c.jpg",
+        ])
+
+        with mock.patch("requests.get") as get:
+            kleinanzeigen_monitor._send_listing(bot, 1, listing, "текст")
+
+        get.assert_not_called()
+        self.assertEqual(bot.calls, ["album"])
+        self.assertEqual(len(bot.albums[0]["media"]), 3)
+
+    def test_an_older_listing_without_a_gallery_still_sends_its_cover(self):
+        bot = FakeBot()
+
+        kleinanzeigen_monitor._send_listing(bot, 1, self._listing(), "текст")
+
+        self.assertEqual(bot.calls, ["photo"])
+        self.assertEqual(bot.photos[0]["photo"], "https://img.kleinanzeigen.de/cover.jpg")
+
+    def test_a_listing_with_neither_gallery_nor_cover_reports_no_caption(self):
+        bot = FakeBot()
+
+        sent = kleinanzeigen_monitor._send_listing(
+            bot, 1, self._listing(cover_image_url=""), "текст")
+
+        self.assertFalse(sent)
+        self.assertEqual(bot.calls, [])

@@ -166,6 +166,26 @@ def parse_detail_prices(html: str) -> dict[str, float | None]:
     return {"price_eur": cold, "price_warm_eur": warm, "nebenkosten_eur": extra}
 
 
+_GALLERY_IMAGE_RE = re.compile(r'data-imgsrc="([^"]+)"')
+
+
+def parse_gallery_urls(html: str) -> list[str]:
+    """Усі фото оголошення — зі сторінки самого оголошення.
+
+    Сторінка пошуку віддає одну обкладинку на оголошення, і довгий час нею
+    все й обмежувалось: другий запит заради галереї суперечив би обережності,
+    з якою бот ходить на цю площадку. Тепер сторінку оголошення однаково
+    відкривають — по одному разу, заради повної ціни, — тож фотографії
+    дістаються тим самим запитом, без жодного зайвого.
+    """
+    seen: list[str] = []
+    for url in _GALLERY_IMAGE_RE.findall(html or ""):
+        candidate = html_lib.unescape(url).strip()
+        if candidate and candidate not in seen:
+            seen.append(candidate)
+    return seen
+
+
 def _line(label: str, value: Any) -> str | None:
     if value is None or value == "":
         return None

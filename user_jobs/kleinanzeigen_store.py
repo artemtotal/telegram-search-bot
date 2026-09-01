@@ -54,6 +54,7 @@ def listing_to_dict(row: KleinanzeigenListing) -> Dict:
         "area_m2": row.area_m2,
         "price_eur": row.price_eur,
         "price_warm_eur": row.price_warm_eur,
+        "gallery_urls": [url for url in str(row.gallery_urls or "").splitlines() if url.strip()],
         "detail_url": row.detail_url,
         "cover_image_url": row.cover_image_url,
     }
@@ -246,6 +247,11 @@ def upsert_listings(listings: Iterable[Dict]) -> int:
             row.price_eur = listing.get("price_eur")
             if listing.get("price_warm_eur") is not None:
                 row.price_warm_eur = listing.get("price_warm_eur")
+            gallery = [str(url).strip() for url in (listing.get("gallery_urls") or []) if str(url).strip()]
+            # Галерея приходить лише зі сторінки оголошення, тож черговий
+            # обхід списку не має її стирати.
+            if gallery:
+                row.gallery_urls = "\n".join(gallery)
             row.detail_url = listing.get("detail_url")
             row.cover_image_url = listing.get("cover_image_url")
             row.last_seen_at = now

@@ -30,6 +30,7 @@ from datetime import timedelta
 from typing import Dict, List
 
 import requests
+from telegram import InputMediaPhoto
 
 from user_jobs import kleinanzeigen_matching, kleinanzeigen_parser, kleinanzeigen_store
 
@@ -43,6 +44,8 @@ ERROR_ALERT_COOLDOWN = timedelta(hours=2)
 _USER_AGENT = "Mozilla/5.0 (compatible; PotsdamHousingBot/1.0)"
 # Подпись к фото Telegram обрезает жёстче обычного текста (1024 против 4096
 # символов) — раньше этого лимита текст уходит подписью, дальше отдельным сообщением.
+# Telegram кладе в один альбом не більше 10 фото, скільки б їх не було.
+GALLERY_ALBUM_MAX = 10
 CAPTION_LIMIT = 1024
 # Пошук по Потсдаму ніколи не буває порожнім — сторінка стабільно віддає 25-26
 # карток. Одиничний нуль (реально спостережений 2026-08-25 12:45 серед сусідніх
@@ -88,26 +91,35 @@ def _fetch_listings() -> List[Dict]:
 
 
 def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
-    """Шлёт квартиру одним постом: обложка объявления с текстом подписью снизу.
+    """Шле квартиру одним постом: галерея фото з текстом підписом знизу.
 
-    В отличие от остальных источников — без похода на страницу объявления за
-    полной галереей: Kleinanzeigen явно запрещает автоматический сбор в своих
-    Условиях использования, и check_job уже держит интервал проверки заметно
-    реже остальных источников именно из-за этого. Второй запрос на каждое
-    новое объявление противоречил бы этой осторожности — используется только
-    обложка, которая и так пришла бесплатно вместе со страницей поиска.
+    Фотографії беруться з бази — їх забрали тим самим запитом, яким читали
+    повну ціну, тож окремого походу на сторінку оголошення тут немає:
+    Kleinanzeigen забороняє автоматичний збір в Умовах використання, і бот
+    навмисне тримає для неї рідший інтервал і один запит на оголошення.
+    Коли галереї немає (старі записи), лишається обкладинка зі сторінки
+    пошуку — як і раніше.
 
-    Возвращает True, если текст ушёл подписью — тогда отдельное текстовое
-    сообщение отправлять не нужно. False означает, что обложки нет или
-    подпись не влезла в лимит: вызывающий обязан отправить тот же текст
-    отдельным сообщением, иначе объявление осталось бы вовсе без текста.
+    Повертає True, якщо текст пішов підписом; False означає, що фото немає
+    або підпис не вліз у ліміт, і викликач має надіслати текст окремо.
     """
-    cover = str(listing.get("cover_image_url") or "").strip()
-    if not cover:
+    photos = [url for url in (listing.get("gallery_urls") or []) if str(url).strip()]
+    if not photos:
+        cover = str(listing.get("cover_image_url") or "").strip()
+        photos = [cover] if cover else []
+    if not photos:
         return False
     caption = text if len(text) <= CAPTION_LIMIT else None
     try:
-        bot.send_photo(chat_id=chat_id, photo=cover, caption=caption, parse_mode="HTML" if caption else None)
+        if len(photos) == 1:
+            bot.send_photo(
+                chat_id=chat_id, photo=photos[0],
+                caption=caption, parse_mode="HTML" if caption else None,
+            )
+            return caption is not None
+        media = [InputMediaPhoto(media=photos[0], caption=caption, parse_mode="HTML" if caption else None)]
+        media.extend(InputMediaPhoto(media=url) for url in photos[1:])
+        bot.send_media_group(chat_id=chat_id, media=media)
         return caption is not None
     except Exception:
         logger.exception("Could not send Kleinanzeigen post to %s", chat_id)
@@ -214,6 +226,11 @@ def _add_full_rent(listings: List[Dict]) -> int:
             response.raise_for_status()
             response.encoding = response.apparent_encoding or "utf-8"
             prices = kleinanzeigen_parser.parse_detail_prices(response.text)
+            # Фотографії — тим самим запитом: окремого походу на сторінку
+            # оголошення заради них не робимо.
+            gallery = kleinanzeigen_parser.parse_gallery_urls(response.text)[:GALLERY_ALBUM_MAX]
+            if gallery:
+                listing["gallery_urls"] = gallery
         except Exception as exc:
             logger.warning("Could not read Kleinanzeigen prices for %s: %s", detail_url, exc)
             continue
