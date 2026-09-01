@@ -4,7 +4,6 @@
   "housing.time.minutes_ago": "{n} хв тому",
   "housing.time.hours_ago": "{n} год тому",
   "housing.time.yesterday_at": "учора о {time}",
-
   "housing.status.immowelt_no_filters": "⚪ Immowelt: активних фільтрів немає.",
   "housing.status.never_checked": "🔴 {name}: перевірка ще не запускалась.",
   "housing.status.immowelt_checking": "{light} Immowelt: перевірка {relative}, збережено: {count}.",
@@ -17,7 +16,6 @@
   "housing.status.coop.available": "можливо є вільне житло!",
   "housing.status.coop.empty": "вільного житла немає",
   "housing.status.coop.first_check": "перевіряється вперше",
-
   "housing.menu.title": "🏠 <b>Моніторинг житла</b>",
   "housing.menu.intro": "Один фільтр працює одразу на <b>8 порталах</b>: Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® та Karl Marx. Нова квартира під ваші умови — і ви одразу отримаєте повідомлення.",
   "housing.menu.coops_intro": "Плюс 3 житлових кооперативи (Gewoba, WBG 1903, WBG «Daheim») — там поки немає розбору за кімнатами/ціною, просто сповіщення, щойно на їхній сторінці зникає «вільного житла немає». Підписатись — кнопка «{btn}» нижче.",
@@ -26,12 +24,10 @@
   "housing.menu.no_filters": "Для вашого Telegram ID поки немає активних фільтрів.",
   "housing.menu.your_filters": "Ваші фільтри:",
   "housing.filter.default_title": "Пошук житла",
-
   "housing.btn.request_access": "📩 Запросити доступ",
   "housing.btn.faq": "❓ Довідка / Часті питання",
   "housing.btn.back_home": "⬅ Головне меню",
   "housing.locked.text": "🏠 <b>Моніторинг житла в Потсдамі</b>\n\nОдин фільтр — і бот одразу стежить за <b>8 порталами водночас</b>: Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® та Karl Marx. Щойно десь з'являється квартира під ваші умови — миттєве повідомлення в Telegram, замість того щоб перевіряти кожен сайт вручну по кілька разів на день.\n\n💶 Доступ — <b>10 €/місяць</b>, відкриває адміністратор особисто.\n\nНатисніть кнопку нижче — і ми зв'яжемось.",
-
   "housing.btn.monitoring_status": "📡 Статус моніторингу",
   "housing.btn.admin": "⚙️ Адмінка житла",
   "housing.btn.current_matches": "🔍 Квартири, що підходять",
@@ -40,12 +36,10 @@
   "housing.btn.self_add": "➕ Додати фільтр",
   "housing.btn.self_manage": "⚙️ Мої фільтри",
   "housing.btn.back_to_monitor": "⬅ До моніторингу",
-
   "housing.coops.title": "🏘 <b>Кооперативи (Gewoba/WBG)</b>\n",
   "housing.coops.explain": "Ці три сайти не показують окремі оголошення — лише напис «вільного житла немає» на сторінці. Тому тут немає умов за кімнатами чи ціною: просто вмикаєте потрібний кооператив, і щойно напис зникне — ми напишемо вам сюди, а деталі доведеться подивитись на сайті самим.\n",
   "housing.coops.on": "✅ стежимо",
   "housing.coops.off": "⬜ вимкнено",
-
   "housing.field.q.kaltmiete_min": "Мінімальна холодна оренда (Kaltmiete), €",
   "housing.field.q.kaltmiete_max": "Максимальна холодна оренда (Kaltmiete), €",
   "housing.field.q.rooms_min": "Мінімальна кількість кімнат",
@@ -60,7 +54,6 @@
   "housing.field.q.price_max": "Максимальна ціна, €",
   "housing.field.q.warmmiete_min": "Мінімальна тепла оренда (Warmmiete), €",
   "housing.field.q.warmmiete_max": "Максимальна тепла оренда (Warmmiete), €",
-
   "housing.field.label.price_min": "Ціна: мінімум (від)",
   "housing.field.label.price_max": "Ціна: максимум (до)",
   "housing.field.label.rooms_min": "Кімнати: мінімум (від)",
@@ -69,16 +62,13 @@
   "housing.field.label.area_max": "Площа: максимум (до)",
   "housing.field.label.rent_min": "Оренда: мінімум (від)",
   "housing.field.label.rent_max": "Оренда: максимум (до)",
-
   "housing.field.numeric_prompt": "🔢 <b>{question}</b>\n\nНапишіть <b>одну цифру</b> внизу в чаті й натисніть «Надіслати» (наприклад, <code>{example}</code>).\n\nНе хочете обмежувати цей показник — просто надішліть «-».",
-
   "housing.describe.from": "від {value}",
   "housing.describe.to": "до {value}",
   "housing.describe.all_districts": "усі райони",
   "housing.unit.eur": " €",
   "housing.unit.rooms": " кімн.",
   "housing.unit.m2": " м²",
-
   "housing.finalize.updated": "Фільтр {source} оновлено",
   "housing.finalize.added": "Фільтр {source} додано",
   "housing.finalize.summary": "✅ {heading}.\nID: {id}\nУмови: {criteria}",
@@ -89,12 +79,9 @@
   "housing.finalize.multi_title": "✅ <b>Фільтр додано</b>",
   "housing.finalize.multi_line": "{icon} {label} (ID {id}): {criteria}",
   "housing.finalize.multi_error": "{icon} {label}: ⚠️ не вдалося зберегти ({error})",
-
   "housing.validation.invalid_number": "Незрозуміле значення.\n\n{prompt}",
   "housing.validation.min_over_max": "Мінімум не може бути більшим за максимум. Надішліть значення ще раз.\n\n{prompt}",
-
   "housing.cancel.msg": "Скасовано.",
-
   "housing.toast.not_your_filter": "Цей фільтр вам не належить.",
   "housing.toast.unknown_coop": "Невідомий кооператив.",
   "housing.toast.coop_off": "Вимкнено: {label}",
@@ -107,7 +94,6 @@
   "housing.toast.filter_deleted": "Фільтр видалено.",
   "housing.toast.filter_saved": "Фільтр збережено.",
   "housing.toast.pick_a_source": "Оберіть хоча б один портал.",
-
   "housing.notify.quiet_on": "✅ увімкнена",
   "housing.notify.quiet_off": "вимкнена",
   "housing.notify.mode_daily": "раз на день",
@@ -123,9 +109,7 @@
   "housing.notify.news_off": "вимкнено",
   "housing.notify.btn.news_on": "📰 Новини бота: увімкнено ✅",
   "housing.notify.btn.news_off": "📰 Новини бота: вимкнено",
-
   "housing.btn.home_monitor": "🏠 Моніторинг житла",
-
   "housing.access.already_open": "Доступ уже відкрито.",
   "housing.access.admin_not_configured": "Адміністратора не налаштовано.",
   "housing.access.already_requested": "Запит вже надіслано, зачекайте на відповідь.",
@@ -143,33 +127,26 @@
   "housing.access.continue_toast": "Дякуємо!",
   "housing.access.continue_text": "Дякуємо! Ми повідомили адміністратора — він зв'яжеться з вами щодо продовження.",
   "housing.access.stop_text": "Гаразд. Через 3 дні підписку та доступ до моніторингу житла буде автоматично закрито.",
-
   "housing.btn.trial_start": "🎁 7 днів безкоштовно",
   "housing.trial.already_used": "Безкоштовний тріал уже використано для цього акаунта.",
   "housing.trial.granted_toast": "Тріал активовано!",
   "housing.trial.granted_text": "🎁 Безкоштовний доступ до моніторингу житла на {days} днів відкрито!",
   "housing.trial.warning": "⏳ Залишився {days} день безкоштовного тріалу моніторингу житла. Якщо він вам сподобався — натисніть, щоб запросити повний місячний доступ.",
   "housing.trial.stopped": "⏸ Безкоштовний тріал закінчився, моніторинг зупинено. Ваші фільтри ще кілька днів залишаться збереженими — якщо забажаєте продовжити, запросіть повний доступ, і все запрацює знову без потреби створювати фільтри заново.",
-
   "housing.btn.field_back": "⬅️ Назад — виправити відповідь",
   "housing.btn.skip_field": "➖ Пропустити — без обмеження",
-
   "housing.btn.done": "✅ Готово",
   "housing.btn.all_districts": "🌍 Усі райони",
   "housing.btn.next": "➡ Далі",
   "housing.btn.save_filter": "✅ Зберегти фільтр",
   "housing.btn.back_fix_criteria": "⬅️ Назад — виправити умови",
-
   "housing.district.text": "{title}\n\nОберіть райони галочками.\nПоточний вибір: <b>{selection}</b>",
   "housing.district.title_immowelt": "🏙 <b>Райони Immowelt</b>",
   "housing.district.title_propot": "🏢 <b>Райони ProPotsdam</b>",
   "housing.district.title_multi": "🏙 <b>Райони</b>",
-
   "housing.criteria_picker.text": "🧾 <b>Що для вас важливо?</b>\n\nЗніміть позначку з тих меж, які вам не важливі — майстер не питатиме про них і не обмежуватиме пошук за ними.\n\n{body}",
-
   "housing.sources.none_selected": "не обрано",
   "housing.sources.text": "🔎 <b>Новий фільтр</b>\n\nОберіть, де шукати — можна кілька порталів одразу. Список порталів згодом поповнюватиметься.\nПоточний вибір: <b>{selection}</b>",
-
   "housing.preview.title": "🔍 <b>Перевірка фільтра</b>",
   "housing.preview.criteria_line": "Умови: {criteria}",
   "housing.preview.no_connection": "Не вдалося звʼязатися з перевіркою, але фільтр можна зберегти.",
@@ -177,19 +154,15 @@
   "housing.preview.no_matches": "Зараз під ці умови не підходить жодна з {catalog_size} квартир у каталозі. Фільтр працюватиме, але новин може довго не бути — спробуйте послабити умови.",
   "housing.preview.matches_found": "Зараз підходить {match_count} з {catalog_size} квартир у каталозі, наприклад:",
   "housing.preview.new_listings_note": "Нові оголошення надходитимуть у міру появи.",
-
   "housing.wizard.pick_districts_hint": "Оберіть райони кнопками нижче і натисніть «Готово».",
   "housing.wizard.pick_criteria_hint": "Оберіть потрібні межі кнопками нижче і натисніть «Готово».",
   "housing.wizard.pick_sources_hint": "Оберіть портали кнопками нижче і натисніть «Далі».",
   "housing.wizard.preview_hint": "Натисніть «Зберегти фільтр», «Назад» або «Скасувати».",
-
   "housing.recent.last_hour": "останню годину",
   "housing.recent.last_day": "останню добу",
   "housing.recent.show_btn": "🕐 Показати за {label}",
   "housing.recent.skip_btn": "Не треба",
-
   "housing.first_filter_congrats": "🎉 Ви впорались, молодець!\n\nТепер усю рутину ми візьмемо на себе. Вам залишилось тільки чекати, а ми будемо шукати квартири за вашими параметрами і, щойно знайдемо — одразу пришлемо сюди. Терпіння! 🍀",
-
   "housing.matches.open_link": "Відкрити",
   "housing.matches.no_filters": "У вас поки немає жодного фільтра. Спочатку додайте його кнопкою «{btn}».",
   "housing.matches.none_for_filter": "Поки нічого не підходить під ці умови.",
@@ -197,11 +170,9 @@
   "housing.matches.total_header": "🔍 <b>Квартири, що підходять зараз: {total}</b>",
   "housing.matches.footer_note": "Якщо з'явиться нова квартира під ваші умови — ми одразу напишемо вам сюди.",
   "housing.matches.missing_sources": "\nФільтра ще немає на: {sources}. Додати можна кнопкою «{btn}».",
-
   "housing.toast.save_failed": "Не вдалося зберегти фільтр.",
   "housing.error.save_failed_detail": "⚠️ Не вдалося зберегти фільтр: {error}",
   "housing.error.filter_gone": "⚠️ Не вдалося зберегти фільтр — можливо, його вже видалено.",
-
   "housing.selfmanage.section": "── {icon} Фільтри {label} ──",
   "housing.btn.edit": "✏️ Редагувати",
   "housing.btn.delete": "🗑 Видалити",
@@ -209,7 +180,6 @@
   "housing.btn.delete_all": "🗑 Видалити всі",
   "housing.selfmanage.text_with_filters": "⚙️ <b>Мої фільтри</b>\n\nНатисніть фільтр, щоб призупинити/увімкнути, а «✏️ Редагувати»/«🗑 Видалити» поруч — щоб змінити умови або прибрати зовсім.",
   "housing.selfmanage.text_empty": "⚙️ <b>Мої фільтри</b>\n\nУ вас ще немає фільтрів. Натисніть «➕ Додати фільтр» у меню.",
-
   "anon.validate.too_short": "Запитання занадто коротке. Потрібно мінімум {n} символів.",
   "anon.validate.too_long": "Запитання занадто довге. Максимум {n} символів.",
   "anon.validate.too_many_lines": "Забагато рядків. Скоротіть та надішліть запитання ще раз.",
@@ -218,7 +188,6 @@
   "anon.validate.looks_like_spam": "Текст схожий на спам. Сформулюйте запитання звичайними словами.",
   "anon.cooldown.days_hours": "Новий анонімний пост можна створити через {days} дн. {hours} год.",
   "anon.cooldown.hours_minutes": "Новий анонімний пост можна створити через {hours} год. {minutes} хв.",
-
   "anon.btn.menu": "✍️ Анонімні запитання",
   "anon.submenu.text": "✍️ <b>Анонімні запитання</b>\n\nПитання йде в загальний чат Потсдама — його бачать усі учасники, а хто саме запитав, не видно нікому, крім адміністратора (лише для захисту від спаму).\n\n«✍️ Поставити анонімне запитання» — написати нове.\n«📋 Мої публікації» — переглянути свої попередні пости.",
   "anon.btn.ask_question": "✍️ Поставити анонімне запитання",
@@ -229,52 +198,40 @@
   "anon.btn.housing": "🏠 Моніторинг житла",
   "anon.btn.cancel": "✖ Скасувати",
   "anon.btn.back_home": "⬅ Головне меню",
-
   "anon.feedback.intro": "💬 <b>Зворотній звʼязок</b>\n\nНапишіть одним повідомленням — помилку, ідею чи скаргу. Дійде особисто адміністратору, без публікації в чаті.",
   "anon.feedback.too_short": "Закоротко — хоча б {n} символів. Напишіть ще раз або натисніть «Скасувати».",
   "anon.feedback.delivered": "Дякуємо! Повідомлення передано адміністратору.",
   "anon.feedback.failed": "Не вдалося передати повідомлення адміністратору — спробуйте пізніше.",
-
   "anon.home.quick_menu_note": "⬇️ Швидке меню закріплено внизу. Можна не натискати /start щоразу.",
   "anon.home.text": "🙈 <b>Анонімне запитання у чаті Потсдама</b>\n\nОберіть тему, напишіть запитання та підтвердіть публікацію. Анонімний пост можна створити не частіше одного разу на {days} днів.\n\nДля учасників чату автор не відображається. Адміністратор зберігає Telegram ID автора лише для захисту від спаму та порушень. Посилання та контактні дані заборонені.",
-
   "anon.captcha.question": "🛡 Перевірка від спаму: скільки буде <b>{question}</b>?",
   "anon.captcha.expired": "Перевірка застаріла. Почніть заново.",
   "anon.captcha.invalid_answer": "Некоректна відповідь.",
   "anon.captcha.locked": "🛑 Забагато хибних відповідей. Спробуйте через {n} хвилин.",
   "anon.captcha.wrong": "❌ Невірно. Спробуйте ще раз.",
   "anon.captcha.passed": "Перевірку пройдено",
-
   "anon.topics.not_loaded": "Теми ще не завантажені. Бот додає їх автоматично після нових повідомлень у темах. Адміністратор також може виконати /anon_topic Назва всередині потрібної теми.",
   "anon.topics.pick": "📌 Оберіть тему для запитання:",
-
   "anon.new.blocked": "Публікацію для вашого акаунту заблоковано.",
   "anon.new.too_many_failures": "Забагато помилок. Спробуйте через {n} хв.",
-
   "anon.topic.gone": "Тема більше недоступна.",
   "anon.topic.prompt": "Тема: <b>{topic}</b>\n\nНапишіть запитання одним повідомленням — від {min} до {max} символів. Не додавайте посилання, @імена, e-mail та номери телефонів.",
-
   "anon.preview.text": "📌 Тема: <b>{topic}</b>\n\n🙈 <b>Попередній перегляд</b>\n\n{text}\n\nПісля підтвердження запитання одразу з'явиться у чаті. Видалити його через бота можна протягом години.",
   "anon.preview.btn_publish": "✅ Опублікувати",
   "anon.preview.btn_edit": "✏️ Змінити текст",
   "anon.preview.btn_change_topic": "📌 Обрати іншу тему",
-
   "anon.submit.validation_error": "❌ {error}\n\nВиправте текст або скасуйте публікацію.",
   "anon.submit.duplicate": "❌ Такий самий текст уже публікувався за останні 30 днів. Сформулюйте запитання інакше.",
-
   "anon.edit.prompt": "Надішліть виправлений текст запитання.",
-
   "anon.reserve.topic_gone": "Обрана тема більше недоступна.",
   "anon.reserve.already_published": "Це запитання вже опубліковано.",
   "anon.reserve.processing": "Запит вже обробляється. Зачекайте кілька секунд.",
-
   "anon.publish.stale_draft": "Чернетка застаріла. Почніть заново.",
   "anon.publish.publishing_toast": "Публікую…",
   "anon.publish.failed": "❌ Не вдалося опублікувати запитання. Ліміт не списано — спробуйте ще раз пізніше.",
   "anon.publish.success": "✅ Запитання опубліковано анонімно. Відповіді на нього надходитимуть сюди.\n\nНаступний анонімний пост можна створити через {days} днів.",
   "anon.publish.btn_open": "🔗 Відкрити запитання",
   "anon.publish.btn_delete": "🗑 Видалити протягом години",
-
   "anon.delete.not_found": "Публікацію не знайдено.",
   "anon.delete.no_access": "Немає доступу.",
   "anon.delete.already_deleted": "Публікацію вже видалено.",
@@ -284,18 +241,15 @@
   "anon.delete.toast_blocked": "Удалено и заблокировано",
   "anon.delete.success": "🗑 Публікацію видалено.",
   "anon.delete.success_blocked": "🗑 Публікацію видалено. Автора заблоковано.",
-
   "anon.myposts.empty": "У вас ще немає анонімних публікацій.",
   "anon.myposts.header": "📋 <b>Останні анонімні публікації</b>",
   "anon.myposts.status_deleted": "🗑 видалено",
   "anon.myposts.status_published": "✅ опубліковано",
   "anon.myposts.btn_open": "🔗 Відкрити #{id}",
   "anon.myposts.btn_delete": "🗑 Видалити #{id}",
-
   "anon.reply_notify.media_fallback": "[медиа]",
   "anon.reply_notify.btn_open": "🔗 Открыть ответ",
   "anon.reply_notify.text": "💬 <b>Нова відповідь на ваше анонімне запитання</b>\n\n{preview}",
-
   "equeue.btn.home": "🛂 Терміни ДП Документ",
   "equeue.btn.unsubscribe": "🔕 Відписатися від перевірки",
   "equeue.btn.subscribe": "🔔 Підписатися на перевірку",
@@ -303,7 +257,6 @@
   "equeue.btn.open_site": "🌐 Відкрити сайт",
   "equeue.btn.open_queue": "🌐 Відкрити електронну чергу",
   "equeue.btn.unsubscribe_short": "🔕 Відписатися",
-
   "equeue.status.never_checked": "⏳ Браузерна перевірка ще не надходила. Вона запускається через Chrome-розширення; дочекайтеся найближчого циклу.",
   "equeue.status.available": "🟢 Остання браузерна перевірка {checked}: є ознаки вільних термінів.",
   "equeue.status.none": "⚪ Остання браузерна перевірка {checked}: вільні терміни не підтверджені.",
@@ -312,15 +265,12 @@
   "equeue.sightings.title": "📌 Востаннє вільні терміни бачили:",
   "equeue.sightings.ago": "Відтоді минуло годин: {hours}.",
   "equeue.sightings.none": "📌 Вільних термінів ще жодного разу не бачили за весь час спостережень.",
-
   "equeue.subscription.on": "увімкнена",
   "equeue.subscription.off": "вимкнена",
   "equeue.menu.text": "🛂 <b>{title}</b>\n\nБот може кожні 15 хвилин перевіряти електронну чергу й написати вам, якщо зʼявляться вільні терміни.\n\nСтатус підписки: <b>{status}</b>.",
   "equeue.not_allowed": "Ця перевірка зараз доступна тільки для дозволених користувачів.",
-
   "equeue.notify.available": "🟢 <b>Є ознаки вільних термінів: {title}</b>\n\nВідкрийте сайт і перевірте запис вручну.\nПричина: {reason}",
   "equeue.notify.default_reason": "знайдено доступність",
-
   "equeue.no_access": "Немає доступу",
   "equeue.toast.subscribed": "Підписку увімкнено",
   "equeue.prefix.subscribed": "✅ Підписку увімкнено. Перевірка йде кожні 15 хвилин.",
@@ -331,9 +281,7 @@
   "equeue.prefix.available_now": "🟢 Зараз є ознаки вільних термінів. Відкрийте сайт і перевірте вручну.",
   "equeue.prefix.none_now": "⚪ Вільні терміни зараз не підтверджені.",
   "equeue.prefix.check_failed": "⚠️ Перевірка не виконана: {reason}",
-
   "housing.faq.text": "❓ <b>Довідка та часті питання</b>\n\n<b>Що робить цей розділ?</b>\nСтежить одразу за 8 порталами оренди житла в Потсдамі (Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals®, Karl Marx) і надсилає вам повідомлення, щойно з'являється квартира під ваші умови — самому нічого перевіряти не треба.\n\n<b>Як працює фільтр?</b>\nВи задаєте кімнати, площу і ціну (де можна — ще й район). Бот шукає за цими умовами на всіх обраних порталах одночасно. Можна створити кілька фільтрів з різними умовами — наприклад, один вужчий і один запасний, ширший.\n\n<b>Чому іноді питає ціну двічі?</b>\nПортали рахують орендну плату по-різному: більшість показує <b>Kaltmiete</b> (холодну оренду, без комунальних) — це одне спільне питання. ProPotsdam показує повну <b>Gesamtmiete</b>, Karl Marx — <b>Warmmiete</b> (з комунальними), а на Kleinanzeigen ціна взагалі без чіткої мітки. Це різні числа за суттю, тож питання теж окремі — так фільтр рахує правильно для кожного порталу.\n\n<b>Що таке кнопки «за останню годину/добу» після створення фільтра?</b>\nОдразу після створення фільтра бот запам'ятовує вже наявні квартири мовчки, щоб не завалити вас усім архівом одразу. Якщо хочете все ж побачити, що зʼявилось нещодавно — саме для цього ці дві кнопки.\n\n<b>Як змінити або вимкнути фільтр?</b>\n«{btn_self_manage}» у головному меню — там можна поставити фільтр на паузу, відредагувати умови або видалити зовсім.\n\n<b>Скільки це коштує і як отримати доступ?</b>\n10 €/місяць, відкриває адміністратор особисто після запиту через кнопку «{btn_request_access}».\n\n<b>Щось не працює або є питання?</b>\nНапишіть про це прямо адміністратору.",
-
   "housing.btn.stats": "📊 Статистика",
   "housing.stats.pick_period": "📊 <b>Статистика знайдених оголошень</b>\n\nОберіть період:",
   "housing.stats.btn_week": "📅 За тиждень",
@@ -345,5 +293,7 @@
   "housing.stats.caption": "📊 Знайдено оголошень за {period}: <b>{count}</b>\n\nГрафіки: площа, ціна та кількість кімнат.",
   "housing.stats.axis_area": "Площа, м²",
   "housing.stats.axis_price": "Ціна, €",
-  "housing.stats.axis_rooms": "Кімнати"
+  "housing.stats.axis_rooms": "Кімнати",
+  "housing.price.basis.kalt": "Kaltmiete (холодна оренда)",
+  "housing.price.basis.warm": "Warmmiete (тепла оренда, з комунальними)"
 }

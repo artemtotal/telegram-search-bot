@@ -36,7 +36,7 @@ class FakeBot:
         self.albums.append(kwargs)
 
 
-def _payload(listing_id="abc", user_id=544675510, images=None):
+def _payload(listing_id="abc", user_id=544675510, images=None, price_basis=None):
     listing = {
         "listing_id": listing_id,
         "url": "https://www.immowelt.de/expose/%s" % listing_id,
@@ -45,6 +45,8 @@ def _payload(listing_id="abc", user_id=544675510, images=None):
         "rooms": "3 Zimmer",
         "address": "Brunnenallee 3 a, Waldstadt I, Potsdam (14478)",
     }
+    if price_basis is not None:
+        listing["price_basis"] = price_basis
     if images is not None:
         listing["images"] = images
     return {
@@ -333,3 +335,47 @@ class HousingReceiverTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ImmoweltPriceLabelTests(unittest.TestCase):
+    """Підпис під ціною має відповідати тому, що написано в картці.
+
+    Раніше до будь-якої ціни дописувалось «Kaltmiete», тож приблизно кожне
+    п'ятнадцяте оголошення — те, яке Immowelt публікує теплою ціною —
+    приходило людині з чужим підписом.
+    """
+
+    def setUp(self):
+        self.engine = create_engine(
+            'sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self._original_session = housing_receiver.DBSession
+        housing_receiver.DBSession = sessionmaker(bind=self.engine)
+        self._original_i18n_session = housing_receiver.i18n.user_settings_store.DBSession
+        housing_receiver.i18n.user_settings_store.DBSession = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        housing_receiver.DBSession = self._original_session
+        housing_receiver.i18n.user_settings_store.DBSession = self._original_i18n_session
+        self.engine.dispose()
+
+    def _text_for(self, **kwargs):
+        bot = FakeBot()
+        housing_receiver.handle_immowelt_result(bot, _payload(**kwargs))
+        return bot.messages[-1]['text']
+
+    def test_a_cold_price_is_labelled_cold(self):
+        self.assertIn('Kaltmiete', self._text_for(price_basis='kalt'))
+
+    def test_a_warm_price_is_labelled_warm(self):
+        text = self._text_for(listing_id='warm', price_basis='warm')
+
+        self.assertIn('Warmmiete', text)
+        self.assertNotIn('Kaltmiete', text)
+
+    def test_an_unlabelled_price_gets_no_label_at_all(self):
+        text = self._text_for(listing_id='plain')
+
+        self.assertIn('1.119', text)
+        self.assertNotIn('Kaltmiete', text)
+        self.assertNotIn('Warmmiete', text)

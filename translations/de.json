@@ -4,7 +4,6 @@
   "housing.time.minutes_ago": "vor {n} Min.",
   "housing.time.hours_ago": "vor {n} Std.",
   "housing.time.yesterday_at": "gestern um {time}",
-
   "housing.status.immowelt_no_filters": "⚪ Immowelt: keine aktiven Filter.",
   "housing.status.never_checked": "🔴 {name}: noch nicht geprüft.",
   "housing.status.immowelt_checking": "{light} Immowelt: Prüfung {relative}, gespeichert: {count}.",
@@ -17,7 +16,6 @@
   "housing.status.coop.available": "möglicherweise freie Wohnungen!",
   "housing.status.coop.empty": "keine freien Wohnungen",
   "housing.status.coop.first_check": "wird erstmals geprüft",
-
   "housing.menu.title": "🏠 <b>Wohnungs-Monitoring</b>",
   "housing.menu.intro": "Ein Filter durchsucht sofort <b>8 Portale</b> gleichzeitig: Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® und Karl Marx. Eine neue Wohnung nach Ihren Kriterien — und Sie erhalten sofort eine Benachrichtigung.",
   "housing.menu.coops_intro": "Dazu 3 Wohnungsgenossenschaften (Gewoba, WBG 1903, WBG „Daheim“) — dort gibt es noch keine Filterung nach Zimmern/Preis, nur eine Benachrichtigung, sobald auf ihrer Seite „keine freien Wohnungen“ verschwindet. Abonnieren — Schaltfläche „{btn}“ unten.",
@@ -26,12 +24,10 @@
   "housing.menu.no_filters": "Für Ihre Telegram-ID gibt es noch keine aktiven Filter.",
   "housing.menu.your_filters": "Ihre Filter:",
   "housing.filter.default_title": "Wohnungssuche",
-
   "housing.btn.request_access": "📩 Zugang anfragen",
   "housing.btn.faq": "❓ Hilfe / Häufige Fragen",
   "housing.btn.back_home": "⬅ Hauptmenü",
   "housing.locked.text": "🏠 <b>Wohnungs-Monitoring in Potsdam</b>\n\nEin Filter — und der Bot überwacht sofort <b>8 Portale gleichzeitig</b>: Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals® und Karl Marx. Sobald irgendwo eine Wohnung nach Ihren Kriterien erscheint — sofortige Benachrichtigung in Telegram, statt jede Seite mehrmals täglich manuell zu prüfen.\n\n💶 Zugang — <b>10 €/Monat</b>, wird persönlich vom Administrator freigeschaltet.\n\nDrücken Sie die Schaltfläche unten — wir melden uns.",
-
   "housing.btn.monitoring_status": "📡 Überwachungsstatus",
   "housing.btn.admin": "⚙️ Wohnungs-Adminbereich",
   "housing.btn.current_matches": "🔍 Passende Wohnungen",
@@ -40,12 +36,10 @@
   "housing.btn.self_add": "➕ Filter hinzufügen",
   "housing.btn.self_manage": "⚙️ Meine Filter",
   "housing.btn.back_to_monitor": "⬅ Zum Monitoring",
-
   "housing.coops.title": "🏘 <b>Genossenschaften (Gewoba/WBG)</b>\n",
   "housing.coops.explain": "Diese drei Seiten zeigen keine einzelnen Angebote — nur den Hinweis „keine freien Wohnungen“ auf der Seite. Deshalb gibt es hier keine Kriterien nach Zimmern oder Preis: Sie aktivieren einfach die gewünschte Genossenschaft, und sobald der Hinweis verschwindet, schreiben wir Ihnen hier — Details müssen Sie dann selbst auf der Website prüfen.\n",
   "housing.coops.on": "✅ wird beobachtet",
   "housing.coops.off": "⬜ deaktiviert",
-
   "housing.field.q.kaltmiete_min": "Mindest-Kaltmiete, €",
   "housing.field.q.kaltmiete_max": "Höchst-Kaltmiete, €",
   "housing.field.q.rooms_min": "Mindestanzahl Zimmer",
@@ -60,7 +54,6 @@
   "housing.field.q.price_max": "Höchstpreis, €",
   "housing.field.q.warmmiete_min": "Mindest-Warmmiete, €",
   "housing.field.q.warmmiete_max": "Höchst-Warmmiete, €",
-
   "housing.field.label.price_min": "Preis: minimum (ab)",
   "housing.field.label.price_max": "Preis: maximum (bis)",
   "housing.field.label.rooms_min": "Zimmer: minimum (ab)",
@@ -69,16 +62,13 @@
   "housing.field.label.area_max": "Fläche: maximum (bis)",
   "housing.field.label.rent_min": "Miete: minimum (ab)",
   "housing.field.label.rent_max": "Miete: maximum (bis)",
-
   "housing.field.numeric_prompt": "🔢 <b>{question}</b>\n\nSchreiben Sie unten im Chat <b>eine einzelne Zahl</b> und tippen Sie auf „Senden“ (zum Beispiel <code>{example}</code>).\n\nWenn Sie diesen Wert nicht einschränken möchten — schicken Sie einfach „-“.",
-
   "housing.describe.from": "ab {value}",
   "housing.describe.to": "bis {value}",
   "housing.describe.all_districts": "alle Stadtteile",
   "housing.unit.eur": " €",
   "housing.unit.rooms": " Zi.",
   "housing.unit.m2": " m²",
-
   "housing.finalize.updated": "Filter {source} aktualisiert",
   "housing.finalize.added": "Filter {source} hinzugefügt",
   "housing.finalize.summary": "✅ {heading}.\nID: {id}\nKriterien: {criteria}",
@@ -89,12 +79,9 @@
   "housing.finalize.multi_title": "✅ <b>Filter hinzugefügt</b>",
   "housing.finalize.multi_line": "{icon} {label} (ID {id}): {criteria}",
   "housing.finalize.multi_error": "{icon} {label}: ⚠️ Speichern fehlgeschlagen ({error})",
-
   "housing.validation.invalid_number": "Unklarer Wert.\n\n{prompt}",
   "housing.validation.min_over_max": "Das Minimum darf nicht größer als das Maximum sein. Bitte senden Sie den Wert erneut.\n\n{prompt}",
-
   "housing.cancel.msg": "Abgebrochen.",
-
   "housing.toast.not_your_filter": "Dieser Filter gehört Ihnen nicht.",
   "housing.toast.unknown_coop": "Unbekannte Genossenschaft.",
   "housing.toast.coop_off": "Deaktiviert: {label}",
@@ -107,7 +94,6 @@
   "housing.toast.filter_deleted": "Filter gelöscht.",
   "housing.toast.filter_saved": "Filter gespeichert.",
   "housing.toast.pick_a_source": "Wählen Sie mindestens ein Portal.",
-
   "housing.notify.quiet_on": "✅ aktiviert",
   "housing.notify.quiet_off": "deaktiviert",
   "housing.notify.mode_daily": "einmal täglich",
@@ -123,9 +109,7 @@
   "housing.notify.news_off": "deaktiviert",
   "housing.notify.btn.news_on": "📰 Bot-Neuigkeiten: aktiviert ✅",
   "housing.notify.btn.news_off": "📰 Bot-Neuigkeiten: deaktiviert",
-
   "housing.btn.home_monitor": "🏠 Wohnungs-Monitoring",
-
   "housing.access.already_open": "Zugang ist bereits geöffnet.",
   "housing.access.admin_not_configured": "Administrator ist nicht konfiguriert.",
   "housing.access.already_requested": "Anfrage bereits gesendet, bitte warten Sie auf eine Antwort.",
@@ -143,33 +127,26 @@
   "housing.access.continue_toast": "Danke!",
   "housing.access.continue_text": "Danke! Wir haben den Administrator informiert — er meldet sich wegen der Verlängerung bei Ihnen.",
   "housing.access.stop_text": "In Ordnung. In 3 Tagen werden Abo und Zugang zum Wohnungs-Monitoring automatisch beendet.",
-
   "housing.btn.trial_start": "🎁 7 Tage kostenlos",
   "housing.trial.already_used": "Der kostenlose Testzeitraum wurde für dieses Konto bereits genutzt.",
   "housing.trial.granted_toast": "Testzeitraum aktiviert!",
   "housing.trial.granted_text": "🎁 Kostenloser Zugang zum Wohnungs-Monitoring für {days} Tage freigeschaltet!",
   "housing.trial.warning": "⏳ Noch {days} Tag kostenloser Testzeitraum für das Wohnungs-Monitoring. Wenn er Ihnen gefallen hat — tippen Sie, um vollen Monatszugang zu beantragen.",
   "housing.trial.stopped": "⏸ Der kostenlose Testzeitraum ist beendet, das Monitoring wurde gestoppt. Ihre Filter bleiben noch ein paar Tage gespeichert — wenn Sie fortfahren möchten, beantragen Sie vollen Zugang, und alles läuft wieder, ohne dass Sie die Filter neu anlegen müssen.",
-
   "housing.btn.field_back": "⬅️ Zurück — Antwort korrigieren",
   "housing.btn.skip_field": "➖ Überspringen — keine Einschränkung",
-
   "housing.btn.done": "✅ Fertig",
   "housing.btn.all_districts": "🌍 Alle Stadtteile",
   "housing.btn.next": "➡ Weiter",
   "housing.btn.save_filter": "✅ Filter speichern",
   "housing.btn.back_fix_criteria": "⬅️ Zurück — Kriterien korrigieren",
-
   "housing.district.text": "{title}\n\nWählen Sie die Stadtteile mit den Häkchen.\nAktuelle Auswahl: <b>{selection}</b>",
   "housing.district.title_immowelt": "🏙 <b>Stadtteile Immowelt</b>",
   "housing.district.title_propot": "🏢 <b>Stadtteile ProPotsdam</b>",
   "housing.district.title_multi": "🏙 <b>Stadtteile</b>",
-
   "housing.criteria_picker.text": "🧾 <b>Was ist Ihnen wichtig?</b>\n\nEntfernen Sie das Häkchen bei den Grenzen, die Sie nicht interessieren — der Assistent fragt dann nicht danach und schränkt die Suche nicht danach ein.\n\n{body}",
-
   "housing.sources.none_selected": "nicht ausgewählt",
   "housing.sources.text": "🔎 <b>Neuer Filter</b>\n\nWählen Sie aus, wo gesucht werden soll — mehrere Portale gleichzeitig sind möglich. Die Liste der Portale wird mit der Zeit erweitert.\nAktuelle Auswahl: <b>{selection}</b>",
-
   "housing.preview.title": "🔍 <b>Filter-Vorschau</b>",
   "housing.preview.criteria_line": "Kriterien: {criteria}",
   "housing.preview.no_connection": "Verbindung zur Vorschau fehlgeschlagen, der Filter kann aber trotzdem gespeichert werden.",
@@ -177,19 +154,15 @@
   "housing.preview.no_matches": "Aktuell passt keine der {catalog_size} Wohnungen im Katalog zu diesen Kriterien. Der Filter läuft trotzdem, aber es kann lange dauern, bis etwas Neues kommt — versuchen Sie, die Kriterien zu lockern.",
   "housing.preview.matches_found": "Aktuell passen {match_count} von {catalog_size} Wohnungen im Katalog, zum Beispiel:",
   "housing.preview.new_listings_note": "Neue Angebote treffen ein, sobald sie erscheinen.",
-
   "housing.wizard.pick_districts_hint": "Wählen Sie die Stadtteile mit den Schaltflächen unten und tippen Sie auf „Fertig“.",
   "housing.wizard.pick_criteria_hint": "Wählen Sie die gewünschten Grenzen mit den Schaltflächen unten und tippen Sie auf „Fertig“.",
   "housing.wizard.pick_sources_hint": "Wählen Sie die Portale mit den Schaltflächen unten und tippen Sie auf „Weiter“.",
   "housing.wizard.preview_hint": "Tippen Sie auf „Filter speichern“, „Zurück“ oder „Abbrechen“.",
-
   "housing.recent.last_hour": "die letzte Stunde",
   "housing.recent.last_day": "die letzten 24 Stunden",
   "housing.recent.show_btn": "🕐 Für {label} anzeigen",
   "housing.recent.skip_btn": "Nicht nötig",
-
   "housing.first_filter_congrats": "🎉 Geschafft, gut gemacht!\n\nAb jetzt übernehmen wir die ganze Routine. Sie müssen nur noch warten — wir suchen Wohnungen nach Ihren Kriterien und schicken sie Ihnen sofort, sobald wir etwas finden. Geduld! 🍀",
-
   "housing.matches.open_link": "Öffnen",
   "housing.matches.no_filters": "Sie haben noch keinen Filter. Fügen Sie zuerst einen über die Schaltfläche „{btn}“ hinzu.",
   "housing.matches.none_for_filter": "Aktuell passt nichts zu diesen Kriterien.",
@@ -197,11 +170,9 @@
   "housing.matches.total_header": "🔍 <b>Aktuell passende Wohnungen: {total}</b>",
   "housing.matches.footer_note": "Sobald eine neue Wohnung zu Ihren Kriterien passt — schreiben wir Ihnen sofort hier.",
   "housing.matches.missing_sources": "\nNoch kein Filter für: {sources}. Hinzufügen über die Schaltfläche „{btn}“.",
-
   "housing.toast.save_failed": "Filter konnte nicht gespeichert werden.",
   "housing.error.save_failed_detail": "⚠️ Filter konnte nicht gespeichert werden: {error}",
   "housing.error.filter_gone": "⚠️ Filter konnte nicht gespeichert werden — möglicherweise wurde er bereits gelöscht.",
-
   "housing.selfmanage.section": "── {icon} Filter {label} ──",
   "housing.btn.edit": "✏️ Bearbeiten",
   "housing.btn.delete": "🗑 Löschen",
@@ -209,7 +180,6 @@
   "housing.btn.delete_all": "🗑 Alle löschen",
   "housing.selfmanage.text_with_filters": "⚙️ <b>Meine Filter</b>\n\nTippen Sie auf einen Filter, um ihn zu pausieren/aktivieren, und daneben auf „✏️ Bearbeiten“/„🗑 Löschen“, um die Kriterien zu ändern oder ihn ganz zu entfernen.",
   "housing.selfmanage.text_empty": "⚙️ <b>Meine Filter</b>\n\nSie haben noch keine Filter. Tippen Sie im Menü auf „➕ Filter hinzufügen“.",
-
   "anon.validate.too_short": "Die Frage ist zu kurz. Mindestens {n} Zeichen erforderlich.",
   "anon.validate.too_long": "Die Frage ist zu lang. Maximal {n} Zeichen.",
   "anon.validate.too_many_lines": "Zu viele Zeilen. Kürzen Sie die Frage und senden Sie sie erneut.",
@@ -218,7 +188,6 @@
   "anon.validate.looks_like_spam": "Der Text sieht nach Spam aus. Formulieren Sie die Frage mit gewöhnlichen Wörtern.",
   "anon.cooldown.days_hours": "Ein neuer anonymer Beitrag ist in {days} Tg. {hours} Std. möglich.",
   "anon.cooldown.hours_minutes": "Ein neuer anonymer Beitrag ist in {hours} Std. {minutes} Min. möglich.",
-
   "anon.btn.menu": "✍️ Anonyme Fragen",
   "anon.submenu.text": "✍️ <b>Anonyme Fragen</b>\n\nDie Frage wird im allgemeinen Potsdam-Chat veröffentlicht — alle Mitglieder sehen sie, aber wer sie gestellt hat, sieht niemand außer dem Administrator (nur zum Schutz vor Spam).\n\n„✍️ Anonyme Frage stellen“ — eine neue Frage schreiben.\n„📋 Meine Beiträge“ — Ihre bisherigen Beiträge ansehen.",
   "anon.btn.ask_question": "✍️ Anonyme Frage stellen",
@@ -229,52 +198,40 @@
   "anon.btn.housing": "🏠 Wohnungs-Monitoring",
   "anon.btn.cancel": "✖ Abbrechen",
   "anon.btn.back_home": "⬅ Hauptmenü",
-
   "anon.feedback.intro": "💬 <b>Feedback</b>\n\nSchreiben Sie in einer Nachricht — einen Fehler, eine Idee oder eine Beschwerde. Geht persönlich an den Administrator, ohne Veröffentlichung im Chat.",
   "anon.feedback.too_short": "Zu kurz — mindestens {n} Zeichen. Schreiben Sie es erneut oder tippen Sie auf „Abbrechen“.",
   "anon.feedback.delivered": "Danke! Die Nachricht wurde an den Administrator weitergeleitet.",
   "anon.feedback.failed": "Die Nachricht konnte nicht an den Administrator übermittelt werden — versuchen Sie es später erneut.",
-
   "anon.home.quick_menu_note": "⬇️ Das Schnellmenü ist unten angeheftet. Sie müssen nicht jedes Mal /start tippen.",
   "anon.home.text": "🙈 <b>Anonyme Frage im Potsdam-Chat</b>\n\nWählen Sie ein Thema, schreiben Sie die Frage und bestätigen Sie die Veröffentlichung. Ein anonymer Beitrag ist höchstens einmal alle {days} Tage möglich.\n\nFür die Chat-Mitglieder wird der Autor nicht angezeigt. Der Administrator speichert die Telegram-ID des Autors nur zum Schutz vor Spam und Verstößen. Links und Kontaktdaten sind nicht erlaubt.",
-
   "anon.captcha.question": "🛡 Spam-Schutz: Wie viel ergibt <b>{question}</b>?",
   "anon.captcha.expired": "Die Prüfung ist abgelaufen. Beginnen Sie erneut.",
   "anon.captcha.invalid_answer": "Ungültige Antwort.",
   "anon.captcha.locked": "🛑 Zu viele falsche Antworten. Versuchen Sie es in {n} Minuten erneut.",
   "anon.captcha.wrong": "❌ Falsch. Versuchen Sie es erneut.",
   "anon.captcha.passed": "Prüfung bestanden",
-
   "anon.topics.not_loaded": "Die Themen sind noch nicht geladen. Der Bot fügt sie automatisch nach neuen Nachrichten in den Themen hinzu. Der Administrator kann auch /anon_topic Name innerhalb des gewünschten Themas ausführen.",
   "anon.topics.pick": "📌 Wählen Sie ein Thema für die Frage:",
-
   "anon.new.blocked": "Die Veröffentlichung für Ihr Konto ist gesperrt.",
   "anon.new.too_many_failures": "Zu viele Fehler. Versuchen Sie es in {n} Min. erneut.",
-
   "anon.topic.gone": "Das Thema ist nicht mehr verfügbar.",
   "anon.topic.prompt": "Thema: <b>{topic}</b>\n\nSchreiben Sie die Frage in einer Nachricht — {min} bis {max} Zeichen. Fügen Sie keine Links, @Namen, E-Mail-Adressen oder Telefonnummern hinzu.",
-
   "anon.preview.text": "📌 Thema: <b>{topic}</b>\n\n🙈 <b>Vorschau</b>\n\n{text}\n\nNach der Bestätigung erscheint die Frage sofort im Chat. Löschen über den Bot ist innerhalb einer Stunde möglich.",
   "anon.preview.btn_publish": "✅ Veröffentlichen",
   "anon.preview.btn_edit": "✏️ Text ändern",
   "anon.preview.btn_change_topic": "📌 Anderes Thema wählen",
-
   "anon.submit.validation_error": "❌ {error}\n\nKorrigieren Sie den Text oder brechen Sie die Veröffentlichung ab.",
   "anon.submit.duplicate": "❌ Derselbe Text wurde in den letzten 30 Tagen bereits veröffentlicht. Formulieren Sie die Frage anders.",
-
   "anon.edit.prompt": "Senden Sie den korrigierten Text der Frage.",
-
   "anon.reserve.topic_gone": "Das gewählte Thema ist nicht mehr verfügbar.",
   "anon.reserve.already_published": "Diese Frage wurde bereits veröffentlicht.",
   "anon.reserve.processing": "Die Anfrage wird noch verarbeitet. Bitte warten Sie einige Sekunden.",
-
   "anon.publish.stale_draft": "Der Entwurf ist abgelaufen. Beginnen Sie erneut.",
   "anon.publish.publishing_toast": "Wird veröffentlicht…",
   "anon.publish.failed": "❌ Die Frage konnte nicht veröffentlicht werden. Das Limit wurde nicht verbraucht — versuchen Sie es später erneut.",
   "anon.publish.success": "✅ Die Frage wurde anonym veröffentlicht. Antworten darauf treffen hier ein.\n\nDer nächste anonyme Beitrag ist in {days} Tagen möglich.",
   "anon.publish.btn_open": "🔗 Frage öffnen",
   "anon.publish.btn_delete": "🗑 Innerhalb einer Stunde löschen",
-
   "anon.delete.not_found": "Beitrag nicht gefunden.",
   "anon.delete.no_access": "Kein Zugriff.",
   "anon.delete.already_deleted": "Der Beitrag wurde bereits gelöscht.",
@@ -284,18 +241,15 @@
   "anon.delete.toast_blocked": "Gelöscht und gesperrt",
   "anon.delete.success": "🗑 Beitrag gelöscht.",
   "anon.delete.success_blocked": "🗑 Beitrag gelöscht. Autor gesperrt.",
-
   "anon.myposts.empty": "Sie haben noch keine anonymen Beiträge.",
   "anon.myposts.header": "📋 <b>Letzte anonyme Beiträge</b>",
   "anon.myposts.status_deleted": "🗑 gelöscht",
   "anon.myposts.status_published": "✅ veröffentlicht",
   "anon.myposts.btn_open": "🔗 Öffnen #{id}",
   "anon.myposts.btn_delete": "🗑 Löschen #{id}",
-
   "anon.reply_notify.media_fallback": "[Medien]",
   "anon.reply_notify.btn_open": "🔗 Antwort öffnen",
   "anon.reply_notify.text": "💬 <b>Neue Antwort auf Ihre anonyme Frage</b>\n\n{preview}",
-
   "equeue.btn.home": "🛂 DP-Dokument Termine",
   "equeue.btn.unsubscribe": "🔕 Prüfung abbestellen",
   "equeue.btn.subscribe": "🔔 Prüfung abonnieren",
@@ -303,7 +257,6 @@
   "equeue.btn.open_site": "🌐 Website öffnen",
   "equeue.btn.open_queue": "🌐 Elektronische Warteschlange öffnen",
   "equeue.btn.unsubscribe_short": "🔕 Abbestellen",
-
   "equeue.status.never_checked": "⏳ Noch keine Browser-Prüfung eingegangen. Sie läuft über eine Chrome-Erweiterung; warten Sie auf den nächsten Zyklus.",
   "equeue.status.available": "🟢 Letzte Browser-Prüfung {checked}: Anzeichen für freie Termine.",
   "equeue.status.none": "⚪ Letzte Browser-Prüfung {checked}: keine freien Termine bestätigt.",
@@ -312,15 +265,12 @@
   "equeue.sightings.title": "📌 Zuletzt wurden freie Termine gesehen:",
   "equeue.sightings.ago": "Seitdem vergangene Stunden: {hours}.",
   "equeue.sightings.none": "📌 Freie Termine wurden im gesamten Beobachtungszeitraum noch nie gesehen.",
-
   "equeue.subscription.on": "aktiviert",
   "equeue.subscription.off": "deaktiviert",
   "equeue.menu.text": "🛂 <b>{title}</b>\n\nDer Bot kann alle 15 Minuten die elektronische Warteschlange prüfen und Ihnen schreiben, sobald freie Termine erscheinen.\n\nAbo-Status: <b>{status}</b>.",
   "equeue.not_allowed": "Diese Prüfung ist derzeit nur für berechtigte Nutzer verfügbar.",
-
   "equeue.notify.available": "🟢 <b>Anzeichen für freie Termine: {title}</b>\n\nÖffnen Sie die Website und prüfen Sie die Buchung manuell.\nGrund: {reason}",
   "equeue.notify.default_reason": "Verfügbarkeit erkannt",
-
   "equeue.no_access": "Kein Zugriff",
   "equeue.toast.subscribed": "Abo aktiviert",
   "equeue.prefix.subscribed": "✅ Abo aktiviert. Die Prüfung läuft alle 15 Minuten.",
@@ -331,9 +281,7 @@
   "equeue.prefix.available_now": "🟢 Aktuell gibt es Anzeichen für freie Termine. Öffnen Sie die Website und prüfen Sie manuell.",
   "equeue.prefix.none_now": "⚪ Aktuell keine freien Termine bestätigt.",
   "equeue.prefix.check_failed": "⚠️ Prüfung fehlgeschlagen: {reason}",
-
   "housing.faq.text": "❓ <b>Hilfe und häufige Fragen</b>\n\n<b>Was macht dieser Bereich?</b>\nÜberwacht gleichzeitig 8 Wohnungsportale in Potsdam (Immowelt, ProPotsdam, SEMMELHAACK, SCHOBA, ImmoTeam/alpha, Kleinanzeigen, locals®, Karl Marx) und schickt Ihnen eine Benachrichtigung, sobald eine Wohnung nach Ihren Kriterien erscheint — Sie müssen selbst nichts prüfen.\n\n<b>Wie funktioniert ein Filter?</b>\nSie geben Zimmer, Fläche und Preis an (wo möglich — auch den Stadtteil). Der Bot sucht nach diesen Kriterien gleichzeitig auf allen gewählten Portalen. Sie können mehrere Filter mit unterschiedlichen Kriterien anlegen — zum Beispiel einen engeren und einen breiteren als Reserve.\n\n<b>Warum wird der Preis manchmal zweimal abgefragt?</b>\nDie Portale berechnen die Miete unterschiedlich: die meisten zeigen die <b>Kaltmiete</b> (ohne Nebenkosten) — das ist eine gemeinsame Frage. ProPotsdam zeigt die volle <b>Gesamtmiete</b>, Karl Marx die <b>Warmmiete</b> (mit Nebenkosten), und bei Kleinanzeigen ist der Preis gar nicht eindeutig gekennzeichnet. Das sind inhaltlich unterschiedliche Zahlen, daher auch getrennte Fragen — so rechnet der Filter für jedes Portal richtig.\n\n<b>Was bedeuten die Schaltflächen „letzte Stunde/24 Stunden“ nach dem Anlegen eines Filters?</b>\nDirekt nach dem Anlegen merkt sich der Bot die bereits vorhandenen Wohnungen still, um Sie nicht mit dem gesamten Archiv zu überfluten. Falls Sie trotzdem sehen möchten, was kürzlich erschienen ist — dafür gibt es diese beiden Schaltflächen.\n\n<b>Wie ändere oder deaktiviere ich einen Filter?</b>\n„{btn_self_manage}“ im Hauptmenü — dort können Sie einen Filter pausieren, die Kriterien bearbeiten oder ihn ganz löschen.\n\n<b>Was kostet das und wie bekomme ich Zugang?</b>\n10 €/Monat, wird persönlich vom Administrator freigeschaltet, nachdem Sie über die Schaltfläche „{btn_request_access}“ angefragt haben.\n\n<b>Etwas funktioniert nicht oder Sie haben eine Frage?</b>\nSchreiben Sie direkt an den Administrator.",
-
   "housing.btn.stats": "📊 Statistik",
   "housing.stats.pick_period": "📊 <b>Statistik der gefundenen Angebote</b>\n\nZeitraum wählen:",
   "housing.stats.btn_week": "📅 Letzte Woche",
@@ -345,5 +293,7 @@
   "housing.stats.caption": "📊 Gefundene Angebote für {period}: <b>{count}</b>\n\nDiagramme: Fläche, Preis und Zimmeranzahl.",
   "housing.stats.axis_area": "Fläche, m²",
   "housing.stats.axis_price": "Preis, €",
-  "housing.stats.axis_rooms": "Zimmer"
+  "housing.stats.axis_rooms": "Zimmer",
+  "housing.price.basis.kalt": "Kaltmiete",
+  "housing.price.basis.warm": "Warmmiete (inkl. Nebenkosten)"
 }

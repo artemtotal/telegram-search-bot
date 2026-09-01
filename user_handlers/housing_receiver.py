@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.error import NetworkError
 
+import i18n
 from database import DBSession, HousingDelivery, ImmoweltListing
 
 
@@ -149,6 +150,7 @@ def handle_immowelt_result(bot, payload):
         logger.info("Immowelt listing %s already delivered to %s; skipping", listing_id, user_id)
         return {"ok": True, "duplicate": True}
 
+    lang = i18n.get_lang(user_id)
     lines = [
         "🏠 <b>Нове житло на Immowelt</b>",
         "",
@@ -157,7 +159,13 @@ def handle_immowelt_result(bot, payload):
         "📍 " + (_text(listing.get("address")) or "Adresse unbekannt"),
     ]
     if listing.get("price"):
-        lines.append("💶 " + _text(listing["price"]) + " Kaltmiete")
+        # Раніше до будь-якої ціни дописувалось «Kaltmiete». Приблизно кожне
+        # п'ятнадцяте оголошення Immowelt публікують теплою ціною — і людина
+        # бачила чужий підпис, тобто суму, більшу за холодну оренду, під виглядом
+        # холодної. Тепер підпис ставиться лише тоді, коли картка сама його назвала.
+        basis = str(listing.get("price_basis") or "").strip()
+        label = i18n.t(f"housing.price.basis.{basis}", lang) if basis in ("kalt", "warm") else ""
+        lines.append("💶 " + _text(listing["price"]) + (" " + label if label else ""))
     details = [
         _text(listing.get("rooms")),
         _text(listing.get("area")),
