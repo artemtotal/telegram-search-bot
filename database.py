@@ -316,6 +316,11 @@ class SemmelhaackFilter(Base):
     max_area_m2 = Column(FLOAT)
     min_price_eur = Column(FLOAT)
     max_price_eur = Column(FLOAT)
+    # Тепла оренда (з комуналкою) — друга межа ціни поруч із холодною.
+    # Джерело застосовує ту, для якої в нього є число: у частини порталів
+    # є обидві, у частини — лише одна.
+    min_price_warm_eur = Column(FLOAT)
+    max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
 
@@ -371,6 +376,11 @@ class SchobaFilter(Base):
     max_area_m2 = Column(FLOAT)
     min_price_eur = Column(FLOAT)
     max_price_eur = Column(FLOAT)
+    # Тепла оренда (з комуналкою) — друга межа ціни поруч із холодною.
+    # Джерело застосовує ту, для якої в нього є число: у частини порталів
+    # є обидві, у частини — лише одна.
+    min_price_warm_eur = Column(FLOAT)
+    max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
 
@@ -432,6 +442,11 @@ class RegiomaklerFilter(Base):
     max_area_m2 = Column(FLOAT)
     min_price_eur = Column(FLOAT)
     max_price_eur = Column(FLOAT)
+    # Тепла оренда (з комуналкою) — друга межа ціни поруч із холодною.
+    # Джерело застосовує ту, для якої в нього є число: у частини порталів
+    # є обидві, у частини — лише одна.
+    min_price_warm_eur = Column(FLOAT)
+    max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
 
@@ -488,6 +503,11 @@ class KleinanzeigenFilter(Base):
     max_area_m2 = Column(FLOAT)
     min_price_eur = Column(FLOAT)
     max_price_eur = Column(FLOAT)
+    # Тепла оренда (з комуналкою) — друга межа ціни поруч із холодною.
+    # Джерело застосовує ту, для якої в нього є число: у частини порталів
+    # є обидві, у частини — лише одна.
+    min_price_warm_eur = Column(FLOAT)
+    max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
 
@@ -544,6 +564,11 @@ class LocalsFilter(Base):
     max_area_m2 = Column(FLOAT)
     min_price_eur = Column(FLOAT)
     max_price_eur = Column(FLOAT)
+    # Тепла оренда (з комуналкою) — друга межа ціни поруч із холодною.
+    # Джерело застосовує ту, для якої в нього є число: у частини порталів
+    # є обидві, у частини — лише одна.
+    min_price_warm_eur = Column(FLOAT)
+    max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
 
@@ -658,6 +683,11 @@ class KarlmarxFilter(Base):
     max_area_m2 = Column(FLOAT)
     min_price_eur = Column(FLOAT)
     max_price_eur = Column(FLOAT)
+    # Тепла оренда (з комуналкою) — друга межа ціни поруч із холодною.
+    # Джерело застосовує ту, для якої в нього є число: у частини порталів
+    # є обидві, у частини — лише одна.
+    min_price_warm_eur = Column(FLOAT)
+    max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
 
@@ -721,6 +751,18 @@ def _ensure_column(table_name: str, column_name: str, column_type: str) -> None:
 
 _ensure_column('propotsdam_filter', 'min_total_rent_eur', 'FLOAT')
 _ensure_column('semmelhaack_listing', 'price_warm_eur', 'FLOAT')
+_ensure_column('semmelhaack_filter', 'min_price_warm_eur', 'FLOAT')
+_ensure_column('semmelhaack_filter', 'max_price_warm_eur', 'FLOAT')
+_ensure_column('schoba_filter', 'min_price_warm_eur', 'FLOAT')
+_ensure_column('schoba_filter', 'max_price_warm_eur', 'FLOAT')
+_ensure_column('regiomakler_filter', 'min_price_warm_eur', 'FLOAT')
+_ensure_column('regiomakler_filter', 'max_price_warm_eur', 'FLOAT')
+_ensure_column('kleinanzeigen_filter', 'min_price_warm_eur', 'FLOAT')
+_ensure_column('kleinanzeigen_filter', 'max_price_warm_eur', 'FLOAT')
+_ensure_column('locals_filter', 'min_price_warm_eur', 'FLOAT')
+_ensure_column('locals_filter', 'max_price_warm_eur', 'FLOAT')
+_ensure_column('karlmarx_filter', 'min_price_warm_eur', 'FLOAT')
+_ensure_column('karlmarx_filter', 'max_price_warm_eur', 'FLOAT')
 _ensure_column('regiomakler_listing', 'price_warm_eur', 'FLOAT')
 _ensure_column('kleinanzeigen_listing', 'cover_image_url', 'TEXT')
 _ensure_column('locals_listing', 'cover_image_url', 'TEXT')

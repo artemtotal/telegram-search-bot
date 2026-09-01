@@ -43,6 +43,8 @@ def filter_to_dict(row: RegiomaklerFilter) -> Dict:
         "max_area_m2": row.max_area_m2,
         "min_price_eur": row.min_price_eur,
         "max_price_eur": row.max_price_eur,
+        "min_price_warm_eur": row.min_price_warm_eur,
+        "max_price_warm_eur": row.max_price_warm_eur,
         "active": row.active,
     }
 
@@ -70,6 +72,8 @@ def create_filter(
     max_area_m2: Optional[float] = None,
     min_price_eur: Optional[float] = None,
     max_price_eur: Optional[float] = None,
+    min_price_warm_eur: Optional[float] = None,
+    max_price_warm_eur: Optional[float] = None,
 ) -> int:
     session = DBSession()
     try:
@@ -82,6 +86,8 @@ def create_filter(
             max_area_m2=max_area_m2,
             min_price_eur=min_price_eur,
             max_price_eur=max_price_eur,
+            min_price_warm_eur=min_price_warm_eur,
+            max_price_warm_eur=max_price_warm_eur,
             active=True,
             created_at=utc_now(),
         )
@@ -116,6 +122,8 @@ def update_filter(
     max_area_m2: Optional[float] = None,
     min_price_eur: Optional[float] = None,
     max_price_eur: Optional[float] = None,
+    min_price_warm_eur: Optional[float] = None,
+    max_price_warm_eur: Optional[float] = None,
 ) -> bool:
     session = DBSession()
     try:
@@ -132,6 +140,8 @@ def update_filter(
         row.max_area_m2 = max_area_m2
         row.min_price_eur = min_price_eur
         row.max_price_eur = max_price_eur
+        row.min_price_warm_eur = min_price_warm_eur
+        row.max_price_warm_eur = max_price_warm_eur
         session.flush()
         filter_data = filter_to_dict(row)
         now = utc_now()

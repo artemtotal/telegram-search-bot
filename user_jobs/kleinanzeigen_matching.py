@@ -30,6 +30,7 @@ def matches_filter(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
     rooms = _num(listing.get("rooms"))
     area = _num(listing.get("area_m2"))
     price = _num(listing.get("price_eur"))
+    price_warm = _num(listing.get("price_warm_eur"))
     return (
         _within_min(rooms, _num(filt.get("min_rooms")))
         and _within_max(rooms, _num(filt.get("max_rooms")))
@@ -37,6 +38,12 @@ def matches_filter(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
         and _within_max(area, _num(filt.get("max_area_m2")))
         and _within_min(price, _num(filt.get("min_price_eur")))
         and _within_max(price, _num(filt.get("max_price_eur")))
+        # Тепла межа звіряється з теплою ціною, холодна — з холодною. Немає в
+        # оголошення потрібної величини — умова просто не застосовується
+        # (`_within_*` пропускає None), як і для будь-якого іншого невідомого
+        # показника: інакше квартиру відкинуло б за те, чого портал не публікує.
+        and _within_min(price_warm, _num(filt.get("min_price_warm_eur")))
+        and _within_max(price_warm, _num(filt.get("max_price_warm_eur")))
     )
 
 
