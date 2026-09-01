@@ -66,15 +66,14 @@ def _add_full_rent(listings: List[Dict]) -> int:
     """Дозабирає повну ціну зі сторінок оголошень.
 
     Каталог друкує лише Nettokaltmiete, а «Gesamtmietpreis» лежить усередині
-    оголошення. Ходимо туди тільки за новим оголошенням — повна ціна не
-    змінюється щопівгодини, і зайвий запит нічого б не дав. Помилка на
+    оголошення. Ходимо туди, доки повної ціни немає, — тобто один раз на оголошення. Помилка на
     одному оголошенні не має псувати весь обхід: без повної ціни фільтр
     просто не застосує до нього теплу межу.
     """
-    known = schoba_store.known_listing_keys()
+    priced = schoba_store.keys_with_full_rent()
     filled = 0
     for listing in listings:
-        if str(listing.get("listing_key") or "") in known:
+        if str(listing.get("listing_key") or "") in priced:
             continue
         detail_url = str(listing.get("detail_url") or "").strip()
         if not detail_url:

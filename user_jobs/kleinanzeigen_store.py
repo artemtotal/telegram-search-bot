@@ -206,11 +206,20 @@ def delete_filter(filter_id: int, user_id: Optional[int] = None) -> bool:
         session.close()
 
 
-def known_listing_keys() -> Set[str]:
-    """Оголошення, які вже є в базі: за їхньою повною ціною вдруге не ходимо."""
+def keys_with_full_rent() -> Set[str]:
+    """Оголошення, для яких повна ціна вже відома.
+
+    Саме вони, а не «всі, що вже в базі»: спершу тут стояла перевірка на
+    новизну — і оголошення, збережені до появи цієї колонки, не отримали б
+    повної ціни ніколи, бо новими вже не стануть. Тепер сторінку відвідують
+    доти, доки ціни немає, і рівно один раз на оголошення.
+    """
     session = DBSession()
     try:
-        return {str(row.listing_key) for row in session.query(KleinanzeigenListing.listing_key).all()}
+        rows = session.query(KleinanzeigenListing.listing_key).filter(
+            KleinanzeigenListing.price_warm_eur.isnot(None)
+        ).all()
+        return {str(row.listing_key) for row in rows}
     finally:
         session.close()
 

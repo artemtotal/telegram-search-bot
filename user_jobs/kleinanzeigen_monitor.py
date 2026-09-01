@@ -195,15 +195,16 @@ def _add_full_rent(listings: List[Dict]) -> int:
     """Дозабирає повну ціну зі сторінок оголошень.
 
     Площадка тримає її готовим числом серед атрибутів оголошення, поруч із
-    Nebenkosten. Запит іде лише за НОВИМ оголошенням — таких одиниці на добу,
+    Nebenkosten. Запит іде лише за тим оголошенням, чиєї повної ціни ще немає —
+    один раз на оголошення, тобто одиниці на добу,
     тож це не перетворює обхід на систематичний збір, якого Умови
     використання не дозволяють; сам список і далі опитується рідше за решту
     джерел. Збій на одному оголошенні не псує обхід.
     """
-    known = kleinanzeigen_store.known_listing_keys()
+    priced = kleinanzeigen_store.keys_with_full_rent()
     filled = 0
     for listing in listings:
-        if str(listing.get("listing_key") or "") in known:
+        if str(listing.get("listing_key") or "") in priced:
             continue
         detail_url = str(listing.get("detail_url") or "").strip()
         if not detail_url:

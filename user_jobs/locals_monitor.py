@@ -44,14 +44,14 @@ def _add_full_rent(listings: List[Dict]) -> int:
     """Дозабирає повну ціну зі сторінок оголошень.
 
     Каталог locals® показує лише Kaltmiete; поруч із нею всередині оголошення
-    стоїть Nebenkosten, з яких і виходить повна. Ходимо туди лише за новим
-    оголошенням, а збій на одному не має псувати весь обхід — без повної ціни
+    стоїть Nebenkosten, з яких і виходить повна. Ходимо туди, доки повної ціни
+    немає, — один раз на оголошення; збій на одному не має псувати весь обхід — без повної ціни
     фільтр просто не застосує до нього теплу межу.
     """
-    known = locals_store.known_listing_keys()
+    priced = locals_store.keys_with_full_rent()
     filled = 0
     for listing in listings:
-        if str(listing.get("listing_key") or "") in known:
+        if str(listing.get("listing_key") or "") in priced:
             continue
         detail_url = str(listing.get("detail_url") or "").strip()
         if not detail_url:

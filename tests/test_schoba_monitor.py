@@ -371,18 +371,20 @@ class SchobaFullRentTests(unittest.TestCase):
         listings = [self._listing()]
 
         with mock.patch('requests.get', return_value=FakeResponse(self.DETAIL_HTML)), \
-             mock.patch('user_jobs.schoba_monitor.schoba_store.known_listing_keys', return_value=set()):
+             mock.patch('user_jobs.schoba_monitor.schoba_store.keys_with_full_rent', return_value=set()):
             filled = schoba_monitor._add_full_rent(listings)
 
         self.assertEqual(filled, 1)
         self.assertEqual(listings[0]['price_warm_eur'], 942.37)
 
-    def test_a_listing_already_in_the_catalogue_is_not_fetched_again(self):
-        """Повна ціна не змінюється щопівгодини — зайвий запит лише слід на сайті."""
+    def test_a_listing_whose_full_rent_is_known_is_not_fetched_again(self):
+        """Ціну беруть один раз на оголошення: далі запит був би лише зайвим
+        слідом на сайті. А ось оголошення без ціни відвідують і надалі —
+        інакше збережені до появи цієї колонки не отримали б її ніколи."""
         listings = [self._listing('old-1')]
 
         with mock.patch('requests.get') as get, \
-             mock.patch('user_jobs.schoba_monitor.schoba_store.known_listing_keys',
+             mock.patch('user_jobs.schoba_monitor.schoba_store.keys_with_full_rent',
                         return_value={'old-1'}):
             filled = schoba_monitor._add_full_rent(listings)
 
@@ -394,7 +396,7 @@ class SchobaFullRentTests(unittest.TestCase):
         listings = [self._listing()]
 
         with mock.patch('requests.get', side_effect=RuntimeError('502')), \
-             mock.patch('user_jobs.schoba_monitor.schoba_store.known_listing_keys', return_value=set()):
+             mock.patch('user_jobs.schoba_monitor.schoba_store.keys_with_full_rent', return_value=set()):
             filled = schoba_monitor._add_full_rent(listings)
 
         self.assertEqual(filled, 0)
