@@ -85,6 +85,27 @@ def _click_text(page, patterns, timeout=5000):
     return False
 
 
+def _first_visible(page, selectors, timeout=5000):
+    """Первое реально видимое поле из списка вариантов.
+
+    Портал построен на SAPUI5, и в разметке хватает скрытых полей: слепой
+    `.first` по общему селектору упирался в одно из них и падал по таймауту —
+    именно так однажды перестал работать вход, а следом отвалились фото,
+    которые открываются только под логином.
+    """
+    for selector in selectors:
+        locator = page.locator(selector)
+        for index in range(min(locator.count(), 5)):
+            candidate = locator.nth(index)
+            try:
+                if candidate.is_visible():
+                    candidate.wait_for(state="visible", timeout=timeout)
+                    return candidate
+            except Exception:
+                continue
+    return None
+
+
 def _login_if_needed(page):
     username = os.getenv("PROPOTSDAM_USERNAME", "")
     password = os.getenv("PROPOTSDAM_PASSWORD", "")
@@ -92,16 +113,41 @@ def _login_if_needed(page):
         raise RuntimeError("PROPOTSDAM_USERNAME/PROPOTSDAM_PASSWORD are not set")
     if not (page.locator("input[type='password']").count() or page.get_by_text(re.compile("anmelden", re.I)).count()):
         return
-    _click_text(page, ["anmelden"], timeout=3000)
-    email = page.locator("input[type='email'], input[name*='mail' i], input[name*='user' i], input[type='text']").first
+    # Кнопка «Anmelden» стартового экрана — она же открывает саму форму.
+    for selector in ("#easy-login", "button:has-text('Anmelden')"):
+        try:
+            page.locator(selector).first.click(timeout=3000)
+            page.wait_for_timeout(1500)
+            break
+        except Exception:
+            continue
+    email = _first_visible(page, (
+        "input[name='login-user']",
+        "input[placeholder*='Mail' i]",
+        "input[type='email']",
+        "input[name*='mail' i]",
+        "input[type='text']",
+    ))
+    password_field = _first_visible(page, ("input[name='login-password']", "input[type='password']"))
+    if email is None or password_field is None:
+        raise RuntimeError("Не знайшов полів входу на порталі ProPotsdam")
     email.fill(username, timeout=7000)
-    page.locator("input[type='password']").first.fill(password, timeout=7000)
-    if not _click_text(page, ["anmelden", "login", "einloggen"], timeout=3000):
-        page.locator("input[type='password']").first.press("Enter")
+    password_field.fill(password, timeout=7000)
+    # Кнопка отправки формы называется так же, как та, что форму открыла, —
+    # берём именно ту, что лежит рядом с полями.
+    for selector in ("[id*='LoginOkBtn']", "button:has-text('Anmelden')"):
+        try:
+            page.locator(selector).last.click(timeout=3000)
+            break
+        except Exception:
+            continue
+    else:
+        password_field.press("Enter")
     try:
         page.wait_for_load_state("networkidle", timeout=20000)
     except PlaywrightTimeoutError:
         pass
+    page.wait_for_timeout(2000)
 
 
 def _navigate_to_list(page):
