@@ -587,7 +587,10 @@ def _min_over_max_text(spec: dict, lang: str = "uk") -> str:
     return i18n.t("housing.validation.min_over_max", lang, prompt=_localized_field(spec, lang)["prompt"])
 
 
-KALTMIETE_SOURCES = {"immowelt", "semmelhaack", "schoba", "regiomakler", "locals", "kleinanzeigen"}
+# ProPotsdam теж сюди: його список друкує лише Gesamtmiete, але холодна
+# оренда стоїть усередині картки оголошення, і колектор її забирає.
+KALTMIETE_SOURCES = {"immowelt", "semmelhaack", "schoba", "regiomakler", "locals",
+                     "kleinanzeigen", "propotsdam"}
 # Повну оренду (з комуналкою) сьогодні публікують ці джерела: ProPotsdam —
 # як Gesamtmiete, Karl Marx — як Warmmiete, SEMMELHAACK і ImmoTeam/alpha —
 # поруч із холодною на тій самій сторінці.
@@ -4488,8 +4491,10 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
         )
         criteria = {
             "districts": propot_districts,
-            "min_price_eur": state.get("min_price_warm_eur"),
-            "max_price_eur": state.get("max_price_warm_eur"),
+            "min_price_eur": state.get("min_price_eur"),
+            "max_price_eur": state.get("max_price_eur"),
+            "min_price_warm_eur": state.get("min_price_warm_eur"),
+            "max_price_warm_eur": state.get("max_price_warm_eur"),
             "min_rooms": state.get("min_rooms"),
             "max_rooms": state.get("max_rooms"),
             "min_area_m2": state.get("min_area_m2"),
@@ -4503,6 +4508,7 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
             # Gesamtmiete порталу — та сама повна оренда, яку майстер питає один раз.
             min_total_rent_eur=state.get("min_price_warm_eur"), max_total_rent_eur=state.get("max_price_warm_eur"),
+            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
         )
         _sync_propot_filters()
         results.append(("propotsdam", filter_id, criteria, None))

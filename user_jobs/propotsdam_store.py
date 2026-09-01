@@ -52,6 +52,8 @@ def filter_to_dict(row: ProPotsdamFilter) -> Dict:
         "max_area_m2": row.max_area_m2,
         "min_total_rent_eur": row.min_total_rent_eur,
         "max_total_rent_eur": row.max_total_rent_eur,
+        "min_price_eur": row.min_price_eur,
+        "max_price_eur": row.max_price_eur,
         "active": row.active,
     }
 
@@ -76,6 +78,11 @@ def listing_to_dict(row: ProPotsdamListing) -> Dict:
             base["extra"] = raw["extra"]
     except Exception:
         pass
+    # Холодна оренда живе поза normalize_listing: той приводить до ладу поля
+    # списку, а ці три беруться зі сторінки самої картки.
+    base["price_eur"] = row.price_eur
+    base["nebenkosten_eur"] = row.nebenkosten_eur
+    base["heizkosten_eur"] = row.heizkosten_eur
     return base
 
 
@@ -89,6 +96,8 @@ def create_filter(
     max_area_m2: Optional[float] = None,
     min_total_rent_eur: Optional[float] = None,
     max_total_rent_eur: Optional[float] = None,
+    min_price_eur: Optional[float] = None,
+    max_price_eur: Optional[float] = None,
 ) -> int:
     session = DBSession()
     try:
@@ -102,6 +111,8 @@ def create_filter(
             max_area_m2=max_area_m2,
             min_total_rent_eur=min_total_rent_eur,
             max_total_rent_eur=max_total_rent_eur,
+            min_price_eur=min_price_eur,
+            max_price_eur=max_price_eur,
             active=True,
             created_at=utc_now(),
         )
@@ -137,6 +148,8 @@ def update_filter(
     max_area_m2: Optional[float] = None,
     min_total_rent_eur: Optional[float] = None,
     max_total_rent_eur: Optional[float] = None,
+    min_price_eur: Optional[float] = None,
+    max_price_eur: Optional[float] = None,
 ) -> bool:
     """Оновлює критерії фільтра й наново базує його на поточному каталозі.
 
@@ -161,6 +174,8 @@ def update_filter(
         row.max_area_m2 = max_area_m2
         row.min_total_rent_eur = min_total_rent_eur
         row.max_total_rent_eur = max_total_rent_eur
+        row.min_price_eur = min_price_eur
+        row.max_price_eur = max_price_eur
         session.flush()
         filter_data = filter_to_dict(row)
         now = utc_now()
@@ -254,6 +269,11 @@ def upsert_listings(listings: Iterable[Dict]) -> int:
             row.rooms = listing.get("rooms")
             row.area_m2 = listing.get("area_m2")
             row.total_rent_eur = listing.get("total_rent_eur")
+            # Ці три приходять лише зі знімка картки, тож не затираємо їх
+            # черговим обходом списку, де їх просто немає.
+            for field in ("price_eur", "nebenkosten_eur", "heizkosten_eur"):
+                if listing.get(field) is not None:
+                    setattr(row, field, listing.get(field))
             row.available_from = listing.get("available_from")
             row.detail_url = listing.get("detail_url")
             row.image_url = listing.get("image_url")

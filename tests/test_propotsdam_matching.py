@@ -54,3 +54,37 @@ class ProPotsdamMatchingTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BothRentBoundsTests(unittest.TestCase):
+    """У ProPotsdam дві ціни: повна зі списку і холодна з картки оголошення."""
+
+    def _listing(self, price_eur=326.48, total_rent_eur=485.52):
+        return {
+            "district": "Babelsberg", "rooms": 1, "area_m2": 37.44,
+            "total_rent_eur": total_rent_eur, "price_eur": price_eur,
+        }
+
+    def test_the_cold_bound_is_measured_against_the_cold_rent(self):
+        self.assertTrue(propotsdam_matching.matches_filter(
+            self._listing(), {"max_price_eur": 400}))
+        self.assertFalse(propotsdam_matching.matches_filter(
+            self._listing(), {"max_price_eur": 300}))
+
+    def test_the_full_bound_still_works_as_before(self):
+        self.assertTrue(propotsdam_matching.matches_filter(
+            self._listing(), {"max_total_rent_eur": 500}))
+        self.assertFalse(propotsdam_matching.matches_filter(
+            self._listing(), {"max_total_rent_eur": 450}))
+
+    def test_a_flat_whose_card_was_never_opened_is_not_dropped_by_a_cold_bound(self):
+        """Холодна ціна відома лише після відкриття картки; доки її немає,
+        квартиру не можна відкидати за те, чого список не друкує."""
+        self.assertTrue(propotsdam_matching.matches_filter(
+            self._listing(price_eur=None), {"max_price_eur": 300}))
+
+    def test_both_bounds_apply_together(self):
+        self.assertTrue(propotsdam_matching.matches_filter(
+            self._listing(), {"max_price_eur": 400, "max_total_rent_eur": 500}))
+        self.assertFalse(propotsdam_matching.matches_filter(
+            self._listing(), {"max_price_eur": 400, "max_total_rent_eur": 450}))

@@ -236,6 +236,11 @@ class ProPotsdamListing(Base):
     rooms = Column(FLOAT)
     area_m2 = Column(FLOAT)
     total_rent_eur = Column(FLOAT)
+    # Список порталу друкує лише Gesamtmiete; холодна оренда та її складові
+    # стоять усередині картки оголошення, у блоці «Kosten».
+    price_eur = Column(FLOAT)
+    nebenkosten_eur = Column(FLOAT)
+    heizkosten_eur = Column(FLOAT)
     available_from = Column(TEXT)
     detail_url = Column(TEXT)
     image_url = Column(TEXT)
@@ -258,6 +263,10 @@ class ProPotsdamFilter(Base):
     max_area_m2 = Column(FLOAT)
     min_total_rent_eur = Column(FLOAT)
     max_total_rent_eur = Column(FLOAT)
+    # Межі холодної оренди — ті самі, що й в інших джерел; повну оренду
+    # цей портал зберігає під власною назвою (min/max_total_rent_eur).
+    min_price_eur = Column(FLOAT)
+    max_price_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
 
@@ -764,6 +773,11 @@ def _ensure_column(table_name: str, column_name: str, column_type: str) -> None:
 
 _ensure_column('propotsdam_filter', 'min_total_rent_eur', 'FLOAT')
 _ensure_column('semmelhaack_listing', 'price_warm_eur', 'FLOAT')
+_ensure_column('propotsdam_listing', 'price_eur', 'FLOAT')
+_ensure_column('propotsdam_listing', 'nebenkosten_eur', 'FLOAT')
+_ensure_column('propotsdam_listing', 'heizkosten_eur', 'FLOAT')
+_ensure_column('propotsdam_filter', 'min_price_eur', 'FLOAT')
+_ensure_column('propotsdam_filter', 'max_price_eur', 'FLOAT')
 _ensure_column('semmelhaack_filter', 'min_price_warm_eur', 'FLOAT')
 _ensure_column('semmelhaack_filter', 'max_price_warm_eur', 'FLOAT')
 _ensure_column('schoba_filter', 'min_price_warm_eur', 'FLOAT')

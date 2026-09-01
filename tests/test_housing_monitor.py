@@ -846,7 +846,8 @@ class HousingAdminFlowTests(unittest.TestCase):
             housing_monitor._finish_criteria_picker(self._cb_update(), context)
             self.assertEqual(state['step'], 'min_rooms')
 
-            for text in ['2', '3', '50', '80', '800', '1000']:
+            # Кімнати, площа, потім холодна ціна (2) і повна (2).
+            for text in ['2', '3', '50', '80', '500', '700', '800', '1000']:
                 update = self._update(text)
                 self.assertTrue(housing_monitor.handle_private_text(update, context))
 
@@ -860,6 +861,8 @@ class HousingAdminFlowTests(unittest.TestCase):
             max_area_m2=80.0,
             min_total_rent_eur=800.0,
             max_total_rent_eur=1000.0,
+            min_price_eur=500.0,
+            max_price_eur=700.0,
         )
         self.assertIn('ProPotsdam', create_filter.call_args.kwargs['title'])
         self.assertNotIn('housing_admin', context.user_data)
@@ -1574,7 +1577,10 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
             user_id=544675510, title=mock.ANY,
             districts='Waldstadt 1,Golm',
             min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            # Холодну межу отримують обидва джерела, повну — лише ProPotsdam:
+            # Immowelt повної ціни не друкує.
             min_total_rent_eur=900.0, max_total_rent_eur=1400.0,
+            min_price_eur=800.0, max_price_eur=1200.0,
         )
         sync.assert_called_once()
 
@@ -1614,7 +1620,9 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
              mock.patch.object(housing_monitor, '_request') as request, \
              mock.patch('user_handlers.housing_monitor.propotsdam_store.create_filter', return_value=5) as create_filter, \
              mock.patch.object(housing_monitor, '_sync_propot_filters'):
-            for text in ['-', '-', '-', '-', '700', '-']:
+            # 4 поля кімнат/площі, потім холодна ціна (2) і повна (2):
+            # портал друкує Gesamtmiete в списку, а Kaltmiete — у картці.
+            for text in ['-', '-', '-', '-', '400', '-', '700', '-']:
                 self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
 
         request.assert_not_called()
@@ -1623,6 +1631,7 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
             districts='Babelsberg Nord',
             min_rooms=None, max_rooms=None, min_area_m2=None, max_area_m2=None,
             min_total_rent_eur=700.0, max_total_rent_eur=None,
+            min_price_eur=400.0, max_price_eur=None,
         )
         self.assertNotIn('housing_admin', context.user_data)
 
