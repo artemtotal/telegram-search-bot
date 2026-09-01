@@ -255,6 +255,39 @@ Kaution
         self.assertIsNone(prices["price_eur"])
         self.assertIsNone(prices["total_rent_eur"])
 
+    def test_a_neighbours_total_from_the_list_above_is_not_taken(self):
+        """Над карткою лишається перелік інших квартир, і перша «Gesamtmiete»
+        в тексті сторінки — сусідська. Одного разу вона так і потрапила в
+        розбір: 753,65 замість власних 485,52."""
+        page_text = (
+            "Babelsberg\n"
+            "Großbeerenstr. 43, 14482 Potsdam\n"
+            "Zimmer\n2\n"
+            "Gesamtmiete\n753,65 EUR\n"
+            + self.CARD_TEXT
+        )
+
+        prices = propotsdam_parser.parse_card_prices(page_text)
+
+        self.assertEqual(prices["total_rent_eur"], 485.52)
+        self.assertEqual(prices["price_eur"], 326.48)
+
+    def test_a_total_that_does_not_match_its_parts_is_dropped(self):
+        """Якщо сума складових не сходиться з підсумком, підсумок чужий."""
+        text = (
+            "Kosten\n"
+            "Kaltmiete\n326,48 EUR\n"
+            "Betriebskosten\n81,24 EUR\n"
+            "Heizkosten\n77,80 EUR\n"
+            "Gesamtmiete\n999,00 EUR\n"
+            "Kaution\n3 Nettokaltmieten\n"
+        )
+
+        prices = propotsdam_parser.parse_card_prices(text)
+
+        self.assertEqual(prices["price_eur"], 326.48)
+        self.assertIsNone(prices["total_rent_eur"])
+
     def test_the_word_kaution_is_not_mistaken_for_a_price(self):
         """«Kaution: 3 Nettokaltmieten» — не сума, і в ціну потрапити не має."""
         prices = propotsdam_parser.parse_card_prices(self.CARD_TEXT)

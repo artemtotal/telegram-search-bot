@@ -203,23 +203,44 @@ _CARD_PRICE_LABELS = {
 }
 
 
+_KOSTEN_BLOCK_RE = re.compile(
+    r"(?:^|\n)[ \t]*Kosten[ \t]*\n(.{0,600}?)"
+    r"(?:\n[ \t]*(?:Kaution|Ausstattung|Objektbeschreibung)|$)",
+    re.I | re.S,
+)
+_CARD_PRICE_PATTERN = r"(?:^|\n)[ \t]*{label}[ \t]*\n[ \t]*([\d.,]+)[ \t]*EUR"
+
+
 def parse_card_prices(text: str) -> dict[str, float | None]:
-    """Розбивка ціни зі сторінки самого оголошення.
+    """Розбивка ціни з блоку «Kosten» на сторінці оголошення.
 
     Список порталу друкує лише Gesamtmiete, і довго вважалось, що холодної
-    оренди він не публікує взагалі. Насправді вона є — просто всередині
-    картки, у блоці «Kosten», поруч із Betriebskosten і Heizkosten (сума
-    трьох і дає Gesamtmiete: 326,48 + 81,24 + 77,80 = 485,52). Те, що портал
-    знає холодну оренду, видно й з його власної форми пошуку — там окреме
-    поле «Kaltmiete bis».
+    оренди він не публікує взагалі. Насправді вона є — усередині картки:
+    Kaltmiete + Betriebskosten + Heizkosten і дають ту саму Gesamtmiete
+    (326,48 + 81,24 + 77,80 = 485,52).
+
+    Шукаємо саме в блоці «Kosten», а не по всій сторінці: над карткою
+    лишається перелік інших квартир, і перша ж «Gesamtmiete» в тексті
+    належить сусідньому оголошенню — так у розбір одного разу й потрапила
+    чужа сума. Якщо складові не дають названого підсумку, підсумку не
+    віримо: краще порожнє поле, ніж чуже число.
     """
+    empty = {key: None for key in _CARD_PRICE_LABELS}
+    block_match = _KOSTEN_BLOCK_RE.search(text or "")
+    if not block_match:
+        return empty
+    block = block_match.group(1)
     prices: dict[str, float | None] = {}
     for key, label in _CARD_PRICE_LABELS.items():
-        match = re.search(
-            r"(?:^|\n)\s*" + label + r"\s*\n\s*([\d.,]+)\s*EUR",
-            text or "", re.I,
-        )
+        match = re.search(_CARD_PRICE_PATTERN.format(label=label), block, re.I)
         prices[key] = parse_decimal(match.group(1)) if match else None
+    parts = [prices.get(key) for key in ("price_eur", "nebenkosten_eur", "heizkosten_eur")]
+    total = prices.get("total_rent_eur")
+    # Складові мають давати названий підсумок. Не дають — значить підсумок
+    # приїхав не з цієї картки, і краще лишити поле порожнім, ніж чуже число.
+    if total is not None and all(part is not None for part in parts):
+        if abs(sum(parts) - total) > 1:
+            prices["total_rent_eur"] = None
     return prices
 
 

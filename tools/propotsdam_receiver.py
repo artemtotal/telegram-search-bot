@@ -265,18 +265,31 @@ def _listing_detail_path(listing):
 def _open_offer_list(page):
     """Доводить сторінку до самого переліку квартир.
 
-    Плитка «Immobiliensuche» лише розкриває підменю, у якому «Immobilien»
-    трапляється двічі: перший раз — заголовком розділу, і клік по ньому нікуди
-    не веде. Потрібен останній збіг — сам пункт переліку.
+    Не через `_navigate_to_list`: той перебирає ще й «^Immobilien$», і меню
+    встигає згорнутись — клік тоді летить у невидимий елемент. Тут потрібні
+    рівно три кроки: розкрити плитку «Immobiliensuche», дотиснути «mehr
+    anzeigen» і взяти ОСТАННІЙ збіг «Immobilien». Перший — заголовок розділу,
+    він нікуди не веде; клік по самому боксу відкриває натомість «Anfragen».
     """
-    _navigate_to_list(page)
+    page.goto(PORTAL_URL, wait_until="domcontentloaded", timeout=60000)
+    page.wait_for_timeout(3000)
+    _login_if_needed(page)
+    page.wait_for_timeout(1500)
+    for pattern in ("Immobiliensuche", "mehr anzeigen"):
+        _click_text(page, [pattern], timeout=4000)
     items = page.get_by_text(re.compile(r"^\s*Immobilien\s*$", re.I))
-    count = items.count()
-    if not count:
-        return False
-    items.nth(count - 1).click(timeout=5000, force=True)
-    page.wait_for_timeout(4000)
-    return bool(re.search(r"Zimmer|Gesamtmiete|EINTR", page.evaluate("() => document.body.innerText") or "", re.I))
+    for index in range(items.count() - 1, -1, -1):
+        candidate = items.nth(index)
+        try:
+            if not candidate.is_visible():
+                continue
+            candidate.click(timeout=4000, force=True)
+        except Exception:
+            continue
+        page.wait_for_timeout(4000)
+        if re.search(r"Zimmer|Gesamtmiete|EINTR", page.evaluate("() => document.body.innerText") or "", re.I):
+            return True
+    return False
 
 
 def _open_listing(page, listing):
