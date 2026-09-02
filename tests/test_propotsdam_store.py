@@ -272,3 +272,52 @@ class ProPotsdamStoreTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CardPricesSurviveStorageTests(unittest.TestCase):
+    """Ціни з картки мають доїхати до бази, а не загубитись дорогою.
+
+    Знімки картки лежали на диску, ціни в них були — а в базі стояли самі
+    Gesamtmiete: `normalize_listing` повертає лише перелічені поля, і все,
+    чого немає в списку порталу, мовчки зникало на цьому кроці.
+    """
+
+    def setUp(self):
+        self.engine = create_engine(
+            'sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self._original = propotsdam_store.DBSession
+        propotsdam_store.DBSession = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        propotsdam_store.DBSession = self._original
+        self.engine.dispose()
+
+    def _listing(self, **kwargs):
+        base = {
+            'listing_key': 'AAAA-1111', 'title': 'Wohnung',
+            'address': 'Alt Nowawes 84, 14482 Potsdam', 'district': 'Babelsberg',
+            'rooms': '1', 'area': '37 m²', 'total_rent': '485,52 EUR',
+        }
+        base.update(kwargs)
+        return base
+
+    def test_the_cold_rent_from_the_card_reaches_the_database(self):
+        propotsdam_store.upsert_listings([self._listing(
+            price_eur=326.48, nebenkosten_eur=81.24, heizkosten_eur=77.8)])
+
+        stored = propotsdam_store.list_active_listings()[0]
+
+        self.assertEqual(stored['price_eur'], 326.48)
+        self.assertEqual(stored['nebenkosten_eur'], 81.24)
+        self.assertEqual(stored['heizkosten_eur'], 77.8)
+        self.assertEqual(stored['total_rent_eur'], 485.52)
+
+    def test_a_later_list_only_scan_does_not_wipe_it(self):
+        """Обхід списку картку не відкриває — і не має стирати те, що вона дала."""
+        propotsdam_store.upsert_listings([self._listing(price_eur=326.48)])
+        propotsdam_store.upsert_listings([self._listing()])
+
+        stored = propotsdam_store.list_active_listings()[0]
+
+        self.assertEqual(stored['price_eur'], 326.48)

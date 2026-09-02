@@ -69,6 +69,12 @@ def normalize_listing(payload: dict[str, Any]) -> dict[str, Any]:
         "rooms": parse_decimal(payload.get("rooms")),
         "area_m2": parse_decimal(payload.get("area") or payload.get("area_m2")),
         "total_rent_eur": parse_decimal(payload.get("total_rent") or payload.get("total_rent_eur")),
+        # Холодна оренда та її складові приходять зі знімка картки оголошення.
+        # Без них тут цифри мовчки губились: нормалізація повертає лише
+        # перелічені поля, тож усе, чого немає в списку, до бази не доїжджало.
+        "price_eur": parse_decimal(payload.get("price_eur")),
+        "nebenkosten_eur": parse_decimal(payload.get("nebenkosten_eur")),
+        "heizkosten_eur": parse_decimal(payload.get("heizkosten_eur")),
         "available_from": clean_text(payload.get("available_from")),
         "detail_url": clean_text(payload.get("detail_url")),
         "image_url": clean_text(payload.get("image_url")),
