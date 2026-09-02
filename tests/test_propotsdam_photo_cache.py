@@ -539,3 +539,49 @@ class SnapshotOwnershipTests(unittest.TestCase):
         """«Babelsberg» — це район, він стоїть у кожній тутешній картці."""
         self.assertFalse(propotsdam_receiver._card_belongs_to(
             self.CARD, {"title": "Babelsberg", "address": "Großbeerenstr. 43"}))
+
+@unittest.skipIf(
+    propotsdam_receiver is None,
+    f"колектор ProPotsdam доступний лише на хості: {_IMPORT_ERROR}",
+)
+class DetailBatchLimitTests(unittest.TestCase):
+    """За один обхід відкривається до десятка карток.
+
+    Ліміт стояв на трьох, і в день, коли портал викладе чотири квартири
+    одразу, четверта чекала б наступного обходу — тобто приїхала б до людини
+    без холодної оренди. Одна картка коштує близько 25 секунд, обхід іде раз
+    на 15 хвилин, тож десяток встигає з запасом.
+    """
+
+    def _page(self):
+        page = FakeDetailPage(['AAAA1111-BBBB-2222-CCCC-333344445555'])
+        page.evaluate = lambda script: (
+            ['https://portal/cover.jpg'] if 'img' in script
+            else 'DetailKarte\nRibbeckstr. 27, 14469 Potsdam\nKosten\nKaltmiete\n700,00 EUR\n'
+        )
+        return page
+
+    def _listings(self, count):
+        return [
+            {"listing_key": f"KEY{index:04d}-AAAA-BBBB", "title": "Wohnung",
+             "address": "Ribbeckstr. 27, 14469 Potsdam"}
+            for index in range(count)
+        ]
+
+    def test_four_new_flats_are_all_opened_in_one_run(self):
+        with TemporaryDirectory() as tmp, \
+             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
+             mock.patch.object(propotsdam_receiver, '_open_offer_list', lambda page: True):
+            result = propotsdam_receiver._capture_details(self._page(), self._listings(4))
+
+        self.assertEqual(result['opened'], 4)
+
+    def test_an_unusually_large_batch_is_capped_and_the_rest_waits(self):
+        """Захист від дня, коли порталу заманеться викласти пів сотні."""
+        with TemporaryDirectory() as tmp, \
+             mock.patch.object(propotsdam_receiver, 'DETAIL_DIR', Path(tmp)), \
+             mock.patch.object(propotsdam_receiver, 'DETAIL_MAX_PER_SCAN', 10), \
+             mock.patch.object(propotsdam_receiver, '_open_offer_list', lambda page: True):
+            result = propotsdam_receiver._capture_details(self._page(), self._listings(14))
+
+        self.assertEqual(result['opened'], 10)

@@ -65,7 +65,12 @@ PHOTO_MAX_BYTES = int(os.getenv("PROPOTSDAM_PHOTO_MAX_BYTES", str(12 * 1024 * 10
 PHOTO_KEEP_DAYS = int(os.getenv("PROPOTSDAM_PHOTO_KEEP_DAYS", "30") or 30)
 PHOTO_TIMEOUT_MS = int(os.getenv("PROPOTSDAM_PHOTO_TIMEOUT_MS", "30000") or 30000)
 DETAIL_DIR = Path(os.getenv("PROPOTSDAM_DETAIL_DIR", str(PROFILE_DIR.parent / "propotsdam-details")))
-DETAIL_MAX_PER_SCAN = int(os.getenv("PROPOTSDAM_DETAIL_MAX", "3") or 3)
+# Скільки карток відкривати за один обхід. Одна картка — близько 25 секунд
+# (відкрити, зняти, повернутись до переліку), сам обхід без карток —
+# близько 40; за 15-хвилинний інтервал десяток встигає з запасом. Ліміт
+# лишається як захист від дня, коли портал викладе одразу пів сотні:
+# решта дістанеться наступному обходу.
+DETAIL_MAX_PER_SCAN = int(os.getenv("PROPOTSDAM_DETAIL_MAX", "10") or 10)
 DETAIL_ENABLED = os.getenv("PROPOTSDAM_DETAIL_ENABLED", "1").strip() not in {"", "0", "false", "no"}
 _scan_lock = Lock()
 _state_lock = Lock()
@@ -478,7 +483,13 @@ def _capture_details(page, listings):
                     logger.warning("Could not return to the ProPotsdam listing view: %s", exc)
                     break
 
-    logger.info("ProPotsdam details opened=%s skipped=%s extra photos=%s", opened, skipped, len(resource_ids))
+    # Скільки карток лишилось незнятими — інакше «opened=10» виглядає як повний
+    # успіх і в той день, коли квартир було вдвічі більше.
+    pending = max(0, len(listings) - opened - skipped)
+    logger.info(
+        "ProPotsdam details opened=%s skipped=%s pending=%s extra photos=%s",
+        opened, skipped, pending, len(resource_ids),
+    )
     return {"opened": opened, "skipped": skipped, "resource_ids": resource_ids}
 
 
