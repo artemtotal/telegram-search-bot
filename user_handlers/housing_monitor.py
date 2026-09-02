@@ -37,6 +37,8 @@ from user_jobs import (
     semmelhaack_matching,
     semmelhaack_store,
     user_settings_store,
+    vonovia_matching,
+    vonovia_store,
 )
 
 logger = logging.getLogger(__name__)
@@ -255,6 +257,21 @@ KARLMARX_CRITERIA_FIELDS = [
 ]
 KARLMARX_CRITERIA_KEYS = [spec["key"] for spec in KARLMARX_CRITERIA_FIELDS]
 KARLMARX_CRITERIA_BY_KEY = {spec["key"]: spec for spec in KARLMARX_CRITERIA_FIELDS}
+# Vonovia теж без районів. Особливість — джерело знає обидві ціни: холодна
+# стоїть у каталозі, повна на сторінці оголошення, тож редагування питає обидві
+# межі, а не одну, як у сусідів вище.
+VONOVIA_CRITERIA_FIELDS = [
+    {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": _numeric_prompt("Мінімальна кількість кімнат", "2"), "label_key": "housing.field.label.rooms_min", "question_key": "housing.field.q.rooms_min", "example": "2"},
+    {"key": "max_rooms", "label": "Кімнати: максимум (до)", "prompt": _numeric_prompt("Максимальна кількість кімнат", "4"), "label_key": "housing.field.label.rooms_max", "question_key": "housing.field.q.rooms_max", "example": "4"},
+    {"key": "min_area_m2", "label": "Площа: мінімум (від)", "prompt": _numeric_prompt("Мінімальна площа, м²", "50"), "label_key": "housing.field.label.area_min", "question_key": "housing.field.q.area_min", "example": "50"},
+    {"key": "max_area_m2", "label": "Площа: максимум (до)", "prompt": _numeric_prompt("Максимальна площа, м²", "90"), "label_key": "housing.field.label.area_max", "question_key": "housing.field.q.area_max", "example": "90"},
+    {"key": "min_price_eur", "label": "Ціна: мінімум (від)", "prompt": _numeric_prompt("Мінімальна холодна оренда (Kaltmiete), €", "600"), "label_key": "housing.field.label.price_min", "question_key": "housing.field.q.kaltmiete_min", "example": "600"},
+    {"key": "max_price_eur", "label": "Ціна: максимум (до)", "prompt": _numeric_prompt("Максимальна холодна оренда (Kaltmiete), €", "1200"), "label_key": "housing.field.label.price_max", "question_key": "housing.field.q.kaltmiete_max", "example": "1200"},
+    {"key": "min_price_warm_eur", "label": "Повна оренда: мінімум (від)", "prompt": _numeric_prompt("Мінімальна повна оренда з комунальними (Warmmiete), €", "700"), "label_key": "housing.field.label.warm_min", "question_key": "housing.field.q.warmmiete_min", "example": "700"},
+    {"key": "max_price_warm_eur", "label": "Повна оренда: максимум (до)", "prompt": _numeric_prompt("Максимальна повна оренда з комунальними (Warmmiete), €", "1400"), "label_key": "housing.field.label.warm_max", "question_key": "housing.field.q.warmmiete_max", "example": "1400"},
+]
+VONOVIA_CRITERIA_KEYS = [spec["key"] for spec in VONOVIA_CRITERIA_FIELDS]
+VONOVIA_CRITERIA_BY_KEY = {spec["key"]: spec for spec in VONOVIA_CRITERIA_FIELDS}
 
 # Портали, серед яких можна обирати одразу при створенні фільтра. Список коротко —
 # додавати нове джерело буде такий самий однорядковий запис, а не окремий майстер.
@@ -267,6 +284,7 @@ AVAILABLE_SOURCES = [
     {"key": "kleinanzeigen", "icon": "📋", "label": "Kleinanzeigen"},
     {"key": "locals", "icon": "🔑", "label": "locals®"},
     {"key": "karlmarx", "icon": "🧱", "label": "Karl Marx"},
+    {"key": "vonovia", "icon": "🏬", "label": "Vonovia"},
 ]
 AVAILABLE_SOURCE_KEYS = [spec["key"] for spec in AVAILABLE_SOURCES]
 # Immowelt і ProPotsdam мають райони (Stadtteil); SEMMELHAACK — ні. Спільний крок
@@ -590,11 +608,11 @@ def _min_over_max_text(spec: dict, lang: str = "uk") -> str:
 # ProPotsdam теж сюди: його список друкує лише Gesamtmiete, але холодна
 # оренда стоїть усередині картки оголошення, і колектор її забирає.
 KALTMIETE_SOURCES = {"immowelt", "semmelhaack", "schoba", "regiomakler", "locals",
-                     "kleinanzeigen", "propotsdam"}
+                     "kleinanzeigen", "propotsdam", "vonovia"}
 # Повну оренду (з комуналкою) сьогодні публікують ці джерела: ProPotsdam —
-# як Gesamtmiete, Karl Marx — як Warmmiete, SEMMELHAACK і ImmoTeam/alpha —
-# поруч із холодною на тій самій сторінці.
-WARMMIETE_SOURCES = {"propotsdam", "karlmarx", "semmelhaack", "regiomakler"}
+# як Gesamtmiete, Karl Marx — як Warmmiete, SEMMELHAACK, ImmoTeam/alpha і
+# Vonovia — поруч із холодною (у Vonovia — на сторінці оголошення).
+WARMMIETE_SOURCES = {"propotsdam", "karlmarx", "semmelhaack", "regiomakler", "vonovia"}
 
 
 def _price_steps_for(sources_selected) -> list:
@@ -791,7 +809,7 @@ def _sync_propot_filters() -> None:
 
 # Джерела з власним сховищем у цьому боті — Immowelt керується окремим
 # check-Wohnung приймачем без API для «нещодавніх» вибірок, тож пропозиція
-# «показати за годину/добу» після створення фільтра охоплює лише ці сім.
+# «показати за годину/добу» після створення фільтра охоплює лише ці вісім.
 _LOCAL_SOURCE_MODULES = {
     "propotsdam": (propotsdam_store, propotsdam_matching),
     "semmelhaack": (semmelhaack_store, semmelhaack_matching),
@@ -800,6 +818,7 @@ _LOCAL_SOURCE_MODULES = {
     "kleinanzeigen": (kleinanzeigen_store, kleinanzeigen_matching),
     "locals": (locals_store, locals_matching),
     "karlmarx": (karlmarx_store, karlmarx_matching),
+    "vonovia": (vonovia_store, vonovia_matching),
 }
 RECENT_WINDOWS = [("housing.recent.last_hour", 1), ("housing.recent.last_day", 24)]
 
@@ -961,7 +980,7 @@ COOP_SOURCE_KEYS = [coop["key"] for coop in coop_watchdog.COOPERATIVES]
 COOP_PREFIXES = {"gewoba": "G", "wbg1903": "W", "wbg_daheim": "D"}
 ALL_HOUSING_SOURCES = [
     "immowelt", "propotsdam", "semmelhaack", "schoba",
-    "regiomakler", "kleinanzeigen", "locals", "karlmarx",
+    "regiomakler", "kleinanzeigen", "locals", "karlmarx", "vonovia",
     *COOP_SOURCE_KEYS,
 ]
 
@@ -1060,10 +1079,13 @@ def user_filters(user_id: Optional[int]) -> list:
     km = karlmarx_store.list_filters(user_id=int(user_id), active_only=True)
     for item in km:
         item.setdefault("source", "karlmarx")
+    von = vonovia_store.list_filters(user_id=int(user_id), active_only=True)
+    for item in von:
+        item.setdefault("source", "vonovia")
     coops = coop_watchdog_store.list_filters(user_id=int(user_id), active_only=True)
     for item in coops:
         item["source"] = item["coop_key"]
-    return immowelt + propot + semm + schoba + regio + kanz + loc + km + coops
+    return immowelt + propot + semm + schoba + regio + kanz + loc + km + von + coops
 
 
 def manageable_filters(user_id: Optional[int]) -> list:
@@ -1094,7 +1116,10 @@ def manageable_filters(user_id: Optional[int]) -> list:
     km = karlmarx_store.list_filters(user_id=int(user_id))
     for item in km:
         item.setdefault("source", "karlmarx")
-    return immowelt + propot + semm + schoba + regio + kanz + loc + km
+    von = vonovia_store.list_filters(user_id=int(user_id))
+    for item in von:
+        item.setdefault("source", "vonovia")
+    return immowelt + propot + semm + schoba + regio + kanz + loc + km + von
 
 
 def _has_grandfathered_filter(user_id: int) -> bool:
@@ -1466,6 +1491,7 @@ _GENERIC_STATUS_SOURCES = [
     (kleinanzeigen_store, "Kleinanzeigen", KLEINANZEIGEN_STALE_AFTER, "housing.status.checking"),
     (locals_store, "locals®", PROPOTSDAM_STALE_AFTER, "housing.status.checking"),
     (karlmarx_store, "Karl Marx", PROPOTSDAM_STALE_AFTER, "housing.status.checking"),
+    (vonovia_store, "Vonovia", PROPOTSDAM_STALE_AFTER, "housing.status.checking"),
 ]
 
 
@@ -1583,6 +1609,7 @@ def _render_menu(user_id: int, lang: str = "uk") -> str:
         prefixes = {
             "immowelt": "", "propotsdam": "P", "semmelhaack": "S", "schoba": "C",
             "regiomakler": "R", "kleinanzeigen": "K", "locals": "L", "karlmarx": "M",
+            "vonovia": "V",
             **COOP_PREFIXES,
         }
         for item in filters:
@@ -1673,6 +1700,11 @@ def _admin_rows() -> list:
         rows.append({
             "user_id": int(item.get("user_id")), "label": f"M#{int(item.get('filter_id'))}",
             "title": html.escape(str(item.get("title") or "Karl Marx")),
+        })
+    for item in vonovia_store.list_filters():
+        rows.append({
+            "user_id": int(item.get("user_id")), "label": f"V#{int(item.get('filter_id'))}",
+            "title": html.escape(str(item.get("title") or "Vonovia")),
         })
     for item in coop_watchdog_store.list_filters():
         prefix = COOP_PREFIXES.get(item["coop_key"], "?")
@@ -2137,7 +2169,8 @@ def _delete_all_filters_for_user(user_id: int) -> int:
     if propot_filters:
         _sync_propot_filters()
 
-    for store in (semmelhaack_store, schoba_store, regiomakler_store, kleinanzeigen_store, locals_store, karlmarx_store):
+    for store in (semmelhaack_store, schoba_store, regiomakler_store, kleinanzeigen_store,
+                  locals_store, karlmarx_store, vonovia_store):
         for filt in store.list_filters(user_id=user_id):
             if store.delete_filter(int(filt["filter_id"]), user_id=user_id):
                 removed += 1
@@ -2172,7 +2205,8 @@ def _set_all_filters_active_for_user(user_id: int, active: bool) -> int:
     if propot_filters:
         _sync_propot_filters()
 
-    for store in (semmelhaack_store, schoba_store, regiomakler_store, kleinanzeigen_store, locals_store, karlmarx_store):
+    for store in (semmelhaack_store, schoba_store, regiomakler_store, kleinanzeigen_store,
+                  locals_store, karlmarx_store, vonovia_store):
         for filt in store.list_filters(user_id=user_id):
             if store.set_filter_active(int(filt["filter_id"]), active, user_id=user_id):
                 changed += 1
@@ -2581,12 +2615,13 @@ def _item_source(item: Dict[str, object]) -> str:
 SOURCE_ICON = {
     "immowelt": "🏠", "propotsdam": "🏢", "semmelhaack": "🏘", "schoba": "🏡",
     "regiomakler": "🤝", "kleinanzeigen": "📋", "locals": "🔑", "karlmarx": "🧱",
+    "vonovia": "🏬",
     "gewoba": "🏗", "wbg1903": "🏚", "wbg_daheim": "🛖",
 }
 SOURCE_LABEL = {
     "immowelt": "Immowelt", "propotsdam": "ProPotsdam", "semmelhaack": "SEMMELHAACK",
     "schoba": "SCHOBA", "regiomakler": "ImmoTeam/alpha", "kleinanzeigen": "Kleinanzeigen",
-    "locals": "locals®", "karlmarx": "Karl Marx",
+    "locals": "locals®", "karlmarx": "Karl Marx", "vonovia": "Vonovia",
     "all": "усі джерела",
     # Labels come straight from coop_watchdog.COOPERATIVES - one source of
     # truth for the human-readable name of each cooperative.
@@ -2625,7 +2660,8 @@ def _item_criteria_summary(item: Dict[str, object], source: str, lang: str = "uk
     return summary
 
 
-_SOURCE_ORDER = ("immowelt", "propotsdam", "semmelhaack", "schoba", "regiomakler", "kleinanzeigen", "locals", "karlmarx")
+_SOURCE_ORDER = ("immowelt", "propotsdam", "semmelhaack", "schoba", "regiomakler",
+                 "kleinanzeigen", "locals", "karlmarx", "vonovia")
 
 
 def _group_signature(item: Dict[str, object]) -> Optional[tuple]:
@@ -2956,6 +2992,8 @@ def _set_one_filter_active(source: str, filter_id: int, active: bool, user_id: i
         return locals_store.set_filter_active(filter_id, active, user_id=user_id)
     if source == "karlmarx":
         return karlmarx_store.set_filter_active(filter_id, active, user_id=user_id)
+    if source == "vonovia":
+        return vonovia_store.set_filter_active(filter_id, active, user_id=user_id)
     try:
         _request("PATCH", f"/api/housing/filters/{filter_id}/active", json={"active": active})
         return True
@@ -2982,6 +3020,8 @@ def _delete_one_filter(source: str, filter_id: int, user_id: int) -> bool:
         return locals_store.delete_filter(filter_id, user_id=user_id)
     if source == "karlmarx":
         return karlmarx_store.delete_filter(filter_id, user_id=user_id)
+    if source == "vonovia":
+        return vonovia_store.delete_filter(filter_id, user_id=user_id)
     try:
         _request("DELETE", f"/api/housing/filters/{filter_id}")
         return True
@@ -3745,6 +3785,109 @@ def _handle_karlmarx_flow(update: Update, context: CallbackContext, state: dict,
     return False
 
 
+def start_vonovia_edit_flow(update: Update, context: CallbackContext, filter_id: int) -> None:
+    """Той самий підхід, що й у сусідів, але з обома межами ціни.
+
+    Vonovia — одне з небагатьох джерел, де відомі і холодна, і повна оренда,
+    тож редагування питає обидві, а не лише холодну.
+    """
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not is_allowed(user.id):
+        return
+    item = _own_filter(int(user.id), "vonovia", filter_id)
+    if not item:
+        query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
+        return
+    first_key = VONOVIA_CRITERIA_KEYS[0]
+    context.user_data["housing_admin"] = {
+        "mode": "vonovia", "step": first_key, "user_id": int(user.id),
+        "min_rooms": item.get("min_rooms"),
+        "max_rooms": item.get("max_rooms"),
+        "min_area_m2": item.get("min_area_m2"),
+        "max_area_m2": item.get("max_area_m2"),
+        "min_price_eur": item.get("min_price_eur"),
+        "max_price_eur": item.get("max_price_eur"),
+        "min_price_warm_eur": item.get("min_price_warm_eur"),
+        "max_price_warm_eur": item.get("max_price_warm_eur"),
+        "edit_filter_id": filter_id,
+    }
+    query.answer()
+    query.edit_message_text(_field_prompt({}, VONOVIA_CRITERIA_FIELDS, first_key, i18n.get_lang(user.id)), parse_mode="HTML")
+
+
+def _finalize_vonovia_filter(message, context: CallbackContext, state: dict) -> None:
+    """Той самий майстер веде і редагування — відрізняє лише `edit_filter_id`."""
+    edit_filter_id = state.get("edit_filter_id")
+    criteria = {
+        "min_price_eur": state.get("min_price_eur"),
+        "max_price_eur": state.get("max_price_eur"),
+        "min_price_warm_eur": state.get("min_price_warm_eur"),
+        "max_price_warm_eur": state.get("max_price_warm_eur"),
+        "min_rooms": state.get("min_rooms"),
+        "max_rooms": state.get("max_rooms"),
+        "min_area_m2": state.get("min_area_m2"),
+        "max_area_m2": state.get("max_area_m2"),
+    }
+    title = _auto_title("vonovia", criteria)
+    common = dict(
+        title=title,
+        min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+        min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+        min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+        min_price_warm_eur=state.get("min_price_warm_eur"),
+        max_price_warm_eur=state.get("max_price_warm_eur"),
+    )
+    if edit_filter_id:
+        ok = vonovia_store.update_filter(
+            filter_id=int(edit_filter_id), user_id=int(state["user_id"]), **common
+        )
+        filter_id = int(edit_filter_id)
+    else:
+        filter_id = vonovia_store.create_filter(user_id=state["user_id"], **common)
+        ok = True
+    context.user_data.pop("housing_admin", None)
+    lang = _dialog_lang(state)
+    if not ok:
+        message.reply_text(i18n.t("housing.error.filter_gone", lang))
+        return
+    heading = (
+        i18n.t("housing.finalize.updated", lang, source="Vonovia") if edit_filter_id
+        else i18n.t("housing.finalize.added", lang, source="Vonovia")
+    )
+    if not edit_filter_id:
+        _offer_recent_matches(context, [("vonovia", filter_id)])
+        _maybe_send_first_filter_congrats(context, state["user_id"])
+    message.reply_text(
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"V{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        parse_mode="HTML",
+        reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
+    )
+
+
+def _handle_vonovia_flow(update: Update, context: CallbackContext, state: dict, text: str) -> bool:
+    step = state.get("step")
+    if step in VONOVIA_CRITERIA_BY_KEY:
+        spec = VONOVIA_CRITERIA_BY_KEY[step]
+        value = _parse_single_number(text)
+        if value is _INVALID_NUMBER:
+            update.message.reply_text(_invalid_number_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
+            return True
+        if _violates_sibling_bound(state, step, value):
+            update.message.reply_text(_min_over_max_text(spec, i18n.get_lang(update.effective_user.id)), parse_mode="HTML")
+            return True
+        state[step] = value
+        index = VONOVIA_CRITERIA_KEYS.index(step)
+        if index < len(VONOVIA_CRITERIA_KEYS) - 1:
+            next_key = VONOVIA_CRITERIA_KEYS[index + 1]
+            state["step"] = next_key
+            _reply_field_prompt(update.message, _field_prompt(state, VONOVIA_CRITERIA_FIELDS, next_key, i18n.get_lang(update.effective_user.id)), i18n.get_lang(update.effective_user.id), field_key=next_key)
+            return True
+        _finalize_vonovia_filter(update.message, context, state)
+        return True
+    return False
+
+
 def _show_immowelt_preview(message, state: dict) -> None:
     criteria = _criteria_from_state(state)
     state["title"] = _auto_title("immowelt", criteria)
@@ -4289,6 +4432,8 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
         return _handle_locals_flow(update, context, state, text)
     if state.get("mode") == "karlmarx":
         return _handle_karlmarx_flow(update, context, state, text)
+    if state.get("mode") == "vonovia":
+        return _handle_vonovia_flow(update, context, state, text)
     if state.get("mode") == "multi":
         return _handle_multi_flow(update, context, state, text)
     return _handle_immowelt_flow(update, context, state, text)
@@ -4633,6 +4778,30 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             min_price_warm_eur=state.get("min_price_warm_eur"), max_price_warm_eur=state.get("max_price_warm_eur"),
         )
         results.append(("karlmarx", filter_id, criteria, None))
+    if "vonovia" in sources:
+        # Без районів. Каталог порталу друкує Kaltmiete, а сторінка оголошення
+        # — Warmmiete, тож застосовуються обидві межі: це те саме одне питання
+        # про холодну і те саме одне про повну, що й для сусідів.
+        criteria = {
+            "min_price_eur": state.get("min_price_eur"),
+            "max_price_eur": state.get("max_price_eur"),
+            "min_price_warm_eur": state.get("min_price_warm_eur"),
+            "max_price_warm_eur": state.get("max_price_warm_eur"),
+            "min_rooms": state.get("min_rooms"),
+            "max_rooms": state.get("max_rooms"),
+            "min_area_m2": state.get("min_area_m2"),
+            "max_area_m2": state.get("max_area_m2"),
+        }
+        title = _auto_title("vonovia", criteria)
+        filter_id = vonovia_store.create_filter(
+            user_id=state["user_id"], title=title,
+            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+            min_price_warm_eur=state.get("min_price_warm_eur"),
+            max_price_warm_eur=state.get("max_price_warm_eur"),
+        )
+        results.append(("vonovia", filter_id, criteria, None))
     context.user_data.pop("housing_admin", None)
     lang = _dialog_lang(state)
     lines = [i18n.t("housing.finalize.multi_title", lang), ""]
@@ -4834,6 +5003,14 @@ def _step_back(update: Update, context: CallbackContext) -> None:
         prev_key = KARLMARX_CRITERIA_KEYS[idx - 1]
         state["step"] = prev_key
         _edit_field_prompt(query, _field_prompt(state, KARLMARX_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
+        return
+    if mode == "vonovia" and step in VONOVIA_CRITERIA_KEYS:
+        idx = VONOVIA_CRITERIA_KEYS.index(step)
+        if idx == 0:
+            return
+        prev_key = VONOVIA_CRITERIA_KEYS[idx - 1]
+        state["step"] = prev_key
+        _edit_field_prompt(query, _field_prompt(state, VONOVIA_CRITERIA_FIELDS, prev_key, lang), lang, field_key=prev_key)
         return
     if mode in ("immowelt", "propotsdam") and step in ("clone_price_min", "clone_price_max"):
         # Клон переносить район/кімнати/площу без питань — до них нема куди
@@ -5113,6 +5290,8 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
             start_locals_edit_flow(update, context, int(raw_id))
         elif source == "karlmarx":
             start_karlmarx_edit_flow(update, context, int(raw_id))
+        elif source == "vonovia":
+            start_vonovia_edit_flow(update, context, int(raw_id))
         else:
             query.answer()
     elif query.data.startswith("housing:delete_confirm:"):

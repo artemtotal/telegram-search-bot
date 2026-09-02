@@ -32,6 +32,7 @@ from user_jobs import kleinanzeigen_monitor
 from user_jobs import locals_monitor
 from user_jobs import coop_watchdog
 from user_jobs import karlmarx_monitor
+from user_jobs import vonovia_monitor
 
 
 from userbot import run_telethon
@@ -151,6 +152,14 @@ if karlmarx_monitor.CHECK_ENABLED:
         karlmarx_monitor.check_job,
         interval=karlmarx_monitor.CHECK_INTERVAL_SECONDS,
         first=330,
+    )
+if vonovia_monitor.CHECK_ENABLED:
+    job.run_repeating(
+        vonovia_monitor.check_job,
+        interval=vonovia_monitor.CHECK_INTERVAL_SECONDS,
+        # Кожне джерело стартує на 30 секунд пізніше за попереднє, щоб усі
+        # обходи не збігалися в одну мить.
+        first=390,
     )
 
 # Housing access subscriptions: daily check for 3-day expiry warnings and

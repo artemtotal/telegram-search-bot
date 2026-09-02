@@ -2163,6 +2163,106 @@ class HousingKarlmarxWizardTests(unittest.TestCase):
         delete_filter.assert_called_once_with(22, user_id=544675510)
 
 
+class HousingVonoviaWizardTests(unittest.TestCase):
+    def _update(self, text, user_id=544675510):
+        message = FakeMessage(text=text, user_id=user_id)
+        return SimpleNamespace(message=message, effective_message=message, effective_user=SimpleNamespace(id=user_id))
+
+    def test_available_sources_include_vonovia(self):
+        self.assertIn('vonovia', housing_monitor.AVAILABLE_SOURCE_KEYS)
+
+    def test_vonovia_takes_both_shared_price_questions(self):
+        """Каталог порталу друкує Kaltmiete, сторінка оголошення — Warmmiete.
+
+        Обидві величини відомі, тож обидві межі й застосовуються — окремих
+        питань «під Vonovia» майстер не ставить.
+        """
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'criteria_selected': list(housing_monitor.CRITERIA_PICKER_KEYS),
+            'sources_selected': ['vonovia'],
+        }})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.vonovia_store.create_filter', return_value=3) as create_filter:
+            # 4 спільні поля, потім холодна ціна (2) і повна (2).
+            for text in ['2', '-', '-', '-', '600', '900', '800', '1200']:
+                self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
+
+        create_filter.assert_called_once_with(
+            user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=600.0, max_price_eur=900.0,
+            min_price_warm_eur=800.0, max_price_warm_eur=1200.0,
+        )
+
+    def test_vonovia_edit_flow_prefills_both_price_bounds(self):
+        own_filter = {
+            'filter_id': 30, 'user_id': 544675510, 'title': 'Vonovia', 'source': 'vonovia',
+            'active': True, 'min_rooms': 3.0, 'max_price_eur': 900.0, 'max_price_warm_eur': 1200.0,
+        }
+        query = SimpleNamespace(
+            data='housing:edit:vonovia:30', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]):
+            housing_monitor.handle_callback(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['mode'], 'vonovia')
+        self.assertEqual(state['edit_filter_id'], 30)
+        self.assertEqual(state['max_price_eur'], 900.0)
+        self.assertEqual(state['max_price_warm_eur'], 1200.0)
+
+    def test_saving_a_vonovia_edit_updates_instead_of_creating(self):
+        state = {'mode': 'vonovia', 'step': 'min_rooms', 'user_id': 544675510, 'edit_filter_id': 31}
+        context = SimpleNamespace(user_data={'housing_admin': state})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch('user_handlers.housing_monitor.vonovia_store.update_filter', return_value=True) as update_filter, \
+             mock.patch('user_handlers.housing_monitor.vonovia_store.create_filter') as create_filter:
+            for text in ['2', '-', '-', '-', '-', '-', '-', '1300']:
+                update = self._update(text)
+                self.assertTrue(housing_monitor.handle_private_text(update, context))
+
+        update_filter.assert_called_once_with(
+            filter_id=31, user_id=544675510, title=mock.ANY,
+            min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            min_price_eur=None, max_price_eur=None,
+            min_price_warm_eur=None, max_price_warm_eur=1300.0,
+        )
+        create_filter.assert_not_called()
+        self.assertIn('оновлено', update.message.replies[-1][0])
+
+    def test_toggle_and_delete_dispatch_to_the_vonovia_store(self):
+        own_filter = {'filter_id': 32, 'user_id': 544675510, 'source': 'vonovia', 'active': True}
+        toggle_query = SimpleNamespace(
+            data='housing:toggle:vonovia:32:0', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=toggle_query, effective_user=SimpleNamespace(id=544675510))
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.vonovia_store.set_filter_active', return_value=True) as set_active:
+            housing_monitor.handle_callback(update, context)
+        set_active.assert_called_once_with(32, False, user_id=544675510)
+
+        delete_query = SimpleNamespace(
+            data='housing:delete_confirm:vonovia:32', answer=mock.Mock(), edit_message_text=mock.Mock(),
+        )
+        update = SimpleNamespace(callback_query=delete_query, effective_user=SimpleNamespace(id=544675510))
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own_filter]), \
+             mock.patch('user_handlers.housing_monitor.vonovia_store.delete_filter', return_value=True) as delete_filter:
+            housing_monitor.handle_callback(update, context)
+        delete_filter.assert_called_once_with(32, user_id=544675510)
+
+
 class HousingRecentMatchesOfferTests(unittest.TestCase):
     """After a filter is created, two buttons offer to search listings first
     seen in the last hour/day — bypassing the create-time baseline that
@@ -3249,7 +3349,7 @@ class HousingAccessRequestTests(unittest.TestCase):
             housing_monitor.show_menu(update, context)
 
         text = update.effective_message.reply_text.call_args.args[0]
-        self.assertIn('8 порталами', text)
+        self.assertIn('9 порталами', text)
         self.assertIn('10 €', text)
 
     def test_district_pickers_bold_the_current_selection(self):
@@ -4068,9 +4168,10 @@ class HousingCoopSubscriptionTests(unittest.TestCase):
 
         self.assertIn(housing_monitor.BTN_COOPS, labels)
 
-    def test_all_eleven_sources_are_listed(self):
-        self.assertEqual(len(housing_monitor.ALL_HOUSING_SOURCES), 11)
-        for key in ('gewoba', 'wbg1903', 'wbg_daheim'):
+    def test_all_twelve_sources_are_listed(self):
+        """Дев'ять порталів із фільтрами плюс три кооперативи під сторожем."""
+        self.assertEqual(len(housing_monitor.ALL_HOUSING_SOURCES), 12)
+        for key in ('vonovia', 'gewoba', 'wbg1903', 'wbg_daheim'):
             self.assertIn(key, housing_monitor.ALL_HOUSING_SOURCES)
 
     def test_toggling_on_subscribes_and_toggling_off_pauses(self):
