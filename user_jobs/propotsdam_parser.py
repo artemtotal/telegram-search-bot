@@ -272,6 +272,9 @@ _EXTRA_DISPLAY_SKIP = {
 
 
 def format_listing_message(listing: dict[str, Any], portal_url: str = PORTAL_URL) -> str:
+    # image_url навмисно не показуємо: це посилання на api5/accndocs2/<id>,
+    # який 404-ить завжди, для будь-кого, незалежно від логіну — самі фото
+    # тепер прикріплюються до повідомлення байтами (див. propotsdam_monitor).
     lines = ["🏢 Нова квартира ProPotsdam", ""]
     for label, key in [
         ("Назва", "title"),
@@ -282,7 +285,6 @@ def format_listing_message(listing: dict[str, Any], portal_url: str = PORTAL_URL
         ("Оренда EUR", "total_rent_eur"),
         ("Доступна", "available_from"),
         ("ID/ключ", "listing_key"),
-        ("Фото", "image_url"),
         ("Деталі", "detail_url"),
     ]:
         line = _line(label, listing.get(key))
