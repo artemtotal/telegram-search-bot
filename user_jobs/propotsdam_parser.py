@@ -260,6 +260,17 @@ def _line(label: str, value: Any) -> str | None:
     return f"{label}: {html.escape(str(value))}"
 
 
+# Рядки картки, які фід кладе і в іменовані поля вище, і без розбору в
+# ``extra`` (Stadtteil/Zimmer/Wohnfläche/Gesamtmiete/Verfügbarkeit — див.
+# parse_boxlist_xml), плюс службові ключі для внутрішньої роботи
+# (стабільний ключ, фото, запасний заголовок). У блоці «Додаткові дані» вони
+# лише дублюють показане вище або показують користувачу технічний сміттям.
+_EXTRA_DISPLAY_SKIP = {
+    "Stadtteil", "Zimmer", "Wohnfläche", "Gesamtmiete", "Verfügbarkeit",
+    "originalId", "headBar", "image_resource_ids",
+}
+
+
 def format_listing_message(listing: dict[str, Any], portal_url: str = PORTAL_URL) -> str:
     lines = ["🏢 Нова квартира ProPotsdam", ""]
     for label, key in [
@@ -277,7 +288,7 @@ def format_listing_message(listing: dict[str, Any], portal_url: str = PORTAL_URL
         line = _line(label, listing.get(key))
         if line:
             lines.append(line)
-    extra = listing.get("extra") or {}
+    extra = {k: v for k, v in (listing.get("extra") or {}).items() if k not in _EXTRA_DISPLAY_SKIP}
     if extra:
         lines.append("")
         lines.append("Додаткові дані:")

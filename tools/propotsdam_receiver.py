@@ -252,6 +252,33 @@ def _photo_path(resource_id):
     return PHOTO_DIR / "{}.bin".format(candidate)
 
 
+def _maybe_cache_photo_response(response):
+    """Ловить байти фото, які браузер і так вантажить для мініатюр/галереї.
+
+    ``api5/accndocs2/<id>`` (IMAGE_URL_TEMPLATE), яким ``_cache_photos`` качає
+    фото сам, стабільно відповідає 404 — портал давно роздає їх іншим шляхом:
+    ``prorex/xmlforms/image.jpg?...&id=<id>``. Раз ці байти й так летять через
+    сесію під час звичайного перегляду списку/картки, зберігаємо їх тут,
+    замість того щоб потім марно бити по мертвому ендпоінту.
+    """
+    url = response.url
+    if "xmlforms/image.jpg" not in url:
+        return
+    resource_id = (parse_qs(urlsplit(url).query).get("id") or [None])[0]
+    path = _photo_path(resource_id)
+    if path is None or (path.exists() and path.stat().st_size):
+        return
+    try:
+        body = response.body()
+    except Exception as exc:
+        logger.warning("Could not read ProPotsdam photo response for %s: %s", resource_id, exc)
+        return
+    if not body or len(body) > PHOTO_MAX_BYTES:
+        return
+    PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(body)
+
+
 RESOURCE_ID_ATTR_RE = re.compile(r'resourceId="([^"]+)"')
 
 
@@ -415,9 +442,18 @@ def _capture_details(page, listings):
             continue
 
         detail_xml = []
-        collect = lambda response: (
-            detail_xml.append(response.text()) if "xmlforms" in response.url else None
-        )
+
+        def collect(response):
+            if "xmlforms" not in response.url:
+                return
+            if "image.jpg" in response.url:
+                _maybe_cache_photo_response(response)
+                return
+            try:
+                detail_xml.append(response.text())
+            except Exception as exc:
+                logger.warning("Could not read xmlforms body from %s: %s", response.url, exc)
+
         page.on("response", collect)
         try:
             if not _open_listing(page, listing):
@@ -584,6 +620,9 @@ def scan():
             def on_response(response):
                 url = response.url
                 if "xmlforms" not in url:
+                    return
+                if "image.jpg" in url:
+                    _maybe_cache_photo_response(response)
                     return
                 responses.append(url)
                 try:
