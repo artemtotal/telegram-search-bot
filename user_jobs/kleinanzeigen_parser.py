@@ -17,6 +17,8 @@ import html as html_lib
 import re
 from typing import Any
 
+import i18n
+
 LISTINGS_URL = "https://www.kleinanzeigen.de/s-wohnung-mieten/potsdam/k0c203"
 BASE_URL = "https://www.kleinanzeigen.de"
 
@@ -192,19 +194,23 @@ def _line(label: str, value: Any) -> str | None:
     return f"{label}: {html_lib.escape(str(value))}"
 
 
-def format_listing_message(listing: dict[str, Any]) -> str:
-    lines = ["📋 Нове оголошення Kleinanzeigen", ""]
-    for label, key in [
-        ("Назва", "title"),
-        ("Адреса", "address"),
-        ("Кімнати", "rooms"),
-        ("Площа м²", "area_m2"),
-        ("Ціна EUR", "price_eur"),
-        ("Warmmiete EUR", "price_warm_eur"),
+def format_listing_message(listing: dict[str, Any], lang: str = "uk") -> str:
+    lines = [i18n.t("housing.notify.header_new_ad", lang, emoji="📋", source="Kleinanzeigen"), ""]
+    for label_key, key in [
+        ("housing.notify.field.title", "title"),
+        ("housing.notify.field.address", "address"),
+        ("housing.notify.field.rooms", "rooms"),
+        ("housing.notify.field.area", "area_m2"),
+        ("housing.notify.field.price", "price_eur"),
     ]:
-        line = _line(label, listing.get(key))
+        line = _line(i18n.t(label_key, lang), listing.get(key))
         if line:
             lines.append(line)
+    # Warmmiete лишається німецькою в будь-якій мові інтерфейсу — це термін
+    # самого порталу, а не текст бота, який має локалізуватись.
+    line = _line("Warmmiete EUR", listing.get("price_warm_eur"))
+    if line:
+        lines.append(line)
     link = listing.get("detail_url") or LISTINGS_URL
-    lines.extend(["", f"Відкрити: {html_lib.escape(str(link))}"])
+    lines.extend(["", f"{i18n.t('housing.matches.open_link', lang)}: {html_lib.escape(str(link))}"])
     return "\n".join(lines)

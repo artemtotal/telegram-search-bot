@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 import requests
 from telegram import InputMediaPhoto
 
+import i18n
 from user_jobs import propotsdam_matching, propotsdam_parser, propotsdam_store
 
 logger = logging.getLogger(__name__)
@@ -284,8 +285,8 @@ def _check_job_locked(context) -> Dict[str, int]:
     sent = 0
     photos_sent = 0
     for filt, listing in matches:
-        text = propotsdam_matching.format_notification(listing, PROPOTSDAM_PORTAL_URL)
         chat_id = int(filt["user_id"])
+        text = propotsdam_matching.format_notification(listing, PROPOTSDAM_PORTAL_URL, lang=i18n.get_lang(chat_id))
         photos, posted_as_caption = _send_listing(bot, chat_id, listing, text)
         photos_sent += photos
         # Фото без подписи (нет фото вообще, или текст не влез в лимит подписи)

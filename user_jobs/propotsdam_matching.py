@@ -56,5 +56,5 @@ def matches_filter(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
     )
 
 
-def format_notification(listing: Dict[str, Any], portal_url: str) -> str:
-    return propotsdam_parser.format_listing_message(listing, portal_url=portal_url)
+def format_notification(listing: Dict[str, Any], portal_url: str, lang: str = "uk") -> str:
+    return propotsdam_parser.format_listing_message(listing, lang=lang, portal_url=portal_url)

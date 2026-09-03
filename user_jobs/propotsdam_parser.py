@@ -271,33 +271,39 @@ _EXTRA_DISPLAY_SKIP = {
 }
 
 
-def format_listing_message(listing: dict[str, Any], portal_url: str = PORTAL_URL) -> str:
+def format_listing_message(listing: dict[str, Any], lang: str = "uk", portal_url: str = PORTAL_URL) -> str:
+    # Локальний імпорт навмисний: цей модуль підвантажує і tools/propotsdam_receiver.py
+    # на хості, у своєму ізольованому venv без sqlalchemy — а i18n тягне за собою
+    # user_settings_store і, отже, database.py. Рецептор format_listing_message
+    # ніколи не викликає, тож імпорт відкладено до виклику, а не на рівень модуля.
+    import i18n
+
     # image_url навмисно не показуємо: це посилання на api5/accndocs2/<id>,
     # який 404-ить завжди, для будь-кого, незалежно від логіну — самі фото
     # тепер прикріплюються до повідомлення байтами (див. propotsdam_monitor).
-    lines = ["🏢 Нова квартира ProPotsdam", ""]
-    for label, key in [
-        ("Назва", "title"),
-        ("Адреса", "address"),
-        ("Район", "district"),
-        ("Кімнати", "rooms"),
-        ("Площа м²", "area_m2"),
-        ("Оренда EUR", "total_rent_eur"),
-        ("Доступна", "available_from"),
-        ("ID/ключ", "listing_key"),
-        ("Деталі", "detail_url"),
+    lines = [i18n.t("housing.notify.header_new_flat", lang, emoji="🏢", source="ProPotsdam"), ""]
+    for label_key, key in [
+        ("housing.notify.field.title", "title"),
+        ("housing.notify.field.address", "address"),
+        ("housing.notify.field.district", "district"),
+        ("housing.notify.field.rooms", "rooms"),
+        ("housing.notify.field.area", "area_m2"),
+        ("housing.notify.field.total_rent", "total_rent_eur"),
+        ("housing.notify.field.available_from", "available_from"),
+        ("housing.notify.field.id_key", "listing_key"),
+        ("housing.notify.field.details_link", "detail_url"),
     ]:
-        line = _line(label, listing.get(key))
+        line = _line(i18n.t(label_key, lang), listing.get(key))
         if line:
             lines.append(line)
     extra = {k: v for k, v in (listing.get("extra") or {}).items() if k not in _EXTRA_DISPLAY_SKIP}
     if extra:
         lines.append("")
-        lines.append("Додаткові дані:")
+        lines.append(i18n.t("housing.notify.extra_data_header", lang))
         for key in sorted(extra):
             lines.append(_line(key, extra[key]))
     link = listing.get("detail_url") or portal_url
-    lines.extend(["", f"Відкрити: {html.escape(str(link))}"])
+    lines.extend(["", f"{i18n.t('housing.matches.open_link', lang)}: {html.escape(str(link))}"])
     if not listing.get("detail_url"):
-        lines.append("Після входу: Immobiliensuche → mehr anzeigen → Immobilien")
+        lines.append(i18n.t("housing.notify.propotsdam.after_login_hint", lang))
     return "\n".join(line for line in lines if line is not None)

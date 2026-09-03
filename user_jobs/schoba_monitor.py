@@ -15,6 +15,7 @@ from typing import Dict, List
 import requests
 from telegram import InputMediaPhoto
 
+import i18n
 from user_jobs import schoba_matching, schoba_parser, schoba_store
 
 logger = logging.getLogger(__name__)
@@ -204,8 +205,8 @@ def check_job(context) -> Dict[str, int]:
     matches = schoba_store.select_unsent_matches(active_listings, filters, schoba_store.delivered_pairs())
     sent = 0
     for filt, listing in matches:
-        text = schoba_matching.format_notification(listing)
         chat_id = int(filt["user_id"])
+        text = schoba_matching.format_notification(listing, lang=i18n.get_lang(chat_id))
         posted_as_caption = _send_listing(bot, chat_id, listing, text)
         if not posted_as_caption:
             bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)

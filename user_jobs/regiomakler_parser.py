@@ -20,6 +20,8 @@ import html as html_lib
 import re
 from typing import Any
 
+import i18n
+
 _TITLE_SPLIT_RE = re.compile(r'<h3 class="property-title">')
 _LINK_TITLE_RE = re.compile(r'<a href="([^"]+)">([^<]*)</a>', re.S)
 _SUBTITLE_RE = re.compile(r'property-subtitle">\s*([^<]*?)\s*</div>', re.S)
@@ -152,20 +154,24 @@ def _line(label: str, value: Any) -> str | None:
     return f"{label}: {html_lib.escape(str(value))}"
 
 
-def format_listing_message(listing: dict[str, Any]) -> str:
-    lines = ["🤝 Нова квартира ImmoTeam/alpha", ""]
-    for label, key in [
-        ("Назва", "title"),
-        ("Адреса", "address"),
-        ("Кімнати", "rooms"),
-        ("Площа м²", "area_m2"),
-        ("Kaltmiete EUR", "price_eur"),
-        ("Warmmiete EUR", "price_warm_eur"),
+def format_listing_message(listing: dict[str, Any], lang: str = "uk") -> str:
+    lines = [i18n.t("housing.notify.header_new_flat", lang, emoji="🤝", source="ImmoTeam/alpha"), ""]
+    for label_key, key in [
+        ("housing.notify.field.title", "title"),
+        ("housing.notify.field.address", "address"),
+        ("housing.notify.field.rooms", "rooms"),
+        ("housing.notify.field.area", "area_m2"),
     ]:
+        line = _line(i18n.t(label_key, lang), listing.get(key))
+        if line:
+            lines.append(line)
+    # Kaltmiete/Warmmiete лишаються німецькою в будь-якій мові інтерфейсу —
+    # це терміни самого порталу, а не текст бота, який має локалізуватись.
+    for label, key in [("Kaltmiete EUR", "price_eur"), ("Warmmiete EUR", "price_warm_eur")]:
         line = _line(label, listing.get(key))
         if line:
             lines.append(line)
     link = listing.get("detail_url")
     if link:
-        lines.extend(["", f"Відкрити: {html_lib.escape(str(link))}"])
+        lines.extend(["", f"{i18n.t('housing.matches.open_link', lang)}: {html_lib.escape(str(link))}"])
     return "\n".join(lines)

@@ -49,5 +49,5 @@ def matches_filter(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
     )
 
 
-def format_notification(listing: Dict[str, Any]) -> str:
-    return vonovia_parser.format_listing_message(listing)
+def format_notification(listing: Dict[str, Any], lang: str = "uk") -> str:
+    return vonovia_parser.format_listing_message(listing, lang=lang)
