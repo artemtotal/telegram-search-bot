@@ -65,6 +65,7 @@ PHOTO_MAX_BYTES = int(os.getenv("PROPOTSDAM_PHOTO_MAX_BYTES", str(12 * 1024 * 10
 PHOTO_KEEP_DAYS = int(os.getenv("PROPOTSDAM_PHOTO_KEEP_DAYS", "30") or 30)
 PHOTO_TIMEOUT_MS = int(os.getenv("PROPOTSDAM_PHOTO_TIMEOUT_MS", "30000") or 30000)
 DETAIL_DIR = Path(os.getenv("PROPOTSDAM_DETAIL_DIR", str(PROFILE_DIR.parent / "propotsdam-details")))
+HEADLESS = os.getenv("PROPOTSDAM_HEADLESS", "1").strip().lower() not in {"", "0", "false", "no"}
 # Скільки карток відкривати за один обхід. Одна картка — близько 25 секунд
 # (відкрити, зняти, повернутись до переліку), сам обхід без карток —
 # близько 40; за 15-хвилинний інтервал десяток встигає з запасом. Ліміт
@@ -611,7 +612,11 @@ def scan():
         xml_bodies = []
         responses = []
         with sync_playwright() as p:
-            kwargs = {"headless": False, "viewport": {"width": 1440, "height": 1000}}
+            kwargs = {"headless": HEADLESS, "viewport": {"width": 1440, "height": 1000}}
+            if HEADLESS:
+                # Chrome's persistent profile can remember a normal browser window.
+                # These switches keep scheduled ProPotsdam scans off the RDP desktop.
+                kwargs["args"] = ["--headless=new", "--disable-gpu"]
             if Path(BROWSER).exists():
                 kwargs["executable_path"] = BROWSER
             context = p.chromium.launch_persistent_context(str(PROFILE_DIR), **kwargs)
