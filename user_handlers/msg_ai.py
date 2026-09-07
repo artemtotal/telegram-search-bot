@@ -53,6 +53,8 @@ VEC_MIN_SCORE = float(os.getenv("VEC_MIN_SCORE", "0.35"))
 PER_KW_ANCHOR = 12   # messages per anchor word (direct from user query)
 PER_KW_BROAD  = 6    # messages per expanded keyword
 MAX_CONTEXT   = 15000
+SLOW_SEARCH_FALLBACK_SECONDS = int(os.getenv("SLOW_SEARCH_FALLBACK_SECONDS", "45") or 45)
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 
 OPENROUTER_URL = os.getenv(
     "OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions"
@@ -1423,6 +1425,94 @@ def _rerank(query: str, messages: List[Dict], top_k: int = 25,
 
 # ── Output ────────────────────────────────────────────────────────────────
 
+def _build_slow_search_fallback_text(query: str, sources: Optional[List[Dict]] = None) -> str:
+    """User-visible fallback while the full AI answer is still running."""
+    lines = [
+        "⏳ Пошук триває довше, ніж зазвичай.",
+        f"Запит: {query}",
+        "",
+        "Щоб ви не чекали без відповіді, ось прямі посилання з чату, які вже знайшлися:",
+    ]
+    source_lines = []
+    seen_links = set()
+    for source in sources or []:
+        link = source.get("link")
+        if not link or link in seen_links:
+            continue
+        seen_links.add(link)
+        date = str(source.get("date") or "")[:10]
+        label = f"{date} — {link}" if date else link
+        source_lines.append(f"• {label}")
+        if len(source_lines) >= 5:
+            break
+    if source_lines:
+        lines.extend(source_lines)
+    else:
+        lines.append("• Поки що є тільки факт, що запит прийнято; джерела ще збираються.")
+    lines.extend([
+        "",
+        "Повну відповідь бот надішле окремо, якщо обробка завершиться.",
+    ])
+    return "\n".join(lines)
+
+
+class _SlowSearchFallbackNotifier:
+    """Send one fallback message if a search handler runs for too long."""
+
+    def __init__(self, message, query: str, admin_id: int = 0, bot=None,
+                 delay_seconds: int = SLOW_SEARCH_FALLBACK_SECONDS):
+        self.message = message
+        self.query = query
+        self.admin_id = admin_id
+        self.bot = bot
+        self.delay_seconds = delay_seconds
+        self._sources: List[Dict] = []
+        self._sent = False
+        self._lock = threading.Lock()
+        self._timer = None
+
+    def start(self) -> None:
+        if self.delay_seconds <= 0:
+            return
+        self._timer = threading.Timer(self.delay_seconds, self._send_fallback)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def update_sources(self, sources: List[Dict]) -> None:
+        with self._lock:
+            self._sources = list(sources or [])
+
+    def cancel(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+
+    def _send_fallback(self) -> None:
+        with self._lock:
+            if self._sent:
+                return
+            self._sent = True
+            sources = list(self._sources)
+        text = _build_slow_search_fallback_text(self.query, sources)
+        try:
+            self.message.reply_text(text, parse_mode=None, disable_web_page_preview=True)
+        except Exception:
+            logger.exception("Failed to send slow search fallback to user")
+        if self.admin_id and self.bot is not None:
+            try:
+                self.bot.send_message(
+                    chat_id=self.admin_id,
+                    text=(
+                        "⚠️ Потсдамбот: повільний пошук\n"
+                        f"Запит: {self.query}\n"
+                        f"Фолбэк користувачу відправлено після {self.delay_seconds} сек."
+                    ),
+                    parse_mode=None,
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                logger.exception("Failed to notify admin about slow search")
+
+
 def _send_answer(message, text: str) -> None:
     text = text.replace("**", "").replace("*", "\u2022")
     MAX = 3900
@@ -1474,6 +1564,10 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         return
 
     wait_indicator = _create_wait_indicator(update)
+    slow_fallback = _SlowSearchFallbackNotifier(
+        update.message, query, admin_id=ADMIN_ID, bot=context.bot,
+    )
+    slow_fallback.start()
 
     try:
         context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
@@ -1655,6 +1749,7 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         )
 
         # Step F: build context string
+        slow_fallback.update_sources(top_msgs)
         ctx = _build_context(top_msgs)
         today = datetime.utcnow().strftime("%Y-%m-%d")
 
@@ -1677,6 +1772,7 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
             return
         answer = _normalize_source_line(answer, top_msgs)
         _send_answer(update.message, answer)
+        logger.info("AI answer sent for query: %r", query)
 
     except Exception as e:
         logger.error(f"AI handler error: {e}", exc_info=True)
@@ -1685,6 +1781,7 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         except Exception:
             pass
     finally:
+        slow_fallback.cancel()
         session.close()
         _delete_wait_indicator(wait_indicator)
 

@@ -17,6 +17,61 @@ except ImportError as exc:  # pragma: no cover
 
 
 class AiProviderTests(unittest.TestCase):
+    def test_slow_search_fallback_includes_direct_chat_links(self):
+        messages = [
+            {"date": "2026-08-23 14:18", "link": "https://t.me/UkrainischesBrandenburg/269894"},
+            {"date": "2026-01-20 21:25", "link": "https://t.me/UkrainischesBrandenburg/246063"},
+        ]
+
+        text = msg_ai._build_slow_search_fallback_text("лор врач", messages)
+
+        self.assertIn("Пошук триває довше", text)
+        self.assertIn("лор врач", text)
+        self.assertIn("2026-08-23 — https://t.me/UkrainischesBrandenburg/269894", text)
+        self.assertIn("2026-01-20 — https://t.me/UkrainischesBrandenburg/246063", text)
+
+    def test_slow_search_notifier_cancels_timer_after_success(self):
+        class FakeTimer:
+            def __init__(self, seconds, callback):
+                self.seconds = seconds
+                self.callback = callback
+                self.started = False
+                self.cancelled = False
+
+            def start(self):
+                self.started = True
+
+            def cancel(self):
+                self.cancelled = True
+
+        message = Mock()
+        with patch.object(msg_ai.threading, "Timer", FakeTimer):
+            notifier = msg_ai._SlowSearchFallbackNotifier(message, "детский хирург", admin_id=123)
+            notifier.start()
+            notifier.cancel()
+
+        self.assertTrue(notifier._timer.started)
+        self.assertTrue(notifier._timer.cancelled)
+        message.reply_text.assert_not_called()
+
+    def test_slow_search_notifier_sends_user_and_admin_alert_once(self):
+        message = Mock()
+        message.chat_id = -1001
+        bot = Mock()
+        notifier = msg_ai._SlowSearchFallbackNotifier(
+            message, "лор врач", admin_id=123, bot=bot,
+        )
+        notifier.update_sources([
+            {"date": "2026-08-23 14:18", "link": "https://t.me/UkrainischesBrandenburg/269894"},
+        ])
+
+        notifier._send_fallback()
+        notifier._send_fallback()
+
+        message.reply_text.assert_called_once()
+        bot.send_message.assert_called_once()
+        self.assertIn("Потсдамбот: повільний пошук", bot.send_message.call_args.kwargs["text"])
+
     def test_calls_omniroute_without_api_key(self):
         response = Mock()
         response.raise_for_status.return_value = None
