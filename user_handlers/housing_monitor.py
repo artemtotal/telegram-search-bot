@@ -561,29 +561,20 @@ def _localized_field(spec: dict, lang: str = "uk") -> dict:
     }
 
 
-def _jobcenter_preset_note(next_key: str) -> str:
+def _jobcenter_preset_note(next_key: str, lang: str = "uk") -> str:
     if next_key in AREA_PRESET_FIELD_KEYS:
-        return "\n\n💡 Кнопки нижче — орієнтовні межі площі за нормами Jobcenter."
+        return i18n.t("housing.jobcenter_note.area", lang)
     if next_key in KALTMIETE_PRICE_PRESET_KEYS:
-        return (
-            "\n\n💡 Кнопки нижче — орієнтовні межі за нормами Jobcenter "
-            "(Angemessenheitsgrenzen), але це <b>Bruttokaltmiete</b> "
-            "(холодна оренда + комунальні), а не Kaltmiete — реальна допустима "
-            "Kaltmiete зазвичай трохи нижче цих чисел."
-        )
+        return i18n.t("housing.jobcenter_note.kaltmiete", lang)
     if next_key in WARMMIETE_PRICE_PRESET_KEYS:
-        return (
-            "\n\n💡 Кнопки нижче — орієнтовні межі Jobcenter для холодної оренди "
-            "(<b>Bruttokaltmiete</b>); тепла оренда (Warmmiete, з опаленням) "
-            "зазвичай трохи вища за ці числа."
-        )
+        return i18n.t("housing.jobcenter_note.warmmiete", lang)
     return ""
 
 
 def _field_prompt(state: dict, fields: list, next_key: str, lang: str = "uk") -> str:
     resolved = [_localized_field(spec, lang) for spec in fields]
     recap = _fields_recap(state, resolved, exclude_key=next_key)
-    prompt = next(spec["prompt"] for spec in resolved if spec["key"] == next_key) + _jobcenter_preset_note(next_key)
+    prompt = next(spec["prompt"] for spec in resolved if spec["key"] == next_key) + _jobcenter_preset_note(next_key, lang)
     return f"{recap}\n\n{prompt}" if recap else prompt
 
 
