@@ -1167,6 +1167,11 @@ def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKey
         rows.insert(1, [InlineKeyboardButton(i18n.t("housing.btn.current_matches", lang), callback_data="housing:current_matches")])
         rows.insert(2, [InlineKeyboardButton(i18n.t("housing.btn.coops", lang), callback_data="housing:coops")])
         rows.insert(3, [InlineKeyboardButton(i18n.t("housing.btn.notify_settings", lang), callback_data="housing:notify_settings")])
+        # Адмін теж шукає собі житло: is_allowed() і так True для ADMIN_ID
+        # (housing_monitor.py:is_allowed), і start_self_add_flow/show_self_manage
+        # не мають окремого блоку на ADMIN_ID - бракувало лише кнопок у меню.
+        rows.insert(4, [InlineKeyboardButton(i18n.t("housing.btn.self_add", lang), callback_data="housing:self_add")])
+        rows.insert(5, [InlineKeyboardButton(i18n.t("housing.btn.self_manage", lang), callback_data="housing:self_manage")])
     elif is_allowed(user_id):
         # Кооперативи звідси прибрані - вони живуть у "Мої фільтри"
         # (_self_manage_keyboard), туди й підписки на фільтри одразу видно.
