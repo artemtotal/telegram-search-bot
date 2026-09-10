@@ -1563,9 +1563,14 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
                 self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
 
         self.assertNotIn('housing_admin', context.user_data)
-        request.assert_called_once_with(
-            'POST', '/api/housing/filters',
-            json={
+        # Перед записом майстер ще читає наявні фільтри (щоб не завести копію),
+        # тож звіряємо саме запис, а не єдиність усіх звернень до приймача.
+        posts = [call for call in request.call_args_list if call.args[0] == 'POST']
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0].args, ('POST', '/api/housing/filters'))
+        self.assertEqual(
+            posts[0].kwargs['json'],
+            {
                 'user_id': 544675510, 'title': mock.ANY,
                 'districts': ['Waldstadt I', 'Golm'],
                 'min_price_eur': 800.0, 'max_price_eur': 1200.0,
@@ -1670,9 +1675,12 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
                 self.assertTrue(housing_monitor.handle_private_text(self._update(text), context))
 
         self.assertNotIn('housing_admin', context.user_data)
-        request.assert_called_once_with(
-            'POST', '/api/housing/filters',
-            json={
+        posts = [call for call in request.call_args_list if call.args[0] == 'POST']
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0].args, ('POST', '/api/housing/filters'))
+        self.assertEqual(
+            posts[0].kwargs['json'],
+            {
                 'user_id': 544675510, 'title': mock.ANY, 'districts': ['Golm'],
                 'min_price_eur': 800.0, 'max_price_eur': 1200.0,
                 'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
@@ -2920,8 +2928,11 @@ class HousingCriteriaPickerTests(unittest.TestCase):
             {'min_rooms', 'min_area_m2', 'max_price'},
         )
         text = housing_monitor._criteria_picker_text(state, 'uk')
-        self.assertEqual(text.count('✅'), 3)
-        self.assertEqual(text.count('☐'), 3)
+        # Рахуємо самі рядки вибору (їх рівно шість, вони йдуть останніми), а
+        # не всі значки в тексті: пояснення згори теж показує «✅» і «☐».
+        marks = [line[:1] for line in text.splitlines() if line[:1] in ('✅', '☐')][-6:]
+        self.assertEqual(marks.count('✅'), 3)
+        self.assertEqual(marks.count('☐'), 3)
         self.assertIn('✅ Кімнати: мінімум (від)', text)
         self.assertIn('☐ Кімнати: максимум (до)', text)
         self.assertIn('✅ Площа: мінімум (від)', text)
@@ -4475,6 +4486,130 @@ class HousingTranslationSmokeTests(unittest.TestCase):
             housing_monitor.start_delete_flow(update, context, 'immowelt', 5)
 
         query.answer.assert_called_once_with('Этот фильтр вам не принадлежит.', show_alert=True)
+
+
+class HousingDuplicateFilterTests(unittest.TestCase):
+    """Один прохід майстра заводить по запису в кожному обраному джерелі.
+    Повторений з тими самими умовами, він заводив другий такий самий комплект
+    — і кожне нове оголошення прилітало людині стільки разів, скільки копій
+    вона встигла завести (реальний випадок 10.09.2026: вісім копій, вісім
+    однакових повідомлень про одну однокімнатну за секунду)."""
+
+    def _cb_update(self, data='housing:crit_done', user_id=544675510):
+        query = SimpleNamespace(
+            data=data, answer=mock.Mock(), edit_message_text=mock.Mock(),
+            message=FakeMessage(user_id=user_id),
+        )
+        return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
+
+    def _context(self):
+        return SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'criteria_picker', 'user_id': 544675510,
+            'sources_selected': ['semmelhaack'], 'criteria_selected': [],
+            'min_rooms': 3.0, 'min_area_m2': 70.0, 'max_price_eur': 1200.0,
+        }})
+
+    def _existing(self, **overrides):
+        item = {
+            'filter_id': 41, 'user_id': 544675510, 'source': 'semmelhaack',
+            'min_rooms': 3.0, 'max_rooms': None, 'min_area_m2': 70.0, 'max_area_m2': None,
+            'min_price_eur': None, 'max_price_eur': 1200.0,
+            'min_price_warm_eur': None, 'max_price_warm_eur': None,
+        }
+        item.update(overrides)
+        return {'semmelhaack': [item]}
+
+    def test_an_identical_filter_is_not_created_a_second_time(self):
+        context = self._context()
+        update = self._cb_update()
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, '_existing_filters_by_source', return_value=self._existing()), \
+             mock.patch.object(housing_monitor, '_offer_recent_matches') as offer, \
+             mock.patch.object(housing_monitor, '_maybe_send_first_filter_congrats'), \
+             mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter') as create_filter:
+            housing_monitor.handle_callback(update, context)
+
+        create_filter.assert_not_called()
+        # Пропозиція «показати нещодавні» — про щойно створений фільтр; для
+        # копії, якої не створювали, показувати нема чого.
+        offer.assert_not_called()
+        text = update.callback_query.message.replies[-1][0]
+        self.assertIn('41', text)
+
+    def test_a_filter_that_differs_by_one_bound_is_still_created(self):
+        context = self._context()
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, '_existing_filters_by_source', return_value=self._existing(min_rooms=2.0)), \
+             mock.patch.object(housing_monitor, '_offer_recent_matches'), \
+             mock.patch.object(housing_monitor, '_maybe_send_first_filter_congrats'), \
+             mock.patch('user_handlers.housing_monitor.semmelhaack_store.create_filter', return_value=42) as create_filter:
+            housing_monitor.handle_callback(self._cb_update(), context)
+
+        create_filter.assert_called_once()
+
+    def test_propotsdam_full_rent_is_compared_under_the_name_the_wizard_uses(self):
+        """Портал зберігає повну оренду як `*_total_rent_eur` (Gesamtmiete), а
+        майстер веде її як `*_price_warm_eur` — без приведення однакові
+        фільтри виглядали б різними, і копія все одно заводилась би."""
+        stored = {'min_rooms': 3.0, 'min_area_m2': 70.0, 'max_total_rent_eur': 1200.0, 'filter_id': 7}
+        criteria = {'min_rooms': 3.0, 'min_area_m2': 70.0, 'max_price_warm_eur': 1200.0}
+
+        found = housing_monitor._duplicate_filter_id({'propotsdam': [stored]}, 'propotsdam', criteria)
+
+        self.assertEqual(found, 7)
+
+
+class HousingUnboundedFilterWarningTests(unittest.TestCase):
+    """Опис умов згадує лише задані межі, тож «шукаю від 3 кімнат» і «шукаю
+    будь-що» виглядали в боті майже однаково — різницю людина дізнавалась із
+    однокімнатної у себе в чаті."""
+
+    def test_a_filter_without_a_room_bound_says_so_when_it_is_created(self):
+        note = housing_monitor._unbounded_note({'min_rooms': None, 'min_area_m2': 50.0, 'max_price_eur': 900.0}, 'ru')
+
+        self.assertIn('комнаты', note)
+        self.assertNotIn('площадь', note)
+
+    def test_a_fully_bounded_filter_says_nothing(self):
+        note = housing_monitor._unbounded_note(
+            {'min_rooms': 3.0, 'min_area_m2': 70.0, 'max_price_eur': 1200.0}, 'uk',
+        )
+
+        self.assertEqual(note, '')
+
+    def test_price_counts_as_bounded_whichever_rent_the_source_names_it(self):
+        """Холодна/повна/Gesamtmiete — три різні поля під одну межу ціни."""
+        note = housing_monitor._unbounded_note(
+            {'min_rooms': 3.0, 'min_area_m2': 70.0, 'max_total_rent_eur': 1200.0}, 'uk',
+        )
+
+        self.assertEqual(note, '')
+
+    def test_the_filter_list_marks_such_a_filter_and_explains_the_mark(self):
+        unbounded = {
+            'filter_id': 22, 'user_id': 544675510, 'source': 'kleinanzeigen',
+            'active': True, 'min_rooms': None, 'max_price_eur': 1200.0,
+        }
+        message = FakeMessage(user_id=544675510)
+        update = SimpleNamespace(
+            message=message, effective_message=message, callback_query=None,
+            effective_user=SimpleNamespace(id=544675510),
+        )
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[unbounded]), \
+             mock.patch.object(housing_monitor.user_settings_store, 'get_language', return_value='ru'):
+            housing_monitor.show_self_manage(update, SimpleNamespace(user_data={}))
+
+        text, kwargs = message.replies[-1]
+        self.assertIn('однокомнатные', text)
+        labels = [b.text for row in kwargs['reply_markup'].inline_keyboard for b in row]
+        self.assertTrue(
+            any(housing_monitor.UNBOUNDED_MARK in label for label in labels),
+            f"no warning mark on the filter button: {labels}",
+        )
 
 
 if __name__ == '__main__':

@@ -33,7 +33,7 @@ import requests
 from telegram import InputMediaPhoto
 
 import i18n
-from user_jobs import kleinanzeigen_matching, kleinanzeigen_parser, kleinanzeigen_store
+from user_jobs import delivery_dedup, kleinanzeigen_matching, kleinanzeigen_parser, kleinanzeigen_store
 
 logger = logging.getLogger(__name__)
 
@@ -266,13 +266,20 @@ def check_job(context) -> Dict[str, int]:
         active_listings, filters, kleinanzeigen_store.delivered_pairs()
     )
     sent = 0
+    dedup = delivery_dedup.PerUserDedup()
     for filt, listing in matches:
         chat_id = int(filt["user_id"])
+        listing_key = str(listing["listing_key"])
+        # Та сама квартира під двома фільтрами однієї людини — одне
+        # повідомлення; позначку про доставку отримують обидва фільтри.
+        if not dedup.claim(chat_id, listing_key):
+            kleinanzeigen_store.mark_delivered(int(filt["filter_id"]), listing_key)
+            continue
         text = kleinanzeigen_matching.format_notification(listing, lang=i18n.get_lang(chat_id))
         posted_as_caption = _send_listing(bot, chat_id, listing, text)
         if not posted_as_caption:
             bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
-        kleinanzeigen_store.mark_delivered(int(filt["filter_id"]), str(listing["listing_key"]))
+        kleinanzeigen_store.mark_delivered(int(filt["filter_id"]), listing_key)
         sent += 1
     logger.info(
         "Kleinanzeigen scan total=%s relevant=%s stored=%s full_rent=%s filters=%s sent=%s",

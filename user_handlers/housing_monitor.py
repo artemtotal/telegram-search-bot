@@ -783,6 +783,52 @@ def _describe_criteria(criteria: Dict[str, object], lang: str = "uk") -> str:
     return html.escape(" · ".join(parts))
 
 
+# Опис умов перелічує лише ті межі, які задані — відсутніх він просто не
+# згадує. Через це «шукаю від 3 кімнат» і «шукаю будь-що» виглядають у боті
+# майже однаково, і людина дізнається про різницю аж коли їй прилетить
+# однокімнатна. Ці ключі проговорюють відсутні межі вголос там, де фільтр
+# щойно створено або відкритий на керування.
+_UNBOUNDED_FIELDS = (
+    (("min_rooms",), "housing.unbounded.rooms"),
+    (("min_area_m2",), "housing.unbounded.area"),
+    # Ціну кожне джерело зберігає під своєю назвою (холодна/повна/Gesamtmiete) —
+    # межа вважається відсутньою, лише якщо порожні всі варіанти одразу.
+    (("max_price_eur", "max_price_warm_eur", "max_total_rent_eur"), "housing.unbounded.price"),
+)
+
+
+def _unbounded_fields(criteria: Dict[str, object], lang: str = "uk") -> list:
+    return [
+        i18n.t(key, lang) for fields, key in _UNBOUNDED_FIELDS
+        if all(criteria.get(field) in (None, "") for field in fields)
+    ]
+
+
+def _unbounded_note(criteria: Dict[str, object], lang: str = "uk") -> str:
+    missing = _unbounded_fields(criteria, lang)
+    if not missing:
+        return ""
+    return i18n.t("housing.unbounded.note", lang, fields=", ".join(missing))
+
+
+def _summary_suffix(criteria: Dict[str, object], lang: str = "uk") -> str:
+    """Готовий хвіст до підсумкового повідомлення майстра: порожній рядок,
+    якщо всі межі на місці."""
+    note = _unbounded_note(criteria, lang)
+    return f"\n\n{note}" if note else ""
+
+
+def _has_room_bound(item: Dict[str, object]) -> bool:
+    return item.get("min_rooms") not in (None, "")
+
+
+# Позначка на кнопці фільтра без нижньої межі кімнат. Сам опис умов про
+# відсутню межу мовчить (нема чого показувати), а в кнопку 40 символів і так
+# ледве влазять — тож попередження несе саме значок, а розшифровку до нього
+# додає легенда над списком (див. show_self_manage).
+UNBOUNDED_MARK = "⚠️"
+
+
 def _auto_title(source: str, criteria: Dict[str, object]) -> str:
     """Назва фільтра тепер сама — умови й так видно всюди в списку, тож окреме
     питання «як назвати фільтр» було зайвим кроком майстра."""
@@ -1111,6 +1157,83 @@ def manageable_filters(user_id: Optional[int]) -> list:
     for item in von:
         item.setdefault("source", "vonovia")
     return immowelt + propot + semm + schoba + regio + kanz + loc + km + von
+
+
+# Один прохід майстра заводить по запису в кожному обраному джерелі. Якщо
+# людина пройшла той самий шлях удруге (а так буває: майстер довгий, і його
+# перезапускають, коли не зрозуміли, чи зберігся фільтр), виходив другий
+# повний комплект тих самих фільтрів — і кожне нове оголошення прилітало їй
+# стільки разів, скільки копій вона встигла завести. Порівнюємо межі, які
+# реально впливають на пошук, і не заводимо копію.
+_DEDUP_NUMERIC_FIELDS = (
+    "min_rooms", "max_rooms", "min_area_m2", "max_area_m2",
+    "min_price_eur", "max_price_eur", "min_price_warm_eur", "max_price_warm_eur",
+)
+
+
+def _dedup_key(criteria: Dict[str, object]) -> tuple:
+    def num(value):
+        try:
+            return round(float(value), 2)
+        except (TypeError, ValueError):
+            return None
+
+    districts = criteria.get("districts")
+    if isinstance(districts, str):
+        districts = districts.split(",")
+    names = tuple(sorted(
+        str(name).strip().casefold() for name in (districts or []) if str(name).strip()
+    ))
+    return (names,) + tuple(num(criteria.get(field)) for field in _DEDUP_NUMERIC_FIELDS)
+
+
+def _stored_dedup_key(item: Dict[str, object], source: str) -> tuple:
+    """Те саме, що `_dedup_key`, але для запису зі сховища.
+
+    ProPotsdam зберігає повну оренду під власною назвою (`*_total_rent_eur` —
+    це Gesamtmiete порталу), тоді як майстер веде її як `*_price_warm_eur`;
+    без цього приведення однакові фільтри виглядали б різними.
+    """
+    if source == "propotsdam":
+        item = {
+            **item,
+            "min_price_warm_eur": item.get("min_total_rent_eur"),
+            "max_price_warm_eur": item.get("max_total_rent_eur"),
+        }
+    return _dedup_key(item)
+
+
+def _existing_filters_by_source(user_id: int, sources) -> Dict[str, list]:
+    """Наявні фільтри людини — лише в тих джерелах, куди зараз збираємось
+    писати. Immowelt живе за мережею (приймач check-Wohnung), тож ходимо туди,
+    тільки якщо його справді обрано."""
+    wanted = set(sources or [])
+    by_source: Dict[str, list] = {}
+    for source in wanted:
+        modules = _LOCAL_SOURCE_MODULES.get(source)
+        if modules is not None:
+            by_source[source] = modules[0].list_filters(user_id=int(user_id))
+    if "immowelt" in wanted:
+        by_source["immowelt"] = [
+            item for item in _all_immowelt_filters()
+            if int(item.get("user_id") or 0) == int(user_id)
+        ]
+    return by_source
+
+
+def _duplicate_filter_id(existing: Dict[str, list], source: str, criteria: Dict[str, object]) -> Optional[int]:
+    wanted = _dedup_key(criteria)
+    for item in existing.get(source) or []:
+        # Призупинений фільтр копією не вважаємо: людина свідомо його
+        # вимкнула, і відмовити їй у новому пошуку через нього було б дивно.
+        if not item.get("active", True):
+            continue
+        if _stored_dedup_key(item, source) == wanted:
+            try:
+                return int(item.get("filter_id"))
+            except (TypeError, ValueError):
+                return None
+    return None
 
 
 def _has_grandfathered_filter(user_id: int) -> bool:
@@ -2770,7 +2893,7 @@ def _self_manage_keyboard(user_id: int, lang: str = "uk") -> InlineKeyboardMarku
             mark = "✅" if active else "⏸"
             summary = _item_criteria_summary(item, source, lang)
             rows.append([InlineKeyboardButton(
-                f"{SOURCE_ICON.get(source, '🔹')} {mark} {summary}",
+                f"{SOURCE_ICON.get(source, '🔹')} {mark}{UNBOUNDED_MARK if not _has_room_bound(item) else ''} {summary}",
                 callback_data=f"housing:toggle:{source}:{filter_id}:{0 if active else 1}",
             )])
             rows.append([
@@ -2803,7 +2926,7 @@ def _group_detail_keyboard(members: list, lang: str = "uk") -> InlineKeyboardMar
         mark = "✅" if active else "⏸"
         summary = _item_criteria_summary(item, source, lang)
         rows.append([InlineKeyboardButton(
-            f"{SOURCE_ICON.get(source, '🔹')} {mark} {summary}",
+            f"{SOURCE_ICON.get(source, '🔹')} {mark}{UNBOUNDED_MARK if not _has_room_bound(item) else ''} {summary}",
             callback_data=f"housing:toggle:{source}:{filter_id}:{0 if active else 1}",
         )])
         rows.append([
@@ -2842,6 +2965,8 @@ def show_self_manage(update: Update, context: CallbackContext, edit: bool = Fals
     lang = i18n.get_lang(user.id)
     filters = manageable_filters(user.id)
     text = i18n.t("housing.selfmanage.text_with_filters" if filters else "housing.selfmanage.text_empty", lang)
+    if any(not _has_room_bound(item) for item in filters):
+        text += "\n\n" + i18n.t("housing.selfmanage.unbounded_legend", lang, mark=UNBOUNDED_MARK)
     keyboard = _self_manage_keyboard(user.id, lang)
     if edit and update.callback_query:
         update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
@@ -3287,7 +3412,7 @@ def _finalize_semmelhaack_filter(message, context: CallbackContext, state: dict)
         _offer_recent_matches(context, [("semmelhaack", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"S{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"S{filter_id}", criteria=_describe_criteria(criteria, lang)) + _summary_suffix(criteria, lang),
         parse_mode="HTML",
         reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
@@ -3380,7 +3505,7 @@ def _finalize_schoba_filter(message, context: CallbackContext, state: dict) -> N
         _offer_recent_matches(context, [("schoba", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"C{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"C{filter_id}", criteria=_describe_criteria(criteria, lang)) + _summary_suffix(criteria, lang),
         parse_mode="HTML",
         reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
@@ -3473,7 +3598,7 @@ def _finalize_regiomakler_filter(message, context: CallbackContext, state: dict)
         _offer_recent_matches(context, [("regiomakler", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"R{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"R{filter_id}", criteria=_describe_criteria(criteria, lang)) + _summary_suffix(criteria, lang),
         parse_mode="HTML",
         reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
@@ -3566,7 +3691,7 @@ def _finalize_kleinanzeigen_filter(message, context: CallbackContext, state: dic
         _offer_recent_matches(context, [("kleinanzeigen", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"K{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"K{filter_id}", criteria=_describe_criteria(criteria, lang)) + _summary_suffix(criteria, lang),
         parse_mode="HTML",
         reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
@@ -3659,7 +3784,7 @@ def _finalize_locals_filter(message, context: CallbackContext, state: dict) -> N
         _offer_recent_matches(context, [("locals", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"L{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"L{filter_id}", criteria=_describe_criteria(criteria, lang)) + _summary_suffix(criteria, lang),
         parse_mode="HTML",
         reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
@@ -3752,7 +3877,7 @@ def _finalize_karlmarx_filter(message, context: CallbackContext, state: dict) ->
         _offer_recent_matches(context, [("karlmarx", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"M{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"M{filter_id}", criteria=_describe_criteria(criteria, lang)) + _summary_suffix(criteria, lang),
         parse_mode="HTML",
         reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
@@ -3855,7 +3980,7 @@ def _finalize_vonovia_filter(message, context: CallbackContext, state: dict) -> 
         _offer_recent_matches(context, [("vonovia", filter_id)])
         _maybe_send_first_filter_congrats(context, state["user_id"])
     message.reply_text(
-        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"V{filter_id}", criteria=_describe_criteria(criteria, lang)),
+        i18n.t("housing.finalize.summary", lang, heading=heading, id=f"V{filter_id}", criteria=_describe_criteria(criteria, lang)) + _summary_suffix(criteria, lang),
         parse_mode="HTML",
         reply_markup=_recent_offer_keyboard(lang) if not edit_filter_id else None,
     )
@@ -4070,7 +4195,7 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
     )
     text_out = i18n.t(
         "housing.finalize.summary_bold", lang, heading=heading, id=filter_id, criteria=_describe_criteria(criteria, lang),
-    )
+    ) + _summary_suffix(criteria, lang)
     rows = [[InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")]]
     if not edit_filter_id:
         _maybe_send_first_filter_congrats(context, state.get("user_id"))
@@ -4280,7 +4405,12 @@ def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, 
         i18n.t("housing.finalize.updated", lang, source="ProPotsdam") if edit_filter_id
         else i18n.t("housing.finalize.added", lang, source="ProPotsdam")
     )
-    text_out = i18n.t("housing.finalize.propot_summary", lang, heading=heading, id=filter_id, user_id=state['user_id'])
+    text_out = i18n.t(
+        "housing.finalize.propot_summary", lang, heading=heading, id=filter_id, user_id=state['user_id'],
+    ) + _summary_suffix({
+        "min_rooms": state.get("min_rooms"), "min_area_m2": state.get("min_area_m2"),
+        "max_total_rent_eur": state.get("max_total_rent_eur"), "max_price_eur": state.get("max_price_eur"),
+    }, lang)
     if edit_filter_id:
         message.reply_text(text_out)
         return
@@ -4606,6 +4736,10 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
     sources = state.get("sources_selected") or []
     districts = list(state.get("districts_selected") or [])
     results = []
+    # Один запит на джерело — і далі кожен блок лише звіряється з готовим
+    # списком, замість ходити по фільтри знову (Immowelt — узагалі по мережі).
+    existing = _existing_filters_by_source(int(state["user_id"]), sources)
+    duplicates = set()
     if "immowelt" in sources:
         criteria = {
             "districts": districts,
@@ -4617,14 +4751,19 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             "max_area_m2": state.get("max_area_m2"),
         }
         title = _auto_title("immowelt", criteria)
-        try:
-            payload = _request("POST", "/api/housing/filters", json={
-                "user_id": state["user_id"], "title": title, **criteria,
-            })
-            results.append(("immowelt", payload.get("filter_id"), criteria, None))
-        except Exception as exc:
-            logger.exception("Could not save Immowelt filter from the multi-source wizard")
-            results.append(("immowelt", None, criteria, str(exc)))
+        filter_id = _duplicate_filter_id(existing, "immowelt", criteria)
+        if filter_id is not None:
+            duplicates.add("immowelt")
+            results.append(("immowelt", filter_id, criteria, None))
+        else:
+            try:
+                payload = _request("POST", "/api/housing/filters", json={
+                    "user_id": state["user_id"], "title": title, **criteria,
+                })
+                results.append(("immowelt", payload.get("filter_id"), criteria, None))
+            except Exception as exc:
+                logger.exception("Could not save Immowelt filter from the multi-source wizard")
+                results.append(("immowelt", None, criteria, str(exc)))
     if "propotsdam" in sources:
         propot_districts = (
             _translate_districts(districts, IMMOWELT_TO_PROPOT_DISTRICT, set(PROPOT_DISTRICTS))
@@ -4642,16 +4781,20 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             "max_area_m2": state.get("max_area_m2"),
         }
         title = _auto_title("propotsdam", criteria)
-        filter_id = propotsdam_store.create_filter(
-            user_id=state["user_id"], title=title,
-            districts=propotsdam_store.normalize_districts(",".join(propot_districts)),
-            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
-            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
-            # Gesamtmiete порталу — та сама повна оренда, яку майстер питає один раз.
-            min_total_rent_eur=state.get("min_price_warm_eur"), max_total_rent_eur=state.get("max_price_warm_eur"),
-            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
-        )
-        _sync_propot_filters()
+        filter_id = _duplicate_filter_id(existing, "propotsdam", criteria)
+        if filter_id is not None:
+            duplicates.add("propotsdam")
+        else:
+            filter_id = propotsdam_store.create_filter(
+                user_id=state["user_id"], title=title,
+                districts=propotsdam_store.normalize_districts(",".join(propot_districts)),
+                min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+                min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+                # Gesamtmiete порталу — та сама повна оренда, яку майстер питає один раз.
+                min_total_rent_eur=state.get("min_price_warm_eur"), max_total_rent_eur=state.get("max_price_warm_eur"),
+                min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+            )
+            _sync_propot_filters()
         results.append(("propotsdam", filter_id, criteria, None))
     if "semmelhaack" in sources:
         # Без районів — фільтр тут лише кімнати/площа/ціна, яку могли вже
@@ -4667,15 +4810,19 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             "max_area_m2": state.get("max_area_m2"),
         }
         title = _auto_title("semmelhaack", criteria)
-        filter_id = semmelhaack_store.create_filter(
-            user_id=state["user_id"], title=title,
-            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
-            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
-            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
-            # Джерело публікує обидві ціни, тож застосовує обидві межі.
-            min_price_warm_eur=state.get("min_price_warm_eur"),
-            max_price_warm_eur=state.get("max_price_warm_eur"),
-        )
+        filter_id = _duplicate_filter_id(existing, "semmelhaack", criteria)
+        if filter_id is not None:
+            duplicates.add("semmelhaack")
+        else:
+            filter_id = semmelhaack_store.create_filter(
+                user_id=state["user_id"], title=title,
+                min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+                min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+                min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+                # Джерело публікує обидві ціни, тож застосовує обидві межі.
+                min_price_warm_eur=state.get("min_price_warm_eur"),
+                max_price_warm_eur=state.get("max_price_warm_eur"),
+            )
         results.append(("semmelhaack", filter_id, criteria, None))
     if "schoba" in sources:
         # Так само без районів; ціна теж холодна оренда — могла піти в те
@@ -4689,12 +4836,16 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             "max_area_m2": state.get("max_area_m2"),
         }
         title = _auto_title("schoba", criteria)
-        filter_id = schoba_store.create_filter(
-            user_id=state["user_id"], title=title,
-            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
-            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
-            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
-        )
+        filter_id = _duplicate_filter_id(existing, "schoba", criteria)
+        if filter_id is not None:
+            duplicates.add("schoba")
+        else:
+            filter_id = schoba_store.create_filter(
+                user_id=state["user_id"], title=title,
+                min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+                min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+                min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+            )
         results.append(("schoba", filter_id, criteria, None))
     if "regiomakler" in sources:
         # Так само без районів; ціна теж холодна оренда (Kaltmiete).
@@ -4709,15 +4860,19 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             "max_area_m2": state.get("max_area_m2"),
         }
         title = _auto_title("regiomakler", criteria)
-        filter_id = regiomakler_store.create_filter(
-            user_id=state["user_id"], title=title,
-            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
-            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
-            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
-            # Джерело публікує обидві ціни, тож застосовує обидві межі.
-            min_price_warm_eur=state.get("min_price_warm_eur"),
-            max_price_warm_eur=state.get("max_price_warm_eur"),
-        )
+        filter_id = _duplicate_filter_id(existing, "regiomakler", criteria)
+        if filter_id is not None:
+            duplicates.add("regiomakler")
+        else:
+            filter_id = regiomakler_store.create_filter(
+                user_id=state["user_id"], title=title,
+                min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+                min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+                min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+                # Джерело публікує обидві ціни, тож застосовує обидві межі.
+                min_price_warm_eur=state.get("min_price_warm_eur"),
+                max_price_warm_eur=state.get("max_price_warm_eur"),
+            )
         results.append(("regiomakler", filter_id, criteria, None))
     if "locals" in sources:
         # Так само без районів; ціна теж холодна оренда (Kaltmiete).
@@ -4730,12 +4885,16 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             "max_area_m2": state.get("max_area_m2"),
         }
         title = _auto_title("locals", criteria)
-        filter_id = locals_store.create_filter(
-            user_id=state["user_id"], title=title,
-            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
-            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
-            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
-        )
+        filter_id = _duplicate_filter_id(existing, "locals", criteria)
+        if filter_id is not None:
+            duplicates.add("locals")
+        else:
+            filter_id = locals_store.create_filter(
+                user_id=state["user_id"], title=title,
+                min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+                min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+                min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+            )
         results.append(("locals", filter_id, criteria, None))
     if "kleinanzeigen" in sources:
         # Ціна оголошення тут — поле категорії «Kaltmiete» самої площадки
@@ -4749,12 +4908,16 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             "max_area_m2": state.get("max_area_m2"),
         }
         title = _auto_title("kleinanzeigen", criteria)
-        filter_id = kleinanzeigen_store.create_filter(
-            user_id=state["user_id"], title=title,
-            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
-            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
-            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
-        )
+        filter_id = _duplicate_filter_id(existing, "kleinanzeigen", criteria)
+        if filter_id is not None:
+            duplicates.add("kleinanzeigen")
+        else:
+            filter_id = kleinanzeigen_store.create_filter(
+                user_id=state["user_id"], title=title,
+                min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+                min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+                min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+            )
         results.append(("kleinanzeigen", filter_id, criteria, None))
     if "karlmarx" in sources:
         # Картка називає ціну Warmmiete — це повна оренда, спільне друге питання.
@@ -4767,12 +4930,16 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             "max_area_m2": state.get("max_area_m2"),
         }
         title = _auto_title("karlmarx", criteria)
-        filter_id = karlmarx_store.create_filter(
-            user_id=state["user_id"], title=title,
-            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
-            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
-            min_price_warm_eur=state.get("min_price_warm_eur"), max_price_warm_eur=state.get("max_price_warm_eur"),
-        )
+        filter_id = _duplicate_filter_id(existing, "karlmarx", criteria)
+        if filter_id is not None:
+            duplicates.add("karlmarx")
+        else:
+            filter_id = karlmarx_store.create_filter(
+                user_id=state["user_id"], title=title,
+                min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+                min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+                min_price_warm_eur=state.get("min_price_warm_eur"), max_price_warm_eur=state.get("max_price_warm_eur"),
+            )
         results.append(("karlmarx", filter_id, criteria, None))
     if "vonovia" in sources:
         # Без районів. Каталог порталу друкує Kaltmiete, а сторінка оголошення
@@ -4789,14 +4956,18 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             "max_area_m2": state.get("max_area_m2"),
         }
         title = _auto_title("vonovia", criteria)
-        filter_id = vonovia_store.create_filter(
-            user_id=state["user_id"], title=title,
-            min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
-            min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
-            min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
-            min_price_warm_eur=state.get("min_price_warm_eur"),
-            max_price_warm_eur=state.get("max_price_warm_eur"),
-        )
+        filter_id = _duplicate_filter_id(existing, "vonovia", criteria)
+        if filter_id is not None:
+            duplicates.add("vonovia")
+        else:
+            filter_id = vonovia_store.create_filter(
+                user_id=state["user_id"], title=title,
+                min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+                min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+                min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+                min_price_warm_eur=state.get("min_price_warm_eur"),
+                max_price_warm_eur=state.get("max_price_warm_eur"),
+            )
         results.append(("vonovia", filter_id, criteria, None))
     context.user_data.pop("housing_admin", None)
     lang = _dialog_lang(state)
@@ -4806,14 +4977,27 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
         label = SOURCE_LABEL[source]
         if error:
             lines.append(i18n.t("housing.finalize.multi_error", lang, icon=icon, label=label, error=html.escape(error)))
+        elif source in duplicates:
+            lines.append(i18n.t(
+                "housing.finalize.multi_duplicate", lang, icon=icon, label=label, id=filter_id,
+                criteria=_describe_criteria(criteria, lang),
+            ))
         else:
             lines.append(i18n.t(
                 "housing.finalize.multi_line", lang, icon=icon, label=label, id=filter_id,
                 criteria=_describe_criteria(criteria, lang),
             ))
+    # Межі майстер питає один раз на всі джерела, тож і попередження про
+    # незадані — одне на весь підсумок, а не під кожним рядком.
+    note = _unbounded_note({
+        "min_rooms": state.get("min_rooms"), "min_area_m2": state.get("min_area_m2"),
+        "max_price_eur": state.get("max_price_eur"), "max_price_warm_eur": state.get("max_price_warm_eur"),
+    }, lang)
+    if note:
+        lines.extend(["", note])
     created = [
         (source, filter_id) for source, filter_id, _criteria, error in results
-        if not error and source in _LOCAL_SOURCE_MODULES
+        if not error and source not in duplicates and source in _LOCAL_SOURCE_MODULES
     ]
     rows = [[InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")]]
     if created:

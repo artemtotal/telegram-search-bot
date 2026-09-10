@@ -472,3 +472,56 @@ class KleinanzeigenEnrichmentScopeTests(unittest.TestCase):
             kleinanzeigen_monitor._add_full_rent(listings)
 
         get.assert_not_called()
+
+
+class KleinanzeigenPerUserDeliveryDedupTests(unittest.TestCase):
+    """Кілька фільтрів однієї людини на одну квартиру — одне повідомлення.
+
+    10.09.2026 користувач отримав одну однокімнатну вісім разів поспіль: у
+    нього лежало вісім однакових фільтрів, і доставка рахувалась парою
+    (фільтр, оголошення), а не парою (людина, оголошення).
+    """
+
+    def _run(self, filters):
+        context = SimpleNamespace(bot=FakeBot())
+        potsdam = _listing('1')
+
+        with mock.patch.object(kleinanzeigen_monitor, 'CHECK_ENABLED', True), \
+             mock.patch('requests.get', return_value=FakeResponse('irrelevant')), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_parser.parse_listings', return_value=[potsdam]), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.record_status'), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.upsert_listings', return_value=1), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.list_active_listings', return_value=[potsdam]), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.list_filters', return_value=filters), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.delivered_pairs', return_value=set()), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.mark_delivered') as mark_delivered:
+            result = kleinanzeigen_monitor.check_job(context)
+        return context, result, mark_delivered
+
+    def test_three_matching_filters_of_one_person_send_one_message(self):
+        filters = [
+            {'filter_id': fid, 'user_id': 544675510, 'max_price_eur': 1000.0}
+            for fid in (7, 8, 9)
+        ]
+
+        context, result, mark_delivered = self._run(filters)
+
+        self.assertEqual(len(context.bot.sent), 1)
+        self.assertEqual(result['sent'], 1)
+        # Кожен збіг усе одно позначений доставленим — інакше решта фільтрів
+        # вважалися б ненадісланими й та сама квартира пішла б наступного обходу.
+        self.assertEqual(
+            sorted(call.args for call in mark_delivered.call_args_list),
+            [(7, '1'), (8, '1'), (9, '1')],
+        )
+
+    def test_two_different_people_still_get_it_each(self):
+        filters = [
+            {'filter_id': 7, 'user_id': 544675510, 'max_price_eur': 1000.0},
+            {'filter_id': 8, 'user_id': 312029534, 'max_price_eur': 1000.0},
+        ]
+
+        context, result, _mark = self._run(filters)
+
+        self.assertEqual(sorted(chat_id for chat_id, _text, _kw in context.bot.sent), [312029534, 544675510])
+        self.assertEqual(result['sent'], 2)

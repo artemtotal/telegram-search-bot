@@ -16,7 +16,7 @@ import requests
 from telegram import InputMediaPhoto
 
 import i18n
-from user_jobs import karlmarx_matching, karlmarx_parser, karlmarx_store
+from user_jobs import delivery_dedup, karlmarx_matching, karlmarx_parser, karlmarx_store
 
 logger = logging.getLogger(__name__)
 
@@ -158,13 +158,20 @@ def check_job(context) -> Dict[str, int]:
     filters = karlmarx_store.list_filters(active_only=True)
     matches = karlmarx_store.select_unsent_matches(active_listings, filters, karlmarx_store.delivered_pairs())
     sent = 0
+    dedup = delivery_dedup.PerUserDedup()
     for filt, listing in matches:
         chat_id = int(filt["user_id"])
+        listing_key = str(listing["listing_key"])
+        # Та сама квартира під двома фільтрами однієї людини — одне
+        # повідомлення; позначку про доставку отримують обидва фільтри.
+        if not dedup.claim(chat_id, listing_key):
+            karlmarx_store.mark_delivered(int(filt["filter_id"]), listing_key)
+            continue
         text = karlmarx_matching.format_notification(listing, lang=i18n.get_lang(chat_id))
         posted_as_caption = _send_listing(bot, chat_id, listing, text)
         if not posted_as_caption:
             bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
-        karlmarx_store.mark_delivered(int(filt["filter_id"]), str(listing["listing_key"]))
+        karlmarx_store.mark_delivered(int(filt["filter_id"]), listing_key)
         sent += 1
     logger.info(
         "Karl Marx scan residential=%s stored=%s filters=%s sent=%s",
