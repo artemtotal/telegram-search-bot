@@ -72,6 +72,39 @@ class AiProviderTests(unittest.TestCase):
         bot.send_message.assert_called_once()
         self.assertIn("Потсдамбот: повільний пошук", bot.send_message.call_args.kwargs["text"])
 
+    def test_keyword_search_stops_when_time_budget_is_exhausted(self):
+        class FakeQuery:
+            def __init__(self):
+                self.all_calls = 0
+
+            def filter(self, *args, **kwargs):
+                return self
+
+            def order_by(self, *args, **kwargs):
+                return self
+
+            def limit(self, *args, **kwargs):
+                return self
+
+            def all(self):
+                self.all_calls += 1
+                return [(self.all_calls,)]
+
+        fake_query = FakeQuery()
+        session = Mock()
+        session.query.return_value = fake_query
+
+        with patch.object(msg_ai.time, "monotonic", side_effect=[0, 999]):
+            ids = msg_ai._search_keyword_ids(
+                session,
+                [-1001724565311],
+                ["перевозка", "транспорт"],
+                deadline=10,
+            )
+
+        self.assertEqual(ids, [1])
+        self.assertEqual(fake_query.all_calls, 1)
+
     def test_calls_omniroute_without_api_key(self):
         response = Mock()
         response.raise_for_status.return_value = None

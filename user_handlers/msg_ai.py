@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
@@ -54,6 +55,7 @@ PER_KW_ANCHOR = 12   # messages per anchor word (direct from user query)
 PER_KW_BROAD  = 6    # messages per expanded keyword
 MAX_CONTEXT   = 15000
 SLOW_SEARCH_FALLBACK_SECONDS = int(os.getenv("SLOW_SEARCH_FALLBACK_SECONDS", "45") or 45)
+KEYWORD_SEARCH_BUDGET_SECONDS = float(os.getenv("KEYWORD_SEARCH_BUDGET_SECONDS", "25") or 25)
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 
 OPENROUTER_URL = os.getenv(
@@ -874,7 +876,8 @@ def _search_keyword_ids(session, chat_ids: List[int],
                         keywords: List[str],
                         anchor_words: Optional[List[str]] = None,
                         since: Optional[datetime] = None,
-                        before: Optional[datetime] = None) -> List[int]:
+                        before: Optional[datetime] = None,
+                        deadline: Optional[float] = None) -> List[int]:
     """Search message text with separate per-keyword quotas and date bounds."""
     if not chat_ids:
         return []
@@ -894,6 +897,9 @@ def _search_keyword_ids(session, chat_ids: List[int],
 
     def _collect(words: List[str], per_kw: int) -> None:
         for word in words:
+            if deadline is not None and time.monotonic() >= deadline:
+                logger.warning("Keyword search time budget exhausted; returning %d ids", len(result))
+                return
             if not word:
                 continue
             rows = (
@@ -1034,14 +1040,15 @@ def _search_keywords_with_fallback(session, chat_ids: List[int],
 
     recent_days = int(os.getenv("SEARCH_RECENT_DAYS", "730"))
     cutoff = datetime.utcnow() - timedelta(days=recent_days)
+    deadline = time.monotonic() + KEYWORD_SEARCH_BUDGET_SECONDS
     recent_ids = _search_keyword_ids(
-        session, chat_ids, keywords, anchor_words, since=cutoff,
+        session, chat_ids, keywords, anchor_words, since=cutoff, deadline=deadline,
     )
     logger.info(f"Keyword search (last {recent_days}d): {len(recent_ids)} ids")
 
     if provider_query:
         historical_ids = _search_keyword_ids(
-            session, chat_ids, keywords, anchor_words, before=cutoff,
+            session, chat_ids, keywords, anchor_words, before=cutoff, deadline=deadline,
         )
         logger.info(f"Provider keyword quota (older history): {len(historical_ids)} ids")
         ids = list(dict.fromkeys(recent_ids + historical_ids))
