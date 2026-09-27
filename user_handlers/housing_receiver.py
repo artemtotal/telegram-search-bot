@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import urlparse
@@ -14,7 +14,8 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.error import NetworkError
 
 import i18n
-from database import DBSession, HousingDelivery, ImmoweltListing
+from database import DBSession, HousingDelivery, HousingPendingDelivery, ImmoweltListing
+from user_jobs import housing_tier
 
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,9 @@ GALLERY_ALBUM_MAX = 10
 # Подпись к фото Telegram обрезает жёстче обычного текста (1024 против 4096
 # символов) — раньше этого лимита текст уходит подписью, дальше отдельным сообщением.
 CAPTION_LIMIT = 1024
+# Отложенное для бесплатного уровня, которое никак не уходит (человек
+# заблокировал бота и т.п.), после стольких попыток выбрасывается.
+PENDING_MAX_ATTEMPTS = 5
 # Подписи ошибок, при которых запрос до Telegram заведомо не дошёл: соединение
 # не открылось, значит сообщения человек не видел и повтор безопасен. Всё
 # остальное (оборванный ответ, таймаут чтения) неоднозначно — там запрос уже
@@ -121,7 +125,77 @@ def _record_listing_for_stats(listing_id, listing):
         session.close()
 
 
-def handle_immowelt_result(bot, payload):
+def _queue_for_later(user_id, listing_id, payload):
+    """Free tier: keeps the flat and sends it once FREE_DELAY has passed
+    (see `send_due_immowelt`). Returns False if it was already queued."""
+    session = DBSession()
+    try:
+        exists = session.query(HousingPendingDelivery).filter(
+            HousingPendingDelivery.user_id == int(user_id),
+            HousingPendingDelivery.listing_id == str(listing_id),
+        ).first()
+        if exists is not None:
+            return False
+        now = datetime.utcnow()
+        session.add(HousingPendingDelivery(
+            user_id=int(user_id),
+            listing_id=str(listing_id),
+            payload=json.dumps(payload, ensure_ascii=False),
+            due_at=now + housing_tier.FREE_DELAY,
+            attempts=0,
+            created_at=now,
+        ))
+        session.commit()
+        return True
+    finally:
+        session.close()
+
+
+def send_due_immowelt(context):
+    """Job: sends the free tier's Immowelt flats whose delay has run out.
+
+    Someone who subscribed in the meantime gets theirs right away too - the
+    delay is only for people who are still on the free tier.
+    """
+    bot = context.bot
+    premium = housing_tier.premium_user_ids()
+    now = datetime.utcnow()
+    session = DBSession()
+    try:
+        rows = session.query(HousingPendingDelivery).order_by(HousingPendingDelivery.due_at.asc()).all()
+        pending = [
+            (row.id, int(row.user_id), row.payload, int(row.attempts or 0))
+            for row in rows if row.due_at <= now or int(row.user_id) in premium
+        ]
+    finally:
+        session.close()
+    sent = 0
+    for row_id, user_id, raw, attempts in pending:
+        done = True
+        try:
+            result = handle_immowelt_result(bot, json.loads(raw), release=True)
+            sent += int(bool(result.get("ok")) and not result.get("duplicate"))
+        except Exception:
+            logger.exception("Could not send a delayed Immowelt flat to %s", user_id)
+            done = attempts + 1 >= PENDING_MAX_ATTEMPTS
+        session = DBSession()
+        try:
+            row = session.query(HousingPendingDelivery).get(row_id)
+            if row is not None:
+                if done:
+                    session.delete(row)
+                else:
+                    row.attempts = attempts + 1
+                    row.due_at = now + timedelta(minutes=15)
+                session.commit()
+        finally:
+            session.close()
+    return {"sent": sent, "due": len(pending)}
+
+
+def handle_immowelt_result(bot, payload, release=False):
+    """`release=True` is the delayed send from `send_due_immowelt`: the
+    free-tier hold has already been served, so it goes out now."""
     if not isinstance(payload, dict):
         raise ValueError("JSON body must be an object")
     if payload.get("source") != "immowelt":
@@ -149,6 +223,11 @@ def handle_immowelt_result(bot, payload):
         # сообщение при этом уже у человека, так что второй раз слать нечего.
         logger.info("Immowelt listing %s already delivered to %s; skipping", listing_id, user_id)
         return {"ok": True, "duplicate": True}
+
+    premium = housing_tier.is_premium(user_id)
+    if not premium and not release:
+        queued = _queue_for_later(user_id, listing_id, payload)
+        return {"ok": True, "queued": True, "duplicate": not queued}
 
     lang = i18n.get_lang(user_id)
     lines = [
@@ -181,6 +260,8 @@ def handle_immowelt_result(bot, payload):
         [[InlineKeyboardButton("Відкрити на Immowelt", url=url)]]
     )
     text = "\n".join(lines)
+    if not premium:
+        text += housing_tier.free_footer(user_id)
     images = [str(u).strip() for u in (listing.get("images") or []) if str(u).strip()][:GALLERY_ALBUM_MAX]
 
     try:
@@ -192,6 +273,7 @@ def handle_immowelt_result(bot, payload):
         # сообщение доставляет, поэтому отмечаем его отправленным: повтор
         # прислал бы человеку вторую копию той же квартиры.
         _mark_delivered(user_id, listing_id)
+        housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium)
         logger.warning(
             "Immowelt listing %s to %s: response lost, assuming delivered (%s)",
             listing_id, user_id, exc,
@@ -199,6 +281,7 @@ def handle_immowelt_result(bot, payload):
         return {"ok": True, "assumed_delivered": True}
 
     _mark_delivered(user_id, listing_id)
+    housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium)
     return {"ok": True}
 
 

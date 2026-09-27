@@ -15,10 +15,23 @@ from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, 
 from telegram.error import BadRequest
 
 import i18n
+from database import (
+    DBSession,
+    KarlmarxListing,
+    KleinanzeigenListing,
+    LocalsListing,
+    ProPotsdamListing,
+    RegiomaklerListing,
+    SchobaListing,
+    SemmelhaackListing,
+    VonoviaListing,
+)
 from user_jobs import (
     coop_watchdog,
     coop_watchdog_store,
     housing_access_store,
+    housing_journey_store,
+    housing_tier,
     karlmarx_matching,
     karlmarx_store,
     kleinanzeigen_matching,
@@ -57,6 +70,10 @@ TIMEOUT = int(os.getenv("HOUSING_MONITOR_TIMEOUT", "20") or 20)
 # Перевірка доступу стоїть на шляху промальовування меню, тож чекати на приймач
 # стільки ж, скільки на збереження фільтра, там не можна.
 ALLOW_CHECK_TIMEOUT = int(os.getenv("HOUSING_ALLOW_CHECK_TIMEOUT", "3") or 3)
+# З 27.09.2026 моніторинг відкритий усім: безкоштовно — із затримкою
+# (housing_tier.FREE_DELAY), за підпискою — одразу. Тріалу більше немає.
+# 0 повертає старий закритий режим «доступ лише за запитом».
+OPEN_TO_ALL = os.getenv("HOUSING_OPEN_TO_ALL", "1") == "1"
 BTN_ADMIN_ADD = "➕ Додати користувача"
 BTN_ADMIN_ACCESS_ADD = "👤 Додати доступ користувачу"
 BTN_ADMIN_ACCESS_LIST = "👥 Доступ до моніторингу"
@@ -68,16 +85,15 @@ BTN_CURRENT_MATCHES = "🔍 Квартири, що підходять"
 BTN_COOPS = "🏘 Кооперативи (Gewoba/WBG)"
 ACCESS_MONTH_OPTIONS = [1, 3, 6, 12]
 EXPIRY_WARNING_DAYS = 3
-# Self-service trial: no admin approval, one shot per Telegram ID (enforced
-# via housing_access_store.has_used_trial/grant_trial). When a trial or a
-# paid period runs out, filters are paused, never deleted (see
-# `_pause_access`): whoever comes back - a week or three months later -
-# picks up where they left off instead of rebuilding every filter.
+# The 7-day trial was retired on 27.09.2026 (monitoring is free for everyone,
+# see OPEN_TO_ALL); these only serve the trials still running at that point.
+# When a trial or a paid period runs out the person drops to the free tier
+# (`_downgrade_to_free`) - filters keep working, nothing is deleted.
 TRIAL_DAYS = 7
 TRIAL_WARNING_DAYS = 1
-# How many paused people the admin's access list spells out by name. They
-# are never deleted any more, so without a cap the list would outgrow one
-# Telegram message within a couple of months of trials.
+# How many people on the free tier (inactive access rows) the admin's access
+# list spells out by name. Those rows are never deleted, so without a cap the
+# list would outgrow one Telegram message.
 ACCESS_LIST_PAUSED_SHOWN = 15
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 IMMOWELT_STALE_AFTER = timedelta(minutes=30)
@@ -429,7 +445,15 @@ def _criteria_picker_text(state: dict, lang: str = "uk") -> str:
     for opt in CRITERIA_PICKER_OPTIONS:
         mark = "✅" if opt["key"] in selected else "☐"
         lines.append(f"{mark} {i18n.t(opt['label_key'], lang)}")
-    return i18n.t("housing.criteria_picker.text", lang, body="\n".join(lines))
+    text = i18n.t("housing.criteria_picker.text", lang, body="\n".join(lines))
+    persons = state.get("jobcenter_household")
+    if persons:
+        area, price, warm = jobcenter_limits(persons)
+        text = i18n.t(
+            "housing.jobcenter.applied", lang, n=persons, area=area,
+            price=_format_eur(price), warm=_format_eur(warm),
+        ) + "\n\n" + text
+    return text
 
 
 def _criteria_picker_keyboard(state: dict, lang: str = "uk") -> InlineKeyboardMarkup:
@@ -448,16 +472,27 @@ def _criteria_picker_keyboard(state: dict, lang: str = "uk") -> InlineKeyboardMa
 # зайвим, бо крок завжди один: попереднє поле того самого списку.
 BACK_CALLBACK = "housing:field_back"
 
-# Jobcenter "Angemessenheitsgrenzen der Bruttokaltmieten" (Потсдам) — верхні
-# межі площі й ціни, у які Jobcenter готовий компенсувати оренду. Площа не
-# залежить від валюти й підходить як є; ціна в таблиці — Bruttokaltmiete
-# (холодна оренда + комунальні), тоді як більшість фільтрів питають
-# Kaltmiete/Nettokaltmiete (без комунальних) — тому справжня допустима
-# Kaltmiete зазвичай трохи нижче цих чисел. Про це попереджає підпис під
-# кнопками (_field_prompt), а не сама кнопка — цифри лишаються як у джерелі,
-# щоб не гадати з чиєїсь площі, скільки саме комуналки відняти.
-JOBCENTER_AREA_PRESETS_M2 = (50, 65, 80, 90, 100)
-JOBCENTER_PRICE_PRESETS_EUR = (550, 640, 720, 829)
+# Jobcenter "Angemessenheitsgrenzen der Bruttokaltmieten" (Потсдам), чинні з
+# 01.07.2026 (до того були 550/550/640/720/829 € — старі цифри досі стоять у
+# фільтрах людей, що заводили їх раніше). Bruttokaltmiete = Nettokaltmiete +
+# холодні Betriebskosten, опалення НЕ входить. {осіб: (м², €)}; за кожну
+# наступну особу понад п'ять — ще JOBCENTER_EXTRA_PERSON.
+#
+# Це ВЕРХНІ межі: Jobcenter платить до них. Тому кнопки з цими числами стоять
+# лише на питаннях про максимум. Раніше вони були й на мінімумі, і люди, що
+# мають ліміт «до 65 м²», тиснули 65 уже на питанні «від скількох м²» — і
+# отримували фільтр, який відсікав саме доступні їм квартири (вересень 2026:
+# «від 65 м² і до 640 €», «рівно 80 м²», «рівно 720 €»).
+JOBCENTER_LIMITS = {
+    1: (50, 562.10),
+    2: (65, 680.90),
+    3: (80, 810.70),
+    4: (90, 943.80),
+    5: (100, 1080.20),
+}
+JOBCENTER_EXTRA_PERSON = (10, 130.90)
+JOBCENTER_AREA_PRESETS_M2 = tuple(area for area, _price in JOBCENTER_LIMITS.values())
+JOBCENTER_PRICE_PRESETS_EUR = tuple(price for _area, price in JOBCENTER_LIMITS.values())
 # Кімнати — не з таблиці Jobcenter, просто найпоширеніші варіанти, щоб не
 # набирати вручну кожен раз.
 ROOM_PRESETS = (1, 2, 3, 4)
@@ -470,18 +505,34 @@ AREA_PRESET_FIELD_KEYS = {"min_area_m2", "max_area_m2"}
 KALTMIETE_PRICE_PRESET_KEYS = {"min_price_eur", "max_price_eur"}
 WARMMIETE_PRICE_PRESET_KEYS = {"min_price_warm_eur", "max_price_warm_eur"}
 PRICE_PRESET_FIELD_KEYS = KALTMIETE_PRICE_PRESET_KEYS | WARMMIETE_PRICE_PRESET_KEYS
+# Лише на цих полях — числа Jobcenter; на мінімумах площі й ціни лишається
+# тільки «Пропустити».
+JOBCENTER_PRESET_FIELD_KEYS = {"max_area_m2", "max_price_eur", "max_price_warm_eur"}
 PRESET_CALLBACK_PREFIX = "housing:preset:"
 SKIP_PRESET_VALUE = "-"
 
 
 def _preset_values_for(field_key: Optional[str]):
+    """Числа-кнопки під питанням; порожній кортеж — лише «Пропустити»,
+    None — поле без кнопок узагалі."""
     if field_key in ROOM_PRESET_FIELD_KEYS:
         return ROOM_PRESETS
+    if field_key not in AREA_PRESET_FIELD_KEYS | PRICE_PRESET_FIELD_KEYS:
+        return None
+    if field_key not in JOBCENTER_PRESET_FIELD_KEYS:
+        return ()
     if field_key in AREA_PRESET_FIELD_KEYS:
         return JOBCENTER_AREA_PRESETS_M2
-    if field_key in PRICE_PRESET_FIELD_KEYS:
-        return JOBCENTER_PRICE_PRESETS_EUR
-    return None
+    return JOBCENTER_PRICE_PRESETS_EUR
+
+
+def _preset_label(value, unit: str) -> str:
+    """562.1 -> «562,10 €», як у таблиці Jobcenter; цілі — без копійок."""
+    if isinstance(value, float) and not value.is_integer():
+        number = f"{value:.2f}".replace(".", ",")
+    else:
+        number = f"{value:g}"
+    return f"{number} {unit}".strip()
 
 
 def _preset_unit_for(field_key: Optional[str]) -> str:
@@ -497,10 +548,10 @@ def _field_keyboard(lang: str = "uk", field_key: Optional[str] = None) -> Inline
     # можна виправити попередню відповідь, і кидали майстер на середині.
     rows = []
     values = _preset_values_for(field_key)
-    if values:
+    if values is not None:
         unit = _preset_unit_for(field_key)
         buttons = [
-            InlineKeyboardButton(f"{value} {unit}".strip(), callback_data=f"{PRESET_CALLBACK_PREFIX}{field_key}:{value}")
+            InlineKeyboardButton(_preset_label(value, unit), callback_data=f"{PRESET_CALLBACK_PREFIX}{field_key}:{value}")
             for value in values
         ]
         rows.extend(buttons[i:i + 3] for i in range(0, len(buttons), 3))
@@ -566,6 +617,8 @@ def _localized_field(spec: dict, lang: str = "uk") -> dict:
 
 
 def _jobcenter_preset_note(next_key: str, lang: str = "uk") -> str:
+    if next_key not in JOBCENTER_PRESET_FIELD_KEYS:
+        return ""
     if next_key in AREA_PRESET_FIELD_KEYS:
         return i18n.t("housing.jobcenter_note.area", lang)
     if next_key in KALTMIETE_PRICE_PRESET_KEYS:
@@ -732,6 +785,11 @@ def _violates_sibling_bound(state: Dict[str, object], key: str, value) -> bool:
     if sibling_value is None:
         return False
     lo, hi = (value, sibling_value) if key.startswith("min_") else (sibling_value, value)
+    # «2–2 кімнати» — нормальний запит, а от «рівно 80 м²» чи «рівно 720 €»
+    # не знайде майже нічого: так фільтр майже завжди виходить випадково,
+    # коли те саме число тиснуть і на мінімумі, і на максимумі.
+    if lo == hi and not key.endswith("_rooms"):
+        return True
     return lo > hi
 
 
@@ -915,6 +973,162 @@ def _maybe_send_first_filter_congrats(context: CallbackContext, user_id: Optiona
         logger.exception("Could not send the first-filter congrats message to user %s", user_id)
 
 
+_LISTING_MODELS = {
+    "propotsdam": ProPotsdamListing,
+    "semmelhaack": SemmelhaackListing,
+    "schoba": SchobaListing,
+    "regiomakler": RegiomaklerListing,
+    "kleinanzeigen": KleinanzeigenListing,
+    "locals": LocalsListing,
+    "karlmarx": KarlmarxListing,
+    "vonovia": VonoviaListing,
+}
+# How far back "this filter would have caught N flats" looks, and at how
+# many hits a filter counts as too narrow to be worth waiting on.
+FILTER_REPORT_DAYS = 30
+THIN_FILTER_MAX_HITS = 2
+
+
+def _local_hits_since(source: str, filter_id, cutoff: datetime) -> Optional[int]:
+    """Flats first seen since `cutoff` that this saved filter matches -
+    including ones already taken down, since the point is how often such a
+    flat turns up at all, not what is on the market this minute."""
+    modules = _LOCAL_SOURCE_MODULES.get(source)
+    model = _LISTING_MODELS.get(source)
+    if not modules or model is None or filter_id is None:
+        return None
+    store, matching = modules
+    filt = next((f for f in store.list_filters() if int(f["filter_id"]) == int(filter_id)), None)
+    if filt is None:
+        return None
+    session = DBSession()
+    try:
+        rows = session.query(model).filter(model.first_seen_at >= cutoff).all()
+        listings = [store.listing_to_dict(row) for row in rows]
+    finally:
+        session.close()
+    return sum(1 for listing in listings if matching.matches_filter(listing, filt))
+
+
+def _immowelt_hits_since(criteria: Dict[str, object], days: int) -> Optional[int]:
+    payload = {"districts": list(criteria.get("districts") or [])}
+    for key in IMMOWELT_CRITERIA_KEYS:
+        payload[key] = criteria.get(key)
+    preview = _preview_criteria({**payload, "since_days": days})
+    count = preview.get("match_count") if isinstance(preview, dict) else None
+    return int(count) if isinstance(count, (int, float)) else None
+
+
+def _filter_hits(saved: list, days: int = FILTER_REPORT_DAYS) -> Dict[str, int]:
+    """{source: flats this filter would have caught over the last `days`}
+    for each saved (source, filter_id, criteria); sources that couldn't be
+    counted are left out rather than shown as zero."""
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    hits = {}
+    for source, filter_id, criteria in saved:
+        try:
+            if source == "immowelt":
+                count = _immowelt_hits_since(criteria or {}, days)
+            else:
+                count = _local_hits_since(source, filter_id, cutoff)
+        except Exception:
+            logger.exception("Could not count %s hits for filter %s", source, filter_id)
+            count = None
+        if count is not None:
+            hits[source] = count
+    return hits
+
+
+def _hits_breakdown(hits: Dict[str, int]) -> str:
+    ordered = sorted(hits.items(), key=lambda item: (-item[1], SOURCE_LABEL.get(item[0], item[0])))
+    return " · ".join(f"{SOURCE_LABEL.get(source, source)} {count}" for source, count in ordered)
+
+
+def _after_filter_saved(context: CallbackContext, user_id, saved: list, edited: bool = False) -> None:
+    """Called by every wizard once a filter is stored (or edited).
+
+    Counting runs on the job queue rather than here: it reads every listing
+    of the last month per source and asks the Immowelt receiver over HTTP,
+    and the person shouldn't wait on that before seeing their summary.
+    """
+    if not user_id or not saved:
+        return
+    if not edited:
+        try:
+            housing_journey_store.mark_first_filter(int(user_id))
+        except Exception:
+            logger.exception("Could not record the first filter of %s", user_id)
+    job_queue = getattr(context, "job_queue", None)
+    if job_queue is None:
+        return
+    try:
+        job_queue.run_once(
+            _filter_report_job, 0,
+            context={"user_id": int(user_id), "saved": list(saved), "edited": bool(edited)},
+        )
+    except Exception:
+        logger.exception("Could not schedule the filter report for %s", user_id)
+
+
+def _filter_report_job(context: CallbackContext) -> None:
+    data = context.job.context or {}
+    user_id = int(data["user_id"])
+    saved = data.get("saved") or []
+    edited = bool(data.get("edited"))
+    hits = _filter_hits(saved)
+    total = sum(hits.values())
+    thin = bool(hits) and total <= THIN_FILTER_MAX_HITS
+    bot = context.bot
+    if hits and not edited:
+        lang = i18n.get_lang(user_id)
+        text = i18n.t("housing.report.user", lang, days=FILTER_REPORT_DAYS, total=total)
+        if thin:
+            text += "\n\n" + i18n.t("housing.report.user_thin", lang)
+        try:
+            bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
+        except Exception:
+            logger.exception("Could not send the filter report to %s", user_id)
+    if ADMIN_ID and user_id != ADMIN_ID:
+        _notify_admin_filter_saved(bot, user_id, saved, hits, edited, thin)
+
+
+def _notify_admin_filter_saved(bot, user_id: int, saved: list, hits: Dict[str, int], edited: bool, thin: bool) -> None:
+    """Lets the admin see every new filter as it's made, so a hopeless one
+    (nothing like it turns up for weeks) can be caught with a word to the
+    person instead of them quietly giving up."""
+    try:
+        chat = bot.get_chat(user_id)
+        name = _display_name(chat)
+    except Exception:
+        name = str(user_id)
+    criteria = next((c for _s, _f, c in saved if c), None) or {}
+    tier = "💎 платний" if housing_tier.is_premium(user_id) else "🆓 безкоштовний"
+    household = housing_journey_store.get_household(user_id)
+    lines = [
+        "✏️ <b>Фільтр змінено</b>" if edited else "🆕 <b>Новий фільтр</b>",
+        f"👤 {html.escape(name)} · <code>{user_id}</code> · {tier}",
+    ]
+    if household:
+        lines.append(f"🏛 Jobcenter, осіб: {household}")
+    lines.append("🔎 " + _describe_criteria(criteria, "uk"))
+    lines.append("🌐 " + ", ".join(SOURCE_LABEL.get(source, source) for source, _f, _c in saved))
+    if hits:
+        lines.append(
+            f"📊 За {FILTER_REPORT_DAYS} днів підійшло б: <b>{sum(hits.values())}</b> ({_hits_breakdown(hits)})"
+        )
+    if thin:
+        lines.append("⚠️ Замало — варто підказати людині розширити фільтр.")
+    try:
+        bot.send_message(
+            chat_id=ADMIN_ID, text="\n".join(lines), parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("💌 Написати", url=f"tg://user?id={int(user_id)}"),
+            ]]),
+        )
+    except Exception:
+        logger.exception("Could not notify admin about a filter saved by %s", user_id)
+
+
 def _clear_recent_offer_keyboard(query) -> None:
     try:
         query.edit_message_reply_markup(reply_markup=None)
@@ -951,14 +1165,20 @@ def _send_recent_matches(update: Update, context: CallbackContext, hours: int) -
         if not filt:
             continue
         owner_id = int(filt["user_id"])
+        # The free tier's delay holds here too - otherwise "the last hour"
+        # would be a way round it.
+        gate = housing_tier.DeliveryGate(source, _LISTING_MODELS.get(source))
         for listing in store.list_active_listings_since(cutoff):
             if not matching.matches_filter(listing, filt):
                 continue
-            text = matching.format_notification(listing)
+            if not gate.due(owner_id, listing):
+                continue
+            text = matching.format_notification(listing) + gate.footer(owner_id)
             context.bot.send_message(
                 chat_id=owner_id, text=text, parse_mode="HTML", disable_web_page_preview=False,
             )
             store.mark_delivered(int(filter_id), str(listing["listing_key"]))
+            gate.sent(owner_id, str(listing["listing_key"]), int(filter_id))
             sent_any = True
     if not sent_any and update.effective_user:
         context.bot.send_message(
@@ -1255,6 +1475,10 @@ def _has_grandfathered_filter(user_id: int) -> bool:
 
 
 def is_allowed(user_id: Optional[int]) -> bool:
+    """Чи може людина користуватись моніторингом узагалі. Це не те саме, що
+    підписка: хто отримує квартири одразу, вирішує housing_tier.is_premium."""
+    if OPEN_TO_ALL and user_id:
+        return True
     return bool(
         user_id
         and (
@@ -1297,6 +1521,8 @@ def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKey
         rows.insert(1, [InlineKeyboardButton(i18n.t("housing.btn.self_manage", lang), callback_data="housing:self_manage")])
         rows.insert(2, [InlineKeyboardButton(i18n.t("housing.btn.current_matches", lang), callback_data="housing:current_matches")])
         rows.insert(3, [InlineKeyboardButton(i18n.t("housing.btn.notify_settings", lang), callback_data="housing:notify_settings")])
+        if not housing_tier.is_premium(user_id):
+            rows.insert(0, [InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request")])
     rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="housing:lang:menu")])
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.back_home", lang), callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
@@ -1713,6 +1939,19 @@ def show_monitoring_status(update: Update, context: CallbackContext, edit: bool 
         update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
+def _tier_line(user_id: int, lang: str = "uk") -> str:
+    if housing_tier.is_premium(user_id):
+        expires_at = next(
+            (u.get("expires_at") for u in housing_access_store.list_users() if int(u["user_id"]) == int(user_id)),
+            None,
+        )
+        until = i18n.t("housing.access.until", lang, date=expires_at.strftime("%d.%m.%Y")) if expires_at else ""
+        return i18n.t("housing.tier.premium", lang, until=until)
+    return i18n.t(
+        "housing.tier.free", lang, hours=housing_tier.free_delay_hours(), price=housing_tier.PREMIUM_PRICE_EUR,
+    )
+
+
 def _render_menu(user_id: int, lang: str = "uk") -> str:
     """Deliberately short - per-service crawl status used to be dumped right
     here (see _status_lines), which turned this into a wall of text on every
@@ -1723,6 +1962,8 @@ def _render_menu(user_id: int, lang: str = "uk") -> str:
         i18n.t("housing.menu.title", lang),
         "",
         i18n.t("housing.menu.intro", lang),
+        "",
+        _tier_line(user_id, lang),
         "",
     ]
     if not filters:
@@ -1744,8 +1985,6 @@ def _render_menu(user_id: int, lang: str = "uk") -> str:
 
 def _locked_keyboard(lang: str = "uk", user_id: Optional[int] = None) -> InlineKeyboardMarkup:
     rows = []
-    if user_id is not None and not housing_access_store.has_used_trial(user_id):
-        rows.append([InlineKeyboardButton(i18n.t("housing.btn.trial_start", lang), callback_data="housing:trial_start")])
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request")])
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.faq", lang), callback_data="housing:faq")])
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.back_home", lang), callback_data="anon:home")])
@@ -1766,6 +2005,10 @@ def show_menu(update: Update, context: CallbackContext, edit: bool = False) -> N
             update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
         return
     lang = i18n.get_lang(user.id)
+    try:
+        housing_journey_store.touch_menu(int(user.id))
+    except Exception:
+        logger.exception("Could not record the first housing visit of %s", user.id)
     text = _render_menu(user.id, lang)
     if edit and update.callback_query:
         try:
@@ -1983,7 +2226,7 @@ def request_access(update: Update, context: CallbackContext) -> None:
     if not query or not user:
         return
     lang = i18n.get_lang(user.id)
-    if is_allowed(user.id) and not housing_access_store.is_trial(user.id):
+    if housing_tier.is_premium(user.id) and not housing_access_store.is_trial(user.id):
         query.answer(i18n.t("housing.access.already_open", lang))
         show_menu(update, context, edit=True)
         return
@@ -2004,7 +2247,7 @@ def request_access(update: Update, context: CallbackContext) -> None:
         context.bot.send_message(
             chat_id=ADMIN_ID,
             text=(
-                "📩 <b>Запит на моніторинг житла</b>\n\n"
+                f"📩 <b>Запит на миттєві сповіщення ({housing_tier.PREMIUM_PRICE_EUR} €/міс)</b>\n\n"
                 f"Користувач: {html.escape(name)}\n"
                 f"Telegram ID: <code>{int(user.id)}</code>"
             ),
@@ -2022,47 +2265,19 @@ def request_access(update: Update, context: CallbackContext) -> None:
     context.bot_data.setdefault("housing_access_pending", {})[int(user.id)] = True
     context.bot_data.setdefault("housing_access_names", {})[int(user.id)] = name
     query.answer(i18n.t("housing.access.request_sent_toast", lang))
-    query.edit_message_text(i18n.t("housing.access.request_sent_text", lang))
+    query.edit_message_text(i18n.t("housing.access.request_sent_text", lang, price=housing_tier.PREMIUM_PRICE_EUR))
 
 
 def start_trial(update: Update, context: CallbackContext) -> None:
-    """Self-service 7-day trial - no admin approval, one shot per Telegram
-    ID (see housing_access_store.has_used_trial/grant_trial)."""
+    """Тріалу більше немає (27.09.2026): моніторинг безкоштовний для всіх.
+    Кнопка «7 днів безкоштовно» лишилась у старих повідомленнях — тап по ній
+    просто відкриває меню."""
     query = update.callback_query
     user = update.effective_user
     if not query or not user:
         return
-    lang = i18n.get_lang(user.id)
-    if is_allowed(user.id):
-        query.answer(i18n.t("housing.access.already_open", lang))
-        show_menu(update, context, edit=True)
-        return
-    if housing_access_store.has_used_trial(user.id):
-        query.answer(i18n.t("housing.trial.already_used", lang), show_alert=True)
-        return
-    name = _display_name(user)
-    expires_at = datetime.utcnow() + timedelta(days=TRIAL_DAYS)
-    housing_access_store.grant_trial(user.id, name, expires_at=expires_at)
-    query.answer(i18n.t("housing.trial.granted_toast", lang))
-    # Drops straight into the actual filter-adding menu instead of just
-    # telling the person to go tap a button themselves - the earlier
-    # version left them staring at a static confirmation text with nothing
-    # to act on.
-    text = i18n.t("housing.trial.granted_text", lang, days=TRIAL_DAYS) + "\n\n" + _render_menu(user.id, lang)
-    query.edit_message_text(text, parse_mode="HTML", reply_markup=_menu_keyboard(user.id, lang))
-    if ADMIN_ID:
-        try:
-            context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=(
-                    f"🎁 Користувач {html.escape(name)} самостійно активував "
-                    f"{TRIAL_DAYS}-денний тріал моніторингу житла.\n"
-                    f"Telegram ID: <code>{int(user.id)}</code>"
-                ),
-                parse_mode="HTML",
-            )
-        except Exception:
-            logger.exception("Could not notify admin about a self-served trial activation for user %s", user.id)
+    query.answer(i18n.t("housing.trial.gone", i18n.get_lang(user.id)))
+    show_menu(update, context, edit=True)
 
 
 def _notify_user_access_granted(bot, user_id: int, expires_at: Optional[datetime] = None) -> None:
@@ -2087,41 +2302,40 @@ def _notify_user_access_revoked(bot, user_id: int) -> None:
         logger.exception("Could not notify user %s about revoked housing access", user_id)
 
 
-def _pause_access(bot, user_id: int, trial: bool) -> None:
-    """A trial or a paid period has run out: stops monitoring, keeps everything.
+def _downgrade_to_free(bot, user_id: int, trial: bool) -> None:
+    """A trial or a paid period has run out: the person drops to the free tier.
 
-    Filters used to be deleted here (paid - on the expiry date, trial - three
-    days after it), so anyone who came back later had to build every filter
-    again from scratch. Now they are only switched off: every source's
-    `check_job` reads active filters only, so that alone stops the
-    notifications, and `_finalize_access_grant` switches them back on as soon
-    as access is granted again. The access row stays too, with active=False
-    (and `is_trial` intact, so the admin can still tell who was a trial).
+    Nothing is deleted or paused any more - the filters keep working and
+    flats keep coming, only with housing_tier.FREE_DELAY now. The access
+    row stays too, with active=False (and `is_trial` intact, so the admin
+    can still tell who was a trial); granting access again makes it
+    instant again.
     """
     lang = i18n.get_lang(user_id)
     housing_access_store.set_active(user_id, False)
-    paused = _set_all_filters_active_for_user(user_id, False)
-    text_key = "housing.trial.stopped" if trial else "housing.access.expired_paused"
+    text_key = "housing.trial.stopped" if trial else "housing.access.expired_free"
     try:
         bot.send_message(
             chat_id=user_id,
-            text=i18n.t(text_key, lang),
+            text=i18n.t(
+                text_key, lang, hours=housing_tier.free_delay_hours(), price=housing_tier.PREMIUM_PRICE_EUR,
+            ),
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request"),
             ]]),
         )
     except Exception:
-        logger.exception("Could not notify user %s that their monitoring was paused", user_id)
+        logger.exception("Could not tell user %s they are on the free tier now", user_id)
     if ADMIN_ID:
         what = "Тріал" if trial else "Платний доступ"
         try:
             bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"⏸ {what} користувача {user_id} закінчився, моніторинг зупинено "
-                     f"(фільтри збережено, на паузі: {paused}).",
+                text=f"🆓 {what} користувача {user_id} закінчився — тепер безкоштовний рівень "
+                     f"(фільтри працюють, затримка {housing_tier.free_delay_hours()} год).",
             )
         except Exception:
-            logger.exception("Could not notify admin about pausing access for user %s", user_id)
+            logger.exception("Could not notify admin about user %s dropping to the free tier", user_id)
 
 
 def _resolve_access_request(update: Update, context: CallbackContext, grant: bool) -> None:
@@ -2185,11 +2399,9 @@ def _finalize_access_grant(update: Update, context: CallbackContext) -> None:
     name = str(context.bot_data.get("housing_access_names", {}).pop(target_id, ""))
     expires_at = _add_months(datetime.utcnow(), months)
     housing_access_store.grant_access(target_id, name, expires_at=expires_at)
-    # Reactivates the filters an expired trial or paid period left paused
-    # (see _pause_access) so coming back resumes monitoring instead of
-    # leaving the person to rebuild every filter from scratch. A no-op for
-    # a brand-new grant or a normal renewal, since those filters are
-    # already active.
+    # Switches back on any filters left paused from before 27.09.2026, when
+    # an expired trial still paused them. A no-op for everyone else, since
+    # expiry no longer touches the filters (see _downgrade_to_free).
     _set_all_filters_active_for_user(target_id, True)
     expires_str = expires_at.strftime("%d.%m.%Y")
     query.answer("✅ Доступ надано")
@@ -2215,10 +2427,10 @@ def start_access_add_flow(update: Update, context: CallbackContext, edit: bool =
 
 
 def _access_users_shown() -> tuple:
-    """Everyone active, plus the ACCESS_LIST_PAUSED_SHOWN most recently
-    paused - and how many paused ones were left out. Paused rows are never
-    deleted any more (see `_pause_access`), so listing all of them would
-    soon outgrow a single Telegram message and its keyboard."""
+    """Everyone with an active subscription, plus the ACCESS_LIST_PAUSED_SHOWN
+    whose subscription or trial ended most recently - and how many were left
+    out. Those rows are never deleted (see `_downgrade_to_free`), so listing
+    all of them would soon outgrow a single Telegram message and its keyboard."""
     users = housing_access_store.list_users()
     active = [u for u in users if u.get("active")]
     paused = sorted(
@@ -2240,7 +2452,7 @@ def _render_access_users() -> str:
         name = html.escape(str(item.get("display_name") or "без назви"))
         lines.append(f"{mark} {int(item['user_id'])} · {name}{trial_mark}")
     if hidden:
-        lines.append(f"… і ще {hidden} на паузі (фільтри збережено)")
+        lines.append(f"… і ще {hidden} на безкоштовному рівні")
     return "\n".join(lines)
 
 
@@ -2337,9 +2549,9 @@ def _delete_all_filters_for_user(user_id: int) -> int:
 def _set_all_filters_active_for_user(user_id: int, active: bool) -> int:
     """Toggles every filter a person owns across all sources without
     deleting anything - unlike `_delete_all_filters_for_user`, this is
-    reversible. Used to pause monitoring once a trial or a paid period runs
-    out (see `_pause_access`), and to resume it when access is granted
-    again (see `_finalize_access_grant`).
+    reversible. Used to resume monitoring when access is granted (see
+    `_finalize_access_grant`) for filters an expired trial paused back when
+    expiry still did that.
     """
     changed = 0
     for item in _all_immowelt_filters():
@@ -2472,7 +2684,99 @@ def _handle_access_stop(update: Update, context: CallbackContext) -> None:
         query.answer()
         return
     query.answer()
-    query.edit_message_text(i18n.t("housing.access.stop_text", i18n.get_lang(user.id)))
+    query.edit_message_text(i18n.t(
+        "housing.access.stop_text", i18n.get_lang(user.id), hours=housing_tier.free_delay_hours(),
+    ))
+
+
+# Хто відкрив розділ і за стільки часу не створив жодного фільтра, отримує
+# одне нагадування. Перші візити почали записувати лише 27.09.2026 — давніших
+# не чіпаємо, щоб не писати людям, які заходили місяць тому.
+NO_FILTER_NUDGE_AFTER = timedelta(hours=3)
+NO_FILTER_NUDGE_NOT_BEFORE = datetime(2026, 9, 27)
+# Опитування — через два тижні після першого фільтра, один раз.
+SURVEY_AFTER = timedelta(days=14)
+SURVEY_OPTIONS = ("found", "fine", "few", "mismatch", "price", "hard")
+
+
+def _survey_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(i18n.t(f"housing.survey.opt.{code}", lang), callback_data=f"housing:survey:{code}")]
+        for code in SURVEY_OPTIONS
+    ])
+
+
+def housing_followups_job(context) -> None:
+    """Every half hour: the one-off nudge and the two-week survey."""
+    bot = context.bot
+    for user_id in housing_journey_store.list_due_no_filter_nudges(
+        NO_FILTER_NUDGE_AFTER, NO_FILTER_NUDGE_NOT_BEFORE,
+    ):
+        if user_id != ADMIN_ID and not user_filters(user_id):
+            lang = i18n.get_lang(user_id)
+            try:
+                bot.send_message(
+                    chat_id=user_id,
+                    text=i18n.t("housing.nudge.no_filter", lang),
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton(i18n.t("housing.btn.self_add", lang), callback_data="housing:self_add"),
+                    ]]),
+                )
+            except Exception:
+                logger.exception("Could not send the no-filter nudge to %s", user_id)
+        elif user_id != ADMIN_ID:
+            # Filters made before first visits were recorded: count this as
+            # the start, so the survey still comes two weeks from now.
+            housing_journey_store.mark_first_filter(user_id)
+        housing_journey_store.mark_no_filter_nudge_sent(user_id)
+
+    for user_id in housing_journey_store.list_due_surveys(SURVEY_AFTER):
+        if user_id != ADMIN_ID:
+            lang = i18n.get_lang(user_id)
+            try:
+                bot.send_message(
+                    chat_id=user_id, text=i18n.t("housing.survey.question", lang),
+                    reply_markup=_survey_keyboard(lang),
+                )
+            except Exception:
+                logger.exception("Could not send the survey to %s", user_id)
+        housing_journey_store.mark_survey_sent(user_id)
+
+
+def _answer_survey(update: Update, context: CallbackContext, code: str) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or code not in SURVEY_OPTIONS:
+        if query:
+            query.answer()
+        return
+    lang = i18n.get_lang(user.id)
+    if not housing_journey_store.save_survey_answer(int(user.id), code):
+        query.answer(i18n.t("housing.survey.already", lang))
+        return
+    query.answer()
+    rows = []
+    if ADMIN_ID:
+        rows.append([InlineKeyboardButton(i18n.t("housing.survey.btn_write", lang), url=f"tg://user?id={ADMIN_ID}")])
+    query.edit_message_text(
+        i18n.t("housing.survey.thanks", lang), reply_markup=InlineKeyboardMarkup(rows) if rows else None,
+    )
+    if ADMIN_ID:
+        tier = "💎 платний" if housing_tier.is_premium(user.id) else "🆓 безкоштовний"
+        try:
+            context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(
+                    f"📝 <b>Опитування</b>: {html.escape(i18n.t(f'housing.survey.opt.{code}', 'uk'))}\n"
+                    f"👤 {html.escape(_display_name(user))} · <code>{int(user.id)}</code> · {tier}"
+                ),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("💌 Написати", url=f"tg://user?id={int(user.id)}"),
+                ]]),
+            )
+        except Exception:
+            logger.exception("Could not forward a survey answer from %s", user.id)
 
 
 def check_access_expiry(context) -> None:
@@ -2522,7 +2826,10 @@ def check_access_expiry(context) -> None:
         try:
             bot.send_message(
                 chat_id=target_id,
-                text=i18n.t("housing.trial.warning", trial_lang, days=TRIAL_WARNING_DAYS),
+                text=i18n.t(
+                    "housing.trial.warning", trial_lang, days=TRIAL_WARNING_DAYS,
+                    hours=housing_tier.free_delay_hours(), price=housing_tier.PREMIUM_PRICE_EUR,
+                ),
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton(i18n.t("housing.btn.request_access", trial_lang), callback_data="housing:access_request"),
                 ]]),
@@ -2532,10 +2839,10 @@ def check_access_expiry(context) -> None:
         housing_access_store.mark_notice_sent(target_id)
 
     for row in housing_access_store.list_expired(trial=False):
-        _pause_access(bot, int(row["user_id"]), trial=False)
+        _downgrade_to_free(bot, int(row["user_id"]), trial=False)
 
     for row in housing_access_store.list_expired(trial=True):
-        _pause_access(bot, int(row["user_id"]), trial=True)
+        _downgrade_to_free(bot, int(row["user_id"]), trial=True)
 
 
 def start_admin_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:
@@ -3407,6 +3714,7 @@ def _finalize_semmelhaack_filter(message, context: CallbackContext, state: dict)
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
+    _after_filter_saved(context, state["user_id"], [("semmelhaack", filter_id, criteria)], edited=bool(edit_filter_id))
     heading = (
         i18n.t("housing.finalize.updated", lang, source="SEMMELHAACK") if edit_filter_id
         else i18n.t("housing.finalize.added", lang, source="SEMMELHAACK")
@@ -3500,6 +3808,7 @@ def _finalize_schoba_filter(message, context: CallbackContext, state: dict) -> N
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
+    _after_filter_saved(context, state["user_id"], [("schoba", filter_id, criteria)], edited=bool(edit_filter_id))
     heading = (
         i18n.t("housing.finalize.updated", lang, source="SCHOBA") if edit_filter_id
         else i18n.t("housing.finalize.added", lang, source="SCHOBA")
@@ -3593,6 +3902,7 @@ def _finalize_regiomakler_filter(message, context: CallbackContext, state: dict)
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
+    _after_filter_saved(context, state["user_id"], [("regiomakler", filter_id, criteria)], edited=bool(edit_filter_id))
     heading = (
         i18n.t("housing.finalize.updated", lang, source="ImmoTeam/alpha") if edit_filter_id
         else i18n.t("housing.finalize.added", lang, source="ImmoTeam/alpha")
@@ -3686,6 +3996,7 @@ def _finalize_kleinanzeigen_filter(message, context: CallbackContext, state: dic
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
+    _after_filter_saved(context, state["user_id"], [("kleinanzeigen", filter_id, criteria)], edited=bool(edit_filter_id))
     heading = (
         i18n.t("housing.finalize.updated", lang, source="Kleinanzeigen") if edit_filter_id
         else i18n.t("housing.finalize.added", lang, source="Kleinanzeigen")
@@ -3779,6 +4090,7 @@ def _finalize_locals_filter(message, context: CallbackContext, state: dict) -> N
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
+    _after_filter_saved(context, state["user_id"], [("locals", filter_id, criteria)], edited=bool(edit_filter_id))
     heading = (
         i18n.t("housing.finalize.updated", lang, source="locals®") if edit_filter_id
         else i18n.t("housing.finalize.added", lang, source="locals®")
@@ -3872,6 +4184,7 @@ def _finalize_karlmarx_filter(message, context: CallbackContext, state: dict) ->
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
+    _after_filter_saved(context, state["user_id"], [("karlmarx", filter_id, criteria)], edited=bool(edit_filter_id))
     heading = (
         i18n.t("housing.finalize.updated", lang, source="Karl Marx") if edit_filter_id
         else i18n.t("housing.finalize.added", lang, source="Karl Marx")
@@ -3975,6 +4288,7 @@ def _finalize_vonovia_filter(message, context: CallbackContext, state: dict) -> 
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
+    _after_filter_saved(context, state["user_id"], [("vonovia", filter_id, criteria)], edited=bool(edit_filter_id))
     heading = (
         i18n.t("housing.finalize.updated", lang, source="Vonovia") if edit_filter_id
         else i18n.t("housing.finalize.added", lang, source="Vonovia")
@@ -4187,6 +4501,7 @@ def _save_immowelt_filter(update: Update, context: CallbackContext) -> None:
         context.user_data.pop("housing_admin", None)
         return
     context.user_data.pop("housing_admin", None)
+    _after_filter_saved(context, state.get("user_id"), [("immowelt", filter_id, criteria)], edited=bool(edit_filter_id))
     lang = _dialog_lang(state)
     heading = (
         i18n.t("housing.finalize.immowelt_updated", lang) if edit_filter_id
@@ -4404,6 +4719,13 @@ def _finalize_propot_filter(message, chatter_id: int, context: CallbackContext, 
     if not ok:
         message.reply_text(i18n.t("housing.error.filter_gone", lang))
         return
+    _after_filter_saved(context, state["user_id"], [("propotsdam", filter_id, {
+        "districts": [d for d in str(state.get("districts") or "").split(",") if d],
+        "min_rooms": state.get("min_rooms"), "max_rooms": state.get("max_rooms"),
+        "min_area_m2": state.get("min_area_m2"), "max_area_m2": state.get("max_area_m2"),
+        "min_price_warm_eur": state.get("min_total_rent_eur"),
+        "max_price_warm_eur": state.get("max_total_rent_eur"),
+    })], edited=bool(edit_filter_id))
     heading = (
         i18n.t("housing.finalize.updated", lang, source="ProPotsdam") if edit_filter_id
         else i18n.t("housing.finalize.added", lang, source="ProPotsdam")
@@ -4657,8 +4979,7 @@ def _finish_sources(update: Update, context: CallbackContext) -> None:
         return
     # Жодне обране джерело не знає районів (лише SEMMELHAACK) — крок вибору
     # району тут нема сенсу показувати, він однаково нічого не відфільтрує.
-    state["step"] = "criteria_picker"
-    query.edit_message_text(_criteria_picker_text(state, lang), parse_mode="HTML", reply_markup=_criteria_picker_keyboard(state, lang))
+    _ask_jobcenter(query, state, lang)
 
 
 def _toggle_multi_district(update: Update, context: CallbackContext, district: str) -> None:
@@ -4688,9 +5009,102 @@ def _finish_multi_districts(update: Update, context: CallbackContext, all_distri
         return
     if all_districts:
         state["districts_selected"] = []
-    state["step"] = "criteria_picker"
     query.answer()
     lang = i18n.get_lang(update.effective_user.id)
+    _ask_jobcenter(query, state, lang)
+
+
+# Опалення в Bruttokaltmiete не входить, а портали, що знають лише повну
+# оренду (ProPotsdam Gesamtmiete, Karl Marx Warmmiete), рахують його всередині
+# ціни. Щоб такі квартири не відсікались, тепла межа = ліміт Jobcenter + оцінка
+# опалення на граничну площу. 1,50 €/м² — середина типових 1,2–1,8 €/м² для
+# Потсдама 2025–26; Jobcenter оплачує опалення окремо, тож це не його ліміт,
+# а лише запас, щоб тепла ціна не обрізала те, що проходить по холодній.
+JOBCENTER_HEATING_EUR_PER_M2 = 1.50
+JOBCENTER_HOUSEHOLD_CHOICES = (1, 2, 3, 4, 5, 6)
+
+
+def jobcenter_limits(persons: int) -> tuple:
+    """(м², Bruttokaltmiete €, тепла межа €) для домогосподарства з `persons` осіб."""
+    persons = max(1, int(persons))
+    if persons in JOBCENTER_LIMITS:
+        area, price = JOBCENTER_LIMITS[persons]
+    else:
+        base_area, base_price = JOBCENTER_LIMITS[max(JOBCENTER_LIMITS)]
+        extra = persons - max(JOBCENTER_LIMITS)
+        area = base_area + JOBCENTER_EXTRA_PERSON[0] * extra
+        price = round(base_price + JOBCENTER_EXTRA_PERSON[1] * extra, 2)
+    warm = round(price + area * JOBCENTER_HEATING_EUR_PER_M2, 2)
+    return area, price, warm
+
+
+def _format_eur(value: float) -> str:
+    return f"{value:,.2f}".replace(",", " ").replace(".", ",").replace(" ", ".")
+
+
+def _jobcenter_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
+    buttons = [
+        InlineKeyboardButton(
+            i18n.t("housing.jobcenter.btn_persons", lang, n=n), callback_data=f"housing:jc:{n}",
+        )
+        for n in JOBCENTER_HOUSEHOLD_CHOICES
+    ]
+    rows = [buttons[i:i + 3] for i in range(0, len(buttons), 3)]
+    rows.append([InlineKeyboardButton(i18n.t("housing.jobcenter.btn_no", lang), callback_data="housing:jc:no")])
+    rows.append([InlineKeyboardButton(BTN_CANCEL, callback_data="housing:multi_cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _ask_jobcenter(query, state: dict, lang: str) -> None:
+    """Питає, чи платить за житло Jobcenter, перед екраном «Про що спитати?».
+
+    Більшість людей, що шукають через бота, мають ліміт Jobcenter і вводили
+    його руками — часто старими цифрами або не в те поле. Тут досить
+    назвати, скільки осіб житиме, і межі ціни стануть самі.
+    """
+    state["step"] = "jobcenter"
+    query.edit_message_text(
+        i18n.t("housing.jobcenter.question", lang), parse_mode="HTML", reply_markup=_jobcenter_keyboard(lang),
+    )
+
+
+def _answer_jobcenter(update: Update, context: CallbackContext, raw: str) -> None:
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    if state.get("mode") != "multi" or state.get("step") != "jobcenter":
+        query.answer()
+        return
+    query.answer()
+    lang = i18n.get_lang(update.effective_user.id)
+    if raw == "no":
+        # Людина могла спершу обрати Jobcenter, повернутись назад і
+        # передумати — тоді прибираємо й поставлені ним межі.
+        if state.pop("jobcenter_household", None):
+            for key in ("max_price_eur", "max_price_warm_eur", "criteria_selected"):
+                state.pop(key, None)
+            try:
+                housing_journey_store.set_household(int(state["user_id"]), None)
+            except Exception:
+                logger.exception("Could not clear the Jobcenter household of %s", state.get("user_id"))
+    else:
+        try:
+            persons = int(raw)
+        except ValueError:
+            return
+        area, price, warm = jobcenter_limits(persons)
+        state["jobcenter_household"] = persons
+        # Холодна межа = сам ліміт: Kaltmiete завжди не більша за
+        # Bruttokaltmiete, тож усе, що Jobcenter оплатить, під неї пройде.
+        state["max_price_eur"] = price
+        state["max_price_warm_eur"] = warm
+        # Ціна вже стоїть — питати її вдруге не треба; кімнати лишаємо
+        # позначеними, решту людина може додати сама.
+        state["criteria_selected"] = ["min_rooms"]
+        try:
+            housing_journey_store.set_household(int(state["user_id"]), persons)
+        except Exception:
+            logger.exception("Could not save the Jobcenter household of %s", state.get("user_id"))
+    state["step"] = "criteria_picker"
     query.edit_message_text(_criteria_picker_text(state, lang), parse_mode="HTML", reply_markup=_criteria_picker_keyboard(state, lang))
 
 
@@ -5008,6 +5422,10 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
         rows = list(_recent_offer_keyboard(lang).inline_keyboard) + rows
     if any(not error for _source, _filter_id, _criteria, error in results):
         _maybe_send_first_filter_congrats(context, state["user_id"])
+    _after_filter_saved(context, state["user_id"], [
+        (source, filter_id, criteria) for source, filter_id, criteria, error in results
+        if not error and source not in duplicates
+    ])
     message.reply_text(
         "\n".join(lines), parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(rows),
@@ -5417,6 +5835,10 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _finish_multi_districts(update, context)
     elif query.data == "housing:multi_district_all":
         _finish_multi_districts(update, context, all_districts=True)
+    elif query.data.startswith("housing:survey:"):
+        _answer_survey(update, context, query.data.split(":", 2)[2])
+    elif query.data.startswith("housing:jc:"):
+        _answer_jobcenter(update, context, query.data.split(":", 2)[2])
     elif query.data.startswith("housing:crit_toggle:"):
         _toggle_criteria_field(update, context, query.data.split(":", 2)[2])
     elif query.data == "housing:crit_done":

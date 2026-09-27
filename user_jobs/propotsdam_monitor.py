@@ -12,7 +12,8 @@ import requests
 from telegram import InputMediaPhoto
 
 import i18n
-from user_jobs import delivery_dedup, propotsdam_matching, propotsdam_parser, propotsdam_store
+from database import ProPotsdamListing
+from user_jobs import delivery_dedup, housing_tier, propotsdam_matching, propotsdam_parser, propotsdam_store
 
 logger = logging.getLogger(__name__)
 
@@ -285,15 +286,19 @@ def _check_job_locked(context) -> Dict[str, int]:
     sent = 0
     photos_sent = 0
     dedup = delivery_dedup.PerUserDedup()
+    gate = housing_tier.DeliveryGate("propotsdam", ProPotsdamListing)
     for filt, listing in matches:
         chat_id = int(filt["user_id"])
         listing_key = str(listing["listing_key"])
+        if not gate.due(chat_id, listing):
+            continue
         # Та сама квартира під двома фільтрами однієї людини — одне
         # повідомлення; позначку про доставку отримують обидва фільтри.
         if not dedup.claim(chat_id, listing_key):
             propotsdam_store.mark_delivered(int(filt["filter_id"]), listing_key)
             continue
         text = propotsdam_matching.format_notification(listing, PROPOTSDAM_PORTAL_URL, lang=i18n.get_lang(chat_id))
+        text += gate.footer(chat_id)
         photos, posted_as_caption = _send_listing(bot, chat_id, listing, text)
         photos_sent += photos
         # Фото без подписи (нет фото вообще, или текст не влез в лимит подписи)
@@ -301,6 +306,7 @@ def _check_job_locked(context) -> Dict[str, int]:
         if not posted_as_caption:
             bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
         propotsdam_store.mark_delivered(int(filt["filter_id"]), listing_key)
+        gate.sent(chat_id, listing_key, int(filt["filter_id"]))
         sent += 1
     logger.info(
         "ProPotsdam scan stored=%s filters=%s matches=%s sent=%s photos=%s empty_alerted=%s",

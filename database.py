@@ -829,6 +829,66 @@ class HousingDelivery(Base):
     sent_at = Column(DATETIME, nullable=False)
 
 
+class HousingSendLog(Base):
+    """Every flat actually sent to a person, from every source, kept for good.
+
+    The per-source `*_delivery` tables can't answer "how many flats did this
+    person get": they also hold the silent baseline written when a filter is
+    created, and they are deleted together with the filter. This one is
+    written only on a real send and never deleted.
+    """
+
+    __tablename__ = 'housing_send_log'
+
+    id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    source = Column(TEXT, nullable=False)
+    listing_key = Column(TEXT, nullable=False)
+    filter_id = Column(INTEGER)
+    # True when the person is on the free tier and got it after the delay.
+    delayed = Column(BOOLEAN, nullable=False, default=False)
+    sent_at = Column(DATETIME, nullable=False, index=True)
+
+
+class HousingPendingDelivery(Base):
+    """Immowelt flats held back for a free-tier person until `due_at`.
+
+    The other sources are polled by the bot itself and simply wait until a
+    listing is old enough (see housing_tier.DeliveryGate). Immowelt is
+    pushed in by check-Wohnung the moment it is found, so the bot has to
+    keep the payload itself and send it later.
+    """
+
+    __tablename__ = 'housing_pending_delivery'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'listing_id', name='uq_housing_pending_user_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    listing_id = Column(TEXT, nullable=False)
+    payload = Column(TEXT, nullable=False)
+    due_at = Column(DATETIME, nullable=False, index=True)
+    attempts = Column(INTEGER, nullable=False, default=0)
+    created_at = Column(DATETIME, nullable=False)
+
+
+class HousingUserJourney(Base):
+    """One row per person who touched housing monitoring: the moments the
+    one-off follow-ups hang off (the no-filter nudge, the two-week survey)
+    and their Jobcenter household size if they gave one."""
+
+    __tablename__ = 'housing_user_journey'
+
+    user_id = Column(INTEGER, primary_key=True)
+    first_menu_at = Column(DATETIME)
+    first_filter_at = Column(DATETIME)
+    no_filter_nudge_sent_at = Column(DATETIME)
+    survey_sent_at = Column(DATETIME)
+    survey_answer = Column(TEXT)
+    jobcenter_household = Column(INTEGER)
+
+
 Base.metadata.create_all(engine)
 
 

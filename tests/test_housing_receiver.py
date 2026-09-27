@@ -1,12 +1,17 @@
+import json
 import unittest
+from datetime import datetime, timedelta
+from types import SimpleNamespace
+from unittest import mock
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from telegram.error import NetworkError
 
-from database import Base, ImmoweltListing
+from database import Base, HousingPendingDelivery, HousingSendLog, ImmoweltListing
 from user_handlers import housing_receiver
+from user_jobs import housing_tier
 
 
 class FakeBot:
@@ -67,8 +72,14 @@ class HousingReceiverTests(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         self._original_session = housing_receiver.DBSession
         housing_receiver.DBSession = sessionmaker(bind=self.engine)
+        self._original_tier_session = housing_tier.DBSession
+        housing_tier.DBSession = sessionmaker(bind=self.engine)
+        self._premium = mock.patch.object(housing_tier, 'is_premium', return_value=True)
+        self._premium.start()
 
     def tearDown(self):
+        self._premium.stop()
+        housing_tier.DBSession = self._original_tier_session
         housing_receiver.DBSession = self._original_session
         self.engine.dispose()
     def test_immowelt_payload_is_sent_to_filter_owner(self):
@@ -353,8 +364,14 @@ class ImmoweltPriceLabelTests(unittest.TestCase):
         housing_receiver.DBSession = sessionmaker(bind=self.engine)
         self._original_i18n_session = housing_receiver.i18n.user_settings_store.DBSession
         housing_receiver.i18n.user_settings_store.DBSession = sessionmaker(bind=self.engine)
+        self._original_tier_session = housing_tier.DBSession
+        housing_tier.DBSession = sessionmaker(bind=self.engine)
+        self._premium = mock.patch.object(housing_tier, 'is_premium', return_value=True)
+        self._premium.start()
 
     def tearDown(self):
+        self._premium.stop()
+        housing_tier.DBSession = self._original_tier_session
         housing_receiver.DBSession = self._original_session
         housing_receiver.i18n.user_settings_store.DBSession = self._original_i18n_session
         self.engine.dispose()
@@ -379,3 +396,118 @@ class ImmoweltPriceLabelTests(unittest.TestCase):
         self.assertIn('1.119', text)
         self.assertNotIn('Kaltmiete', text)
         self.assertNotIn('Warmmiete', text)
+
+
+class ImmoweltFreeTierTests(unittest.TestCase):
+    """Free tier: an Immowelt flat is held for FREE_DELAY, then sent."""
+
+    PAYLOAD = {
+        "source": "immowelt",
+        "user_id": 777,
+        "filter_title": "2 кімнати",
+        "listing": {
+            "listing_id": "iw-1",
+            "url": "https://www.immowelt.de/expose/iw-1",
+            "title": "Wohnung",
+            "address": "Potsdam",
+            "price": "600 €",
+        },
+    }
+
+    def setUp(self):
+        self.engine = create_engine(
+            'sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self._sessions = []
+        for module in (housing_receiver, housing_tier, housing_receiver.i18n.user_settings_store):
+            self._sessions.append((module, module.DBSession))
+            module.DBSession = sessionmaker(bind=self.engine)
+        self.premium_ids = set()
+        self._premium = mock.patch.object(housing_tier, 'premium_user_ids', side_effect=lambda: set(self.premium_ids))
+        self._premium.start()
+
+    def tearDown(self):
+        self._premium.stop()
+        for module, session in self._sessions:
+            module.DBSession = session
+        self.engine.dispose()
+
+    def _pending(self):
+        session = housing_receiver.DBSession()
+        try:
+            return session.query(HousingPendingDelivery).all()
+        finally:
+            session.close()
+
+    def _logged(self):
+        session = housing_receiver.DBSession()
+        try:
+            return [(row.user_id, row.source, row.listing_key, row.delayed) for row in session.query(HousingSendLog).all()]
+        finally:
+            session.close()
+
+    def test_a_free_user_gets_nothing_right_away_and_the_flat_is_queued(self):
+        bot = FakeBot()
+
+        result = housing_receiver.handle_immowelt_result(bot, dict(self.PAYLOAD))
+
+        self.assertTrue(result['queued'])
+        self.assertEqual(bot.messages, [])
+        [row] = self._pending()
+        self.assertEqual((row.user_id, row.listing_id), (777, 'iw-1'))
+        self.assertAlmostEqual(row.due_at, datetime.utcnow() + housing_tier.FREE_DELAY, delta=timedelta(minutes=1))
+
+    def test_the_same_flat_is_queued_once(self):
+        housing_receiver.handle_immowelt_result(FakeBot(), dict(self.PAYLOAD))
+        result = housing_receiver.handle_immowelt_result(FakeBot(), dict(self.PAYLOAD))
+
+        self.assertTrue(result['duplicate'])
+        self.assertEqual(len(self._pending()), 1)
+
+    def test_nothing_goes_out_before_the_delay_is_over(self):
+        housing_receiver.handle_immowelt_result(FakeBot(), dict(self.PAYLOAD))
+        bot = FakeBot()
+
+        housing_receiver.send_due_immowelt(SimpleNamespace(bot=bot))
+
+        self.assertEqual(bot.messages, [])
+        self.assertEqual(len(self._pending()), 1)
+
+    def test_once_due_it_goes_out_with_the_free_tier_note_and_is_logged(self):
+        housing_receiver.handle_immowelt_result(FakeBot(), dict(self.PAYLOAD))
+        session = housing_receiver.DBSession()
+        session.query(HousingPendingDelivery).update({"due_at": datetime.utcnow() - timedelta(minutes=1)})
+        session.commit()
+        session.close()
+        bot = FakeBot()
+
+        housing_receiver.send_due_immowelt(SimpleNamespace(bot=bot))
+
+        self.assertEqual(len(bot.messages), 1)
+        self.assertIn('5 €', bot.messages[0]['text'])
+        self.assertEqual(self._pending(), [])
+        self.assertEqual(self._logged(), [(777, 'immowelt', 'iw-1', True)])
+
+    def test_someone_who_subscribed_meanwhile_gets_it_right_away(self):
+        housing_receiver.handle_immowelt_result(FakeBot(), dict(self.PAYLOAD))
+        self.premium_ids.add(777)
+        bot = FakeBot()
+
+        housing_receiver.send_due_immowelt(SimpleNamespace(bot=bot))
+
+        self.assertEqual(len(bot.messages), 1)
+        self.assertNotIn('5 €', bot.messages[0]['text'])
+        self.assertEqual(self._logged(), [(777, 'immowelt', 'iw-1', False)])
+
+    def test_a_subscriber_gets_it_at_once(self):
+        self.premium_ids.add(777)
+        bot = FakeBot()
+
+        housing_receiver.handle_immowelt_result(bot, dict(self.PAYLOAD))
+
+        self.assertEqual(len(bot.messages), 1)
+        self.assertEqual(self._pending(), [])
+
+
+if __name__ == '__main__':
+    unittest.main()

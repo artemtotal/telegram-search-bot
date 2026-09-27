@@ -145,7 +145,7 @@ class HousingAdminFlowTests(unittest.TestCase):
         # бачила відкритий пункт меню лише випадково.
         context.bot.send_message.assert_called_once()
         self.assertEqual(context.bot.send_message.call_args.kwargs['chat_id'], 777)
-        self.assertIn('відкрито', context.bot.send_message.call_args.kwargs['text'])
+        self.assertIn('ввімкнено', context.bot.send_message.call_args.kwargs['text'])
 
     def test_access_list_shows_a_delete_button_per_user_and_can_revoke_access(self):
         """Раніше цей екран був лише списком без жодної дії над записом —
@@ -356,6 +356,8 @@ class HousingAdminFlowTests(unittest.TestCase):
 
             housing_monitor._finish_sources(self._cb_update(), context)
             # SCHOBA не знає районів — крок вибору району тут пропускається.
+            self.assertEqual(state['step'], 'jobcenter')
+            housing_monitor._answer_jobcenter(self._cb_update(), context, 'no')
             self.assertEqual(state['step'], 'criteria_picker')
             state['criteria_selected'] = list(housing_monitor.CRITERIA_PICKER_KEYS)
             housing_monitor._finish_criteria_picker(self._cb_update(), context)
@@ -474,7 +476,7 @@ class HousingAdminFlowTests(unittest.TestCase):
             self.assertTrue(housing_monitor.handle_private_text(update, context))
 
         self.assertEqual(state['step'], 'max_price_eur')
-        self.assertIn('Мінімум не може бути більшим за максимум', update.message.replies[-1][0])
+        self.assertIn('Мінімум має бути меншим за максимум', update.message.replies[-1][0])
 
     def test_preview_has_a_back_button_not_only_cancel(self):
         """Раніше на етапі перевірки можна було лише скасувати весь фільтр."""
@@ -841,6 +843,8 @@ class HousingAdminFlowTests(unittest.TestCase):
             housing_monitor._finish_sources(self._cb_update(), context)
             self.assertEqual(state['step'], 'districts')
             housing_monitor._finish_multi_districts(self._cb_update(), context, all_districts=True)
+            self.assertEqual(state['step'], 'jobcenter')
+            housing_monitor._answer_jobcenter(self._cb_update(), context, 'no')
             self.assertEqual(state['step'], 'criteria_picker')
             state['criteria_selected'] = list(housing_monitor.CRITERIA_PICKER_KEYS)
             housing_monitor._finish_criteria_picker(self._cb_update(), context)
@@ -912,7 +916,7 @@ class HousingAdminFlowTests(unittest.TestCase):
             self.assertTrue(housing_monitor.handle_private_text(update, context))
 
         self.assertEqual(state['step'], 'max_rooms')
-        self.assertIn('Мінімум не може бути більшим за максимум', update.message.replies[-1][0])
+        self.assertIn('Мінімум має бути меншим за максимум', update.message.replies[-1][0])
 
     def test_housing_status_shows_local_times_and_never_dp_document(self):
         immowelt_task = {
@@ -1651,9 +1655,9 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
 
         state = context.user_data['housing_admin']
         self.assertEqual(state['mode'], 'multi')
-        # District step skipped straight to the criteria picker (not directly
-        # into "min_rooms" any more — that screen now sits in between).
-        self.assertEqual(state['step'], 'criteria_picker')
+        # District step skipped straight to the Jobcenter question, which
+        # leads on to the criteria picker.
+        self.assertEqual(state['step'], 'jobcenter')
 
     def test_immowelt_and_semmelhaack_together_ask_each_price_only_once(self):
         """Питань про ціну два — холодна й повна, — і кожне ставиться один раз
@@ -2523,7 +2527,10 @@ class HousingWizardBackButtonTests(unittest.TestCase):
         with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
             housing_monitor._finish_sources(finish_update, context)
             # No district-aware source picked — src_done lands on the
-            # criteria picker, click "Готово" there to reach the first field.
+            # Jobcenter question, then the criteria picker, where "Готово"
+            # reaches the first field.
+            self.assertEqual(context.user_data['housing_admin']['step'], 'jobcenter')
+            housing_monitor._answer_jobcenter(self._cb_update(user_id=544675510), context, 'no')
             self.assertEqual(context.user_data['housing_admin']['step'], 'criteria_picker')
             housing_monitor._finish_criteria_picker(picker_done_update, context)
 
@@ -2736,18 +2743,36 @@ class HousingWizardPresetButtonTests(unittest.TestCase):
             self.assertIn(f'housing:preset:{field_key}:-', callbacks)
             self.assertIn(housing_monitor.BACK_CALLBACK, callbacks)
 
-    def test_min_area_now_also_offers_jobcenter_presets(self):
-        keyboard = housing_monitor._field_keyboard('uk', 'min_area_m2')
-        callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
-        for value in housing_monitor.JOBCENTER_AREA_PRESETS_M2:
-            self.assertIn(f'housing:preset:min_area_m2:{value}', callbacks)
+    def test_min_area_offers_only_skip_not_the_jobcenter_numbers(self):
+        # Jobcenter numbers are upper limits: offered on "minimum" they got
+        # tapped as a minimum and produced filters like "from 65 m²".
+        for field_key in ('min_area_m2', 'min_price_eur', 'min_price_warm_eur'):
+            keyboard = housing_monitor._field_keyboard('uk', field_key)
+            callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+            self.assertEqual(callbacks, [f'housing:preset:{field_key}:-', housing_monitor.BACK_CALLBACK])
+            text = housing_monitor._field_prompt({}, housing_monitor.SEMM_CRITERIA_FIELDS, 'min_area_m2', 'uk')
+            self.assertNotIn('Jobcenter', text)
+
+    def test_price_presets_read_like_the_jobcenter_table(self):
+        keyboard = housing_monitor._field_keyboard('uk', 'max_price_eur')
+        labels = [b.text for row in keyboard.inline_keyboard for b in row]
+        self.assertIn('680,90 €', labels)
+        self.assertIn('1080,20 €', labels)
+
+    def test_min_equal_to_max_is_refused_for_area_and_price_but_not_rooms(self):
+        self.assertTrue(housing_monitor._violates_sibling_bound({'min_area_m2': 80}, 'max_area_m2', 80))
+        self.assertTrue(housing_monitor._violates_sibling_bound({'max_price_eur': 720}, 'min_price_eur', 720))
+        self.assertFalse(housing_monitor._violates_sibling_bound({'min_rooms': 2}, 'max_rooms', 2))
 
     def test_every_price_step_key_across_every_source_offers_presets_and_a_skip_button(self):
         for field_key in housing_monitor.PRICE_PRESET_FIELD_KEYS:
             keyboard = housing_monitor._field_keyboard('uk', field_key)
             callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
             for value in housing_monitor.JOBCENTER_PRICE_PRESETS_EUR:
-                self.assertIn(f'housing:preset:{field_key}:{value}', callbacks)
+                if field_key.startswith('max_'):
+                    self.assertIn(f'housing:preset:{field_key}:{value}', callbacks)
+                else:
+                    self.assertNotIn(f'housing:preset:{field_key}:{value}', callbacks)
             self.assertIn(f'housing:preset:{field_key}:-', callbacks)
 
     def test_price_prompt_warns_the_presets_are_bruttokaltmiete(self):
@@ -2858,7 +2883,7 @@ class HousingWizardPresetButtonTests(unittest.TestCase):
 
         self.assertEqual(context.user_data['housing_admin']['step'], 'max_area_m2')
         self.assertEqual(len(query_message.replies), 1)
-        self.assertIn('Мінімум не може бути більшим за максимум', query_message.replies[0][0])
+        self.assertIn('Мінімум має бути меншим за максимум', query_message.replies[0][0])
 
     def test_a_disallowed_user_tapping_a_preset_is_a_no_op(self):
         context = SimpleNamespace(user_data={'housing_admin': {
@@ -2867,6 +2892,7 @@ class HousingWizardPresetButtonTests(unittest.TestCase):
         update, query_message = self._preset_cb_update('max_area_m2', 65, user_id=999)
 
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor, 'OPEN_TO_ALL', False), \
              mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', set()):
             housing_monitor._handle_preset_tap(update, context)
 
@@ -2904,8 +2930,10 @@ class HousingCriteriaPickerTests(unittest.TestCase):
             'mode': 'multi', 'step': 'districts', 'user_id': 544675510,
             'sources_selected': ['immowelt'], 'districts_selected': [],
         }})
-        update = self._cb_update('housing:multi_district_done')
 
+        housing_monitor.handle_callback(self._cb_update('housing:multi_district_done'), context)
+        self.assertEqual(context.user_data['housing_admin']['step'], 'jobcenter')
+        update = self._cb_update('housing:jc:no')
         housing_monitor.handle_callback(update, context)
 
         self.assertEqual(context.user_data['housing_admin']['step'], 'criteria_picker')
@@ -2914,6 +2942,47 @@ class HousingCriteriaPickerTests(unittest.TestCase):
         self.assertIn('housing:crit_done', callbacks)
         for opt in housing_monitor.CRITERIA_PICKER_KEYS:
             self.assertIn(f'housing:crit_toggle:{opt}', callbacks)
+
+    def test_a_jobcenter_household_sets_the_price_limits_and_skips_the_price_question(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'jobcenter', 'user_id': 544675510,
+            'sources_selected': ['immowelt', 'karlmarx'], 'districts_selected': [],
+        }})
+        update = self._cb_update('housing:jc:2')
+
+        with mock.patch.object(housing_monitor.housing_journey_store, 'set_household') as set_household:
+            housing_monitor.handle_callback(update, context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'criteria_picker')
+        self.assertEqual(state['max_price_eur'], 680.90)
+        self.assertEqual(state['max_price_warm_eur'], 778.40)
+        self.assertEqual(state['criteria_selected'], ['min_rooms'])
+        set_household.assert_called_once_with(544675510, 2)
+        # Only the rooms question is left, the price is already set.
+        self.assertEqual(housing_monitor._visible_multi_keys(state), ['min_rooms'])
+        self.assertIn('680,90', update.callback_query.edit_message_text.call_args.args[0])
+
+    def test_changing_your_mind_about_jobcenter_clears_its_limits(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'jobcenter', 'user_id': 544675510,
+            'sources_selected': ['immowelt'], 'districts_selected': [],
+            'jobcenter_household': 2, 'max_price_eur': 680.90, 'max_price_warm_eur': 778.40,
+            'criteria_selected': ['min_rooms'],
+        }})
+
+        with mock.patch.object(housing_monitor.housing_journey_store, 'set_household'):
+            housing_monitor.handle_callback(self._cb_update('housing:jc:no'), context)
+
+        state = context.user_data['housing_admin']
+        for key in ('jobcenter_household', 'max_price_eur', 'max_price_warm_eur', 'criteria_selected'):
+            self.assertNotIn(key, state)
+
+    def test_jobcenter_limits_follow_the_table_from_july_2026(self):
+        self.assertEqual(housing_monitor.jobcenter_limits(1)[:2], (50, 562.10))
+        self.assertEqual(housing_monitor.jobcenter_limits(5)[:2], (100, 1080.20))
+        # Every person past five adds 10 m² and 130,90 €.
+        self.assertEqual(housing_monitor.jobcenter_limits(7)[:2], (120, 1342.00))
 
     def test_default_selection_is_min_rooms_min_area_and_max_price_only(self):
         """Найчастіше людей цікавить «від скількох кімнат», «від якої площі»
@@ -3311,7 +3380,7 @@ class HousingAccessRequestTests(unittest.TestCase):
                 for button in row
             ]
 
-        self.assertIn('📩 Запросити доступ', labels)
+        self.assertIn('⚡ Отримувати одразу — 5 €/міс', labels)
 
     def test_locked_menu_also_offers_the_faq(self):
         """People without access yet should still be able to read what the
@@ -3345,7 +3414,7 @@ class HousingAccessRequestTests(unittest.TestCase):
 
         query.answer.assert_called_once()
         text, kwargs = query.edit_message_text.call_args.args[0], query.edit_message_text.call_args.kwargs
-        self.assertIn('10 €', text)
+        self.assertIn('5 €', text)
         callbacks = [b.callback_data for row in kwargs['reply_markup'].inline_keyboard for b in row]
         self.assertIn('housing:menu', callbacks)
 
@@ -3361,7 +3430,7 @@ class HousingAccessRequestTests(unittest.TestCase):
 
         text = update.effective_message.reply_text.call_args.args[0]
         self.assertIn('9 порталами', text)
-        self.assertIn('10 €', text)
+        self.assertIn('5 €', text)
 
     def test_district_pickers_bold_the_current_selection(self):
         # Раніше вибрані райони губилися серед звичайного тексту — людина не
@@ -3564,7 +3633,7 @@ class HousingAccessExpiryTests(unittest.TestCase):
 
         revoke.assert_not_called()
         delete_filters.assert_not_called()
-        self.assertIn('збереженими', update.callback_query.edit_message_text.call_args.args[0])
+        self.assertIn('безкоштовно', update.callback_query.edit_message_text.call_args.args[0])
         context.bot.send_message.assert_not_called()
 
     def test_check_access_expiry_warns_the_user_and_the_admin_once(self):
@@ -3594,9 +3663,9 @@ class HousingAccessExpiryTests(unittest.TestCase):
         self.assertIn(312029534, calls)
         mark_sent.assert_called_once_with(777)
 
-    def test_check_access_expiry_pauses_paid_access_but_keeps_filters_once_the_date_has_passed(self):
-        # Filters used to be deleted on the expiry date; now they are only
-        # switched off, so renewing later brings everything straight back.
+    def test_check_access_expiry_moves_paid_access_to_the_free_tier_once_the_date_has_passed(self):
+        # Filters used to be deleted on the expiry date; now the person just
+        # drops to the free tier and keeps getting flats, a bit later.
         context = SimpleNamespace(bot=mock.Mock())
 
         def fake_expired(trial=None):
@@ -3614,7 +3683,8 @@ class HousingAccessExpiryTests(unittest.TestCase):
             housing_monitor.check_access_expiry(context)
 
         set_active.assert_called_once_with(888, False)
-        set_filters_active.assert_called_once_with(888, False)
+        # The filters keep working on the free tier - nothing paused, nothing deleted.
+        set_filters_active.assert_not_called()
         revoke.assert_not_called()
         delete_filters.assert_not_called()
         user_calls = [
@@ -3622,7 +3692,7 @@ class HousingAccessExpiryTests(unittest.TestCase):
             if call.kwargs.get('chat_id') == 888
         ]
         self.assertEqual(len(user_calls), 1)
-        self.assertIn('збережено', user_calls[0].kwargs['text'])
+        self.assertIn('затримкою ~2 год', user_calls[0].kwargs['text'])
         callbacks = [b.callback_data for row in user_calls[0].kwargs['reply_markup'].inline_keyboard for b in row]
         self.assertIn('housing:access_request', callbacks)
 
@@ -3637,7 +3707,7 @@ class HousingTrialTests(unittest.TestCase):
             effective_user=SimpleNamespace(id=user_id, first_name='Іван', last_name='', username='ivan'),
         )
 
-    def test_locked_menu_offers_the_trial_when_not_used_yet(self):
+    def test_locked_menu_no_longer_offers_a_trial(self):
         with mock.patch.object(housing_monitor, 'is_allowed', return_value=False), \
              mock.patch.object(housing_monitor.housing_access_store, 'has_used_trial', return_value=False):
             labels = [
@@ -3646,7 +3716,7 @@ class HousingTrialTests(unittest.TestCase):
                 for button in row
             ]
 
-        self.assertIn('🎁 7 днів безкоштовно', labels)
+        self.assertNotIn('🎁 7 днів безкоштовно', labels)
 
     def test_locked_menu_hides_the_trial_once_already_used(self):
         with mock.patch.object(housing_monitor, 'is_allowed', return_value=False), \
@@ -3669,49 +3739,21 @@ class HousingTrialTests(unittest.TestCase):
 
         self.assertNotIn('🎁 7 днів безкоштовно', labels)
 
-    def test_start_trial_grants_access_without_admin_involvement(self):
-        context = SimpleNamespace(bot=mock.Mock())
+    def test_an_old_trial_button_just_opens_the_menu(self):
+        # The trial was retired; its button still sits in old messages.
+        context = SimpleNamespace(bot=mock.Mock(), user_data={})
         update = self._update()
 
-        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
-             mock.patch.object(housing_monitor, 'is_allowed', side_effect=[False, True]), \
-             mock.patch.object(housing_monitor.housing_access_store, 'has_used_trial', return_value=False), \
-             mock.patch.object(housing_monitor.housing_access_store, 'grant_trial') as grant_trial, \
-             mock.patch.object(housing_monitor, 'user_filters', return_value=[]):
-            housing_monitor.start_trial(update, context)
-
-        grant_trial.assert_called_once()
-        args = grant_trial.call_args.args
-        self.assertEqual(args[0], 777)
-        expires_at = grant_trial.call_args.kwargs['expires_at']
-        self.assertAlmostEqual(
-            expires_at, datetime.utcnow() + timedelta(days=housing_monitor.TRIAL_DAYS), delta=timedelta(minutes=1),
-        )
-        update.callback_query.answer.assert_called_once()
-        update.callback_query.edit_message_text.assert_called_once()
-        # Drops straight into the real menu (with the "add filter" button),
-        # not just a static confirmation text nobody can act on.
-        edit_kwargs = update.callback_query.edit_message_text.call_args.kwargs
-        menu_callbacks = [
-            b.callback_data for row in edit_kwargs['reply_markup'].inline_keyboard for b in row
-        ]
-        self.assertIn('housing:self_add', menu_callbacks)
-        # An FYI ping to the admin, not a decision request - no approval buttons.
-        context.bot.send_message.assert_called_once()
-        self.assertEqual(context.bot.send_message.call_args.kwargs['chat_id'], 312029534)
-
-    def test_start_trial_refuses_a_second_time_for_the_same_id(self):
-        context = SimpleNamespace(bot=mock.Mock())
-        update = self._update()
-
-        with mock.patch.object(housing_monitor, 'is_allowed', return_value=False), \
-             mock.patch.object(housing_monitor.housing_access_store, 'has_used_trial', return_value=True), \
-             mock.patch.object(housing_monitor.housing_access_store, 'grant_trial') as grant_trial:
+        with mock.patch.object(housing_monitor.housing_access_store, 'grant_trial') as grant_trial, \
+             mock.patch.object(housing_monitor, 'show_menu') as show_menu:
             housing_monitor.start_trial(update, context)
 
         grant_trial.assert_not_called()
-        update.callback_query.answer.assert_called_once()
-        self.assertTrue(update.callback_query.answer.call_args.kwargs.get('show_alert'))
+        show_menu.assert_called_once()
+        self.assertIn('безкоштовний', update.callback_query.answer.call_args.args[0])
+        context.bot.send_message.assert_not_called()
+
+
 
     def test_start_trial_is_a_no_op_when_access_is_already_open(self):
         context = SimpleNamespace(bot=mock.Mock())
@@ -3743,7 +3785,7 @@ class HousingTrialTests(unittest.TestCase):
         update = self._update(data='housing:access_request')
 
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
-             mock.patch.object(housing_monitor, 'is_allowed', return_value=True), \
+             mock.patch.object(housing_monitor.housing_tier, 'is_premium', return_value=True), \
              mock.patch.object(housing_monitor.housing_access_store, 'is_trial', return_value=False):
             housing_monitor.handle_callback(update, context)
 
@@ -3772,7 +3814,7 @@ class HousingTrialTests(unittest.TestCase):
         self.assertIn('housing:access_request', callbacks)
         mark_sent.assert_called_once_with(777)
 
-    def test_check_access_expiry_pauses_monitoring_but_keeps_filters_when_a_trial_runs_out(self):
+    def test_check_access_expiry_moves_a_finished_trial_to_the_free_tier(self):
         context = SimpleNamespace(bot=mock.Mock())
 
         def fake_expired(trial=None):
@@ -3790,7 +3832,7 @@ class HousingTrialTests(unittest.TestCase):
             housing_monitor.check_access_expiry(context)
 
         set_active.assert_called_once_with(777, False)
-        set_filters_active.assert_called_once_with(777, False)
+        set_filters_active.assert_not_called()
         revoke.assert_not_called()
         delete_filters.assert_not_called()
         stop_calls = [
@@ -3823,7 +3865,7 @@ class HousingTrialTests(unittest.TestCase):
         # The most recently paused are shown, the oldest five are not.
         self.assertIn('housing:access_delete:2000', callbacks)
         self.assertNotIn(f'housing:access_delete:{2000 + housing_monitor.ACCESS_LIST_PAUSED_SHOWN}', callbacks)
-        self.assertIn('і ще 5 на паузі', text)
+        self.assertIn('і ще 5 на безкоштовному рівні', text)
 
     def test_finalize_access_grant_reactivates_any_filters_paused_by_a_trial(self):
         context = SimpleNamespace(
@@ -4477,7 +4519,7 @@ class HousingTranslationSmokeTests(unittest.TestCase):
 
         self.assertIn('Непонятное значение.', ru_invalid)
         self.assertIn('Минимальное количество комнат', ru_invalid)
-        self.assertIn('darf nicht größer', de_min_over_max)
+        self.assertIn('muss kleiner', de_min_over_max)
         self.assertIn('Mindestanzahl Zimmer', de_min_over_max)
 
     def test_cancel_message_in_german(self):
