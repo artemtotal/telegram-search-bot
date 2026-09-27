@@ -69,12 +69,16 @@ BTN_COOPS = "🏘 Кооперативи (Gewoba/WBG)"
 ACCESS_MONTH_OPTIONS = [1, 3, 6, 12]
 EXPIRY_WARNING_DAYS = 3
 # Self-service trial: no admin approval, one shot per Telegram ID (enforced
-# via housing_access_store.has_used_trial/grant_trial). Filters survive
-# TRIAL_GRACE_DAYS past the stop so a same-day upgrade to full access can
-# resume monitoring instead of forcing a rebuild from scratch.
+# via housing_access_store.has_used_trial/grant_trial). When a trial or a
+# paid period runs out, filters are paused, never deleted (see
+# `_pause_access`): whoever comes back - a week or three months later -
+# picks up where they left off instead of rebuilding every filter.
 TRIAL_DAYS = 7
-TRIAL_GRACE_DAYS = 3
 TRIAL_WARNING_DAYS = 1
+# How many paused people the admin's access list spells out by name. They
+# are never deleted any more, so without a cap the list would outgrow one
+# Telegram message within a couple of months of trials.
+ACCESS_LIST_PAUSED_SHOWN = 15
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 IMMOWELT_STALE_AFTER = timedelta(minutes=30)
 # propotsdam/semmelhaack/schoba/regiomakler/locals/karlmarx all scan every 15
@@ -2083,24 +2087,41 @@ def _notify_user_access_revoked(bot, user_id: int) -> None:
         logger.exception("Could not notify user %s about revoked housing access", user_id)
 
 
-def _close_access(bot, user_id: int, notify_admin: bool = True) -> None:
-    """Revokes access and deletes the person's filters (see
-    `_delete_all_filters_for_user` for why deletion, not just deactivation,
-    is required to actually stop notifications), then says goodbye."""
-    housing_access_store.revoke_access(user_id)
-    removed = _delete_all_filters_for_user(user_id)
+def _pause_access(bot, user_id: int, trial: bool) -> None:
+    """A trial or a paid period has run out: stops monitoring, keeps everything.
+
+    Filters used to be deleted here (paid - on the expiry date, trial - three
+    days after it), so anyone who came back later had to build every filter
+    again from scratch. Now they are only switched off: every source's
+    `check_job` reads active filters only, so that alone stops the
+    notifications, and `_finalize_access_grant` switches them back on as soon
+    as access is granted again. The access row stays too, with active=False
+    (and `is_trial` intact, so the admin can still tell who was a trial).
+    """
+    lang = i18n.get_lang(user_id)
+    housing_access_store.set_active(user_id, False)
+    paused = _set_all_filters_active_for_user(user_id, False)
+    text_key = "housing.trial.stopped" if trial else "housing.access.expired_paused"
     try:
-        bot.send_message(chat_id=user_id, text=i18n.t("housing.access.goodbye", i18n.get_lang(user_id)))
+        bot.send_message(
+            chat_id=user_id,
+            text=i18n.t(text_key, lang),
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request"),
+            ]]),
+        )
     except Exception:
-        logger.exception("Could not send the goodbye message to user %s", user_id)
-    if notify_admin and ADMIN_ID:
+        logger.exception("Could not notify user %s that their monitoring was paused", user_id)
+    if ADMIN_ID:
+        what = "Тріал" if trial else "Платний доступ"
         try:
             bot.send_message(
                 chat_id=ADMIN_ID,
-                text=f"⛔ Доступ користувача {user_id} закрито (фільтрів прибрано: {removed}).",
+                text=f"⏸ {what} користувача {user_id} закінчився, моніторинг зупинено "
+                     f"(фільтри збережено, на паузі: {paused}).",
             )
         except Exception:
-            logger.exception("Could not notify admin about closing access for user %s", user_id)
+            logger.exception("Could not notify admin about pausing access for user %s", user_id)
 
 
 def _resolve_access_request(update: Update, context: CallbackContext, grant: bool) -> None:
@@ -2164,10 +2185,10 @@ def _finalize_access_grant(update: Update, context: CallbackContext) -> None:
     name = str(context.bot_data.get("housing_access_names", {}).pop(target_id, ""))
     expires_at = _add_months(datetime.utcnow(), months)
     housing_access_store.grant_access(target_id, name, expires_at=expires_at)
-    # Reactivates any filters a trial left paused in its grace period (see
-    # _pause_trial) so upgrading to full access resumes monitoring instead
-    # of leaving the person to rebuild every filter from scratch. A no-op
-    # for a brand-new grant or a normal renewal, since those filters are
+    # Reactivates the filters an expired trial or paid period left paused
+    # (see _pause_access) so coming back resumes monitoring instead of
+    # leaving the person to rebuild every filter from scratch. A no-op for
+    # a brand-new grant or a normal renewal, since those filters are
     # already active.
     _set_all_filters_active_for_user(target_id, True)
     expires_str = expires_at.strftime("%d.%m.%Y")
@@ -2193,8 +2214,23 @@ def start_access_add_flow(update: Update, context: CallbackContext, edit: bool =
         update.effective_message.reply_text(text, parse_mode="HTML")
 
 
-def _render_access_users() -> str:
+def _access_users_shown() -> tuple:
+    """Everyone active, plus the ACCESS_LIST_PAUSED_SHOWN most recently
+    paused - and how many paused ones were left out. Paused rows are never
+    deleted any more (see `_pause_access`), so listing all of them would
+    soon outgrow a single Telegram message and its keyboard."""
     users = housing_access_store.list_users()
+    active = [u for u in users if u.get("active")]
+    paused = sorted(
+        (u for u in users if not u.get("active")),
+        key=lambda u: u.get("updated_at") or datetime.min,
+        reverse=True,
+    )
+    return active + paused[:ACCESS_LIST_PAUSED_SHOWN], max(0, len(paused) - ACCESS_LIST_PAUSED_SHOWN)
+
+
+def _render_access_users() -> str:
+    users, hidden = _access_users_shown()
     lines = ["👥 <b>Доступ до моніторингу житла</b>", ""]
     if not users:
         lines.append("Окремо доданих користувачів поки немає.")
@@ -2203,6 +2239,8 @@ def _render_access_users() -> str:
         trial_mark = " 🎁" if item.get("is_trial") else ""
         name = html.escape(str(item.get("display_name") or "без назви"))
         lines.append(f"{mark} {int(item['user_id'])} · {name}{trial_mark}")
+    if hidden:
+        lines.append(f"… і ще {hidden} на паузі (фільтри збережено)")
     return "\n".join(lines)
 
 
@@ -2211,7 +2249,7 @@ def _access_users_keyboard() -> InlineKeyboardMarkup:
     без жодної дії над записом, і прибрати чийсь доступ можна було тільки
     вручну в базі."""
     rows = []
-    for item in housing_access_store.list_users():
+    for item in _access_users_shown()[0]:
         target_id = int(item["user_id"])
         name = str(item.get("display_name") or "без назви")[:30]
         rows.append([InlineKeyboardButton(
@@ -2299,10 +2337,9 @@ def _delete_all_filters_for_user(user_id: int) -> int:
 def _set_all_filters_active_for_user(user_id: int, active: bool) -> int:
     """Toggles every filter a person owns across all sources without
     deleting anything - unlike `_delete_all_filters_for_user`, this is
-    reversible. Used to pause a trial's monitoring at day 7 while keeping
-    the filters intact through the grace period (see `_pause_trial`), and
-    to resume them if the trial converts to full access before that grace
-    period runs out (see `_finalize_access_grant`).
+    reversible. Used to pause monitoring once a trial or a paid period runs
+    out (see `_pause_access`), and to resume it when access is granted
+    again (see `_finalize_access_grant`).
     """
     changed = 0
     for item in _all_immowelt_filters():
@@ -2315,7 +2352,7 @@ def _set_all_filters_active_for_user(user_id: int, active: bool) -> int:
             _request("PATCH", f"/api/housing/filters/{filter_id}/active", json={"active": active})
             changed += 1
         except Exception:
-            logger.exception("Could not toggle Immowelt filter %s while pausing/resuming a trial", filter_id)
+            logger.exception("Could not toggle Immowelt filter %s while pausing/resuming access", filter_id)
 
     propot_filters = propotsdam_store.list_filters(user_id=user_id)
     for filt in propot_filters:
@@ -2330,36 +2367,6 @@ def _set_all_filters_active_for_user(user_id: int, active: bool) -> int:
             if store.set_filter_active(int(filt["filter_id"]), active, user_id=user_id):
                 changed += 1
     return changed
-
-
-def _pause_trial(bot, user_id: int) -> None:
-    """Trial's TRIAL_DAYS are up: stops monitoring right away but keeps the
-    filters for TRIAL_GRACE_DAYS more (see `set_trial_dormant`), and tells
-    the person the only thing left is to request full access - same as
-    `_locked_keyboard` shows once `has_used_trial` is True."""
-    lang = i18n.get_lang(user_id)
-    grace_ends_at = datetime.utcnow() + timedelta(days=TRIAL_GRACE_DAYS)
-    housing_access_store.set_trial_dormant(user_id, grace_ends_at)
-    _set_all_filters_active_for_user(user_id, False)
-    try:
-        bot.send_message(
-            chat_id=user_id,
-            text=i18n.t("housing.trial.stopped", lang),
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request"),
-            ]]),
-        )
-    except Exception:
-        logger.exception("Could not notify user %s that their trial monitoring stopped", user_id)
-    if ADMIN_ID:
-        try:
-            bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"⏸ Тріал користувача {user_id} закінчився, моніторинг зупинено "
-                     f"(фільтри збережено ще {TRIAL_GRACE_DAYS} дні).",
-            )
-        except Exception:
-            logger.exception("Could not notify admin about trial pause for user %s", user_id)
 
 
 def confirm_access_delete(update: Update, context: CallbackContext, target_id: int) -> None:
@@ -2447,7 +2454,7 @@ def _handle_access_stop(update: Update, context: CallbackContext) -> None:
     """The user tapped "❌ Не продовжувати" on the 3-day expiry warning.
 
     Access is NOT closed here - it stays open for the remaining days the
-    person already paid for and closes itself automatically on the actual
+    person already paid for and pauses itself automatically on the actual
     expiry date, same as if they'd never answered the warning at all (see
     check_access_expiry's list_expired() pass). This just turns off the
     "do you want to continue" question and confirms what's coming.
@@ -2469,14 +2476,13 @@ def _handle_access_stop(update: Update, context: CallbackContext) -> None:
 
 
 def check_access_expiry(context) -> None:
-    """Daily job. Four passes, paid and trial handled separately because
-    they close on different schedules:
-    - paid: warns EXPIRY_WARNING_DAYS before expiry, then auto-closes
-      (deletes filters right away) once the date passes.
+    """Daily job. Paid and trial are handled in separate passes because
+    they are warned on different schedules and told different things:
+    - paid: warns EXPIRY_WARNING_DAYS before expiry, then pauses monitoring
+      once the date passes.
     - trial: warns TRIAL_WARNING_DAYS before expiry to nudge a request for
-      full access, then on expiry stops monitoring but keeps the filters
-      for TRIAL_GRACE_DAYS (`_pause_trial`), and finally deletes them once
-      that grace period itself runs out.
+      full access, then pauses monitoring once it runs out.
+    Either way the filters are kept (`_pause_access`), never deleted.
     """
     bot = context.bot
     for row in housing_access_store.list_expiring_soon(within_days=EXPIRY_WARNING_DAYS, trial=False):
@@ -2526,13 +2532,10 @@ def check_access_expiry(context) -> None:
         housing_access_store.mark_notice_sent(target_id)
 
     for row in housing_access_store.list_expired(trial=False):
-        _close_access(bot, int(row["user_id"]))
+        _pause_access(bot, int(row["user_id"]), trial=False)
 
     for row in housing_access_store.list_expired(trial=True):
-        _pause_trial(bot, int(row["user_id"]))
-
-    for row in housing_access_store.list_trial_grace_expired():
-        _close_access(bot, int(row["user_id"]))
+        _pause_access(bot, int(row["user_id"]), trial=True)
 
 
 def start_admin_add_flow(update: Update, context: CallbackContext, edit: bool = False) -> None:

@@ -3564,7 +3564,7 @@ class HousingAccessExpiryTests(unittest.TestCase):
 
         revoke.assert_not_called()
         delete_filters.assert_not_called()
-        self.assertIn('автоматично закрито', update.callback_query.edit_message_text.call_args.args[0])
+        self.assertIn('збереженими', update.callback_query.edit_message_text.call_args.args[0])
         context.bot.send_message.assert_not_called()
 
     def test_check_access_expiry_warns_the_user_and_the_admin_once(self):
@@ -3581,7 +3581,6 @@ class HousingAccessExpiryTests(unittest.TestCase):
                  housing_monitor.housing_access_store, 'list_expiring_soon', side_effect=fake_expiring_soon,
              ), \
              mock.patch.object(housing_monitor.housing_access_store, 'list_expired', return_value=[]), \
-             mock.patch.object(housing_monitor.housing_access_store, 'list_trial_grace_expired', return_value=[]), \
              mock.patch.object(housing_monitor.housing_access_store, 'mark_notice_sent') as mark_sent:
             housing_monitor.check_access_expiry(context)
 
@@ -3595,7 +3594,9 @@ class HousingAccessExpiryTests(unittest.TestCase):
         self.assertIn(312029534, calls)
         mark_sent.assert_called_once_with(777)
 
-    def test_check_access_expiry_closes_access_once_the_date_has_passed(self):
+    def test_check_access_expiry_pauses_paid_access_but_keeps_filters_once_the_date_has_passed(self):
+        # Filters used to be deleted on the expiry date; now they are only
+        # switched off, so renewing later brings everything straight back.
         context = SimpleNamespace(bot=mock.Mock())
 
         def fake_expired(trial=None):
@@ -3606,18 +3607,24 @@ class HousingAccessExpiryTests(unittest.TestCase):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
              mock.patch.object(housing_monitor.housing_access_store, 'list_expiring_soon', return_value=[]), \
              mock.patch.object(housing_monitor.housing_access_store, 'list_expired', side_effect=fake_expired), \
-             mock.patch.object(housing_monitor.housing_access_store, 'list_trial_grace_expired', return_value=[]), \
+             mock.patch.object(housing_monitor.housing_access_store, 'set_active') as set_active, \
              mock.patch.object(housing_monitor.housing_access_store, 'revoke_access') as revoke, \
-             mock.patch.object(housing_monitor, '_delete_all_filters_for_user', return_value=0):
+             mock.patch.object(housing_monitor, '_set_all_filters_active_for_user', return_value=3) as set_filters_active, \
+             mock.patch.object(housing_monitor, '_delete_all_filters_for_user') as delete_filters:
             housing_monitor.check_access_expiry(context)
 
-        revoke.assert_called_once_with(888)
-        goodbye_calls = [
+        set_active.assert_called_once_with(888, False)
+        set_filters_active.assert_called_once_with(888, False)
+        revoke.assert_not_called()
+        delete_filters.assert_not_called()
+        user_calls = [
             call for call in context.bot.send_message.call_args_list
             if call.kwargs.get('chat_id') == 888
         ]
-        self.assertEqual(len(goodbye_calls), 1)
-        self.assertIn('Дякуємо', goodbye_calls[0].kwargs['text'])
+        self.assertEqual(len(user_calls), 1)
+        self.assertIn('збережено', user_calls[0].kwargs['text'])
+        callbacks = [b.callback_data for row in user_calls[0].kwargs['reply_markup'].inline_keyboard for b in row]
+        self.assertIn('housing:access_request', callbacks)
 
 
 class HousingTrialTests(unittest.TestCase):
@@ -3756,7 +3763,6 @@ class HousingTrialTests(unittest.TestCase):
                  housing_monitor.housing_access_store, 'list_expiring_soon', side_effect=fake_expiring_soon,
              ), \
              mock.patch.object(housing_monitor.housing_access_store, 'list_expired', return_value=[]), \
-             mock.patch.object(housing_monitor.housing_access_store, 'list_trial_grace_expired', return_value=[]), \
              mock.patch.object(housing_monitor.housing_access_store, 'mark_notice_sent') as mark_sent:
             housing_monitor.check_access_expiry(context)
 
@@ -3777,15 +3783,15 @@ class HousingTrialTests(unittest.TestCase):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
              mock.patch.object(housing_monitor.housing_access_store, 'list_expiring_soon', return_value=[]), \
              mock.patch.object(housing_monitor.housing_access_store, 'list_expired', side_effect=fake_expired), \
-             mock.patch.object(housing_monitor.housing_access_store, 'list_trial_grace_expired', return_value=[]), \
-             mock.patch.object(housing_monitor.housing_access_store, 'set_trial_dormant') as set_dormant, \
+             mock.patch.object(housing_monitor.housing_access_store, 'set_active') as set_active, \
+             mock.patch.object(housing_monitor.housing_access_store, 'revoke_access') as revoke, \
              mock.patch.object(housing_monitor, '_set_all_filters_active_for_user') as set_filters_active, \
              mock.patch.object(housing_monitor, '_delete_all_filters_for_user') as delete_filters:
             housing_monitor.check_access_expiry(context)
 
-        set_dormant.assert_called_once()
-        self.assertEqual(set_dormant.call_args.args[0], 777)
+        set_active.assert_called_once_with(777, False)
         set_filters_active.assert_called_once_with(777, False)
+        revoke.assert_not_called()
         delete_filters.assert_not_called()
         stop_calls = [
             call for call in context.bot.send_message.call_args_list
@@ -3793,21 +3799,31 @@ class HousingTrialTests(unittest.TestCase):
         ]
         self.assertEqual(len(stop_calls), 1)
 
-    def test_check_access_expiry_deletes_filters_once_the_trial_grace_period_ends(self):
-        context = SimpleNamespace(bot=mock.Mock())
+    def test_access_list_names_every_active_user_but_only_the_latest_paused_ones(self):
+        # Paused people are never deleted any more, so the list would grow
+        # past one Telegram message; only the most recent paused are named.
+        now = datetime.utcnow()
+        users = [
+            {'user_id': 1000 + i, 'display_name': f'Активний {i}', 'active': True, 'is_trial': False,
+             'updated_at': now - timedelta(days=40)}
+            for i in range(3)
+        ] + [
+            {'user_id': 2000 + i, 'display_name': f'Пауза {i}', 'active': False, 'is_trial': True,
+             'updated_at': now - timedelta(days=i)}
+            for i in range(housing_monitor.ACCESS_LIST_PAUSED_SHOWN + 5)
+        ]
+        with mock.patch.object(housing_monitor.housing_access_store, 'list_users', return_value=users):
+            text = housing_monitor._render_access_users()
+            callbacks = [
+                b.callback_data for row in housing_monitor._access_users_keyboard().inline_keyboard for b in row
+            ]
 
-        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
-             mock.patch.object(housing_monitor.housing_access_store, 'list_expiring_soon', return_value=[]), \
-             mock.patch.object(housing_monitor.housing_access_store, 'list_expired', return_value=[]), \
-             mock.patch.object(
-                 housing_monitor.housing_access_store, 'list_trial_grace_expired',
-                 return_value=[{'user_id': 777, 'display_name': 'Іван'}],
-             ), \
-             mock.patch.object(housing_monitor.housing_access_store, 'revoke_access') as revoke, \
-             mock.patch.object(housing_monitor, '_delete_all_filters_for_user', return_value=2):
-            housing_monitor.check_access_expiry(context)
-
-        revoke.assert_called_once_with(777)
+        for i in range(3):
+            self.assertIn(f'housing:access_delete:{1000 + i}', callbacks)
+        # The most recently paused are shown, the oldest five are not.
+        self.assertIn('housing:access_delete:2000', callbacks)
+        self.assertNotIn(f'housing:access_delete:{2000 + housing_monitor.ACCESS_LIST_PAUSED_SHOWN}', callbacks)
+        self.assertIn('і ще 5 на паузі', text)
 
     def test_finalize_access_grant_reactivates_any_filters_paused_by_a_trial(self):
         context = SimpleNamespace(

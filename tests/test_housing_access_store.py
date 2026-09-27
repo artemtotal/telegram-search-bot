@@ -29,12 +29,14 @@ class HousingAccessStoreTests(unittest.TestCase):
         housing_access_store.grant_access(777, 'Новий користувач')
 
         self.assertTrue(housing_access_store.is_allowed(777))
+        [row] = housing_access_store.list_users()
+        self.assertIsNotNone(row.pop('updated_at'))
         self.assertEqual(
-            housing_access_store.list_users(),
-            [{
+            row,
+            {
                 'user_id': 777, 'display_name': 'Новий користувач', 'active': True,
                 'expires_at': None, 'is_trial': False,
-            }],
+            },
         )
 
     def test_grant_access_reactivates_existing_user(self):
@@ -140,32 +142,26 @@ class HousingAccessStoreTests(unittest.TestCase):
 
     def test_grant_access_clears_any_leftover_trial_state(self):
         housing_access_store.grant_trial(777, 'Хтось', expires_at=datetime.utcnow() + timedelta(days=7))
-        housing_access_store.set_trial_dormant(777, datetime.utcnow() + timedelta(days=3))
+        housing_access_store.set_active(777, False)
 
         housing_access_store.grant_access(777, 'Хтось', expires_at=datetime.utcnow() + timedelta(days=30))
 
         self.assertFalse(housing_access_store.is_trial(777))
         self.assertTrue(housing_access_store.is_allowed(777))
 
-    def test_set_trial_dormant_stops_access_without_forgetting_it_was_a_trial(self):
+    def test_pausing_a_trial_keeps_the_row_and_that_it_was_a_trial(self):
+        # An expired trial is only paused (set_active False), never deleted -
+        # the row stays so the admin list still shows it with its 🎁 mark.
         housing_access_store.grant_trial(777, 'Хтось', expires_at=datetime.utcnow() - timedelta(hours=1))
 
-        grace_ends = datetime.utcnow() + timedelta(days=3)
-        self.assertTrue(housing_access_store.set_trial_dormant(777, grace_ends))
+        self.assertTrue(housing_access_store.set_active(777, False))
 
         self.assertFalse(housing_access_store.is_allowed(777))
-        self.assertEqual(housing_access_store.list_trial_grace_expired(), [])
-
-    def test_list_trial_grace_expired_only_lists_dormant_trials_past_their_grace_period(self):
-        housing_access_store.grant_trial(1, 'Скоро прибрати', expires_at=datetime.utcnow() - timedelta(days=8))
-        housing_access_store.set_trial_dormant(1, datetime.utcnow() - timedelta(hours=1))
-        housing_access_store.grant_trial(2, 'Ще в грейсі', expires_at=datetime.utcnow() - timedelta(days=1))
-        housing_access_store.set_trial_dormant(2, datetime.utcnow() + timedelta(days=2))
-
-        expired = [r['user_id'] for r in housing_access_store.list_trial_grace_expired()]
-
-        self.assertEqual(expired, [1])
-
+        [row] = housing_access_store.list_users()
+        self.assertFalse(row['active'])
+        self.assertTrue(row['is_trial'])
+        self.assertIsNotNone(row['updated_at'])
+        self.assertEqual(housing_access_store.list_expired(trial=True), [])
 
 if __name__ == '__main__':
     unittest.main()

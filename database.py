@@ -187,9 +187,10 @@ class HousingAccessUser(Base):
     # admin-approved paid grant. Cleared (False) the moment an admin grants
     # real months, so the row falls back into the ordinary paid-expiry path.
     is_trial = Column(BOOLEAN, nullable=False, default=False)
-    # Set when a trial's 7 days run out: monitoring stops immediately, but
-    # the filters are kept until this timestamp so a same-day upgrade to
-    # full access doesn't force the person to rebuild every filter.
+    # Unused since 2026-09-27. Used to hold the deadline after which an
+    # expired trial's filters were deleted; now filters are only paused and
+    # kept for good (see `_pause_access` in housing_monitor.py). The column
+    # stays because SQLite can't drop it cheaply and old rows still carry it.
     trial_grace_ends_at = Column(DATETIME)
     created_at = Column(DATETIME, nullable=False)
     updated_at = Column(DATETIME, nullable=False)
@@ -197,9 +198,10 @@ class HousingAccessUser(Base):
 
 class HousingTrialUsed(Base):
     """Permanent record of Telegram IDs that already burned their one free
-    7-day trial. Kept separate from HousingAccessUser because that row gets
-    deleted once access closes (see `_close_access`) - this one must survive
-    that deletion so nobody can re-trigger the trial by asking again."""
+    7-day trial. Kept separate from HousingAccessUser because the admin can
+    delete that row outright (the 🗑 button in the access list) - this one
+    must survive that deletion so nobody can re-trigger the trial by asking
+    again."""
 
     __tablename__ = 'housing_trial_used'
 

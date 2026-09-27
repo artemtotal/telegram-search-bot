@@ -18,9 +18,8 @@ def grant_access(user_id: int, display_name: str = "", expires_at: Optional[date
     back into the expired list on the new expiry date without a fresh one.
 
     Always marks the row as a full (non-trial) grant - this is the
-    admin-approved path, so any leftover trial state (is_trial, a pending
-    grace-period deadline) from a prior self-service trial no longer
-    applies.
+    admin-approved path, so a leftover `is_trial` flag from a prior
+    self-service trial no longer applies.
     """
     session = DBSession()
     try:
@@ -64,7 +63,7 @@ def grant_trial(user_id: int, display_name: str = "", expires_at: Optional[datet
     """Self-service, no-approval-needed grant. Callers must check
     `has_used_trial` first - this always (re)marks the trial as used so it
     can never be triggered twice for the same Telegram ID, even across a
-    later `revoke_access`/`_close_access` that deletes the access row."""
+    later `revoke_access` that deletes the access row."""
     session = DBSession()
     try:
         now = utc_now()
@@ -102,24 +101,6 @@ def is_trial(user_id: int) -> bool:
     try:
         row = session.query(HousingAccessUser).get(int(user_id))
         return bool(row and row.active and row.is_trial)
-    finally:
-        session.close()
-
-
-def set_trial_dormant(user_id: int, grace_ends_at: datetime) -> bool:
-    """Trial's 7 days are up: stops monitoring (active=False) but keeps the
-    row and its `is_trial` flag so the filters can be left in place until
-    `grace_ends_at` instead of being deleted right away."""
-    session = DBSession()
-    try:
-        row = session.query(HousingAccessUser).get(int(user_id))
-        if row is None:
-            return False
-        row.active = False
-        row.trial_grace_ends_at = grace_ends_at
-        row.updated_at = utc_now()
-        session.commit()
-        return True
     finally:
         session.close()
 
@@ -173,6 +154,7 @@ def list_users(active_only: bool = False) -> list:
                 "active": bool(row.active),
                 "expires_at": row.expires_at,
                 "is_trial": bool(row.is_trial),
+                "updated_at": row.updated_at,
             }
             for row in query.order_by(HousingAccessUser.user_id.asc()).all()
         ]
@@ -225,9 +207,9 @@ def list_expired(trial: Optional[bool] = None) -> list:
     """Active users whose expiry date has already passed.
 
     `trial` narrows to trial rows (True) or paid rows (False), same as in
-    `list_expiring_soon` - paid rows close immediately on expiry, trial rows
-    instead go through `set_trial_dormant`'s grace period, so callers must
-    pick one or the other rather than mixing both in a single pass.
+    `list_expiring_soon` - both get paused on expiry, but with a different
+    message, so callers must pick one or the other rather than mixing both
+    in a single pass.
     """
     session = DBSession()
     try:
@@ -242,27 +224,6 @@ def list_expired(trial: Optional[bool] = None) -> list:
         return [
             {"user_id": int(row.user_id), "display_name": str(row.display_name or ""), "expires_at": row.expires_at}
             for row in query.all()
-        ]
-    finally:
-        session.close()
-
-
-def list_trial_grace_expired() -> list:
-    """Dormant trials (monitoring already stopped by `set_trial_dormant`)
-    whose grace period has now run out - their filters are due for deletion."""
-    session = DBSession()
-    try:
-        rows = (
-            session.query(HousingAccessUser)
-            .filter(HousingAccessUser.active.is_(False))
-            .filter(HousingAccessUser.is_trial.is_(True))
-            .filter(HousingAccessUser.trial_grace_ends_at.isnot(None))
-            .filter(HousingAccessUser.trial_grace_ends_at <= utc_now())
-            .all()
-        )
-        return [
-            {"user_id": int(row.user_id), "display_name": str(row.display_name or "")}
-            for row in rows
         ]
     finally:
         session.close()
