@@ -5835,6 +5835,13 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _finish_multi_districts(update, context)
     elif query.data == "housing:multi_district_all":
         _finish_multi_districts(update, context, all_districts=True)
+    elif query.data == "housing:digest_off":
+        housing_journey_store.set_digest_off(int(update.effective_user.id))
+        query.answer(i18n.t("housing.digest.off_done", i18n.get_lang(update.effective_user.id)))
+        try:
+            query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
     elif query.data.startswith("housing:survey:"):
         _answer_survey(update, context, query.data.split(":", 2)[2])
     elif query.data.startswith("housing:jc:"):

@@ -887,6 +887,8 @@ class HousingUserJourney(Base):
     survey_sent_at = Column(DATETIME)
     survey_answer = Column(TEXT)
     jobcenter_household = Column(INTEGER)
+    # Pressed "don't send statistics" under the weekly digest.
+    digest_off = Column(BOOLEAN, nullable=False, default=False)
 
 
 Base.metadata.create_all(engine)
@@ -980,6 +982,7 @@ _ensure_column('housing_access_user', 'trial_grace_ends_at', 'DATETIME')
 _ensure_column('equeue_status', 'last_admin_alert_at', 'DATETIME')
 _ensure_column('equeue_status', 'last_stale_alert_at', 'DATETIME')
 _ensure_column('user_settings', 'news_subscribed', 'BOOLEAN NOT NULL DEFAULT 1')
+_ensure_column('housing_user_journey', 'digest_off', 'BOOLEAN NOT NULL DEFAULT 0')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword
 # `text_lower LIKE '%word%'` queries per user message, each filtered by

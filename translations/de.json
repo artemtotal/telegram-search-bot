@@ -343,5 +343,14 @@
   "housing.survey.opt.hard": "🤔 Umständlich / unklar",
   "housing.survey.thanks": "Danke! 🙏 Wenn Sie mehr erzählen möchten — schreiben Sie dem Administrator, jede Meinung hilft.",
   "housing.survey.btn_write": "💬 Dem Administrator schreiben",
-  "housing.survey.already": "Sie haben schon geantwortet — danke!"
+  "housing.survey.already": "Sie haben schon geantwortet — danke!",
+  "housing.digest.caption": "📊 <b>Die Woche auf dem Potsdamer Wohnungsmarkt</b> ({start}–{end})\n\n🏘 Neue Wohnungen auf 9 Portalen: <b>{total}</b>\n🎯 Passend zu Ihren Filtern: <b>{mine}</b>\n📬 Vom Bot an Sie gesendet: <b>{sent}</b>",
+  "housing.digest.missed": "⏱ Mindestens {missed} weitere passende waren schon weg, bevor die {hours} Std. kostenlose Verzögerung um waren. Mit ⚡ Abo ({price} €/Monat) hätten Sie sie bekommen.",
+  "housing.digest.thin": "⚠️ Ihre Filter finden sehr wenig. Die Grafik zeigt, wo sie aussortieren: graue Balken — alle neuen Wohnungen, grüne — Ihre. Erweitern Sie die Grenzen unter „Meine Filter“.",
+  "housing.digest.legend_hint": "In der Grafik: grau — alle neuen Wohnungen, grün — die zu Ihnen passenden.",
+  "housing.digest.chart_title": "Neue Wohnungen der Woche: alle und Ihre",
+  "housing.digest.legend_all": "Alle neuen",
+  "housing.digest.legend_mine": "Zu Ihren Filtern",
+  "housing.digest.btn_off": "🔕 Keine Statistik mehr senden",
+  "housing.digest.off_done": "In Ordnung, wir senden keine Statistik mehr."
 }

@@ -7,7 +7,7 @@ already sent, and the Jobcenter household size they gave the wizard.
 """
 
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from database import DBSession, HousingUserJourney
 
@@ -113,6 +113,26 @@ def save_survey_answer(user_id: int, answer: str) -> bool:
             row.survey_sent_at = utc_now()
         session.commit()
         return True
+    finally:
+        session.close()
+
+
+def set_digest_off(user_id: int) -> None:
+    session = DBSession()
+    try:
+        _row(session, user_id).digest_off = True
+        session.commit()
+    finally:
+        session.close()
+
+
+def digest_off_ids() -> Set[int]:
+    session = DBSession()
+    try:
+        return {
+            int(row.user_id)
+            for row in session.query(HousingUserJourney.user_id).filter(HousingUserJourney.digest_off.is_(True))
+        }
     finally:
         session.close()
 

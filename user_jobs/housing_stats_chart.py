@@ -62,3 +62,44 @@ def render_dashboard(rows, title, axis_labels):
     plt.close(fig)
     buf.seek(0)
     return buf
+
+
+_ALL_COLOR = "#C9CED6"
+_MINE_COLOR = "#2E7D32"
+
+
+def render_comparison(all_rows, mine_rows, title, axis_labels, legend):
+    """The weekly digest chart: for area, price and rooms, a grey bar for
+    every new flat and a green one beside it for the flats that matched the
+    person's filters - so it's visible at a glance where the filter cuts.
+
+    rows: (rooms, area_m2, price_eur) tuples as in `render_dashboard`.
+    legend: {"all": ..., "mine": ...}, already translated."""
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8))
+    fig.suptitle(title, fontsize=14)
+    panels = (
+        (axes[0], 1, AREA_BINS, _range_labels(AREA_BINS), axis_labels["area"]),
+        (axes[1], 2, PRICE_BINS, _range_labels(PRICE_BINS), axis_labels["price"]),
+        (axes[2], 0, ROOM_BINS, list(ROOM_LABELS), axis_labels["rooms"]),
+    )
+    width = 0.42
+    for ax, index, bins, labels, subtitle in panels:
+        every = _bucket_counts([row[index] for row in all_rows], bins)
+        mine = _bucket_counts([row[index] for row in mine_rows], bins)
+        positions = range(len(labels))
+        ax.bar([p - width / 2 for p in positions], every, width, color=_ALL_COLOR, label=legend["all"])
+        bars = ax.bar([p + width / 2 for p in positions], mine, width, color=_MINE_COLOR, label=legend["mine"])
+        for bar, count in zip(bars, mine):
+            if count:
+                ax.annotate(str(count), (bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                            ha="center", va="bottom", fontsize=8, color=_MINE_COLOR)
+        ax.set_xticks(list(positions))
+        ax.set_xticklabels(labels, rotation=45)
+        ax.set_title(subtitle)
+    axes[0].legend(loc="upper right", fontsize=9)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=110)
+    plt.close(fig)
+    buf.seek(0)
+    return buf

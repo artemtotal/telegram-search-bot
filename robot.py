@@ -20,6 +20,7 @@ from user_handlers import (
     equeue_monitor,
     equeue_receiver,
     housing_monitor,
+    housing_digest,
     housing_receiver,
 )
 from user_jobs.commands_set import set_bot_commands
@@ -171,6 +172,10 @@ job.run_repeating(housing_receiver.send_due_immowelt, interval=300, first=420)
 # Follow-ups: the "you haven't created a filter yet" nudge and the
 # two-weeks-after-the-first-filter survey.
 job.run_repeating(housing_monitor.housing_followups_job, interval=1800, first=450)
+# Weekly digest: every new flat vs the ones that matched each person's filters.
+job.run_daily(
+    housing_digest.weekly_digest_job, time=housing_digest.DIGEST_TIME, days=(housing_digest.DIGEST_WEEKDAY,),
+)
 
 
 dispatcher.add_handler(msg_ai.handler)
