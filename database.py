@@ -191,6 +191,9 @@ class EconsulState(Base):
     last_status = Column(TEXT)
     last_reason = Column(TEXT)
     token_expires_at = Column(DATETIME)
+    # Для якого строку входу адміну вже нагадали перелогінитись - щоб одне
+    # нагадування на один вхід, а не на кожну перевірку останньої години.
+    token_reminded_for = Column(DATETIME)
     last_admin_alert_at = Column(DATETIME)
     # Перший вдалий результат лише запам'ятовується: інакше підписники
     # отримали б "нові" терміни, які насправді висіли вже давно.
@@ -1057,6 +1060,7 @@ _ensure_column('equeue_status', 'last_admin_alert_at', 'DATETIME')
 _ensure_column('equeue_status', 'last_stale_alert_at', 'DATETIME')
 _ensure_column('user_settings', 'news_subscribed', 'BOOLEAN NOT NULL DEFAULT 1')
 _ensure_column('housing_user_journey', 'digest_off', 'BOOLEAN NOT NULL DEFAULT 0')
+_ensure_column('econsul_state', 'token_reminded_for', 'DATETIME')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword
 # `text_lower LIKE '%word%'` queries per user message, each filtered by

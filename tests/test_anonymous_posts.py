@@ -438,7 +438,8 @@ class BotCommandMenuTests(unittest.TestCase):
         self.assertEqual(private_commands[0][0], "start")
         self.assertEqual(private_commands[1][0], "anonymous")
         self.assertEqual(private_commands[2][0], "dps_document")
-        self.assertEqual(private_commands[3][0], "housing")
+        self.assertEqual(private_commands[3][0], "embassy")
+        self.assertEqual(private_commands[4][0], "housing")
         self.assertEqual(private_kwargs["scope"].type, "all_private_chats")
         self.assertTrue(bot.menu_buttons)
 

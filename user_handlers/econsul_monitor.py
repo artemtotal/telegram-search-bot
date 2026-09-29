@@ -41,6 +41,8 @@ BERLIN_TZ = ZoneInfo("Europe/Berlin")
 # Поки розрахунок не звірено з сайтом, меню бачать тільки адмін і перелічені ID.
 PUBLIC = os.getenv("ECONSUL_PUBLIC", "0") == "1"
 ADMIN_ALERT_COOLDOWN = timedelta(hours=3)
+# За скільки до кінця входу e-Consul (JWT на добу) нагадати адміну перелогінитись.
+TOKEN_REMINDER_BEFORE = timedelta(hours=1)
 # Перевірка йде раз на 10-15 хвилин; без вдалої відповіді довше за це меню
 # чесно каже, що дані застарілі.
 STALE_AFTER = timedelta(minutes=45)
@@ -154,29 +156,6 @@ def _served_services(session) -> List[EconsulService]:
         .order_by(EconsulService.name)
         .all()
     )
-
-
-def _toggle(session, user, action: str) -> None:
-    rows = _user_subscriptions(session, user.id)
-    codes = _active_codes(rows)
-    if action == "all":
-        for service in rows:
-            _set_subscription(session, user, service, False)
-        _set_subscription(session, user, SUB_ALL, True)
-        return
-    if action == "none":
-        for service in rows:
-            _set_subscription(session, user, service, False)
-        return
-    code = action
-    if "*" in codes:
-        # Зняти одну послугу з «усіх» - значить лишити решту поіменно.
-        _set_subscription(session, user, SUB_ALL, False)
-        for service in _served_services(session):
-            if service.code != code:
-                _set_subscription(session, user, SUB_PREFIX + service.code, True)
-        return
-    _set_subscription(session, user, SUB_PREFIX + code, code not in codes)
 
 
 # --- приймання результату з браузера ---
@@ -359,6 +338,12 @@ def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
             _send_admin(bot, "econsul.admin.recovered")
         state.last_admin_alert_at = None
         state.last_ok_at = now
+        expires = state.token_expires_at
+        if (expires is not None and expires - now <= TOKEN_REMINDER_BEFORE
+                and state.token_reminded_for != expires
+                and _send_admin(bot, "econsul.admin.token_expiring", until=_berlin(expires), url=BOOKING_URL)):
+            # Вхід живе добу; без нагадування перевірка просто зупинилась би.
+            state.token_reminded_for = expires
         institution = payload.get("institution") or {}
         if isinstance(institution, dict) and institution.get("name"):
             state.institution_name = str(institution["name"])[:300]
@@ -459,67 +444,166 @@ def _sightings_text(session, lang: str) -> str:
     return "\n".join(lines)
 
 
-def _subscription_text(codes: set, lang: str) -> str:
-    if "*" in codes:
-        what = i18n.t("econsul.subs.all", lang)
-    elif codes:
-        what = i18n.t("econsul.subs.some", lang, count=len(codes))
-    else:
-        what = i18n.t("econsul.subs.none", lang)
-    return i18n.t("econsul.subs.title", lang, what=what)
-
-
 def _short(name: str, limit: int = 48) -> str:
     return name if len(name) <= limit else name[: limit - 1] + "…"
 
 
-def _menu_keyboard(services: List[EconsulService], codes: set, lang: str) -> InlineKeyboardMarkup:
-    rows = []
-    all_on = "*" in codes
-    for service in services:
-        mark = "✅" if all_on or service.code in codes else "▫️"
-        callback = f"econsul:s:{service.code}"
-        if len(callback.encode("utf-8")) > 64:
-            continue
-        rows.append([InlineKeyboardButton(f"{mark} {_short(service.name)}", callback_data=callback)])
-    if all_on:
-        rows.append([InlineKeyboardButton(i18n.t("econsul.btn.none", lang), callback_data="econsul:none")])
-    else:
-        rows.append([InlineKeyboardButton(i18n.t("econsul.btn.all", lang), callback_data="econsul:all")])
-        if codes:
-            rows.append([InlineKeyboardButton(i18n.t("econsul.btn.none", lang), callback_data="econsul:none")])
+def _nearest_text(service: Optional[EconsulService], lang: str) -> str:
+    if service is None or not service.free_count or not service.nearest:
+        return i18n.t("econsul.subs.nothing_free", lang)
+    date, _, time = service.nearest.partition(" ")
+    return i18n.t("econsul.subs.nearest", lang, nearest=f"{_date_dot(date)} {time}".strip())
+
+
+def _subscriptions_block(session, codes: set, lang: str) -> str:
+    if not codes:
+        return i18n.t("econsul.subs.empty", lang)
+    lines = [i18n.t("econsul.subs.title", lang)]
+    if "*" in codes:
+        lines.append(i18n.t("econsul.subs.all_line", lang))
+        return "\n".join(lines)
+    services = {row.code: row for row in session.query(EconsulService).all()}
+    for code in sorted(codes, key=lambda item: (services[item].name if item in services else item)):
+        service = services.get(code)
+        name = html.escape(service.name if service else code)
+        lines.append(f"• <b>{name}</b> — {_nearest_text(service, lang)}")
+    return "\n".join(lines)
+
+
+def _home_keyboard(codes: set, lang: str) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(i18n.t("econsul.btn.add", lang), callback_data="econsul:add")]]
+    if codes:
+        rows.append([InlineKeyboardButton(i18n.t("econsul.btn.manage", lang), callback_data="econsul:manage")])
+    rows.append([InlineKeyboardButton(i18n.t("econsul.btn.free", lang), callback_data="econsul:free")])
     rows.append([InlineKeyboardButton(i18n.t("econsul.btn.open_site", lang), url=BOOKING_URL)])
     rows.append([InlineKeyboardButton(i18n.t("anon.btn.back_home", lang), callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
 
 
 def render_menu(user_id: int, lang: str, prefix: str = ""):
+    """Головний екран: коротко статус і власні підписки, без переліку всіх послуг."""
     session = DBSession()
     try:
         state = session.query(EconsulState).filter(EconsulState.source == SOURCE).first()
-        services = _served_services(session)
         codes = _active_codes(_user_subscriptions(session, user_id))
         institution = (state.institution_name if state else None) or i18n.t("econsul.default_institution", lang)
         blocks = [
             i18n.t("econsul.menu.text", lang, institution=html.escape(institution)),
             _status_text(state, lang),
-            _free_text(services, lang),
-            _sightings_text(session, lang),
+            _subscriptions_block(session, codes, lang),
         ]
+        if session.query(EqueueAvailableSighting).filter(EqueueAvailableSighting.service == SOURCE).count():
+            blocks.append(_sightings_text(session, lang))
         lifetime = typical_lifetime(session)
         if lifetime is not None:
             blocks.append(i18n.t("econsul.lifetime", lang, duration=_duration_text(lifetime, lang)))
-        if user_id == ADMIN_ID and state is not None and state.token_expires_at is not None:
-            blocks.append(i18n.t("econsul.admin.token_line", lang, until=_berlin(state.token_expires_at)))
-        blocks.append(_subscription_text(codes, lang))
-        if services:
-            blocks.append(i18n.t("econsul.hint.pick", lang))
         text = "\n\n".join(block for block in blocks if block)
         if prefix:
             text = prefix + "\n\n" + text
-        return text, _menu_keyboard(services, codes, lang)
+        return text, _home_keyboard(codes, lang)
     finally:
         session.close()
+
+
+def render_picker(user_id: int, lang: str, picked: set):
+    """Вибір послуг для нової підписки: галочки, внизу одна кнопка «Підписатися»."""
+    session = DBSession()
+    try:
+        codes = _active_codes(_user_subscriptions(session, user_id))
+        back = [InlineKeyboardButton(i18n.t("econsul.btn.cancel", lang), callback_data="econsul:menu")]
+        if "*" in codes:
+            return i18n.t("econsul.pick.already_all", lang), InlineKeyboardMarkup([back])
+        services = [service for service in _served_services(session) if service.code not in codes]
+        if not services:
+            return i18n.t("econsul.pick.nothing_left", lang), InlineKeyboardMarkup([back])
+        rows = [[InlineKeyboardButton(i18n.t("econsul.btn.pick_all", lang), callback_data="econsul:add_all")]]
+        for service in services:
+            callback = f"econsul:p:{service.code}"
+            if len(callback.encode("utf-8")) > 64:
+                continue
+            mark = "✅" if service.code in picked else "▫️"
+            rows.append([InlineKeyboardButton(f"{mark} {_short(service.name)}", callback_data=callback)])
+        chosen = [code for code in picked if any(service.code == code for service in services)]
+        if chosen:
+            rows.append([InlineKeyboardButton(
+                i18n.t("econsul.btn.subscribe", lang, count=len(chosen)), callback_data="econsul:save",
+            )])
+        rows.append(back)
+        return i18n.t("econsul.pick.text", lang), InlineKeyboardMarkup(rows)
+    finally:
+        session.close()
+
+
+def render_manage(user_id: int, lang: str, prefix: str = ""):
+    """Власні підписки з кнопкою ❌ біля кожної."""
+    session = DBSession()
+    try:
+        codes = _active_codes(_user_subscriptions(session, user_id))
+        names = {row.code: row.name for row in session.query(EconsulService).all()}
+        rows = []
+        for code in sorted(codes, key=lambda item: names.get(item, item)):
+            label = i18n.t("econsul.subs.all", lang) if code == "*" else names.get(code, code)
+            rows.append([InlineKeyboardButton(f"❌ {_short(label)}", callback_data=f"econsul:u:{code}")])
+        if len(codes) > 1:
+            rows.append([InlineKeyboardButton(i18n.t("econsul.btn.none", lang), callback_data="econsul:none")])
+        rows.append([InlineKeyboardButton(i18n.t("econsul.btn.back", lang), callback_data="econsul:menu")])
+        text = i18n.t("econsul.manage.text", lang) if codes else i18n.t("econsul.subs.empty", lang)
+        if prefix:
+            text = prefix + "\n\n" + text
+        return text, InlineKeyboardMarkup(rows)
+    finally:
+        session.close()
+
+
+def render_free(lang: str):
+    """Повний перелік того, що вільно зараз - лише на окремий запит."""
+    session = DBSession()
+    try:
+        text = _free_text(_served_services(session), lang) or i18n.t("econsul.status.never_checked", lang)
+    finally:
+        session.close()
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(i18n.t("econsul.btn.add", lang), callback_data="econsul:add")],
+        [InlineKeyboardButton(i18n.t("econsul.btn.back", lang), callback_data="econsul:menu")],
+    ])
+    return text, keyboard
+
+
+def _subscribe(session, user, codes: set) -> None:
+    if "*" in codes:
+        for service in _user_subscriptions(session, user.id):
+            _set_subscription(session, user, service, False)
+        _set_subscription(session, user, SUB_ALL, True)
+        return
+    for code in codes:
+        _set_subscription(session, user, SUB_PREFIX + code, True)
+
+
+def _unsubscribe(session, user, code: Optional[str]) -> None:
+    """`None` - відписатися від усього."""
+    for service in _user_subscriptions(session, user.id):
+        if code is None or service == SUB_PREFIX + code:
+            _set_subscription(session, user, service, False)
+
+
+def _service_names(codes: Iterable[str], lang: str) -> str:
+    session = DBSession()
+    try:
+        names = {row.code: row.name for row in session.query(EconsulService).all()}
+    finally:
+        session.close()
+    return ", ".join(
+        html.escape(i18n.t("econsul.subs.all", lang) if code == "*" else names.get(code, code))
+        for code in sorted(codes, key=lambda item: names.get(item, item))
+    )
+
+
+def _edit(query, text: str, keyboard: InlineKeyboardMarkup) -> None:
+    try:
+        query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=True)
+    except BadRequest as exc:
+        if "Message is not modified" not in str(exc):
+            raise
 
 
 def show_menu(update: Update, context: CallbackContext, edit: bool = False, prefix: str = "") -> None:
@@ -534,13 +618,7 @@ def show_menu(update: Update, context: CallbackContext, edit: bool = False, pref
         return
     text, keyboard = render_menu(user.id, lang, prefix)
     if edit and update.callback_query:
-        try:
-            update.callback_query.edit_message_text(
-                text, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=True,
-            )
-        except BadRequest as exc:
-            if "Message is not modified" not in str(exc):
-                raise
+        _edit(update.callback_query, text, keyboard)
     else:
         update.effective_message.reply_text(
             text, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=True,
@@ -557,22 +635,59 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         query.answer(i18n.t("econsul.not_allowed", lang), show_alert=True)
         return
     data = query.data
+    picked = context.user_data.setdefault("econsul_pick", set())
+
     if data == "econsul:menu":
+        picked.clear()
         query.answer()
         show_menu(update, context, edit=True)
-        return
-    if data in ("econsul:all", "econsul:none") or data.startswith("econsul:s:"):
-        action = data[len("econsul:s:"):] if data.startswith("econsul:s:") else data.split(":", 1)[1]
+    elif data == "econsul:add":
+        picked.clear()
+        query.answer()
+        _edit(query, *render_picker(user.id, lang, picked))
+    elif data.startswith("econsul:p:"):
+        code = data[len("econsul:p:"):]
+        picked.symmetric_difference_update({code})
+        query.answer()
+        _edit(query, *render_picker(user.id, lang, picked))
+    elif data in ("econsul:save", "econsul:add_all"):
+        codes = {"*"} if data == "econsul:add_all" else set(picked)
+        picked.clear()
+        if not codes:
+            query.answer()
+            _edit(query, *render_picker(user.id, lang, picked))
+            return
         session = DBSession()
         try:
-            _toggle(session, user, action)
+            _subscribe(session, user, codes)
             session.commit()
         finally:
             session.close()
         query.answer(i18n.t("econsul.toast.saved", lang))
-        show_menu(update, context, edit=True)
-        return
-    query.answer()
+        prefix = i18n.t("econsul.prefix.subscribed", lang, names=_service_names(codes, lang))
+        show_menu(update, context, edit=True, prefix=prefix)
+    elif data == "econsul:manage":
+        query.answer()
+        _edit(query, *render_manage(user.id, lang))
+    elif data.startswith("econsul:u:") or data == "econsul:none":
+        code = data[len("econsul:u:"):] if data.startswith("econsul:u:") else None
+        session = DBSession()
+        try:
+            _unsubscribe(session, user, code)
+            session.commit()
+            left = _active_codes(_user_subscriptions(session, user.id))
+        finally:
+            session.close()
+        query.answer(i18n.t("econsul.toast.unsubscribed", lang))
+        if left:
+            _edit(query, *render_manage(user.id, lang))
+        else:
+            show_menu(update, context, edit=True, prefix=i18n.t("econsul.prefix.unsubscribed_all", lang))
+    elif data == "econsul:free":
+        query.answer()
+        _edit(query, *render_free(lang))
+    else:
+        query.answer()
 
 
 command_handler = CommandHandler("embassy", show_menu, Filters.chat_type.private)

@@ -68,7 +68,7 @@ class EconsulMonitorTest(unittest.TestCase):
     def _subscribe(self, user_id, action):
         session = DBSession()
         try:
-            monitor._toggle(session, SimpleNamespace(id=user_id, username="", full_name=""), action)
+            monitor._subscribe(session, SimpleNamespace(id=user_id, username="", full_name=""), {"*"} if action == "all" else {action})
             session.commit()
         finally:
             session.close()
@@ -140,22 +140,39 @@ class EconsulMonitorTest(unittest.TestCase):
         self.assertEqual(self._sent_to(), [ADMIN, ADMIN])
         self.assertIn("знову працює", self.bot.send_message.call_args.args[1])
 
-    def test_unticking_one_service_from_all_keeps_the_rest(self):
+    def test_unsubscribing_one_service_keeps_the_rest(self):
         monitor.handle_browser_result(self.bot, _payload({
             "7": ("Паспорт", []),
             "8": ("Облік", []),
             "9": ("Довіреність", []),
         }))
-        self._subscribe(USER_ALL, "all")
+        self._subscribe(USER_PASSPORT, "7")
+        self._subscribe(USER_PASSPORT, "8")
 
-        self._subscribe(USER_ALL, "8")
+        session = DBSession()
+        try:
+            monitor._unsubscribe(session, SimpleNamespace(id=USER_PASSPORT, username="", full_name=""), "8")
+            session.commit()
+            codes = monitor._active_codes(monitor._user_subscriptions(session, USER_PASSPORT))
+        finally:
+            session.close()
+        self.assertEqual(codes, {"7"})
+
+        text, keyboard = monitor.render_manage(USER_PASSPORT, "uk")
+        callbacks = [row[0].callback_data for row in keyboard.inline_keyboard]
+        self.assertEqual(callbacks, ["econsul:u:7", "econsul:menu"])
+        self.assertIn("❌", keyboard.inline_keyboard[0][0].text)
+
+    def test_subscribing_to_all_replaces_single_services(self):
+        self._subscribe(USER_ALL, "7")
+        self._subscribe(USER_ALL, "all")
 
         session = DBSession()
         try:
             codes = monitor._active_codes(monitor._user_subscriptions(session, USER_ALL))
         finally:
             session.close()
-        self.assertEqual(codes, {"7", "9"})
+        self.assertEqual(codes, {"*"})
 
     def test_typical_lifetime_ignores_dates_that_simply_arrived(self):
         now = datetime(2026, 10, 1, 12, 0)
@@ -189,7 +206,7 @@ class EconsulMonitorTest(unittest.TestCase):
             self.assertTrue(monitor.is_allowed(USER_OTHER))
             self.assertFalse(monitor.is_allowed(None))
 
-    def test_menu_shows_what_is_free_now(self):
+    def test_main_menu_lists_only_own_subscriptions(self):
         monitor.handle_browser_result(self.bot, _payload({
             "7": ("Паспорт", [_day("2026-10-21", 3, "11:20"), _day("2026-10-14", 5)]),
             "8": ("Облік", []),
@@ -198,12 +215,46 @@ class EconsulMonitorTest(unittest.TestCase):
 
         text, keyboard = monitor.render_menu(USER_PASSPORT, "uk")
 
-        self.assertIn("Паспорт: найближчий 14.10.2026 09:00", text)
-        self.assertIn("вибрані послуги (1)", text)
-        labels = [row[0].text for row in keyboard.inline_keyboard]
-        self.assertIn("✅ Паспорт", labels)
-        self.assertIn("▫️ Облік", labels)
+        self.assertIn("<b>Паспорт</b> — найближчий вільний 14.10.2026 09:00", text)
+        self.assertNotIn("Облік", text)
+        self.assertNotIn("Вхід e-Consul", text)
+        callbacks = [row[0].callback_data for row in keyboard.inline_keyboard]
+        self.assertEqual(callbacks[:3], ["econsul:add", "econsul:manage", "econsul:free"])
 
+    def test_menu_without_subscriptions_invites_to_subscribe(self):
+        text, keyboard = monitor.render_menu(USER_OTHER, "uk")
+
+        self.assertIn("ще немає підписок", text)
+        callbacks = [row[0].callback_data for row in keyboard.inline_keyboard]
+        self.assertNotIn("econsul:manage", callbacks)
+
+    def test_picker_hides_taken_services_and_shows_subscribe_only_after_a_pick(self):
+        monitor.handle_browser_result(self.bot, _payload({
+            "7": ("Паспорт", []),
+            "8": ("Облік", []),
+            "9": ("Довіреність", []),
+        }))
+        self._subscribe(USER_PASSPORT, "7")
+
+        _text, keyboard = monitor.render_picker(USER_PASSPORT, "uk", set())
+        callbacks = [row[0].callback_data for row in keyboard.inline_keyboard]
+        self.assertEqual(callbacks, ["econsul:add_all", "econsul:p:9", "econsul:p:8", "econsul:menu"])
+
+        _text, keyboard = monitor.render_picker(USER_PASSPORT, "uk", {"8"})
+        labels = [row[0].text for row in keyboard.inline_keyboard]
+        self.assertIn("✅ Облік", labels)
+        self.assertIn("✅ Підписатися (1)", labels)
+
+    def test_admin_is_reminded_once_before_the_sign_in_runs_out(self):
+        monitor.handle_browser_result(self.bot, _payload({"7": ("Паспорт", [])}))
+        soon = (datetime.utcnow() + timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        payload = dict(_payload({"7": ("Паспорт", [])}), token_expires_at=soon)
+
+        monitor.handle_browser_result(self.bot, payload)
+        monitor.handle_browser_result(self.bot, payload)
+
+        self.assertEqual(self._sent_to(), [ADMIN])
+        self.assertIn("Вхід e-Consul закінчиться", self.bot.send_message.call_args.args[1])
 
 if __name__ == "__main__":
     unittest.main()
