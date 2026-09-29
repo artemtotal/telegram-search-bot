@@ -63,9 +63,9 @@ services:
       - PASSPORT_EQUEUE_URL=https://berlin.pasport.org.ua/solutions/e-queue
       - PASSPORT_EQUEUE_BROWSER_ONLY=1
       - EQUEUE_RECEIVER_PORT=5011
-      # e-Consul (посольство в Берліні): поки розрахунок не звірено з сайтом,
-      # меню бачать лише ADMIN_ID і перелічені ID; ECONSUL_PUBLIC=1 відкриває всім.
-      - ECONSUL_PUBLIC=${ECONSUL_PUBLIC:-0}
+      # e-Consul (посольство в Берліні): розрахунок звірено з сайтом 29.09.2026;
+      # ECONSUL_PUBLIC=0 знову сховає меню для всіх, крім ADMIN_ID і переліку.
+      - ECONSUL_PUBLIC=${ECONSUL_PUBLIC:-1}
       - ECONSUL_ALLOWED_USER_IDS=${ECONSUL_ALLOWED_USER_IDS:-}
       - HOUSING_RECEIVER_PORT=5012
       # Comma-separated Telegram IDs that may open housing monitoring before filters exist.

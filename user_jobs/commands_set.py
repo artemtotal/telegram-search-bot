@@ -11,12 +11,14 @@ def set_bot_commands(context: telegram.ext.CallbackContext):
         ('start', 'головне меню'),
         ('anonymous', 'поставити анонімне запитання'),
         ('dps_document', 'перевірка термінів ДП Документ'),
+        ('embassy', 'терміни посольства в Берліні (e-Consul)'),
         ('housing', 'моніторинг житла'),
     ]
     commands = [
         ('start', _('start bot in current group ( userbot mode need `start <group_id>`)')),
         ('anonymous', 'поставити анонімне запитання'),
         ('dps_document', 'перевірка термінів ДП Документ'),
+        ('embassy', 'терміни посольства в Берліні (e-Consul)'),
         ('housing', 'моніторинг житла'),
         ('help', 'довідка про команди бота'),
         ('chat_id', _('get current chat id (group or user)')),
