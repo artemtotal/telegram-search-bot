@@ -140,6 +140,18 @@ class EconsulMonitorTest(unittest.TestCase):
         self.assertEqual(self._sent_to(), [ADMIN, ADMIN])
         self.assertIn("знову працює", self.bot.send_message.call_args.args[1])
 
+    def test_a_new_breakage_is_reported_even_within_the_cooldown(self):
+        ok = _payload({"7": ("Паспорт", [])})
+        broken = {"source": "econsul_berlin", "status": "auth_required", "reason": "401"}
+        monitor.handle_browser_result(self.bot, ok)
+        monitor.handle_browser_result(self.bot, broken)
+        monitor.handle_browser_result(self.bot, ok)
+        monitor.handle_browser_result(self.bot, broken)
+
+        # тривога, «знову працює», і знову тривога - без мовчання через кулдаун
+        self.assertEqual(self._sent_to(), [ADMIN, ADMIN, ADMIN])
+        self.assertIn("потрібен вхід", self.bot.send_message.call_args.args[1])
+
     def test_unsubscribing_one_service_keeps_the_rest(self):
         monitor.handle_browser_result(self.bot, _payload({
             "7": ("Паспорт", []),

@@ -327,7 +327,14 @@ def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
             state.token_expires_at = token_expires_at
 
         if status != "ok":
-            alert_due = state.last_admin_alert_at is None or state.last_admin_alert_at <= now - ADMIN_ALERT_COOLDOWN
+            # Поломка після вдалої перевірки - новина завжди; кулдаун стримує
+            # лише повтори, поки перевірка так і лежить. Інакше свіжий вихід з
+            # e-Consul мовчки ховався за кулдауном попередньої тривоги.
+            alert_due = (
+                previous == "ok"
+                or state.last_admin_alert_at is None
+                or state.last_admin_alert_at <= now - ADMIN_ALERT_COOLDOWN
+            )
             key = "econsul.admin.auth_required" if status == "auth_required" else "econsul.admin.error"
             if alert_due and _send_admin(bot, key, reason=html.escape(reason or "—"), url=BOOKING_URL):
                 state.last_admin_alert_at = now
