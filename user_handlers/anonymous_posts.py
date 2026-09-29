@@ -20,7 +20,7 @@ from user_handlers.anonymous_validation import (
     text_fingerprint,
     validate_submission as validate_submission_text,
 )
-from user_handlers import equeue_monitor, housing_monitor
+from user_handlers import econsul_monitor, equeue_monitor, housing_monitor
 from user_jobs import user_settings_store
 from user_jobs.reindex_queue import enqueue_message_reindex
 
@@ -57,6 +57,7 @@ def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(i18n.t("anon.btn.menu", lang), callback_data="anon:menu")],
     ]
     rows.extend(equeue_monitor.private_home_rows(user_id))
+    rows.extend(econsul_monitor.private_home_rows(user_id))
     rows.extend(housing_monitor.private_home_rows(user_id))
     rows.append([InlineKeyboardButton(i18n.t("anon.btn.feedback", lang), callback_data="anon:feedback")])
     rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="anon:lang:menu")])
@@ -97,6 +98,8 @@ def reply_menu_keyboard(user_id=None) -> ReplyKeyboardMarkup:
     rows = [[i18n.t("anon.btn.home", lang), i18n.t("anon.btn.menu", lang)]]
     if equeue_monitor.is_allowed(user_id):
         rows.append([i18n.t("anon.btn.equeue", lang)])
+    if econsul_monitor.is_allowed(user_id):
+        rows.append([i18n.t("anon.btn.econsul", lang)])
     # Shown to everyone, allowed or not: housing_monitor.show_menu() renders
     # its own locked screen (pricing + "request access") for people without
     # access yet, same as the top inline menu already does.
@@ -425,6 +428,9 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
             return
         if text == i18n.t("anon.btn.equeue", lang) and equeue_monitor.is_allowed(user_id):
             equeue_monitor.show_menu(update, context)
+            return
+        if text == i18n.t("anon.btn.econsul", lang) and econsul_monitor.is_allowed(user_id):
+            econsul_monitor.show_menu(update, context)
             return
         if text == i18n.t("anon.btn.housing", lang):
             housing_monitor.show_menu(update, context)

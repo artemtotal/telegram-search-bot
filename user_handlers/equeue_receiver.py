@@ -6,7 +6,7 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
-from user_handlers import equeue_monitor
+from user_handlers import econsul_monitor, equeue_monitor
 
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,10 @@ def _handler_factory(bot):
                 payload = json.loads(raw.decode("utf-8"))
                 if not isinstance(payload, dict):
                     raise ValueError("JSON body must be an object")
-                result = equeue_monitor.handle_browser_result(bot, payload)
+                if payload.get("source") == econsul_monitor.SOURCE:
+                    result = econsul_monitor.handle_browser_result(bot, payload)
+                else:
+                    result = equeue_monitor.handle_browser_result(bot, payload)
             except Exception as exc:
                 logger.exception("Could not process browser e-queue payload")
                 self._json_response(400, {"ok": False, "error": str(exc)})

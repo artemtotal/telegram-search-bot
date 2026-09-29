@@ -19,6 +19,7 @@ from user_handlers import (
     faq_admin,
     equeue_monitor,
     equeue_receiver,
+    econsul_monitor,
     housing_monitor,
     housing_digest,
     housing_receiver,
@@ -182,6 +183,8 @@ dispatcher.add_handler(msg_ai.handler)
 dispatcher.add_handler(faq_admin.handler)
 dispatcher.add_handler(equeue_monitor.command_handler)
 dispatcher.add_handler(equeue_monitor.callback_handler)
+dispatcher.add_handler(econsul_monitor.command_handler)
+dispatcher.add_handler(econsul_monitor.callback_handler)
 dispatcher.add_handler(housing_monitor.command_handler)
 dispatcher.add_handler(housing_monitor.callback_handler)
 dispatcher.add_handler(housing_monitor.add_handler)

@@ -175,6 +175,62 @@ class EqueueAvailableSighting(Base):
     reason = Column(TEXT)
 
 
+class EconsulState(Base):
+    """Останній стан перевірки e-Consul (посольство України в Берліні).
+
+    Перевіряє Chrome під одним акаунтом адміна для всіх, тож стан - один рядок
+    на джерело, а не на підписку.
+    """
+
+    __tablename__ = 'econsul_state'
+
+    source = Column(TEXT, primary_key=True)
+    institution_name = Column(TEXT)
+    last_checked_at = Column(DATETIME)
+    last_ok_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_reason = Column(TEXT)
+    token_expires_at = Column(DATETIME)
+    last_admin_alert_at = Column(DATETIME)
+    # Перший вдалий результат лише запам'ятовується: інакше підписники
+    # отримали б "нові" терміни, які насправді висіли вже давно.
+    baseline_done = Column(BOOLEAN, nullable=False, default=False)
+
+
+class EconsulService(Base):
+    """Послуга посольства з останньої перевірки й те, що по ній вільно зараз."""
+
+    __tablename__ = 'econsul_service'
+
+    code = Column(TEXT, primary_key=True)
+    name = Column(TEXT, nullable=False)
+    minutes = Column(INTEGER)
+    served = Column(BOOLEAN, nullable=False, default=True)
+    free_count = Column(INTEGER, nullable=False, default=0)
+    nearest = Column(TEXT)
+    updated_at = Column(DATETIME)
+
+
+class EconsulDay(Base):
+    """Епізод доступності: дата послуги з вільним часом, від появи до зникнення.
+
+    Нове для підписників - це дата, що з'явилась, або дата, де вільних часів
+    стало більше, ніж уже повідомляли (`notified_count`). Закриті епізоди
+    дають оцінку, як швидко терміни розбирають.
+    """
+
+    __tablename__ = 'econsul_day'
+
+    id = Column(INTEGER, primary_key=True)
+    service_code = Column(TEXT, nullable=False, index=True)
+    date = Column(TEXT, nullable=False)
+    count = Column(INTEGER, nullable=False, default=0)
+    notified_count = Column(INTEGER, nullable=False, default=0)
+    first_time = Column(TEXT)
+    first_seen_at = Column(DATETIME, nullable=False)
+    gone_at = Column(DATETIME, index=True)
+
+
 class HousingAccessUser(Base):
     __tablename__ = 'housing_access_user'
 
