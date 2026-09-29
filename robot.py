@@ -177,6 +177,8 @@ job.run_repeating(housing_monitor.housing_followups_job, interval=1800, first=45
 job.run_daily(
     housing_digest.weekly_digest_job, time=housing_digest.DIGEST_TIME, days=(housing_digest.DIGEST_WEEKDAY,),
 )
+# Admin: one evening summary of new/edited filters instead of a message per filter.
+job.run_daily(housing_monitor.daily_filter_summary_job, time=housing_monitor.FILTER_SUMMARY_TIME)
 
 
 dispatcher.add_handler(msg_ai.handler)

@@ -231,6 +231,24 @@ class EconsulDay(Base):
     gone_at = Column(DATETIME, index=True)
 
 
+class HousingFilterEvent(Base):
+    """Новий або змінений фільтр житла - для щоденного зведення адміну.
+
+    Раніше кожен такий фільтр одразу йшов адміну окремим повідомленням; тепер
+    одразу йдуть лише завузькі, решта збирається тут до вечора.
+    """
+
+    __tablename__ = 'housing_filter_event'
+
+    id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    edited = Column(BOOLEAN, nullable=False, default=False)
+    sources = Column(TEXT)
+    total_hits = Column(INTEGER)
+    thin = Column(BOOLEAN, nullable=False, default=False)
+    created_at = Column(DATETIME, nullable=False, index=True)
+
+
 class HousingAccessUser(Base):
     __tablename__ = 'housing_access_user'
 

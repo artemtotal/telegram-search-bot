@@ -193,7 +193,7 @@ class FilterReportTests(_InMemoryDb):
         self.assertIn('Kleinanzeigen 1', admin_text)
         self.assertIn('Замало', admin_text)
 
-    def test_an_edit_reaches_the_admin_but_does_not_repeat_the_count_to_the_person(self):
+    def test_an_ordinary_edit_waits_for_the_evening_summary(self):
         bot = mock.Mock()
         bot.get_chat.side_effect = Exception('no chat')
         job = SimpleNamespace(context={'user_id': 777, 'saved': [('kleinanzeigen', 999, {})], 'edited': True})
@@ -201,9 +201,48 @@ class FilterReportTests(_InMemoryDb):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
             housing_monitor._filter_report_job(SimpleNamespace(bot=bot, job=job))
 
+        bot.send_message.assert_not_called()
+
+    def test_a_wide_new_filter_does_not_ping_the_admin(self):
+        bot = mock.Mock()
+        job = SimpleNamespace(context={'user_id': 777, 'saved': [('kleinanzeigen', 1, {})], 'edited': False})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+                mock.patch.object(housing_monitor, '_filter_hits', return_value={'kleinanzeigen': 40}):
+            housing_monitor._filter_report_job(SimpleNamespace(bot=bot, job=job))
+
+        self.assertEqual([call.kwargs['chat_id'] for call in bot.send_message.call_args_list], [777])
+
+    def test_the_evening_summary_counts_new_and_edited_filters_per_person(self):
+        bot = mock.Mock()
+        bot.get_chat.side_effect = lambda user_id: SimpleNamespace(
+            id=user_id, first_name=f'U{user_id}', last_name='', username='')
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            for user_id, edited, hits in ((777, False, {'kleinanzeigen': 40}), (777, True, {'kleinanzeigen': 35}),
+                                          (888, False, {'kleinanzeigen': 1})):
+                job = SimpleNamespace(context={'user_id': user_id, 'saved': [('kleinanzeigen', 1, {})],
+                                               'edited': edited})
+                with mock.patch.object(housing_monitor, '_filter_hits', return_value=hits):
+                    housing_monitor._filter_report_job(SimpleNamespace(bot=bot, job=job))
+            bot.send_message.reset_mock()
+
+            housing_monitor.daily_filter_summary_job(SimpleNamespace(bot=bot))
+
         [call] = bot.send_message.call_args_list
+        text = call.kwargs['text']
         self.assertEqual(call.kwargs['chat_id'], 312029534)
-        self.assertIn('Фільтр змінено', call.kwargs['text'])
+        self.assertIn('Нових: <b>2</b> (людей: 2)', text)
+        self.assertIn('Змінено: <b>1</b> (людей: 1)', text)
+        self.assertIn('Завузьких зараз: <b>1</b>', text)
+        self.assertIn('U777 · <code>777</code> — нових 1, змін 1, за 30 днів підійшло б 35', text)
+        self.assertIn('⚠️ U888', text)
+
+    def test_a_quiet_day_sends_no_summary(self):
+        bot = mock.Mock()
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            housing_monitor.daily_filter_summary_job(SimpleNamespace(bot=bot))
+
+        bot.send_message.assert_not_called()
 
 
 class FollowupTests(_InMemoryDb):

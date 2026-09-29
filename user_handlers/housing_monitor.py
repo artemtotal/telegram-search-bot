@@ -5,10 +5,11 @@ import html
 import logging
 import os
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time as dtime, timedelta, timezone
 from typing import Dict, Iterable, Optional
 from zoneinfo import ZoneInfo
 
+import pytz
 import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
@@ -17,6 +18,7 @@ from telegram.error import BadRequest
 import i18n
 from database import (
     DBSession,
+    HousingFilterEvent,
     KarlmarxListing,
     KleinanzeigenListing,
     LocalsListing,
@@ -1089,13 +1091,111 @@ def _filter_report_job(context: CallbackContext) -> None:
         except Exception:
             logger.exception("Could not send the filter report to %s", user_id)
     if ADMIN_ID and user_id != ADMIN_ID:
-        _notify_admin_filter_saved(bot, user_id, saved, hits, edited, thin)
+        _record_filter_event(user_id, saved, hits, edited, thin)
+        # Кожен новий чи змінений фільтр окремим повідомленням засипав адміна;
+        # одразу лишились тільки завузькі - там варто встигнути написати людині,
+        # решта приходить у вечірньому зведенні (daily_filter_summary_job).
+        if thin:
+            _notify_admin_filter_saved(bot, user_id, saved, hits, edited, thin)
+
+
+def _record_filter_event(user_id: int, saved: list, hits: Dict[str, int], edited: bool, thin: bool) -> None:
+    session = DBSession()
+    try:
+        session.add(HousingFilterEvent(
+            user_id=int(user_id),
+            edited=bool(edited),
+            sources=",".join(sorted({str(source) for source, _f, _c in saved})),
+            total_hits=sum(hits.values()) if hits else None,
+            thin=bool(thin),
+            created_at=datetime.utcnow(),
+        ))
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Could not record the filter event of %s", user_id)
+    finally:
+        session.close()
+
+
+# Вечірнє зведення по фільтрах за останню добу - замість повідомлення адміну
+# на кожен новий чи змінений фільтр.
+# pytz, а не ZoneInfo: APScheduler 3 під PTB 13 приймає лише pytz-зони.
+FILTER_SUMMARY_TIME = dtime(21, 0, tzinfo=pytz.timezone("Europe/Berlin"))
+FILTER_SUMMARY_PEOPLE_SHOWN = 15
+
+
+def filter_summary_text(bot, since: datetime, until: datetime) -> Optional[str]:
+    session = DBSession()
+    try:
+        events = (
+            session.query(HousingFilterEvent)
+            .filter(HousingFilterEvent.created_at >= since, HousingFilterEvent.created_at < until)
+            .order_by(HousingFilterEvent.created_at)
+            .all()
+        )
+        events = [
+            {"user_id": e.user_id, "edited": bool(e.edited), "thin": bool(e.thin), "hits": e.total_hits}
+            for e in events
+        ]
+    finally:
+        session.close()
+    if not events:
+        return None
+    created = [e for e in events if not e["edited"]]
+    edited = [e for e in events if e["edited"]]
+    people: Dict[int, Dict[str, object]] = {}
+    for event in events:
+        person = people.setdefault(event["user_id"], {"new": 0, "edited": 0, "thin": False, "hits": None})
+        person["edited" if event["edited"] else "new"] += 1
+        person["thin"] = event["thin"]
+        person["hits"] = event["hits"]
+    lines = [
+        f"📊 <b>Фільтри житла за добу</b> ({_format_time(since)} – {_format_time(until)})",
+        "",
+        f"🆕 Нових: <b>{len(created)}</b> (людей: {len({e['user_id'] for e in created})})",
+        f"✏️ Змінено: <b>{len(edited)}</b> (людей: {len({e['user_id'] for e in edited})})",
+    ]
+    thin_people = [user_id for user_id, person in people.items() if person["thin"]]
+    if thin_people:
+        lines.append(f"⚠️ Завузьких зараз: <b>{len(thin_people)}</b> (про них ви вже отримали окремі повідомлення)")
+    lines.append("")
+    for user_id, person in list(people.items())[:FILTER_SUMMARY_PEOPLE_SHOWN]:
+        try:
+            name = _display_name(bot.get_chat(user_id))
+        except Exception:
+            name = str(user_id)
+        parts = []
+        if person["new"]:
+            parts.append(f"нових {person['new']}")
+        if person["edited"]:
+            parts.append(f"змін {person['edited']}")
+        if person["hits"] is not None:
+            parts.append(f"за {FILTER_REPORT_DAYS} днів підійшло б {person['hits']}")
+        mark = "⚠️ " if person["thin"] else "• "
+        lines.append(f"{mark}{html.escape(name)} · <code>{user_id}</code> — {', '.join(parts)}")
+    if len(people) > FILTER_SUMMARY_PEOPLE_SHOWN:
+        lines.append(f"…і ще людей: {len(people) - FILTER_SUMMARY_PEOPLE_SHOWN}")
+    return "\n".join(lines)
+
+
+def daily_filter_summary_job(context: CallbackContext) -> None:
+    if not ADMIN_ID:
+        return
+    until = datetime.utcnow()
+    text = filter_summary_text(context.bot, until - timedelta(days=1), until)
+    if not text:
+        # Тихий день - нема про що писати, окреме «нічого не сталося» теж спам.
+        return
+    try:
+        context.bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode="HTML", disable_web_page_preview=True)
+    except Exception:
+        logger.exception("Could not send the daily filter summary")
 
 
 def _notify_admin_filter_saved(bot, user_id: int, saved: list, hits: Dict[str, int], edited: bool, thin: bool) -> None:
-    """Lets the admin see every new filter as it's made, so a hopeless one
-    (nothing like it turns up for weeks) can be caught with a word to the
-    person instead of them quietly giving up."""
+    """Lets the admin catch a hopeless filter (nothing like it turns up for
+    weeks) with a word to the person instead of them quietly giving up."""
     try:
         chat = bot.get_chat(user_id)
         name = _display_name(chat)
