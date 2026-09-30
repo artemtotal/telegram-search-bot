@@ -356,7 +356,7 @@
   "anon.btn.econsul": "🇺🇦 Посольство в Берліні",
   "econsul.btn.home": "🇺🇦 Терміни посольства в Берліні",
   "econsul.default_institution": "Посольство України в Німеччині",
-  "econsul.menu.text": "🇺🇦 <b>{institution}</b>\n\nБот раз на 10–15 хвилин дивиться розклад e-Consul і пише, коли з’являються вільні терміни. Записуєтеся ви самі на e-consul.gov.ua через Дію або BankID — бот ваших даних не бачить і не просить.",
+  "econsul.menu.text": "🇺🇦 <b>{institution}</b>\n\nБот кілька разів на день у будні перевіряє розклад e-Consul і пише, коли з’являються нові вільні терміни. Записуєтеся ви самі на e-consul.gov.ua через Дію або BankID — бот ваших даних не бачить і не просить.",
   "econsul.status.never_checked": "⏳ Перевірка ще не надходила. Дочекайтеся найближчого циклу.",
   "econsul.status.ok": "✅ Остання перевірка: {checked}.",
   "econsul.status.stale": "⚠️ Остання вдала перевірка була {checked} — дані можуть бути застарілими.",
@@ -402,5 +402,8 @@
   "econsul.prefix.subscribed": "✅ Підписано: {names}. Напишемо, щойно з’являться нові терміни.",
   "econsul.prefix.unsubscribed_all": "🔕 Ви відписалися від усіх сповіщень посольства.",
   "econsul.toast.unsubscribed": "Відписано",
-  "econsul.admin.token_expiring": "🔑 <b>Вхід e-Consul закінчиться о {until}</b>\n\nЩоб перевірка посольства не зупинилась, увійдіть заново на e-consul.gov.ua через Дію в профілі Chrome, де працює Site Watcher."
+  "econsul.btn.login": "🔑 Увійти через monobank",
+  "econsul.admin.login_link": "🔑 <b>e-Consul: підтвердіть вхід</b>\n\nНатисніть кнопку на телефоні — відкриється monobank, підтвердіть вхід. Після цього перевірка посольства пройде сама.\n\nЧекаю {minutes} хв.",
+  "econsul.admin.login_done": "✅ Вхід e-Consul підтверджено — перевіряю посольство.",
+  "econsul.admin.login_timeout": "⌛ Вхід e-Consul не підтвердили за {minutes} хв — цю перевірку пропущено, наступна за розкладом."
 }

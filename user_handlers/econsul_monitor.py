@@ -7,6 +7,7 @@
 """
 
 import html
+import json
 import logging
 import os
 import re
@@ -24,6 +25,7 @@ from database import (
     DBSession,
     EconsulDay,
     EconsulService,
+    EconsulSnapshot,
     EconsulState,
     EqueueAvailableSighting,
     EqueueSubscription,
@@ -41,11 +43,9 @@ BERLIN_TZ = ZoneInfo("Europe/Berlin")
 # Поки розрахунок не звірено з сайтом, меню бачать тільки адмін і перелічені ID.
 PUBLIC = os.getenv("ECONSUL_PUBLIC", "0") == "1"
 ADMIN_ALERT_COOLDOWN = timedelta(hours=3)
-# За скільки до кінця входу e-Consul (JWT на добу) нагадати адміну перелогінитись.
-TOKEN_REMINDER_BEFORE = timedelta(hours=1)
-# Перевірка йде раз на 10-15 хвилин; без вдалої відповіді довше за це меню
-# чесно каже, що дані застарілі.
-STALE_AFTER = timedelta(minutes=45)
+# Перевірка йде кілька разів на день лише в будні (вхід треба підтверджувати),
+# тож і нічна, і вихідна пауза - норма; «застаріло» - лише після кількох днів.
+STALE_AFTER = timedelta(days=3)
 SIGHTINGS_SHOWN = 3
 LIFETIME_WINDOW = timedelta(days=14)
 LIFETIME_MIN_EPISODES = 3
@@ -309,6 +309,73 @@ def _send_admin(bot, key: str, **kwargs) -> bool:
         return False
 
 
+LOGIN_STATUSES = {"login_link", "login_done", "login_timeout"}
+
+
+def _login_keyboard(link: str, lang: str) -> Optional[InlineKeyboardMarkup]:
+    if not link.startswith(("https://", "http://")):
+        return None
+    return InlineKeyboardMarkup([[InlineKeyboardButton(i18n.t("econsul.btn.login", lang), url=link)]])
+
+
+def _handle_login(bot, state: EconsulState, status: str, payload: Dict[str, object]) -> None:
+    """Одне повідомлення адміну на спробу входу: кнопка monobank, далі правки.
+
+    Розширення доходить до сторінки monobank само; адміну лишається натиснути
+    кнопку на телефоні й підтвердити вхід у застосунку.
+    """
+    if not ADMIN_ID:
+        return
+    lang = i18n.get_lang(ADMIN_ID)
+    login_id = str(payload.get("login_id") or "")
+    if status == "login_link":
+        link = str(payload.get("link") or "")
+        minutes = int(payload.get("wait_minutes") or 30)
+        text = i18n.t("econsul.admin.login_link", lang, minutes=minutes)
+        keyboard = _login_keyboard(link, lang)
+        if keyboard is None:
+            text += "\n\n<code>" + html.escape(link) + "</code>"
+        if state.login_id == login_id and state.login_message_id:
+            try:
+                bot.edit_message_text(
+                    text, chat_id=ADMIN_ID, message_id=state.login_message_id,
+                    parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=True,
+                )
+                return
+            except Exception:
+                logger.exception("Could not update the e-Consul login message")
+        try:
+            message = bot.send_message(
+                ADMIN_ID, text, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=True,
+            )
+        except Exception:
+            logger.exception("Could not send the e-Consul login link")
+            return
+        state.login_id = login_id
+        state.login_message_id = getattr(message, "message_id", None)
+        return
+    key = "econsul.admin.login_done" if status == "login_done" else "econsul.admin.login_timeout"
+    text = i18n.t(key, lang, minutes=int(payload.get("wait_minutes") or 30))
+    if state.login_id == login_id and state.login_message_id:
+        try:
+            bot.edit_message_text(text, chat_id=ADMIN_ID, message_id=state.login_message_id, parse_mode="HTML")
+        except Exception:
+            logger.exception("Could not close the e-Consul login message")
+    state.login_id = None
+    state.login_message_id = None
+
+
+def _record_snapshot(session, services: List[dict], now: datetime) -> None:
+    compact = [
+        {"code": str(item.get("code")), "days": [
+            [str(day.get("date")), int(day.get("count") or 0), str(day.get("first") or "")]
+            for day in item.get("days") or [] if int(day.get("count") or 0) > 0
+        ]}
+        for item in services if item.get("served", True)
+    ]
+    session.add(EconsulSnapshot(checked_at=now, services=json.dumps(compact, ensure_ascii=False)))
+
+
 def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
     if payload.get("source") != SOURCE:
         return {"ok": False, "error": "unsupported source"}
@@ -318,6 +385,10 @@ def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
     session = DBSession()
     try:
         state = _get_state(session)
+        if status in LOGIN_STATUSES:
+            _handle_login(bot, state, status, payload)
+            session.commit()
+            return {"ok": True, "status": status}
         previous = state.last_status
         state.last_checked_at = now
         state.last_status = status
@@ -345,18 +416,13 @@ def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
             _send_admin(bot, "econsul.admin.recovered")
         state.last_admin_alert_at = None
         state.last_ok_at = now
-        expires = state.token_expires_at
-        if (expires is not None and expires - now <= TOKEN_REMINDER_BEFORE
-                and state.token_reminded_for != expires
-                and _send_admin(bot, "econsul.admin.token_expiring", until=_berlin(expires), url=BOOKING_URL)):
-            # Вхід живе добу; без нагадування перевірка просто зупинилась би.
-            state.token_reminded_for = expires
         institution = payload.get("institution") or {}
         if isinstance(institution, dict) and institution.get("name"):
             state.institution_name = str(institution["name"])[:300]
         services = [item for item in payload.get("services") or [] if isinstance(item, dict)]
         baseline = not state.baseline_done
         _update_services(session, services, now)
+        _record_snapshot(session, services, now)
         fresh = _track_days(session, services, now, baseline)
         state.baseline_done = True
         institution_name = state.institution_name or i18n.t("econsul.default_institution", "uk")

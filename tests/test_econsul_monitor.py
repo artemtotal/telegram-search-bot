@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 from datetime import datetime, timedelta
@@ -9,6 +10,7 @@ from database import (
     DBSession,
     EconsulDay,
     EconsulService,
+    EconsulSnapshot,
     EconsulState,
     EqueueAvailableSighting,
     EqueueSubscription,
@@ -55,6 +57,7 @@ class EconsulMonitorTest(unittest.TestCase):
             session.query(EconsulState).delete()
             session.query(EconsulService).delete()
             session.query(EconsulDay).delete()
+            session.query(EconsulSnapshot).delete()
             session.query(EqueueAvailableSighting).filter(
                 EqueueAvailableSighting.service == monitor.SOURCE
             ).delete(synchronize_session=False)
@@ -257,16 +260,51 @@ class EconsulMonitorTest(unittest.TestCase):
         self.assertIn("✅ Облік", labels)
         self.assertIn("✅ Підписатися (1)", labels)
 
-    def test_admin_is_reminded_once_before_the_sign_in_runs_out(self):
+    def test_login_link_is_one_message_that_gets_updated_and_closed(self):
+        self.bot.send_message.return_value = SimpleNamespace(message_id=77)
+        link = {"source": "econsul_berlin", "status": "login_link", "login_id": "a1",
+                "link": "https://mbnk.app/nbi123", "wait_minutes": 30}
+
+        monitor.handle_browser_result(self.bot, link)
+        monitor.handle_browser_result(self.bot, dict(link, link="https://mbnk.app/nbi456"))
+        monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_done", "login_id": "a1"})
+
+        [sent] = self.bot.send_message.call_args_list
+        self.assertEqual(sent.args[0], ADMIN)
+        button = sent.kwargs["reply_markup"].inline_keyboard[0][0]
+        self.assertEqual(button.url, "https://mbnk.app/nbi123")
+        edits = self.bot.edit_message_text.call_args_list
+        self.assertEqual(edits[0].kwargs["reply_markup"].inline_keyboard[0][0].url, "https://mbnk.app/nbi456")
+        self.assertIn("підтверджено", edits[1].args[0])
+        self.assertTrue(all(call.kwargs["message_id"] == 77 for call in edits))
+
+    def test_login_messages_do_not_touch_the_check_status(self):
         monitor.handle_browser_result(self.bot, _payload({"7": ("Паспорт", [])}))
-        soon = (datetime.utcnow() + timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        payload = dict(_payload({"7": ("Паспорт", [])}), token_expires_at=soon)
+        self.bot.send_message.return_value = SimpleNamespace(message_id=5)
+        monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_link",
+                                                 "login_id": "b", "link": "monobank://x"})
 
-        monitor.handle_browser_result(self.bot, payload)
-        monitor.handle_browser_result(self.bot, payload)
+        session = DBSession()
+        try:
+            state = session.query(EconsulState).first()
+            self.assertEqual(state.last_status, "ok")
+        finally:
+            session.close()
+        # не-http посилання Telegram не прийме кнопкою - воно йде текстом
+        self.assertIn("monobank://x", self.bot.send_message.call_args.args[1])
 
-        self.assertEqual(self._sent_to(), [ADMIN])
-        self.assertIn("Вхід e-Consul закінчиться", self.bot.send_message.call_args.args[1])
+    def test_every_successful_check_is_kept_for_statistics(self):
+        monitor.handle_browser_result(self.bot, _payload({"7": ("Паспорт", [_day("2026-10-14", 5)])}))
+        monitor.handle_browser_result(self.bot, _payload({"7": ("Паспорт", [])}))
+
+        session = DBSession()
+        try:
+            rows = session.query(EconsulSnapshot).order_by(EconsulSnapshot.id).all()
+            data = [json.loads(row.services) for row in rows]
+        finally:
+            session.close()
+        self.assertEqual(data[-2:], [[{"code": "7", "days": [["2026-10-14", 5, "09:00"]]}],
+                                     [{"code": "7", "days": []}]])
 
 if __name__ == "__main__":
     unittest.main()

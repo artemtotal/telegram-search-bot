@@ -356,7 +356,7 @@
   "anon.btn.econsul": "🇺🇦 Botschaft in Berlin",
   "econsul.btn.home": "🇺🇦 Termine der Botschaft in Berlin",
   "econsul.default_institution": "Botschaft der Ukraine in Deutschland",
-  "econsul.menu.text": "🇺🇦 <b>{institution}</b>\n\nDer Bot prüft alle 10–15 Minuten den e-Consul-Kalender und meldet sich, wenn freie Termine auftauchen. Buchen Sie selbst auf e-consul.gov.ua mit Diia oder BankID — der Bot sieht Ihre Daten nicht und fragt nicht danach.",
+  "econsul.menu.text": "🇺🇦 <b>{institution}</b>\n\nDer Bot prüft werktags mehrmals am Tag den e-Consul-Kalender und meldet sich, wenn neue freie Termine auftauchen. Buchen Sie selbst auf e-consul.gov.ua mit Diia oder BankID — der Bot sieht Ihre Daten nicht und fragt nicht danach.",
   "econsul.status.never_checked": "⏳ Es ist noch keine Prüfung eingegangen. Bitte warten Sie den nächsten Durchlauf ab.",
   "econsul.status.ok": "✅ Letzte Prüfung: {checked}.",
   "econsul.status.stale": "⚠️ Die letzte erfolgreiche Prüfung war am {checked} — die Angaben können veraltet sein.",
@@ -402,5 +402,8 @@
   "econsul.prefix.subscribed": "✅ Abonniert: {names}. Wir melden uns, sobald neue Termine auftauchen.",
   "econsul.prefix.unsubscribed_all": "🔕 Sie haben alle Botschafts-Benachrichtigungen abbestellt.",
   "econsul.toast.unsubscribed": "Abbestellt",
-  "econsul.admin.token_expiring": "🔑 <b>Die e-Consul-Anmeldung endet um {until}</b>\n\nDamit die Botschafts-Prüfung nicht stoppt, melden Sie sich im Chrome-Profil mit Site Watcher erneut auf e-consul.gov.ua mit Diia an."
+  "econsul.btn.login": "🔑 Mit monobank anmelden",
+  "econsul.admin.login_link": "🔑 <b>e-Consul: Anmeldung bestätigen</b>\n\nTippen Sie auf dem Handy auf die Schaltfläche — monobank öffnet sich, bestätigen Sie die Anmeldung. Danach läuft die Botschafts-Prüfung von selbst.\n\nIch warte {minutes} Min.",
+  "econsul.admin.login_done": "✅ e-Consul-Anmeldung bestätigt — ich prüfe die Botschaft.",
+  "econsul.admin.login_timeout": "⌛ Die e-Consul-Anmeldung wurde nicht innerhalb von {minutes} Min. bestätigt — diese Prüfung entfällt, die nächste folgt laut Plan."
 }
