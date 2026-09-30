@@ -260,6 +260,28 @@ class EconsulMonitorTest(unittest.TestCase):
         self.assertIn("✅ Облік", labels)
         self.assertIn("✅ Підписатися (1)", labels)
 
+    def test_login_starts_with_a_request_button_and_the_link_comes_on_demand(self):
+        self.bot.send_message.return_value = SimpleNamespace(message_id=9)
+        monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_needed",
+                                                 "login_id": "c3", "wait_minutes": 40})
+
+        [sent] = self.bot.send_message.call_args_list
+        self.assertIn("Потрібен вхід", sent.args[1])
+        button = sent.kwargs["reply_markup"].inline_keyboard[0][0]
+        self.assertEqual(button.callback_data, "econsul:login:c3")
+
+        with mock.patch.object(monitor.requests, "post") as post:
+            post.return_value = SimpleNamespace(ok=True)
+            self.assertTrue(monitor.request_login_link("c3"))
+        self.assertTrue(post.call_args.args[0].endswith("/api/econsul/login-request"))
+        self.assertEqual(post.call_args.kwargs["json"], {"login_id": "c3"})
+
+        monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_link",
+                                                 "login_id": "c3", "link": "https://mbnk.app/nbi"})
+        rows = self.bot.edit_message_text.call_args.kwargs["reply_markup"].inline_keyboard
+        self.assertEqual(rows[0][0].url, "https://mbnk.app/nbi")
+        self.assertEqual(rows[1][0].callback_data, "econsul:login:c3")
+
     def test_login_link_is_one_message_that_gets_updated_and_closed(self):
         self.bot.send_message.return_value = SimpleNamespace(message_id=77)
         link = {"source": "econsul_berlin", "status": "login_link", "login_id": "a1",

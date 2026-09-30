@@ -403,7 +403,14 @@
   "econsul.prefix.unsubscribed_all": "🔕 Ви відписалися від усіх сповіщень посольства.",
   "econsul.toast.unsubscribed": "Відписано",
   "econsul.btn.login": "🔑 Увійти через monobank",
-  "econsul.admin.login_link": "🔑 <b>e-Consul: підтвердіть вхід</b>\n\nНатисніть кнопку на телефоні — відкриється monobank, підтвердіть вхід. Після цього перевірка посольства пройде сама.\n\nЧекаю {minutes} хв.",
+  "econsul.admin.login_link": "🔑 <b>Вхід e-Consul</b>\n\nНатисніть кнопку на телефоні, відкриється monobank — підтвердіть вхід. Посилання діє кілька хвилин; якщо monobank напише «запит застарів», натисніть «Нове посилання».",
   "econsul.admin.login_done": "✅ Вхід e-Consul підтверджено — перевіряю посольство.",
-  "econsul.admin.login_timeout": "⌛ Вхід e-Consul не підтвердили за {minutes} хв — цю перевірку пропущено, наступна за розкладом."
+  "econsul.admin.login_timeout": "⌛ Вхід e-Consul не підтвердили за {minutes} хв — цю перевірку пропущено, наступна за розкладом.",
+  "econsul.btn.get_link": "🔑 Отримати посилання",
+  "econsul.btn.new_link": "🔄 Нове посилання",
+  "econsul.admin.login_needed": "🔑 <b>Потрібен вхід e-Consul</b>\n\nКоли телефон буде під рукою, натисніть «Отримати посилання» — за пів хвилини тут з’явиться кнопка входу через monobank. Посилання діє лише кілька хвилин, тому готую його на ваш запит.\n\nЧекаю {minutes} хв.",
+  "econsul.admin.link_coming": "⏳ Готую посилання для monobank… Зазвичай до хвилини.",
+  "econsul.admin.login_failed": "⚠️ <b>Не вдалося дійти до monobank</b>\n\nПричина: {reason}\n\nСпробуйте ще раз або увійдіть на e-consul.gov.ua вручну.",
+  "econsul.toast.link_coming": "Готую посилання…",
+  "econsul.toast.link_failed": "Не вдалося передати запит розширенню. Перевірте, чи працює приймач check-Wohnung."
 }

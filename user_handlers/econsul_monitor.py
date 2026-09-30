@@ -16,6 +16,8 @@ from statistics import median
 from typing import Dict, Iterable, List, Optional
 from zoneinfo import ZoneInfo
 
+import requests
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
@@ -309,60 +311,91 @@ def _send_admin(bot, key: str, **kwargs) -> bool:
         return False
 
 
-LOGIN_STATUSES = {"login_link", "login_done", "login_timeout"}
+LOGIN_STATUSES = {"login_needed", "login_link", "login_failed", "login_done", "login_timeout"}
+CHECK_WOHNUNG_BASE_URL = os.getenv("CHECK_WOHNUNG_BASE_URL", "http://host.docker.internal:18765").rstrip("/")
 
 
-def _login_keyboard(link: str, lang: str) -> Optional[InlineKeyboardMarkup]:
-    if not link.startswith(("https://", "http://")):
-        return None
-    return InlineKeyboardMarkup([[InlineKeyboardButton(i18n.t("econsul.btn.login", lang), url=link)]])
+def _request_button(login_id: str, key: str, lang: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(i18n.t(key, lang), callback_data=f"econsul:login:{login_id}")
+
+
+def _login_message(status: str, payload: Dict[str, object], login_id: str, lang: str):
+    """Текст і кнопки повідомлення входу для кожного кроку."""
+    minutes = int(payload.get("wait_minutes") or 40)
+    if status == "login_needed":
+        return (
+            i18n.t("econsul.admin.login_needed", lang, minutes=minutes),
+            InlineKeyboardMarkup([[_request_button(login_id, "econsul.btn.get_link", lang)]]),
+        )
+    if status == "login_link":
+        link = str(payload.get("link") or "")
+        text = i18n.t("econsul.admin.login_link", lang)
+        rows = []
+        if link.startswith(("https://", "http://")):
+            rows.append([InlineKeyboardButton(i18n.t("econsul.btn.login", lang), url=link)])
+        else:
+            text += "\n\n<code>" + html.escape(link) + "</code>"
+        rows.append([_request_button(login_id, "econsul.btn.new_link", lang)])
+        return text, InlineKeyboardMarkup(rows)
+    if status == "login_failed":
+        return (
+            i18n.t("econsul.admin.login_failed", lang, reason=html.escape(str(payload.get("reason") or "—"))),
+            InlineKeyboardMarkup([[_request_button(login_id, "econsul.btn.get_link", lang)]]),
+        )
+    key = "econsul.admin.login_done" if status == "login_done" else "econsul.admin.login_timeout"
+    return i18n.t(key, lang, minutes=minutes), None
 
 
 def _handle_login(bot, state: EconsulState, status: str, payload: Dict[str, object]) -> None:
-    """Одне повідомлення адміну на спробу входу: кнопка monobank, далі правки.
+    """Одне повідомлення адміну на спробу входу, далі тільки правки.
 
-    Розширення доходить до сторінки monobank само; адміну лишається натиснути
-    кнопку на телефоні й підтвердити вхід у застосунку.
+    Запит BankID живе лічені хвилини, тож розширення йде до monobank лише коли
+    адмін натисне «Отримати посилання» - і посилання приходить свіжим.
     """
     if not ADMIN_ID:
         return
     lang = i18n.get_lang(ADMIN_ID)
     login_id = str(payload.get("login_id") or "")
-    if status == "login_link":
-        link = str(payload.get("link") or "")
-        minutes = int(payload.get("wait_minutes") or 30)
-        text = i18n.t("econsul.admin.login_link", lang, minutes=minutes)
-        keyboard = _login_keyboard(link, lang)
-        if keyboard is None:
-            text += "\n\n<code>" + html.escape(link) + "</code>"
-        if state.login_id == login_id and state.login_message_id:
-            try:
-                bot.edit_message_text(
-                    text, chat_id=ADMIN_ID, message_id=state.login_message_id,
-                    parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=True,
-                )
-                return
-            except Exception:
+    text, keyboard = _login_message(status, payload, login_id, lang)
+    same_login = state.login_id == login_id and state.login_message_id
+    edited = False
+    if same_login:
+        try:
+            bot.edit_message_text(
+                text, chat_id=ADMIN_ID, message_id=state.login_message_id,
+                parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=True,
+            )
+            edited = True
+        except Exception as exc:
+            if "Message is not modified" in str(exc):
+                edited = True
+            else:
                 logger.exception("Could not update the e-Consul login message")
+    if not edited and status in ("login_needed", "login_link", "login_failed"):
         try:
             message = bot.send_message(
                 ADMIN_ID, text, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=True,
             )
         except Exception:
-            logger.exception("Could not send the e-Consul login link")
+            logger.exception("Could not send the e-Consul login message")
             return
         state.login_id = login_id
         state.login_message_id = getattr(message, "message_id", None)
-        return
-    key = "econsul.admin.login_done" if status == "login_done" else "econsul.admin.login_timeout"
-    text = i18n.t(key, lang, minutes=int(payload.get("wait_minutes") or 30))
-    if state.login_id == login_id and state.login_message_id:
-        try:
-            bot.edit_message_text(text, chat_id=ADMIN_ID, message_id=state.login_message_id, parse_mode="HTML")
-        except Exception:
-            logger.exception("Could not close the e-Consul login message")
-    state.login_id = None
-    state.login_message_id = None
+    if status in ("login_done", "login_timeout"):
+        state.login_id = None
+        state.login_message_id = None
+
+
+def request_login_link(login_id: str) -> bool:
+    """Передає розширенню (через приймач check-Wohnung) «йди по посилання»."""
+    try:
+        response = requests.post(
+            f"{CHECK_WOHNUNG_BASE_URL}/api/econsul/login-request", json={"login_id": login_id}, timeout=10,
+        )
+        return response.ok
+    except requests.RequestException:
+        logger.exception("Could not ask the extension for an e-Consul login link")
+        return False
 
 
 def _record_snapshot(session, services: List[dict], now: datetime) -> None:
@@ -708,6 +741,19 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         query.answer(i18n.t("econsul.not_allowed", lang), show_alert=True)
         return
     data = query.data
+    if data.startswith("econsul:login:"):
+        if user.id != ADMIN_ID:
+            query.answer()
+            return
+        ok = request_login_link(data[len("econsul:login:"):])
+        query.answer(i18n.t("econsul.toast.link_coming" if ok else "econsul.toast.link_failed", lang),
+                     show_alert=not ok)
+        if ok:
+            try:
+                query.edit_message_text(i18n.t("econsul.admin.link_coming", lang), parse_mode="HTML")
+            except Exception:
+                logger.exception("Could not mark the e-Consul login message as pending")
+        return
     picked = context.user_data.setdefault("econsul_pick", set())
 
     if data == "econsul:menu":
