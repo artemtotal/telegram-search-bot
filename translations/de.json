@@ -408,7 +408,7 @@
   "econsul.admin.login_timeout": "⌛ Die e-Consul-Anmeldung wurde nicht innerhalb von {minutes} Min. bestätigt — diese Prüfung entfällt, die nächste folgt laut Plan.",
   "econsul.btn.get_link": "🔑 Link anfordern",
   "econsul.btn.new_link": "🔄 Neuer Link",
-  "econsul.admin.login_needed": "🔑 <b>e-Consul-Anmeldung nötig</b>\n\nWenn Sie das Handy zur Hand haben, tippen Sie auf „Link anfordern“ — nach etwa einer halben Minute erscheint hier die Anmeldung über monobank. Der Link gilt nur wenige Minuten, deshalb erstelle ich ihn erst auf Ihre Anfrage.\n\nIch warte {minutes} Min.",
+  "econsul.admin.login_needed": "🔑 <b>e-Consul-Anmeldung nötig</b>\n\nDie Botschafts-Prüfung pausiert, bis Sie sich anmelden. Wenn Sie kurz Zeit und das Handy zur Hand haben, tippen Sie auf „Link anfordern“: nach etwa einer halben Minute erscheint hier die Anmeldung über monobank, danach läuft die Prüfung sofort.\n\nDiese Nachricht wartet, so lange es nötig ist — weitere Erinnerungen kommen nicht.",
   "econsul.admin.link_coming": "⏳ Ich erstelle den monobank-Link… meist unter einer Minute.",
   "econsul.admin.login_failed": "⚠️ <b>monobank nicht erreicht</b>\n\nGrund: {reason}\n\nVersuchen Sie es erneut oder melden Sie sich manuell auf e-consul.gov.ua an.",
   "econsul.toast.link_coming": "Link wird erstellt…",
