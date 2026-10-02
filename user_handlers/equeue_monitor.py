@@ -1,20 +1,23 @@
 """Private subscriptions for Berlin DP Document e-queue availability."""
 
+import hashlib
 import html
 import logging
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from collections import Counter
+from datetime import datetime, time as dtime, timedelta, timezone
 from typing import Dict, Iterable, Optional, Tuple
 from zoneinfo import ZoneInfo
 
+import pytz
 import requests
 from telegram.error import BadRequest
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
 
 import i18n
-from database import DBSession, EqueueAvailableSighting, EqueueStatus, EqueueSubscription
+from database import DBSession, EqueueAvailableSighting, EqueueCheckLog, EqueueStatus, EqueueSubscription
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +40,15 @@ STALE_AFTER = timedelta(hours=int(os.getenv("PASSPORT_EQUEUE_STALE_HOURS", "24")
 STALE_ALERT_COOLDOWN = timedelta(hours=12)
 BROWSER_ONLY = os.getenv("PASSPORT_EQUEUE_BROWSER_ONLY", "1") == "1"
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
+# Звіт тестових тижнів: розширення перевіряє сайт раз на 15 хвилин, звідси
+# очікувана кількість перевірок; сам звіт приходить адміну на 7-й і 14-й день.
+CHECK_INTERVAL = timedelta(minutes=15)
+REPORT_TIME = dtime(21, 0, tzinfo=pytz.timezone("Europe/Berlin"))
+REPORT_DAYS = (7, 14)
+REPORT_APPEARANCES_SHOWN = 15
+# Відписка так скоро після сповіщення - найімовірніше людина записалась
+# (або сповіщення виявилось хибним); точніше бот знати не може.
+UNSUBSCRIBE_AFTER_NOTIFY = timedelta(hours=1)
 
 
 def utc_now() -> datetime:
@@ -493,7 +505,8 @@ def _notify_admin_stale(bot) -> None:
         session.close()
 
 
-def _notify_available(bot, subscribers, result: Dict[str, object]) -> None:
+def _notify_available(bot, subscribers, result: Dict[str, object]) -> int:
+    sent = 0
     for user_id, last_status, _last_notified_at in subscribers:
         if last_status == "available":
             continue
@@ -515,13 +528,57 @@ def _notify_available(bot, subscribers, result: Dict[str, object]) -> None:
                 disable_web_page_preview=True,
                 reply_markup=keyboard,
             )
+            sent += 1
         except Exception:
             logger.exception("Could not notify e-queue subscriber %s", user_id)
+    return sent
+
+
+def _log_check(status: str, reason: str, text: str, subscribers: int, notified: int) -> None:
+    normalized = re.sub(r"\s+", " ", text or "").strip()
+    page_hash = hashlib.sha1(normalized.encode("utf-8")).hexdigest() if normalized else None
+    session = DBSession()
+    try:
+        previous = (
+            session.query(EqueueCheckLog.page_hash)
+            .filter(EqueueCheckLog.service == SERVICE_KEY, EqueueCheckLog.page_hash.isnot(None))
+            .order_by(EqueueCheckLog.checked_at.desc())
+            .first()
+        )
+        changed = page_hash is not None and (previous is None or previous[0] != page_hash)
+        session.add(EqueueCheckLog(
+            service=SERVICE_KEY,
+            checked_at=utc_now(),
+            status=status,
+            reason=str(reason or "")[:500],
+            page_hash=page_hash,
+            page_text=str(text)[:4000] if changed else None,
+            subscribers=subscribers,
+            notified=notified,
+        ))
+        session.commit()
+    except Exception:
+        # Журнал - для аналізу, він не має ламати сповіщення підписників.
+        logger.exception("Could not log the DP Document check")
+    finally:
+        session.close()
 
 
 def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
     if payload.get("source") != SERVICE_KEY:
         return {"ok": False, "error": "unsupported source"}
+    response = _handle_browser_result(bot, payload)
+    _log_check(
+        response["status"],
+        str(payload.get("reason") or ""),
+        str(payload.get("text_sample") or ""),
+        int(response.get("subscribers") or 0),
+        int(response.pop("sent", 0)),
+    )
+    return response
+
+
+def _handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
     subscribers = _active_subscribers()
     status = str(payload.get("status") or "unknown")
     result = {
@@ -549,9 +606,9 @@ def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
         _update_status_for_active(status, notified=False)
         return {"ok": True, "subscribers": 0, "status": status}
     if result["available"]:
-        _notify_available(bot, subscribers, result)
+        sent = _notify_available(bot, subscribers, result)
         _update_status_for_active(status, notified=True)
-        return {"ok": True, "subscribers": len(subscribers), "status": status, "notified": True}
+        return {"ok": True, "subscribers": len(subscribers), "status": status, "notified": True, "sent": sent}
     _update_status_for_active(status, notified=False)
     return {"ok": True, "subscribers": len(subscribers), "status": status, "notified": False}
 
@@ -577,6 +634,201 @@ def check_job(context: CallbackContext) -> None:
 
     _notify_available(context.bot, subscribers, result)
     _update_status_for_active(status, notified=True)
+
+
+def _to_berlin(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc).astimezone(BERLIN_TZ)
+
+
+def _top_counts(counter: Counter, fmt, limit: int = 8) -> str:
+    items = sorted(counter.items(), key=lambda item: (-item[1], item[0]))[:limit]
+    return ", ".join(f"{fmt(key)} — {count}" for key, count in sorted(items))
+
+
+def _appearances(rows, state: Optional[str]) -> list:
+    """Моменти, коли форма запису з'явилась після "всі місця зайняті".
+
+    Cloudflare та інші збої стан не міняють: форма, яка була до блокування й
+    лишилась після нього, - це та сама поява, а не нова. Кінець появи - перша
+    перевірка з "місць немає", тож тривалість - оцінка зверху з точністю до
+    інтервалу перевірок.
+    """
+    found = []
+    for row in rows:
+        if row.status not in ("available", "none"):
+            continue
+        if row.status == "available" and state == "none":
+            found.append([row.checked_at, None])
+        elif row.status == "none" and state == "available" and found and found[-1][1] is None:
+            found[-1][1] = row.checked_at
+        state = row.status
+    return found
+
+
+def _blocked_episodes(rows) -> list:
+    episodes = []
+    start = None
+    for row in rows:
+        if row.status == "blocked":
+            start = start or row.checked_at
+        elif start is not None:
+            episodes.append((start, row.checked_at))
+            start = None
+    if start is not None:
+        episodes.append((start, rows[-1].checked_at))
+    return episodes
+
+
+def monitoring_report_text(lang: str = "uk", since: Optional[datetime] = None, until: Optional[datetime] = None) -> str:
+    until = until or utc_now()
+    session = DBSession()
+    try:
+        if since is None:
+            first = (
+                session.query(EqueueCheckLog.checked_at)
+                .filter(EqueueCheckLog.service == SERVICE_KEY)
+                .order_by(EqueueCheckLog.checked_at)
+                .first()
+            )
+            if first is None:
+                return i18n.t("equeue.report.empty", lang)
+            since = first[0]
+        rows = (
+            session.query(EqueueCheckLog)
+            .filter(
+                EqueueCheckLog.service == SERVICE_KEY,
+                EqueueCheckLog.checked_at >= since,
+                EqueueCheckLog.checked_at <= until,
+            )
+            .order_by(EqueueCheckLog.checked_at)
+            .all()
+        )
+        if not rows:
+            return i18n.t("equeue.report.empty", lang)
+        before = (
+            session.query(EqueueCheckLog.status)
+            .filter(
+                EqueueCheckLog.service == SERVICE_KEY,
+                EqueueCheckLog.checked_at < since,
+                EqueueCheckLog.status.in_(("available", "none")),
+            )
+            .order_by(EqueueCheckLog.checked_at.desc())
+            .first()
+        )
+        subs = session.query(EqueueSubscription).filter(EqueueSubscription.service == SERVICE_KEY).all()
+    finally:
+        session.close()
+
+    weekdays = i18n.t("equeue.report.weekdays", lang).split(",")
+    statuses = Counter(row.status for row in rows)
+    expected = max(1, int((until - since) / CHECK_INTERVAL))
+    parts = [i18n.t(
+        "equeue.report.title", lang,
+        start=_format_berlin_time(since), end=_format_berlin_time(until),
+        days=max(1, round((until - since).total_seconds() / 86400)),
+    )]
+
+    in_period = lambda value: value is not None and since <= value <= until
+    left = [row for row in subs if not row.active and in_period(row.updated_at)]
+    parts.append(i18n.t(
+        "equeue.report.subscribers", lang,
+        active=sum(1 for row in subs if row.active),
+        ever=len({row.user_id for row in subs}),
+        new=sum(1 for row in subs if in_period(row.created_at)),
+        left=len(left),
+        left_after_notify=sum(
+            1 for row in left
+            if row.last_notified_at is not None
+            and timedelta(0) <= row.updated_at - row.last_notified_at <= UNSUBSCRIBE_AFTER_NOTIFY
+        ),
+        sent=sum(row.notified or 0 for row in rows),
+    ))
+
+    other = len(rows) - statuses["none"] - statuses["available"] - statuses["blocked"]
+    parts.append(i18n.t(
+        "equeue.report.checks", lang,
+        total=len(rows), expected=expected, coverage=min(100, round(100 * len(rows) / expected)),
+        none=statuses["none"], available=statuses["available"], blocked=statuses["blocked"],
+        blocked_pct=round(100 * statuses["blocked"] / len(rows)), other=other,
+    ))
+
+    episodes = _blocked_episodes(rows)
+    if episodes:
+        blocked_hours = Counter(_to_berlin(row.checked_at).hour for row in rows if row.status == "blocked")
+        parts.append(i18n.t(
+            "equeue.report.blocked", lang,
+            episodes=len(episodes),
+            hours=round(sum((end - start).total_seconds() for start, end in episodes) / 3600, 1),
+            hours_top=_top_counts(blocked_hours, lambda hour: f"{hour:02d}:00"),
+        ))
+    else:
+        parts.append(i18n.t("equeue.report.blocked_none", lang))
+
+    found = _appearances(rows, before[0] if before else None)
+    if found:
+        starts = [_to_berlin(start) for start, _end in found]
+        parts.append(i18n.t(
+            "equeue.report.appearances", lang,
+            count=len(found),
+            by_hour=_top_counts(Counter(value.hour for value in starts), lambda hour: f"{hour:02d}–{(hour + 1) % 24:02d}", limit=24),
+            by_weekday=_top_counts(Counter(value.weekday() for value in starts), lambda day: weekdays[day], limit=7),
+        ))
+        items = []
+        for start, end in found[-REPORT_APPEARANCES_SHOWN:]:
+            local = _to_berlin(start)
+            when = f"{weekdays[local.weekday()]} {local.strftime('%d.%m %H:%M')}"
+            if end is None:
+                items.append(i18n.t("equeue.report.item_open", lang, when=when))
+            else:
+                minutes = int((end - start).total_seconds() // 60)
+                items.append(i18n.t("equeue.report.item_closed", lang, when=when, minutes=minutes))
+        parts.append(i18n.t("equeue.report.recent", lang, items="\n".join(items)))
+    else:
+        parts.append(i18n.t("equeue.report.appearances_none", lang))
+
+    parts.append(i18n.t("equeue.report.page_changes", lang, count=sum(1 for row in rows if row.page_text)))
+    return "\n\n".join(parts)
+
+
+def stats_command(update: Update, context: CallbackContext) -> None:
+    user = update.effective_user
+    if not user or not ADMIN_ID or user.id != ADMIN_ID:
+        return
+    lang = i18n.get_lang(user.id)
+    since = None
+    if context.args and context.args[0].isdigit():
+        since = utc_now() - timedelta(days=int(context.args[0]))
+    update.effective_message.reply_text(
+        monitoring_report_text(lang, since=since), parse_mode="HTML", disable_web_page_preview=True,
+    )
+
+
+def report_job(context: CallbackContext) -> None:
+    """Звіт тестових тижнів сам приходить адміну на 7-й і 14-й день журналу."""
+    if not ADMIN_ID:
+        return
+    session = DBSession()
+    try:
+        first = (
+            session.query(EqueueCheckLog.checked_at)
+            .filter(EqueueCheckLog.service == SERVICE_KEY)
+            .order_by(EqueueCheckLog.checked_at)
+            .first()
+        )
+    finally:
+        session.close()
+    if first is None:
+        return
+    days = (_to_berlin(utc_now()).date() - _to_berlin(first[0]).date()).days
+    if days not in REPORT_DAYS:
+        return
+    try:
+        context.bot.send_message(
+            ADMIN_ID, monitoring_report_text(i18n.get_lang(ADMIN_ID)),
+            parse_mode="HTML", disable_web_page_preview=True,
+        )
+    except Exception:
+        logger.exception("Could not send the DP Document monitoring report")
 
 
 def handle_callback(update: Update, context: CallbackContext) -> None:
@@ -617,3 +869,4 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
 
 command_handler = CommandHandler("dps_document", show_menu, Filters.chat_type.private)
 callback_handler = CallbackQueryHandler(handle_callback, pattern=r"^equeue:")
+stats_handler = CommandHandler("dps_stats", stats_command, Filters.chat_type.private)

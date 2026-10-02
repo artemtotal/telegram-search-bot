@@ -107,6 +107,8 @@ if os.getenv("QDRANT_UPDATER_ENABLED", "0") == "1":
     job.run_repeating(run_qdrant_update, interval=3600, first=300)
 
 job.run_repeating(equeue_monitor.check_job, interval=900, first=90)
+# DP Document test weeks: the check-log report goes to the admin on day 7 and 14.
+job.run_daily(equeue_monitor.report_job, time=equeue_monitor.REPORT_TIME)
 if os.getenv("PROPOTSDAM_CHECK_ENABLED", "0") == "1":
     job.run_repeating(
         propotsdam_monitor.check_job,
@@ -185,6 +187,7 @@ dispatcher.add_handler(msg_ai.handler)
 dispatcher.add_handler(faq_admin.handler)
 dispatcher.add_handler(equeue_monitor.command_handler)
 dispatcher.add_handler(equeue_monitor.callback_handler)
+dispatcher.add_handler(equeue_monitor.stats_handler)
 dispatcher.add_handler(econsul_monitor.command_handler)
 dispatcher.add_handler(econsul_monitor.callback_handler)
 dispatcher.add_handler(housing_monitor.command_handler)

@@ -175,6 +175,30 @@ class EqueueAvailableSighting(Base):
     reason = Column(TEXT)
 
 
+class EqueueCheckLog(Base):
+    """Кожна браузерна перевірка ДП Документ цілком - для тестових тижнів.
+
+    `EqueueStatus` тримає лише останній результат, а `EqueueAvailableSighting`
+    лише знахідки, тож по них не видно ні моментів, коли форма запису
+    з'являється після "всі місця зайняті", ні того, як часто перевірка
+    впирається в Cloudflare. Звідси звіт (`/dps_stats`) і вибір розкладу.
+    """
+
+    __tablename__ = 'equeue_check_log'
+
+    id = Column(INTEGER, primary_key=True)
+    service = Column(TEXT, nullable=False, index=True)
+    checked_at = Column(DATETIME, nullable=False, index=True)
+    status = Column(TEXT, nullable=False)
+    reason = Column(TEXT)
+    page_hash = Column(TEXT)
+    # Текст сторінки пишеться лише коли він змінився відносно попередньої
+    # перевірки: оголошення центру видно, а база не росте на 2 КБ щочверть години.
+    page_text = Column(TEXT)
+    subscribers = Column(INTEGER)
+    notified = Column(INTEGER)
+
+
 class EconsulState(Base):
     """Останній стан перевірки e-Consul (посольство України в Берліні).
 
