@@ -874,6 +874,109 @@ class AiProviderTests(unittest.TestCase):
 
         self.assertEqual([item["id"] for item in grouped], [1, 2, 3, 4, 99])
 
+    def _gastro_session(self):
+        from datetime import datetime, timedelta
+        from database import Base, Chat, Message, User
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        session = sessionmaker(bind=engine)()
+        session.add(Chat(id=-1001, title="test", enable=True))
+        for user_id, name in ((1, "Irina"), (2, "valdajko"), (3, "Mers"), (4, "Svit")):
+            session.add(User(id=user_id, fullname=name, username=name))
+        start = datetime(2025, 2, 18, 14, 0)
+
+        def add(_id, msg_id, from_id, minutes, text, reply_to=None):
+            session.add(Message(
+                _id=_id, id=msg_id, from_id=from_id, from_chat=-1001,
+                date=start + timedelta(minutes=minutes),
+                link=f"https://t.me/c/1/{msg_id}",
+                text=text, text_lower=text.lower(), reply_to_msg_id=reply_to,
+            ))
+
+        add(10, 100, 1, 0, "Добрый день. Кто то может порекомендовать гастроэнтеролога?", 9)
+        add(11, 101, 4, 5, "Квартира сдается, кауцион около 3000", 9)
+        add(12, 102, 3, 10, "Пасажирські перевезення Україна — Німеччина, рекомендації клієнтів, "
+                            "+380990915248", 9)
+        add(13, 103, 1, 20, "Дякую", 100)
+        add(14, 104, 2, 45, "Praxis Hannah und Markus Mailahn\nК Маркусу записывайтесь. "
+                            "Говорит на английском.", 9)
+        add(15, 105, 4, 50, "Рекомендую доктора Иванова", 777)
+        # Explicit reply far outside the neighbour window.
+        add(90, 190, 4, 60 * 24 * 3, "https://praxis-mailahn.de/\nХороший лікар, "
+                                     "розмовляють тільки німецькою.", 100)
+        add(91, 191, 4, 60, "Stellenangebot: Gastronomie, wir suchen Kellner?", 9)
+        session.commit()
+        return engine, session
+
+    def test_answers_under_question_found_without_specialty_word(self):
+        engine, session = self._gastro_session()
+        try:
+            answers = msg_ai._search_answers_to_questions(
+                session, [-1001], "гастроентеролог",
+                ["гастроентеролог"],
+            )
+        finally:
+            session.close()
+            engine.dispose()
+
+        # Ukrainian spelling finds the Russian question; the replies under it
+        # carry no specialty word. The carrier ad, the asker's thanks and a
+        # reply to another conversation are not answers.
+        self.assertEqual(sorted(item["id"] for item in answers), [14, 90])
+        for item in answers:
+            self.assertIn("гастроэнтеролога", item["question"])
+
+    def test_keyword_search_matches_ukrainian_and_russian_spelling(self):
+        engine, session = self._gastro_session()
+        try:
+            ids = msg_ai._search_keyword_ids(session, [-1001], [], ["гастроентеролог"])
+        finally:
+            session.close()
+            engine.dispose()
+
+        self.assertEqual(ids, [10])
+
+    def test_specialty_answer_matches_topic_through_its_question(self):
+        answer = {"text": "Praxis Hannah und Markus Mailahn"}
+        self.assertTrue(msg_ai._is_service_provider_query("гастроентеролог"))
+        self.assertFalse(msg_ai._matches_query_topic("гастроентеролог", answer))
+        answer["question"] = "Шукаю гастроентеролога"
+        self.assertTrue(msg_ai._matches_query_topic("гастроентеролог", answer))
+        self.assertFalse(msg_ai._matches_query_topic(
+            "гастроентеролог", {"text": "Stellenangebot Gastronomie, гастрономія"},
+        ))
+
+    def test_context_shows_which_question_an_answer_replies_to(self):
+        context = msg_ai._build_context([{
+            "id": 1, "user": "valdajko", "date": "2025-02-18 15:08",
+            "text": "Praxis Mailahn", "link": "https://t.me/c/1/104",
+            "question": "Кто может порекомендовать гастроэнтеролога?",
+        }])
+
+        self.assertIn(
+            "(відповідь на питання: «Кто может порекомендовать гастроэнтеролога?») "
+            "Praxis Mailahn",
+            context,
+        )
+
+    def test_sources_list_starts_with_messages_the_answer_cites(self):
+        messages = [
+            {"date": f"2026-01-0{i}", "link": f"https://t.me/c/1/{i}"} for i in range(1, 8)
+        ]
+        answer = "Praxis Mailahn →https://t.me/c/1/7"
+
+        result = msg_ai._normalize_source_line(answer, messages)
+
+        self.assertIn("Джерела з чату:\n• 2026-01-07 — https://t.me/c/1/7", result)
+
 
 if __name__ == "__main__":
     unittest.main()

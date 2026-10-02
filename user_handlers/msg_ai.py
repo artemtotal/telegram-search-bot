@@ -132,6 +132,11 @@ SYSTEM_PROMPT_CHAT = """
   • Конкретні контакти та посилання
 - НЕ подавай як відповідь повідомлення де люди ПИТАЮТЬ "хто робить?", "порадьте" — це не контакти!
 - Якщо в контексті є і питання, і відповідь — наводь ТІЛЬКИ відповідь/пропозицію.
+- Позначка «(відповідь на питання: «...»)» означає, що це порада у відповідь на чуже
+  питання: рекомендація стосується теми того питання, навіть якщо спеціальність
+  у самій відповіді не названа.
+- Якщо одного лікаря/майстра/праксис радять кілька різних людей — назви його першим
+  і скажи, що його радили неодноразово; додай важливі деталі (мова, адреса, як записатися).
 
 КРИТИЧНО ВАЖЛИВО — щорічні/повторювані події (свята, фестивалі, ярмарки):
 - Перед відповіддю ОБОВ'ЯЗКОВО звір рік повідомлення з поточною датою ({today}).
@@ -373,6 +378,10 @@ _SERVICE_QUERY_HINTS = [
     "кардіолог", "кардиолог", "психолог", "психотерап", "логопед", "лор ",
     "узи", "узд", "масаж", "массаж", "физиотерап", "фізіотерап", "мануал",
     "костоправ", "остеопат", "медсестр", "медбрат", "капельниц",
+    "гастроэ", "гастрое", "gastroent", "колоноскоп", "гастроскоп", "фгс", "ендокринолог",
+    "эндокринолог", "уролог", "алерголог", "аллерголог", "ревматолог",
+    "пульмонолог", "нефролог", "онколог", "психіатр", "психиатр", "hno",
+    "arzt", "ärzt", "praxis", "праксис",
     # ── красота / уход ─────────────────────────────────────────────────
     "манікюр", "маникюр", "педикюр", "брів", "бров", "вій", "ресниц",
     "косметолог", "візаж", "визаж", "макіяж", "макияж", "епіляц", "депіляц",
@@ -466,6 +475,7 @@ _RECOMMEND_PATTERNS = [
     r"є\s+(праксис|praxis|хорош)",
     r"есть\s+(праксис|praxis|хорош)",
     r"можете\s+(звернутись|обратиться|пойти|записатись)",
+    r"записуйтесь|записывайтесь|запишіться|запишитесь",
     r"напишіть\s+(йому|їй|в|у)",
     r"контакт\w*\s+(стоматолог|врач|лікар|майстер|перукар)",
 ]
@@ -490,7 +500,9 @@ _MEDICAL_TOPIC_RE = re.compile(
     r"педиатр|ортопед|дерматолог|гінеколог|гинеколог|окуліст|окулист|хірург|"
     r"хирург|невролог|кардіолог|кардиолог|психолог|психотерап|логопед|"
     r"масаж|массаж|физиотерап|фізіотерап|мануал|костоправ|остеопат|"
-    r"praxis|праксис|клінік|клиник|медсестр|медбрат|arzt|ärzt)",
+    r"praxis|праксис|клінік|клиник|медсестр|медбрат|arzt|ärzt|гастро(?!ном|паб)|gastro(?!nom)|"
+    r"колоноскоп|гастроскоп|фгс|[еэ]ндокринолог|уролог|ал+ерголог|ревматолог|"
+    r"пульмонолог|нефролог|онколог|психіатр|психиатр|\bлор\b|\bhno\b)",
     re.IGNORECASE,
 )
 _BEAUTY_TOPIC_RE = re.compile(
@@ -561,6 +573,14 @@ _SPECIFIC_TOPIC_FAMILIES = [
     (_topic_re(r"(хірург|хирург)"), _topic_re(r"(хірург|хирург|chirurg)")),
     (_topic_re(r"(невролог)"), _topic_re(r"(невролог|neurolog)")),
     (_topic_re(r"(кардіолог|кардиолог)"), _topic_re(r"(кардіолог|кардиолог|kardiolog)")),
+    (_topic_re(r"(гастро(?!ном|паб)|gastro(?!nom)|колоноскоп|гастроскоп|\bфгс|\bфгдс|[еэ]ндоскоп)"),
+     _topic_re(r"(гастро(?!ном|паб)|gastro(?!nom)|колоноскоп|koloskop|гастроскоп|\bфгс|\bфгдс|[еэ]ндоскоп|endoskop)")),
+    (_topic_re(r"([еэ]ндокринолог|endokrinolog)"), _topic_re(r"([еэ]ндокринолог|endokrinolog)")),
+    (_topic_re(r"(уролог|urolog)"), _topic_re(r"(уролог|urolog)")),
+    (_topic_re(r"(\bлор\b|\bhno\b|отоларинголог)"), _topic_re(r"(\bлор\b|\bhno\b|отоларинголог)")),
+    (_topic_re(r"(ал+ерголог|allergolog)"), _topic_re(r"(ал+ерголог|allergolog)")),
+    (_topic_re(r"(ревматолог|rheumatolog)"), _topic_re(r"(ревматолог|rheumatolog)")),
+    (_topic_re(r"(психіатр|психиатр|psychiat)"), _topic_re(r"(психіатр|психиатр|psychiat)")),
     # Beauty specialties
     (_topic_re(r"(манікюр|маникюр|педикюр|нігт|ногт)"),
      _topic_re(r"(манікюр|маникюр|педикюр|нігт|ногт|nail)")),
@@ -612,7 +632,9 @@ _HAIR_SERVICE_KEYWORDS = [
 
 def _matches_query_topic(query: str, msg: Dict) -> bool:
     """Keep provider offers inside the service family requested by the user."""
-    text = msg.get("text") or ""
+    # A reply such as "Praxis Mailahn, говорит на английском" never names the
+    # specialty; the question it answers does.
+    text = f"{msg.get('question') or ''}\n{msg.get('text') or ''}"
     if _is_carrier_query(query):
         return bool(_CARRIER_TOPIC_RE.search(text))
     if _is_hair_query(query):
@@ -821,6 +843,152 @@ def _search_provider_offers(session, chat_ids: List[int], query: str,
     return list(newest_by_author.values())[:result_limit]
 
 
+# Answers sit below the question: explicit replies (stored since July 2026)
+# or, in older history, the next few messages of the same thread.
+ANSWER_WINDOW_ROWS = 30
+ANSWER_WINDOW_HOURS = 24
+# Real answers are short; long neighbours are digests and ads.
+ANSWER_WINDOW_MAX_CHARS = 600
+
+_QUESTION_RE = re.compile(
+    r"(\?|\bищу\b|\bищем\b|\bшукаю\b|\bшукаємо\b|\bнужн|\bпотрібн|подска|підказ|"
+    r"підкаж|порад|посовет|порекоменд|кто\s+(?:знает|может)|хто\s+(?:знає|може)|"
+    r"kennt\s+jemand|\bsuche\b)",
+    re.IGNORECASE,
+)
+
+# A neighbouring message counts as an answer only if it reads like advice or
+# experience, not like an unrelated ad that happened to land in the window.
+_ANSWER_HINT_RE = re.compile(
+    r"(доктор|dr\.|praxis|праксис|лікар|врач|клінік|клиник|klinik|arzt|ärzt|"
+    r"рекоменд|советую|раджу|порадж|ходил|ходила|ходим|ходили|ходжу|хожу|"
+    r"записал|записув|записыв|запиш|звернітьс|обратитесь|"
+    r"у\s+нас\s+(?:був|була|был)|нам\s+(?:допом|помог))",
+    re.IGNORECASE,
+)
+
+_OTHER_SERVICE_RES = (
+    _CARRIER_TOPIC_RE, _HAIR_TOPIC_RE, _FOOD_TOPIC_RE, _AUTO_TOPIC_RE,
+    _PHOTO_TOPIC_RE, _CLEANING_TOPIC_RE, _TUTOR_TOPIC_RE,
+)
+
+
+def _is_foreign_service_post(query: str, text: str) -> bool:
+    """A carrier or bakery ad posted under a doctor question is not an answer."""
+    return any(
+        topic_re.search(text) and not topic_re.search(query or "")
+        for topic_re in _OTHER_SERVICE_RES
+    ) and not _matches_query_topic(query, {"text": text})
+
+
+def _search_answers_to_questions(session, chat_ids: List[int], query: str,
+                                 terms: List[str], question_limit: int = 60,
+                                 per_term: int = 80,
+                                 deadline: Optional[float] = None) -> List[Dict]:
+    """Collect what people answered under earlier questions on the same topic.
+
+    Recommendations like "Praxis Mailahn, говорит по-английски" rarely repeat
+    the specialty the asker named, so text search alone never finds them.
+    Each returned answer carries the question text under "question".
+    """
+    terms = [t for t in dict.fromkeys(terms) if t and len(t) >= 3][:12]
+    if not chat_ids or not terms:
+        return []
+
+    base_q = _exclude_bot_address(
+        session.query(Message)
+        .filter(Message.from_chat.in_(chat_ids))
+        .filter(Message.text.isnot(None))
+        .filter(Message.text != "")
+    )
+    questions: Dict[int, Message] = {}
+    for term in terms:
+        if deadline is not None and time.monotonic() >= deadline:
+            logger.warning("Answer search time budget exhausted at term %r", term)
+            break
+        rows = (
+            base_q.filter(_TL.like(_like_pattern(term)))
+            .order_by(Message.date.desc())
+            .limit(per_term)
+            .all()
+        )
+        for row in rows:
+            text = row.text or ""
+            if (
+                row._id not in questions
+                and _QUESTION_RE.search(text)
+                and _matches_query_topic(query, {"text": text})
+            ):
+                questions[row._id] = row
+    ordered = sorted(questions.values(), key=lambda m: m.date, reverse=True)[:question_limit]
+    if not ordered:
+        return []
+
+    explicit: Dict[tuple, List] = {}
+    ids_by_chat: Dict[int, set] = {}
+    for question in ordered:
+        ids_by_chat.setdefault(question.from_chat, set()).add(question.id)
+    for chat_id, ids in ids_by_chat.items():
+        rows = (
+            session.query(Message, User)
+            .outerjoin(User, Message.from_id == User.id)
+            .filter(Message.from_chat == chat_id)
+            .filter(Message.reply_to_msg_id.in_(ids))
+            .filter(Message.text.isnot(None))
+            .filter(Message.text != "")
+            .all()
+        )
+        for msg, user in rows:
+            explicit.setdefault((chat_id, msg.reply_to_msg_id), []).append((msg, user))
+
+    results: List[Dict] = []
+    seen: set = set()
+    for question in ordered:
+        replies = explicit.get((question.from_chat, question.id), [])
+        reply_ids = {msg._id for msg, _ in replies}
+        window = (
+            session.query(Message, User)
+            .outerjoin(User, Message.from_id == User.id)
+            .filter(Message.from_chat == question.from_chat)
+            .filter(Message._id > question._id)
+            .filter(Message._id <= question._id + ANSWER_WINDOW_ROWS)
+            .filter(Message.date <= question.date + timedelta(hours=ANSWER_WINDOW_HOURS))
+            .filter(Message.text.isnot(None))
+            .filter(Message.text != "")
+            .order_by(Message._id)
+            .all()
+        )
+        for msg, user in replies + window:
+            if msg._id in seen or msg.from_id == question.from_id:
+                continue
+            is_reply = msg._id in reply_ids
+            # In a forum chat the window mixes topics; a message replying to
+            # something else is part of another conversation.
+            if not is_reply and msg.reply_to_msg_id not in (None, question.reply_to_msg_id):
+                continue
+            answer = _rows_to_dicts([(msg, user)])[0]
+            text = answer["text"]
+            if _BOT_ADDRESS_RE.search(text) or _is_foreign_service_post(query, text):
+                continue
+            score = _provider_signal_score(answer)
+            if is_reply:
+                if score < 1 and not (score == 0 and len(text) >= 25):
+                    continue
+            elif (
+                score < 1
+                or len(text) > ANSWER_WINDOW_MAX_CHARS
+                or not _ANSWER_HINT_RE.search(text)
+            ):
+                continue
+            answer["question"] = re.sub(r"\s+", " ", question.text or "").strip()[:300]
+            seen.add(msg._id)
+            results.append(answer)
+    logger.info(
+        "Answers under %d topic questions: %d messages", len(ordered), len(results),
+    )
+    return results
+
+
 def _get_anchor_words(query: str) -> List[str]:
     """Words from the original query worth anchoring DB search on."""
     return [
@@ -872,6 +1040,19 @@ def _exclude_bot_address(q):
     return q.filter(~_TL.op("REGEXP")(_BOT_ADDRESS_PATTERN))
 
 
+# Ukrainian and Russian spell the same word with different vowels
+# ("гастроентеролог" / "гастроэнтеролог" / "гастроэнтэролог"), so those
+# vowels become single-character LIKE wildcards inside longer words.
+_VOWEL_VARIANTS_RE = re.compile(r"[еэєёиіыї]")
+
+
+def _like_pattern(word: str) -> str:
+    word = re.sub(r"[%_\\]", "", word.lower())
+    if len(word) >= 6:
+        word = _VOWEL_VARIANTS_RE.sub("_", word)
+    return f"%{word}%"
+
+
 def _search_keyword_ids(session, chat_ids: List[int],
                         keywords: List[str],
                         anchor_words: Optional[List[str]] = None,
@@ -903,7 +1084,7 @@ def _search_keyword_ids(session, chat_ids: List[int],
             if not word:
                 continue
             rows = (
-                base_q.filter(_TL.like(f"%{word.lower()}%"))
+                base_q.filter(_TL.like(_like_pattern(word)))
                 .order_by(Message.date.desc())
                 .limit(per_kw)
                 .all()
@@ -1106,6 +1287,11 @@ def _rrf_merge(ranked_lists: List[List[Dict]], k: int = 60) -> List[Dict]:
     return [first_seen[mid] for mid in ordered]
 
 
+def _question_prefix(msg: Dict, limit: int = 200) -> str:
+    question = msg.get("question")
+    return f"(відповідь на питання: «{question[:limit]}») " if question else ""
+
+
 def _build_context(msgs: List[Dict]) -> str:
     """Deduplicate, truncate by relevance order, present newest-first.
 
@@ -1130,7 +1316,7 @@ def _build_context(msgs: List[Dict]) -> str:
             r"\1\2\3:",
             m["text"],
         )
-        line = f"[{m['date']}] {author}: {text}"
+        line = f"[{m['date']}] {author}: {_question_prefix(m)}{text}"
         if m.get("link"):
             line += f" →{m['link']}"
         if total_len + len(line) > MAX_CONTEXT:
@@ -1150,7 +1336,9 @@ def _normalize_source_line(answer: str, messages: List[Dict]) -> str:
     body = "\n".join(body_lines).rstrip()
     sources = []
     seen_links = set()
-    for message in messages:
+    # Messages the answer actually quotes come first.
+    cited = [m for m in messages if m.get("link") and m["link"] in body]
+    for message in cited + [m for m in messages if m not in cited]:
         link = message.get("link")
         if not link or link in seen_links:
             continue
@@ -1265,6 +1453,10 @@ def _expand_keywords(query: str) -> List[str]:
         "костоправ": ["костоправ", "мануальщик", "остеопат", "физиотерапевт", "массаж"],
         "лікар": ["лікар", "врач", "доктор", "arzt", "praxis"],
         "педіатр": ["педіатр", "педиатр", "kinderarzt", "детский врач", "дитячий лікар"],
+        "гастро": ["гастроентеролог", "gastroenterolog", "гастроскоп", "колоноскоп",
+                   "фгс", "-gastro."],
+        "gastro": ["гастроентеролог", "gastroenterolog", "гастроскоп", "колоноскоп", "-gastro."],
+        "колоноскоп": ["колоноскоп", "koloskopie", "гастроентеролог", "gastroenterolog"],
         # Food / florist
         "торт": ["торт", "торты", "тортики", "кондитер", "выпечка", "випічка", "бенто", "капкейк"],
         "тортики": ["торт", "торты", "тортики", "кондитер", "выпечка", "випічка", "бенто", "капкейк"],
@@ -1346,7 +1538,8 @@ def _rerank(query: str, messages: List[Dict], top_k: int = 25,
             # Protect concrete answers first: phone/link/contact or a strong
             # offer/recommendation. This prevents seeker questions with an
             # unrelated URL inside a dialogue chunk from occupying every slot.
-            is_concrete = has_contact or score >= 6
+            # An answer under a matching question is concrete by construction.
+            is_concrete = has_contact or score >= 6 or bool(message.get("question"))
             (concrete if is_concrete else general).append(message)
         provider_ranked = sorted(
             concrete,
@@ -1394,7 +1587,7 @@ def _rerank(query: str, messages: List[Dict], top_k: int = 25,
     # Limit input to avoid oversized prompts (>150 msgs × 200 chars ≈ ~10k tokens)
     candidates = messages[:150]
     numbered = "\n".join(
-        f"{i}: [{m['date']}] @{m['user']}: {m['text'][:200]}"
+        f"{i}: [{m['date']}] @{m['user']}: {_question_prefix(m, 100)}{m['text'][:200]}"
         for i, m in enumerate(candidates)
     )
     prompt = (
@@ -1689,7 +1882,13 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         # independent retrieval channel.
         author_msgs = []
         offer_msgs = []
+        answer_msgs = []
         if is_provider_query:
+            answer_msgs = _search_answers_to_questions(
+                session, chat_ids, query,
+                anchor_words + _expand_keywords(query),
+                deadline=time.monotonic() + KEYWORD_SEARCH_BUDGET_SECONDS,
+            )
             author_terms = _provider_author_terms(query)
             author_rows = _search_provider_authors(
                 session, chat_ids, author_terms, limit=40,
@@ -1719,8 +1918,10 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         else:
             recent_msgs = _search_recent(session, chat_ids, limit=10)
 
+        # Answers go first so their question-annotated copy wins the dedup.
         ranked_sources = [
-            items for items in (offer_msgs, vec_msgs, keyword_msgs, author_msgs) if items
+            items for items in (answer_msgs, offer_msgs, vec_msgs, keyword_msgs, author_msgs)
+            if items
         ]
         if len(ranked_sources) > 1:
             fused = _rrf_merge(ranked_sources)
@@ -1742,7 +1943,8 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
             return
 
         logger.info(
-            f"Candidates: {len(offer_msgs)} offers + {len(vec_msgs)} vector + "
+            f"Candidates: {len(answer_msgs)} answers + "
+            f"{len(offer_msgs)} offers + {len(vec_msgs)} vector + "
             f"{len(keyword_msgs)} keyword + {len(author_msgs)} author + "
             f"{len(recent_msgs)} recent = {len(all_candidates)}"
         )
