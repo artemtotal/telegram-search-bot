@@ -874,6 +874,22 @@ class AiProviderTests(unittest.TestCase):
 
         self.assertEqual([item["id"] for item in grouped], [1, 2, 3, 4, 99])
 
+    def test_sql_never_uses_regexp_callbacks(self):
+        # A REGEXP filter runs a Python callback inside SQLite; on the shared
+        # StaticPool connection that deadlocked the whole bot (2026-10-04).
+        import re as std_re
+        for relative in ("user_handlers", "user_jobs"):
+            folder = os.path.join(PROJECT_ROOT, relative)
+            for name in os.listdir(folder):
+                if not name.endswith(".py"):
+                    continue
+                with open(os.path.join(folder, name), encoding="utf-8") as source:
+                    code = source.read()
+                self.assertIsNone(
+                    std_re.search(r"""op\(\s*["']REGEXP["']""", code),
+                    f"{relative}/{name} filters SQL with REGEXP",
+                )
+
     def _gastro_session(self):
         from datetime import datetime, timedelta
         from database import Base, Chat, Message, User

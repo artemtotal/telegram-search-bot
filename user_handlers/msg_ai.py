@@ -616,6 +616,17 @@ _PROVIDER_OFFER_PATTERN = (
 )
 
 
+_PROVIDER_OFFER_STEMS = (
+    "допоможу", "помогу", "пропоную", "предлагаю", "надаю", "роблю", "делаю",
+    "виконую", "выполняю", "ремонтирую", "збираю", "собираю", "підключаю",
+    "подключаю", "пишіть", "пишите",
+)
+_CARRIER_OFFER_STEMS = (
+    "перевоз", "перевез", "перевіз", "посыл", "посилк", "пасажир", "пассажир",
+    "нова пошт", "новая почт", "транспорт", "вантаж", "грузоперев",
+)
+
+
 def _is_hair_query(query: str) -> bool:
     return bool(_HAIR_TOPIC_RE.search(query))
 
@@ -813,11 +824,15 @@ def _search_provider_offers(session, chat_ids: List[int], query: str,
     if not chat_ids:
         return []
     offer_pattern = _PROVIDER_OFFER_PATTERN
+    stems = _PROVIDER_OFFER_STEMS
     if _is_carrier_query(query):
         offer_pattern = (
             r"(?i)(?:перевоз|перевез|перевіз|посыл|посилк|пасажир|пассажир|"
             r"нова\s+пошт|новая\s+почт|транспорт|вантаж|грузоперев)"
         )
+        stems = _CARRIER_OFFER_STEMS
+    # LIKE on the pattern's stems narrows the rows in SQL; the exact pattern
+    # is applied here (see _exclude_bot_address for why not REGEXP).
     rows = (
         _exclude_bot_address(
             session.query(Message, User)
@@ -825,12 +840,16 @@ def _search_provider_offers(session, chat_ids: List[int], query: str,
             .filter(Message.from_chat.in_(chat_ids))
             .filter(Message.text.isnot(None))
             .filter(Message.text != "")
-            .filter(_TL.op("REGEXP")(offer_pattern))
+            .filter(or_(*[_TL.like(f"%{stem}%") for stem in stems]))
         )
         .order_by(Message.date.desc())
-        .limit(scan_limit)
+        .limit(scan_limit * 2)
         .all()
     )
+    offer_re = re.compile(offer_pattern)
+    rows = [
+        (msg, user) for msg, user in rows if offer_re.search(msg.text_lower or "")
+    ][:scan_limit]
     row_dicts = _rows_to_dicts(rows)
     if _is_carrier_query(query):
         candidates = _prioritize_provider_candidates(row_dicts, query)
@@ -1036,8 +1055,16 @@ _BOT_ADDRESS_RE = re.compile(_BOT_ADDRESS_PATTERN, re.IGNORECASE)
 _TL = func.coalesce(Message.text_lower, "")
 
 
+# SQL filters here must stay native (LIKE), never REGEXP. SQLite runs REGEXP
+# through a Python callback that needs the GIL while it holds the connection
+# mutex; the bot shares one connection (StaticPool) between threads, so any
+# thread touching the DB while holding the GIL deadlocked the whole process
+# (watchdog restarts on 2026-08-18 and 2026-10-04). Exact regexes run in
+# Python on the fetched rows instead.
 def _exclude_bot_address(q):
-    return q.filter(~_TL.op("REGEXP")(_BOT_ADDRESS_PATTERN))
+    for alias in TRIGGER_ALIASES:
+        q = q.filter(~_TL.like(f"%{alias}%"))
+    return q
 
 
 # Ukrainian and Russian spell the same word with different vowels

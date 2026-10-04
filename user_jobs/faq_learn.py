@@ -36,6 +36,7 @@ SLEEP_BETWEEN      = float(os.getenv("FAQ_SLEEP", "1.5"))       # seconds betwee
 _BOT_ADDRESS_PATTERN = (
     r"(?<!\w)(?:потсдамбот|посдамбот|потсдам\ бот)(?!\w)"
 )
+_BOT_ADDRESS_RE = re.compile(_BOT_ADDRESS_PATTERN)
 
 # ── All topic categories
 CATEGORIES = [
@@ -263,17 +264,14 @@ def _fetch_category_messages(session, chat_ids, keywords, days, limit) -> List[s
             .filter(Message.text != "")
             .filter(Message.date >= cutoff)
             .filter(func.coalesce(Message.text_lower, "").like(f"%{kw.lower()}%"))
-            .filter(
-                ~func.coalesce(Message.text_lower, "").op("REGEXP")(
-                    _BOT_ADDRESS_PATTERN
-                )
-            )
             .order_by(Message.date.desc())
             .limit(limit)
             .all()
         )
         for msg, user in rows:
-            if msg._id in seen:
+            # Filtered here, not with SQL REGEXP: its Python callback deadlocks
+            # the shared connection (see msg_ai._exclude_bot_address).
+            if msg._id in seen or _BOT_ADDRESS_RE.search(msg.text_lower or ""):
                 continue
             seen.add(msg._id)
             uname = (user.username or user.fullname or "?") if user else "?"
