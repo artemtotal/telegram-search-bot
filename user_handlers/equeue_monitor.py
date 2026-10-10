@@ -5,6 +5,7 @@ import html
 import logging
 import os
 import re
+import uuid
 from collections import Counter
 from datetime import datetime, time as dtime, timedelta, timezone
 from typing import Dict, Iterable, Optional, Tuple
@@ -49,6 +50,17 @@ REPORT_APPEARANCES_SHOWN = 15
 # Відписка так скоро після сповіщення - найімовірніше людина записалась
 # (або сповіщення виявилось хибним); точніше бот знати не може.
 UNSUBSCRIBE_AFTER_NOTIFY = timedelta(hours=1)
+# Кнопка «Я пройшов перевірку»: бот кладе запит у приймач check-Wohnung, а
+# розширення забирає його на найближчому щохвилинному будильнику і робить
+# позачергову перевірку з тим самим request_id - так бот знає, кому показати
+# результат. Сама перевірка з очікуванням Cloudflare триває до ~2,5 хв.
+CHECK_WOHNUNG_BASE_URL = os.getenv("CHECK_WOHNUNG_BASE_URL", "http://host.docker.internal:18765").rstrip("/")
+MANUAL_CHECK_TIMEOUT = timedelta(minutes=8)
+MANUAL_CHECK_MIN_EXTENSION = "1.7.4"
+MANUAL_CHECK_TEXT_SHOWN = 700
+# request_id -> chat_id запитів, на які ще не прийшов результат. Живе в памʼяті:
+# після перезапуску бота відповідь просто пройде як звичайна перевірка.
+_pending_manual_checks: Dict[str, int] = {}
 
 
 def utc_now() -> datetime:
@@ -430,15 +442,11 @@ def _notify_admin_error(bot, result: Dict[str, object]) -> None:
             return
         status = str(result.get("status") or "")
         reason = html.escape(str(result.get("reason") or "невідома"))
+        markup = None
         if status == "blocked":
-            text = (
-                "🔒 <b>ДП Документ: потрібна ручна перевірка Cloudflare</b>\n\n"
-                f"Причина: {reason}\n\n"
-                "Автоматична перевірка сама не може пройти капчу. Відкрийте сайт "
-                "у тому ж профілі Chrome, де працює розширення-збирач, і пройдіть "
-                "перевірку вручну - після цього автоматичні перевірки знову запрацюють.\n\n"
-                f"Сайт: {SERVICE_URL}"
-            )
+            lang = i18n.get_lang(ADMIN_ID)
+            text = i18n.t("equeue.admin.blocked", lang, reason=reason, url=SERVICE_URL)
+            markup = _cloudflare_done_keyboard(lang)
         else:
             text = (
                 "⚠️ <b>Перевірка ДП Документ не виконана</b>\n\n"
@@ -446,7 +454,7 @@ def _notify_admin_error(bot, result: Dict[str, object]) -> None:
                 f"Сайт: {SERVICE_URL}"
             )
         try:
-            bot.send_message(ADMIN_ID, text, parse_mode="HTML", disable_web_page_preview=True)
+            bot.send_message(ADMIN_ID, text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup)
         except Exception:
             logger.exception("Could not notify admin about e-queue checker error")
             return
@@ -454,6 +462,73 @@ def _notify_admin_error(bot, result: Dict[str, object]) -> None:
         session.commit()
     finally:
         session.close()
+
+
+def _cloudflare_done_keyboard(lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(i18n.t("equeue.admin.btn.cf_done", lang), callback_data="equeue:cf_done"),
+    ]])
+
+
+def _request_manual_check(query, context: CallbackContext, lang: str) -> None:
+    """Адмін пройшов Cloudflare вручну: просимо розширення перевірити зараз."""
+    request_id = uuid.uuid4().hex[:12]
+    try:
+        response = requests.post(
+            f"{CHECK_WOHNUNG_BASE_URL}/api/dp-document/check-request",
+            json={"request_id": request_id},
+            timeout=10,
+        )
+        ok = response.ok
+    except requests.RequestException:
+        logger.exception("Could not ask the extension for a DP Document check")
+        ok = False
+    if not ok:
+        query.answer(i18n.t("equeue.admin.recheck_failed", lang), show_alert=True)
+        return
+    chat_id = query.message.chat_id
+    _pending_manual_checks[request_id] = chat_id
+    query.answer(i18n.t("equeue.admin.recheck_toast", lang))
+    context.bot.send_message(chat_id, i18n.t("equeue.admin.recheck_started", lang))
+    context.job_queue.run_once(
+        _manual_check_timeout, MANUAL_CHECK_TIMEOUT.total_seconds(), context=request_id,
+    )
+
+
+def _manual_check_timeout(context: CallbackContext) -> None:
+    chat_id = _pending_manual_checks.pop(context.job.context, None)
+    if chat_id is None:
+        return
+    lang = i18n.get_lang(chat_id)
+    context.bot.send_message(
+        chat_id, i18n.t("equeue.admin.recheck_timeout", lang, version=MANUAL_CHECK_MIN_EXTENSION),
+    )
+
+
+def _send_manual_check_report(bot, chat_id: int, payload: Dict[str, object]) -> None:
+    """Показує адміну, що саме побачило розширення: Cloudflare це чи
+    сторінка, яку бот прочитав неправильно."""
+    lang = i18n.get_lang(chat_id)
+    status = str(payload.get("status") or "unknown")
+    if status in ("none", "available", "blocked"):
+        label = i18n.t(f"equeue.admin.result.{status}", lang)
+    else:
+        label = i18n.t("equeue.admin.result.other", lang, status=html.escape(status))
+    text = i18n.t(
+        "equeue.admin.recheck_result", lang,
+        status=label,
+        reason=html.escape(str(payload.get("reason") or "—")),
+        title=html.escape(str(payload.get("title") or "—")),
+        text=html.escape(str(payload.get("text_sample") or "").strip()[:MANUAL_CHECK_TEXT_SHOWN] or "—"),
+    )
+    markup = None
+    if status == "blocked":
+        text += "\n\n" + i18n.t("equeue.admin.recheck_still_blocked", lang)
+        markup = _cloudflare_done_keyboard(lang)
+    try:
+        bot.send_message(chat_id, text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup)
+    except Exception:
+        logger.exception("Could not send the DP Document manual check report")
 
 
 def _notify_admin_stale(bot) -> None:
@@ -567,7 +642,10 @@ def _log_check(status: str, reason: str, text: str, subscribers: int, notified: 
 def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
     if payload.get("source") != SERVICE_KEY:
         return {"ok": False, "error": "unsupported source"}
-    response = _handle_browser_result(bot, payload)
+    manual_chat = _pending_manual_checks.pop(str(payload.get("request_id") or ""), None)
+    response = _handle_browser_result(bot, payload, quiet_admin=manual_chat is not None)
+    if manual_chat is not None:
+        _send_manual_check_report(bot, manual_chat, payload)
     _log_check(
         response["status"],
         str(payload.get("reason") or ""),
@@ -578,7 +656,7 @@ def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
     return response
 
 
-def _handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
+def _handle_browser_result(bot, payload: Dict[str, object], quiet_admin: bool = False) -> Dict[str, object]:
     subscribers = _active_subscribers()
     status = str(payload.get("status") or "unknown")
     result = {
@@ -592,7 +670,9 @@ def _handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]
     # whether anyone is currently subscribed - it's an operational problem
     # with the checker itself, not something that only matters to subscribers.
     if not result["ok"]:
-        _notify_admin_error(bot, result)
+        # На позачергову перевірку адмін і так отримає звіт з тією ж кнопкою.
+        if not quiet_admin:
+            _notify_admin_error(bot, result)
         _update_status_for_active(status, notified=False)
         return {"ok": True, "subscribers": len(subscribers), "status": status}
     # Знахідка - факт про сайт, а не про підписки: пишеться навіть коли
@@ -851,6 +931,11 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _deactivate_subscription(user.id)
         query.answer(i18n.t("equeue.toast.unsubscribed", lang))
         show_menu(update, context, edit=True, prefix=i18n.t("equeue.prefix.unsubscribed", lang))
+    elif query.data == "equeue:cf_done":
+        if user.id != ADMIN_ID:
+            query.answer(i18n.t("equeue.no_access", lang), show_alert=True)
+            return
+        _request_manual_check(query, context, lang)
     elif query.data == "equeue:check":
         if BROWSER_ONLY:
             query.answer(i18n.t("equeue.toast.showing_latest", lang))

@@ -166,7 +166,7 @@ class EqueueAdminAlertCooldownTests(unittest.TestCase):
 
         bot.send_message.assert_called_once()
         text = bot.send_message.call_args.args[1]
-        self.assertIn("вручну", text)
+        self.assertIn("Я пройшов перевірку", text)
         self.assertIn("Cloudflare", text)
 
     def test_repeated_blocked_checks_do_not_spam_within_the_cooldown(self):
