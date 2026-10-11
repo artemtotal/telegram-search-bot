@@ -518,9 +518,15 @@ def _send_manual_check_report(bot, chat_id: int, payload: Dict[str, object]) -> 
         "equeue.admin.recheck_result", lang,
         status=label,
         reason=html.escape(str(payload.get("reason") or "—")),
-        title=html.escape(str(payload.get("title") or "—")),
-        text=html.escape(str(payload.get("text_sample") or "").strip()[:MANUAL_CHECK_TEXT_SHOWN] or "—"),
     )
+    # Текст сторінки потрібен лише тоді, коли результат незрозумілий - щоб
+    # відрізнити Cloudflare від сторінки, яку розширення не змогло прочитати.
+    if status not in ("none", "available"):
+        text += "\n\n" + i18n.t(
+            "equeue.admin.recheck_page", lang,
+            title=html.escape(str(payload.get("title") or "—")),
+            text=html.escape(str(payload.get("text_sample") or "").strip()[:MANUAL_CHECK_TEXT_SHOWN] or "—"),
+        )
     markup = None
     if status == "blocked":
         text += "\n\n" + i18n.t("equeue.admin.recheck_still_blocked", lang)
@@ -586,11 +592,9 @@ def _notify_available(bot, subscribers, result: Dict[str, object]) -> int:
         if last_status == "available":
             continue
         lang = i18n.get_lang(user_id)
-        text = i18n.t(
-            "equeue.notify.available", lang,
-            title=html.escape(SERVICE_TITLE),
-            reason=html.escape(str(result.get('reason') or i18n.t("equeue.notify.default_reason", lang))),
-        )
+        # Технічна причина («після вибору послуги сайт не написав…») - для
+        # адміна; підписникам досить знати, що місця є.
+        text = i18n.t("equeue.notify.available", lang, title=html.escape(SERVICE_TITLE))
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(i18n.t("equeue.btn.open_queue", lang), url=SERVICE_URL)],
             [InlineKeyboardButton(i18n.t("equeue.btn.unsubscribe_short", lang), callback_data="equeue:unsubscribe")],

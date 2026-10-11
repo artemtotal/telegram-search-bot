@@ -100,7 +100,7 @@ class EqueueMonitorTest(unittest.TestCase):
 
             text = monitor._latest_status_text(user_ids[0])
             self.assertIn("11:00", text)
-            self.assertIn("є ознаки", text)
+            self.assertIn("є вільні місця", text)
         finally:
             session.query(monitor.EqueueSubscription).filter(
                 monitor.EqueueSubscription.user_id.in_(user_ids)

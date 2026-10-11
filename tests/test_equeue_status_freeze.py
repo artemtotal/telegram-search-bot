@@ -79,7 +79,7 @@ class EqueueStatusFreezeTests(unittest.TestCase):
 
         frozen = self.monitor._format_berlin_time(stale)
         self.assertNotIn(frozen, text)
-        self.assertIn("вільні терміни не підтверджені", text)
+        self.assertIn("вільних місць немає", text)
 
     def test_old_database_still_falls_back_to_subscription_rows(self):
         """База, яка ще не бачила жодного результату, не мусить втратити історію."""

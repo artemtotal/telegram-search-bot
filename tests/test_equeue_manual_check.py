@@ -94,6 +94,27 @@ class EqueueManualCheckTests(unittest.TestCase):
         report = [c for c in self.bot.send_message.call_args_list if 'Позачергова' in c[0][1]]
         self.assertEqual(len(report), 1)
         self.assertIsNone(report[0][1]['reply_markup'])
+        # Зрозумілий результат - без простирадла тексту сторінки.
+        self.assertNotIn('<pre>', report[0][0][1])
+
+    def test_users_never_see_cloudflare_in_status(self):
+        for status in ('blocked', 'unknown'):
+            self.monitor.handle_browser_result(self.bot, self._payload(status))
+            text = self.monitor._latest_status_text(111, 'uk')
+            self.assertIn('не вдалося перевірити', text)
+            self.assertNotIn('Cloudflare', text)
+            self.assertNotIn(status, text)
+
+    def test_subscribers_get_short_message_without_technical_reason(self):
+        sent = self.monitor._notify_available(
+            self.bot, [(111, None, None)],
+            {'reason': 'після вибору послуги сайт за 25 с не написав, що всі місця зайняті'},
+        )
+        self.assertEqual(sent, 1)
+        text = self.bot.send_message.call_args[0][1]
+        self.assertIn('Є вільні місця', text)
+        self.assertNotIn('25 с', text)
+        self.assertNotIn('Причина', text)
 
     def test_unselected_service_warns_admin_instead_of_counting_as_slots(self):
         # Без вибору послуги сайт не пише «всі місця зайняті», тож така
