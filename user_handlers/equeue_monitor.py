@@ -34,6 +34,11 @@ CHECK_TIMEOUT = int(os.getenv("PASSPORT_EQUEUE_TIMEOUT", "45") or 45)
 ADMIN_ERROR_COOLDOWN = timedelta(hours=3)
 # Скільки останніх знахідок вільних термінів показувати в меню.
 SIGHTINGS_SHOWN = 3
+# До 11.10.2026 розширення не вибирало послугу, а без цього сайт не пише
+# «всі місця зайняті» - тож кожна відкрита сторінка записувалась як знахідка.
+# Ці записи лишаються в базі, але людям показуємо лише знахідки після виправлення
+# (перша справжня - 11.10.2026 08:48 за Берліном).
+SIGHTINGS_RELIABLE_SINCE = datetime(2026, 10, 11, 6, 40)
 # Якщо вільних термінів не бачили довше за цей строк, попереджаємо адміна:
 # сама перевірка при цьому може бути цілком справною (сайт чесно каже "місць
 # немає"), тож це підказка "варто глянути", а не доказ поломки.
@@ -177,7 +182,10 @@ def recent_sightings(limit: int = SIGHTINGS_SHOWN) -> list:
     try:
         rows = (
             session.query(EqueueAvailableSighting)
-            .filter(EqueueAvailableSighting.service == SERVICE_KEY)
+            .filter(
+                EqueueAvailableSighting.service == SERVICE_KEY,
+                EqueueAvailableSighting.found_at >= SIGHTINGS_RELIABLE_SINCE,
+            )
             .order_by(EqueueAvailableSighting.found_at.desc())
             .limit(int(limit))
             .all()

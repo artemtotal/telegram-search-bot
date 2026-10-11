@@ -97,6 +97,17 @@ class EqueueManualCheckTests(unittest.TestCase):
         # Зрозумілий результат - без простирадла тексту сторінки.
         self.assertNotIn('<pre>', report[0][0][1])
 
+    def test_false_sightings_before_the_fix_stay_hidden(self):
+        from datetime import datetime
+        from database import EqueueAvailableSighting
+
+        session = database.DBSession()
+        session.add(EqueueAvailableSighting(service='dp_document_berlin', found_at=datetime(2026, 10, 8, 15, 0)))
+        session.add(EqueueAvailableSighting(service='dp_document_berlin', found_at=datetime(2026, 10, 11, 6, 48)))
+        session.commit()
+        session.close()
+        self.assertEqual(self.monitor.recent_sightings(), [datetime(2026, 10, 11, 6, 48)])
+
     def test_users_never_see_cloudflare_in_status(self):
         for status in ('blocked', 'unknown'):
             self.monitor.handle_browser_result(self.bot, self._payload(status))
