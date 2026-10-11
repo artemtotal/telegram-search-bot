@@ -4,7 +4,7 @@ from unittest import mock
 
 import requests
 
-from user_jobs import kleinanzeigen_monitor
+from user_jobs import alert_cooldown, kleinanzeigen_monitor
 
 
 class FakeBot:
@@ -118,6 +118,8 @@ class KleinanzeigenMonitorCheckJobTests(unittest.TestCase):
     def test_a_second_failure_within_the_cooldown_does_not_alert_again(self):
         context = SimpleNamespace(bot=FakeBot())
         previous_status = {'last_status': 'error', 'last_checked_at': kleinanzeigen_monitor.kleinanzeigen_store.utc_now()}
+        alert_cooldown.mark('kleinanzeigen:fetch')
+        self.addCleanup(alert_cooldown.reset)
         with mock.patch.object(kleinanzeigen_monitor, 'CHECK_ENABLED', True), \
              mock.patch.object(kleinanzeigen_monitor, 'ADMIN_ID', 312029534), \
              mock.patch('requests.get', side_effect=RuntimeError('still down')), \
@@ -266,6 +268,8 @@ class KleinanzeigenParseAlertCooldownTests(unittest.TestCase):
 
     def test_a_repeated_empty_parse_within_the_cooldown_stays_quiet(self):
         bot = FakeBot()
+        alert_cooldown.mark('kleinanzeigen:parse')
+        self.addCleanup(alert_cooldown.reset)
         previous = {
             'last_status': 'ok',
             'listings_count': 0,

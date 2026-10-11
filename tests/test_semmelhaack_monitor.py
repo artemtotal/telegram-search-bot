@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from user_jobs import semmelhaack_monitor
+from user_jobs import alert_cooldown, semmelhaack_monitor
 
 
 class FakeBot:
@@ -75,6 +75,8 @@ class SemmelhaackMonitorCheckJobTests(unittest.TestCase):
     def test_a_second_failure_within_the_cooldown_does_not_alert_again(self):
         context = SimpleNamespace(bot=FakeBot())
         previous_status = {'last_status': 'error', 'last_checked_at': semmelhaack_monitor.semmelhaack_store.utc_now()}
+        alert_cooldown.mark('semmelhaack:fetch')
+        self.addCleanup(alert_cooldown.reset)
         with mock.patch.object(semmelhaack_monitor, 'CHECK_ENABLED', True), \
              mock.patch.object(semmelhaack_monitor, 'ADMIN_ID', 312029534), \
              mock.patch('requests.get', side_effect=RuntimeError('still down')), \

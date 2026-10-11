@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from user_jobs import vonovia_monitor
+from user_jobs import alert_cooldown, vonovia_monitor
 
 
 class FakeBot:
@@ -148,6 +148,8 @@ class VonoviaCheckJobTests(unittest.TestCase):
     def test_a_second_failure_within_the_cooldown_does_not_alert_again(self):
         context = SimpleNamespace(bot=FakeBot())
         previous = {'last_status': 'error', 'last_checked_at': vonovia_monitor.vonovia_store.utc_now()}
+        alert_cooldown.mark('vonovia:fetch')
+        self.addCleanup(alert_cooldown.reset)
         with mock.patch.object(vonovia_monitor, 'CHECK_ENABLED', True), \
              mock.patch.object(vonovia_monitor, 'ADMIN_ID', 312029534), \
              mock.patch('requests.Session', side_effect=RuntimeError('still down')), \

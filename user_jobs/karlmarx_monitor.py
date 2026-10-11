@@ -17,7 +17,7 @@ from telegram import InputMediaPhoto
 
 import i18n
 from database import KarlmarxListing
-from user_jobs import delivery_dedup, housing_tier, karlmarx_matching, karlmarx_parser, karlmarx_store
+from user_jobs import alert_cooldown, delivery_dedup, housing_tier, karlmarx_matching, karlmarx_parser, karlmarx_store
 
 logger = logging.getLogger(__name__)
 
@@ -119,10 +119,9 @@ def _notify_admin_parse_broke(bot) -> None:
 def _should_alert_fetch_error(previous_status: Dict) -> bool:
     if not previous_status or previous_status.get("last_status") != "error":
         return True
-    last_checked = previous_status.get("last_checked_at")
-    if last_checked is None:
-        return True
-    return karlmarx_store.utc_now() - last_checked >= ERROR_ALERT_COOLDOWN
+    # Не last_checked_at статусу: він оновлюється на кожній перевірці, тож
+    # пауза від нього ніколи не спливала і тривога приходила лише раз.
+    return alert_cooldown.due("karlmarx:fetch", ERROR_ALERT_COOLDOWN)
 
 
 def _notify_admin_fetch_failed(bot, error: Exception, previous_status: Dict) -> bool:
@@ -131,6 +130,7 @@ def _notify_admin_fetch_failed(bot, error: Exception, previous_status: Dict) -> 
     text = f"⚠️ <b>Karl Marx: не вдалося перевірити оголошення</b>\n\nПричина: {html.escape(str(error))}"
     try:
         bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode="HTML", disable_web_page_preview=True)
+        alert_cooldown.mark("karlmarx:fetch")
         return True
     except Exception:
         logger.exception("Could not notify admin about a Karl Marx fetch failure")
