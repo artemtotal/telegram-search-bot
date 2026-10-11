@@ -31,6 +31,7 @@ class EqueueManualCheckTests(unittest.TestCase):
             mock.patch.object(monitor, 'ADMIN_ID', ADMIN),
             mock.patch.object(monitor.i18n, 'get_lang', lambda _user_id: 'uk'),
             mock.patch.dict(monitor._pending_manual_checks, clear=True),
+            mock.patch.object(monitor, "_last_autoclick_notice_at", None),
         ]
         for patch in self.patches:
             patch.start()
@@ -147,6 +148,33 @@ class EqueueManualCheckTests(unittest.TestCase):
         self.monitor._pending_manual_checks['abc'] = ADMIN
         self.monitor._manual_check_timeout(context)
         context.bot.send_message.assert_called_once()
+
+    def test_blocked_alert_says_auto_click_did_not_help(self):
+        click = {"seen": True, "clicks": 3, "cleared": False, "error": None}
+        self.monitor.handle_browser_result(self.bot, self._payload("blocked", cloudflare_click=click))
+        text = self.bot.send_message.call_args[0][1]
+        self.assertIn("натискало галочку (3×)", text)
+        self.assertNotIn("само капчу не пройде", text)
+
+    def test_auto_click_success_is_reported_once_per_cooldown(self):
+        click = {"seen": True, "clicks": 1, "cleared": True, "error": None}
+        for _ in range(2):
+            self.monitor.handle_browser_result(self.bot, self._payload("none", cloudflare_click=click))
+        notices = [c for c in self.bot.send_message.call_args_list if "автоматично" in c[0][1]]
+        self.assertEqual(len(notices), 1)
+        self.assertEqual(notices[0][0][0], ADMIN)
+
+    def test_no_auto_click_notice_without_cloudflare(self):
+        self.monitor.handle_browser_result(self.bot, self._payload("none"))
+        texts = [c[0][1] for c in self.bot.send_message.call_args_list]
+        self.assertFalse(any("автоматично" in text for text in texts))
+
+    def test_manual_report_shows_auto_click_result(self):
+        self.monitor._pending_manual_checks["abc"] = ADMIN
+        click = {"seen": True, "clicks": 0, "cleared": False, "error": "Another debugger is already attached"}
+        self.monitor.handle_browser_result(self.bot, self._payload("blocked", request_id="abc", cloudflare_click=click))
+        text = self.bot.send_message.call_args[0][1]
+        self.assertIn("Автонатискання галочки не вдалося", text)
 
 
 if __name__ == '__main__':

@@ -214,6 +214,10 @@ class EqueueSightingsTests(unittest.TestCase):
         self.original_service = monitor.SERVICE_KEY
         self.service_patch = mock.patch.object(monitor, "SERVICE_KEY", "test_equeue_sightings")
         self.service_patch.start()
+        # Находки «несколько дней назад» не должны отсекаться отсечкой ложных
+        # находок до 11.10.2026 - её проверяет test_equeue_manual_check.
+        self.since_patch = mock.patch.object(monitor, "SIGHTINGS_RELIABLE_SINCE", datetime(2000, 1, 1))
+        self.since_patch.start()
         session.query(monitor.EqueueAvailableSighting).filter(
             monitor.EqueueAvailableSighting.service == "test_equeue_sightings"
         ).delete(synchronize_session=False)
@@ -234,6 +238,7 @@ class EqueueSightingsTests(unittest.TestCase):
         session.commit()
         session.close()
         self.service_patch.stop()
+        self.since_patch.stop()
 
     def _add_sighting(self, found_at):
         session = self.monitor.DBSession()

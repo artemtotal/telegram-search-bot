@@ -66,6 +66,7 @@ MANUAL_CHECK_TEXT_SHOWN = 700
 # request_id -> chat_id запитів, на які ще не прийшов результат. Живе в памʼяті:
 # після перезапуску бота відповідь просто пройде як звичайна перевірка.
 _pending_manual_checks: Dict[str, int] = {}
+_last_autoclick_notice_at: Optional[datetime] = None
 
 
 def utc_now() -> datetime:
@@ -454,6 +455,9 @@ def _notify_admin_error(bot, result: Dict[str, object]) -> None:
         if status == "blocked":
             lang = i18n.get_lang(ADMIN_ID)
             text = i18n.t("equeue.admin.blocked", lang, reason=reason, url=SERVICE_URL)
+            autoclick = _autoclick_line(result.get("autoclick"), lang)
+            if autoclick:
+                text += "\n\n" + autoclick
             markup = _cloudflare_done_keyboard(lang)
         else:
             text = (
@@ -470,6 +474,39 @@ def _notify_admin_error(bot, result: Dict[str, object]) -> None:
         session.commit()
     finally:
         session.close()
+
+
+def _autoclick_line(info, lang: str) -> str:
+    """Рядок про те, чи допомогло розширенню саме натиснути галочку Cloudflare
+    (з версії 1.7.6). Порожній, якщо Cloudflare цього разу не було."""
+    if not isinstance(info, dict) or not info.get("seen"):
+        return ""
+    clicks = int(info.get("clicks") or 0)
+    if info.get("cleared") and clicks:
+        return i18n.t("equeue.admin.autoclick_ok", lang, clicks=clicks)
+    if clicks:
+        return i18n.t("equeue.admin.autoclick_failed", lang, clicks=clicks)
+    if info.get("error"):
+        return i18n.t("equeue.admin.autoclick_error", lang, error=html.escape(str(info["error"])[:200]))
+    return i18n.t("equeue.admin.autoclick_not_found", lang)
+
+
+def _notify_admin_autoclick_passed(bot, info) -> None:
+    """Пробний режим автонатискання: адмін бачить, що галочку пройдено без
+    нього. Не частіше разу на ADMIN_ERROR_COOLDOWN, щоб не спамити щогодини."""
+    global _last_autoclick_notice_at
+    if not ADMIN_ID or not isinstance(info, dict) or not (info.get("cleared") and info.get("clicks")):
+        return
+    now = utc_now()
+    if _last_autoclick_notice_at is not None and _last_autoclick_notice_at > now - ADMIN_ERROR_COOLDOWN:
+        return
+    lang = i18n.get_lang(ADMIN_ID)
+    try:
+        bot.send_message(ADMIN_ID, _autoclick_line(info, lang), parse_mode="HTML")
+    except Exception:
+        logger.exception("Could not notify admin about the Cloudflare auto-click")
+        return
+    _last_autoclick_notice_at = now
 
 
 def _cloudflare_done_keyboard(lang: str) -> InlineKeyboardMarkup:
@@ -527,6 +564,9 @@ def _send_manual_check_report(bot, chat_id: int, payload: Dict[str, object]) -> 
         status=label,
         reason=html.escape(str(payload.get("reason") or "—")),
     )
+    autoclick = _autoclick_line(payload.get("cloudflare_click"), lang)
+    if autoclick:
+        text += "\n\n" + autoclick
     # Текст сторінки потрібен лише тоді, коли результат незрозумілий - щоб
     # відрізнити Cloudflare від сторінки, яку розширення не змогло прочитати.
     if status not in ("none", "available"):
@@ -678,8 +718,11 @@ def _handle_browser_result(bot, payload: Dict[str, object], quiet_admin: bool = 
         "available": bool(payload.get("available")) or status == "available",
         "status": status,
         "reason": str(payload.get("reason") or ""),
+        "autoclick": payload.get("cloudflare_click"),
     }
     _record_service_status(status, str(result["reason"]))
+    if status != "blocked" and not quiet_admin:
+        _notify_admin_autoclick_passed(bot, result["autoclick"])
     # A failed/blocked check is worth alerting the admin about regardless of
     # whether anyone is currently subscribed - it's an operational problem
     # with the checker itself, not something that only matters to subscribers.
