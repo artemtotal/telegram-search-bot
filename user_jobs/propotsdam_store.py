@@ -15,6 +15,10 @@ from user_jobs import propotsdam_matching, propotsdam_parser
 ALL_DISTRICTS_WORDS = {"", "-", "all", "alle", "всі", "все", "усі", "любой", "любые"}
 STATUS_KEY = "global"
 EMPTY_ALERT_KEY = "empty_alert"
+# Коли адміну востаннє писали про поломку збирача. Окремо від STATUS_KEY:
+# той оновлюється на кожній перевірці, і кулдаун по ньому не спливав ніколи -
+# про збирач, що лежав з 27.09 по 11.10.2026, адмін дізнався рівно один раз.
+ERROR_ALERT_KEY = "error_alert"
 
 
 def utc_now() -> datetime:
@@ -401,21 +405,21 @@ def latest_listing_seen_at() -> Optional[datetime]:
         session.close()
 
 
-def last_empty_alert_at() -> Optional[datetime]:
+def _alert_at(key: str) -> Optional[datetime]:
     session = DBSession()
     try:
-        row = session.query(ProPotsdamStatus).filter(ProPotsdamStatus.key == EMPTY_ALERT_KEY).first()
+        row = session.query(ProPotsdamStatus).filter(ProPotsdamStatus.key == key).first()
         return row.last_checked_at if row else None
     finally:
         session.close()
 
 
-def record_empty_alert() -> None:
+def _record_alert(key: str) -> None:
     session = DBSession()
     try:
-        row = session.query(ProPotsdamStatus).filter(ProPotsdamStatus.key == EMPTY_ALERT_KEY).first()
+        row = session.query(ProPotsdamStatus).filter(ProPotsdamStatus.key == key).first()
         if row is None:
-            row = ProPotsdamStatus(key=EMPTY_ALERT_KEY)
+            row = ProPotsdamStatus(key=key)
             session.add(row)
         row.last_checked_at = utc_now()
         row.last_status = "alerted"
@@ -424,3 +428,19 @@ def record_empty_alert() -> None:
         session.commit()
     finally:
         session.close()
+
+
+def last_empty_alert_at() -> Optional[datetime]:
+    return _alert_at(EMPTY_ALERT_KEY)
+
+
+def record_empty_alert() -> None:
+    _record_alert(EMPTY_ALERT_KEY)
+
+
+def last_error_alert_at() -> Optional[datetime]:
+    return _alert_at(ERROR_ALERT_KEY)
+
+
+def record_error_alert() -> None:
+    _record_alert(ERROR_ALERT_KEY)

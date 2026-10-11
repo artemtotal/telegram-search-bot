@@ -35,6 +35,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -73,6 +74,8 @@ HEADLESS = os.getenv("PROPOTSDAM_HEADLESS", "1").strip().lower() not in {"", "0"
 # решта дістанеться наступному обходу.
 DETAIL_MAX_PER_SCAN = int(os.getenv("PROPOTSDAM_DETAIL_MAX", "10") or 10)
 DETAIL_ENABLED = os.getenv("PROPOTSDAM_DETAIL_ENABLED", "1").strip() not in {"", "0", "false", "no"}
+# Обычный обход - около минуты, с десятком карточек - до 5-6 минут.
+SCAN_HARD_LIMIT_SECONDS = int(os.getenv("PROPOTSDAM_SCAN_HARD_LIMIT_SECONDS", "900") or 900)
 _scan_lock = Lock()
 _state_lock = Lock()
 _last_result = {"ok": False, "error": "no scan yet", "listings": []}
@@ -791,8 +794,41 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"ok": False, "error": "not found"})
 
 
+def _scan_overdue(now=None):
+    """Секунды текущего обхода сверх SCAN_HARD_LIMIT_SECONDS (0 - не просрочен)."""
+    with _state_lock:
+        running, started = _scan_running, _scan_started_at
+    if not running or not started:
+        return 0
+    now = now or datetime.now(timezone.utc)
+    elapsed = (now - datetime.fromisoformat(started)).total_seconds()
+    return max(0, elapsed - SCAN_HARD_LIMIT_SECONDS)
+
+
+def _hung_scan_guard():
+    """Завершает процесс, если обход завис.
+
+    26.09.2026 обход повис внутри Playwright: HTTP-сервер дальше отвечал 202 на
+    каждый запрос бота, но `_scan_running` так и не сбросился, и две недели не
+    было ни одного обхода. Прервать зависший Playwright изнутри нельзя, поэтому
+    процесс гасит себя вместе с Chrome (иначе Chrome держит профиль), а сторож
+    Windows (propotsdam-receiver-watchdog) поднимает его заново.
+    """
+    while True:
+        time.sleep(30)
+        overdue = _scan_overdue()
+        if not overdue:
+            continue
+        logger.error("ProPotsdam scan is stuck for over %ss; exiting so the watchdog restarts the receiver",
+                     SCAN_HARD_LIMIT_SECONDS)
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(os.getpid())], capture_output=True, check=False)
+        os._exit(3)
+
+
 def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
+    threading.Thread(target=_hung_scan_guard, name="propotsdam-hung-scan-guard", daemon=True).start()
     logger.info("ProPotsdam receiver listening on http://%s:%s", HOST, PORT)
     server.serve_forever()
 

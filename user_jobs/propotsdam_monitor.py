@@ -42,6 +42,9 @@ PROPOTSDAM_POLL_SECONDS = int(os.getenv("PROPOTSDAM_POLL_SECONDS", "5") or 5)
 CHECK_INTERVAL_SECONDS = 15 * 60
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 ERROR_ALERT_COOLDOWN = timedelta(hours=6)
+# Сборщик принимает запрос на обход (202), но нового результата так и не отдаёт -
+# так он висел с 26.09.2026, а бот каждые 15 минут молча ждал «ещё идёт».
+SCAN_STUCK_AFTER = timedelta(minutes=int(os.getenv("PROPOTSDAM_SCAN_STUCK_MINUTES", "45") or 45))
 EMPTY_ALERT_AFTER = timedelta(hours=int(os.getenv("PROPOTSDAM_EMPTY_ALERT_HOURS", "24") or 24))
 EMPTY_ALERT_COOLDOWN = timedelta(hours=12)
 EMPTY_HINT = (
@@ -50,6 +53,13 @@ EMPTY_HINT = (
     "1) Откройте на ПК Chrome-профиль сборщика ProPotsdam.\n"
     "2) Зайдите на портал и убедитесь, что Immobiliensuche открывается без повторного входа.\n"
     "3) Если портал показывает квартиры, а бот их не видит — сессия сборщика умерла."
+)
+DOWN_HINT = (
+    "Дело не во входе на портал, а в самом сборщике на ПК: он не отвечает или завис.\n"
+    "Сторож Windows (задача propotsdam-receiver-watchdog) проверяет его раз в 5 минут "
+    "и поднимает заново. Если сообщение повторяется, запустите вручную "
+    "C:\\Scripts\\start-propotsdam-receiver.cmd и посмотрите "
+    "C:\\opt\\propotsdam-receiver\\receiver.err.log."
 )
 RELOGIN_HINT = (
     "Как чинить:\n"
@@ -63,10 +73,16 @@ _scan_lock = Lock()
 # purpose: after a restart the newest result is simply consumed once more, and
 # `upsert_listings` plus the delivery keys make that a no-op instead of a resend.
 _last_consumed_finished_at: Optional[str] = None
+# С какого момента (time.monotonic) обход «ещё идёт» без нового результата.
+_pending_since: Optional[float] = None
 
 
 class ScanPending(Exception):
     """The collector is still scanning; a later tick will pick the result up."""
+
+
+class CollectorDown(RuntimeError):
+    """The collector on the PC is unreachable or stuck - not a portal login problem."""
 
 
 def _fetch_last_result() -> Dict:
@@ -192,22 +208,26 @@ def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> tuple[int, boo
 def _should_alert_error(previous_status: Dict) -> bool:
     if not previous_status or previous_status.get("last_status") != "error":
         return True
-    last_checked = previous_status.get("last_checked_at")
-    if last_checked is None:
+    # Не last_checked_at статуса: он обновляется на каждой проверке, так что
+    # «6 часов с последнего» не наступали никогда и напоминаний не было.
+    last_alert = propotsdam_store.last_error_alert_at()
+    if last_alert is None:
         return True
-    return propotsdam_store.utc_now() - last_checked >= ERROR_ALERT_COOLDOWN
+    return propotsdam_store.utc_now() - last_alert >= ERROR_ALERT_COOLDOWN
 
 
 def _notify_admin_error(bot, error: Exception, previous_status: Dict) -> bool:
     if not ADMIN_ID or not _should_alert_error(previous_status):
         return False
+    hint = DOWN_HINT if isinstance(error, CollectorDown) else RELOGIN_HINT
     text = (
         "⚠️ <b>ProPotsdam не смог собрать квартиры</b>\n\n"
         f"Причина: {html.escape(str(error))}\n\n"
-        f"{html.escape(RELOGIN_HINT)}"
+        f"{html.escape(hint)}"
     )
     try:
         bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode="HTML", disable_web_page_preview=True)
+        propotsdam_store.record_error_alert()
         return True
     except Exception:
         logger.exception("Could not notify admin about ProPotsdam collector error")
@@ -263,15 +283,30 @@ def check_job(context) -> Dict[str, int]:
 
 
 def _check_job_locked(context) -> Dict[str, int]:
+    global _pending_since
     bot = context.bot
     try:
-        listings = _request_scan()
-    except ScanPending:
-        # Not a failure: the browser is still working. Keep the previous status
-        # so a slow scan cannot masquerade as a dead session.
-        logger.info("ProPotsdam scan still running; the result will be consumed on a later tick")
-        return {"ok": 1, "enabled": 1, "pending": 1, "sent": 0}
+        try:
+            listings = _request_scan()
+        except requests.ConnectionError as exc:
+            raise CollectorDown(f"сборщик на ПК не отвечает: {exc}") from exc
+        except ScanPending:
+            now = time.monotonic()
+            if _pending_since is None:
+                _pending_since = now
+            stuck_for = now - _pending_since
+            if stuck_for < SCAN_STUCK_AFTER.total_seconds():
+                # Not a failure: the browser is still working. Keep the previous
+                # status so a slow scan cannot masquerade as a dead session.
+                logger.info("ProPotsdam scan still running; the result will be consumed on a later tick")
+                return {"ok": 1, "enabled": 1, "pending": 1, "sent": 0}
+            raise CollectorDown(
+                "сборщик принимает запросы, но уже %d мин не выдаёт нового результата — похоже, завис"
+                % int(stuck_for // 60)
+            )
+        _pending_since = None
     except Exception as exc:
+        _pending_since = None
         previous_status = propotsdam_store.latest_status()
         alerted = _notify_admin_error(bot, exc, previous_status)
         propotsdam_store.record_status("error", listings_count=0, error=str(exc))

@@ -53,9 +53,11 @@ class ProPotsdamMonitorTests(unittest.TestCase):
              mock.patch.object(propotsdam_monitor, 'ADMIN_ID', 312029534), \
              mock.patch.object(propotsdam_monitor, '_request_scan', side_effect=RuntimeError('login required')), \
              mock.patch.object(propotsdam_store, 'latest_status', return_value={'last_status': 'ok'}), \
+             mock.patch.object(propotsdam_store, 'record_error_alert') as record_error_alert, \
              mock.patch.object(propotsdam_store, 'record_status') as record_status:
             result = propotsdam_monitor.check_job(context)
 
+        record_error_alert.assert_called_once()
         self.assertEqual(result['ok'], 0)
         self.assertEqual(result['admin_alerted'], 1)
         self.assertEqual(context.bot.messages[0]['chat_id'], 312029534)
@@ -72,11 +74,70 @@ class ProPotsdamMonitorTests(unittest.TestCase):
                  'last_status': 'error',
                  'last_checked_at': propotsdam_store.utc_now() - timedelta(minutes=5),
              }), \
+             mock.patch.object(propotsdam_store, 'last_error_alert_at',
+                               return_value=propotsdam_store.utc_now() - timedelta(minutes=5)), \
              mock.patch.object(propotsdam_store, 'record_status'):
             result = propotsdam_monitor.check_job(context)
 
         self.assertEqual(result['admin_alerted'], 0)
         self.assertEqual(context.bot.messages, [])
+
+    def test_a_long_outage_is_reminded_every_six_hours(self):
+        """Регрессия 27.09–11.10.2026: сборщик лежал две недели, а админ узнал
+        об этом один раз - кулдаун считался от last_checked_at, который
+        обновляется на каждой проверке и потому никогда не «старел»."""
+        context = FakeContext()
+        with mock.patch.object(propotsdam_monitor, 'PROPOTSDAM_CHECK_ENABLED', True), \
+             mock.patch.object(propotsdam_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(propotsdam_monitor, '_request_scan', side_effect=RuntimeError('boom')), \
+             mock.patch.object(propotsdam_store, 'latest_status', return_value={
+                 'last_status': 'error',
+                 'last_checked_at': propotsdam_store.utc_now() - timedelta(minutes=15),
+             }), \
+             mock.patch.object(propotsdam_store, 'last_error_alert_at',
+                               return_value=propotsdam_store.utc_now() - timedelta(hours=7)), \
+             mock.patch.object(propotsdam_store, 'record_error_alert'), \
+             mock.patch.object(propotsdam_store, 'record_status'):
+            result = propotsdam_monitor.check_job(context)
+
+        self.assertEqual(result['admin_alerted'], 1)
+
+    def test_unreachable_collector_says_so_instead_of_asking_to_relogin(self):
+        context = FakeContext()
+        with mock.patch.object(propotsdam_monitor, 'PROPOTSDAM_CHECK_ENABLED', True), \
+             mock.patch.object(propotsdam_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(propotsdam_monitor, '_request_scan',
+                               side_effect=propotsdam_monitor.requests.ConnectionError('refused')), \
+             mock.patch.object(propotsdam_store, 'latest_status', return_value={'last_status': 'ok'}), \
+             mock.patch.object(propotsdam_store, 'record_error_alert'), \
+             mock.patch.object(propotsdam_store, 'record_status'):
+            propotsdam_monitor.check_job(context)
+
+        text = context.bot.messages[0]['text']
+        self.assertIn('не отвечает', text)
+        self.assertIn('propotsdam-receiver-watchdog', text)
+        self.assertNotIn('Войдите в ProPotsdam', text)
+
+    def test_a_scan_that_never_finishes_is_reported_as_stuck(self):
+        """Регрессия 26.09.2026: сборщик отвечал 202, но результата не было,
+        и бот сутками считал это «обход ещё идёт»."""
+        context = FakeContext()
+        with mock.patch.object(propotsdam_monitor, 'PROPOTSDAM_CHECK_ENABLED', True), \
+             mock.patch.object(propotsdam_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(propotsdam_monitor, '_pending_since', None), \
+             mock.patch.object(propotsdam_monitor, '_request_scan',
+                               side_effect=propotsdam_monitor.ScanPending()), \
+             mock.patch.object(propotsdam_monitor.time, 'monotonic', side_effect=[1000.0, 1000.0 + 46 * 60]), \
+             mock.patch.object(propotsdam_store, 'latest_status', return_value={'last_status': 'ok'}), \
+             mock.patch.object(propotsdam_store, 'record_error_alert'), \
+             mock.patch.object(propotsdam_store, 'record_status') as record_status:
+            first = propotsdam_monitor.check_job(context)
+            second = propotsdam_monitor.check_job(context)
+
+        self.assertEqual(first.get('pending'), 1)
+        self.assertEqual(second['ok'], 0)
+        self.assertIn('завис', context.bot.messages[0]['text'])
+        self.assertEqual(record_status.call_args[0][0], 'error')
 
     def test_a_still_running_scan_is_not_reported_as_a_failure(self):
         """A slow browser must not look like a dead collector session.
@@ -87,6 +148,7 @@ class ProPotsdamMonitorTests(unittest.TestCase):
         context = FakeContext()
         with mock.patch.object(propotsdam_monitor, 'PROPOTSDAM_CHECK_ENABLED', True), \
              mock.patch.object(propotsdam_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(propotsdam_monitor, '_pending_since', None), \
              mock.patch.object(propotsdam_monitor, '_request_scan',
                                side_effect=propotsdam_monitor.ScanPending()), \
              mock.patch.object(propotsdam_store, 'record_status') as record_status:
