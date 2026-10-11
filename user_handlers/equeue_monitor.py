@@ -48,7 +48,7 @@ BROWSER_ONLY = os.getenv("PASSPORT_EQUEUE_BROWSER_ONLY", "1") == "1"
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 # Звіт тестових тижнів: розширення перевіряє сайт раз на 30 хвилин (до 10.10.2026 - раз на 15), звідси
 # очікувана кількість перевірок; сам звіт приходить адміну на 7-й і 14-й день.
-CHECK_INTERVAL = timedelta(minutes=30)
+CHECK_INTERVAL = timedelta(minutes=10)
 REPORT_TIME = dtime(21, 0, tzinfo=pytz.timezone("Europe/Berlin"))
 REPORT_DAYS = (7, 14)
 REPORT_APPEARANCES_SHOWN = 15
