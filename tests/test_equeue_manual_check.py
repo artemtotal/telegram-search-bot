@@ -95,6 +95,18 @@ class EqueueManualCheckTests(unittest.TestCase):
         self.assertEqual(len(report), 1)
         self.assertIsNone(report[0][1]['reply_markup'])
 
+    def test_unselected_service_warns_admin_instead_of_counting_as_slots(self):
+        # Без вибору послуги сайт не пише «всі місця зайняті», тож така
+        # перевірка - поломка збирача, а не новина для підписників.
+        result = self.monitor.handle_browser_result(
+            self.bot, self._payload('unknown', reason='на сторінці немає поля «Послуга»'),
+        )
+        self.assertNotIn('notified', result)
+        self.assertEqual(self.monitor.recent_sightings(), [])
+        args, _kwargs = self.bot.send_message.call_args
+        self.assertEqual(args[0], ADMIN)
+        self.assertIn('Послуга', args[1])
+
     def test_timeout_only_when_no_answer(self):
         context = mock.Mock()
         context.job.context = 'abc'

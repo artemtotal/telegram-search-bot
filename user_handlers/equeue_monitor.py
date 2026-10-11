@@ -660,7 +660,9 @@ def _handle_browser_result(bot, payload: Dict[str, object], quiet_admin: bool = 
     subscribers = _active_subscribers()
     status = str(payload.get("status") or "unknown")
     result = {
-        "ok": status not in {"blocked", "error", "http_error"},
+        # unknown - расширение не смогло выбрать услугу: без этого сайт об отказе
+        # не пишет, и такую проверку нельзя считать ни «есть», ни «нет».
+        "ok": status not in {"blocked", "error", "http_error", "unknown"},
         "available": bool(payload.get("available")) or status == "available",
         "status": status,
         "reason": str(payload.get("reason") or ""),
