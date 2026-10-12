@@ -251,6 +251,7 @@ class HousingAdminFlowTests(unittest.TestCase):
             'step': 'sources',
             'user_id': 544675510,
             'sources_selected': list(housing_monitor.AVAILABLE_SOURCE_KEYS),
+            'coops_selected': list(housing_monitor.COOP_KEYS),
         })
 
     def test_new_filter_sources_screen_starts_with_every_portal_checked(self):
@@ -266,7 +267,8 @@ class HousingAdminFlowTests(unittest.TestCase):
         kwargs = update.effective_message.replies[-1][1]
         labels = [b.text for row in kwargs['reply_markup'].inline_keyboard for b in row]
         checked = [label for label in labels if label.startswith('✅')]
-        self.assertEqual(len(checked), len(housing_monitor.AVAILABLE_SOURCE_KEYS))
+        # Площадки й кооперативи — один фільтр охоплює і те, і те.
+        self.assertEqual(len(checked), len(housing_monitor.AVAILABLE_SOURCE_KEYS) + len(housing_monitor.COOP_KEYS))
 
     def test_allowed_user_can_toggle_only_own_filter(self):
         own_filter = {
@@ -1205,52 +1207,6 @@ class HousingAdminFlowTests(unittest.TestCase):
         sync_filters.assert_called_once()
         query.answer.assert_called_with('Фільтр видалено.')
 
-    def test_self_manage_keyboard_offers_edit_for_both_sources(self):
-        """Раніше ProPotsdam-фільтр можна було лише поставити на паузу чи видалити."""
-        immowelt = {'filter_id': 1, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True}
-        propotsdam = {
-            'filter_id': 2, 'user_id': 544675510, 'title': 'ProPotsdam', 'source': 'propotsdam',
-            'districts': 'Drewitz', 'active': True,
-        }
-
-        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt, propotsdam]):
-            keyboard = housing_monitor._self_manage_keyboard(544675510)
-
-        callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
-        self.assertIn('housing:edit:immowelt:1', callbacks)
-        self.assertIn('housing:delete:immowelt:1', callbacks)
-        self.assertIn('housing:edit:propotsdam:2', callbacks)
-        self.assertIn('housing:delete:propotsdam:2', callbacks)
-
-    def test_self_manage_keyboard_prefixes_each_row_with_its_source_icon(self):
-        """Секційні заголовки прибрані на користь групування «один пошук —
-        один рядок» — джерело тепер видно з іконки перед самим рядком фільтра."""
-        immowelt = {
-            'filter_id': 1, 'user_id': 544675510, 'title': 'Golm', 'source': 'immowelt',
-            'active': True, 'districts': ('Golm',),
-        }
-        propotsdam = {
-            'filter_id': 2, 'user_id': 544675510, 'title': 'Golm', 'source': 'propotsdam',
-            'districts': 'Golm', 'active': True,
-        }
-
-        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt, propotsdam]):
-            keyboard = housing_monitor._self_manage_keyboard(544675510)
-
-        labels = [button.text for row in keyboard.inline_keyboard for button in row]
-        self.assertTrue(any(label.startswith(f"{housing_monitor.SOURCE_ICON['immowelt']} ✅") for label in labels))
-        self.assertTrue(any(label.startswith(f"{housing_monitor.SOURCE_ICON['propotsdam']} ✅") for label in labels))
-
-    def test_self_manage_keyboard_lists_only_the_filters_that_exist(self):
-        immowelt = {'filter_id': 1, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True}
-
-        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt]):
-            keyboard = housing_monitor._self_manage_keyboard(544675510)
-
-        labels = [button.text for row in keyboard.inline_keyboard for button in row]
-        self.assertTrue(any(housing_monitor.SOURCE_ICON['immowelt'] in label for label in labels))
-        self.assertFalse(any(housing_monitor.SOURCE_ICON['propotsdam'] in label for label in labels))
-
     def test_header_button_is_a_no_op(self):
         query = SimpleNamespace(data='housing:noop', answer=mock.Mock())
         update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
@@ -1319,164 +1275,6 @@ class HousingAdminFlowTests(unittest.TestCase):
         housing_monitor.handle_callback(update, context)
 
         self.assertEqual(context.user_data['housing_admin']['districts_selected'], ['Golm'])
-
-
-class HousingSelfManageGroupingTests(unittest.TestCase):
-    """Фільтри одного проходу майстра mode="multi" живуть у різних сховищах
-    (кожне джерело — своя таблиця), тож раніше «Мої фільтри» показувало їх
-    окремими, майже нерозрізненними рядками — видалити «один» пошук means
-    полювати на кожен запис по черзі. _group_manageable_filters/_self_manage_
-    keyboard тепер зводять записи з однаковими кімнатами/площею в один рядок
-    з одною кнопкою "Видалити всі"."""
-
-    def _cb_update(self, data, user_id=544675510):
-        query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_text=mock.Mock())
-        return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id))
-
-    def test_two_sources_from_the_same_wizard_pass_render_as_one_row(self):
-        immowelt = {
-            'filter_id': 1, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True,
-            'districts': ('Golm',), 'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': 50.0, 'max_area_m2': None,
-        }
-        semm = {
-            'filter_id': 5, 'user_id': 544675510, 'title': 'SEMM', 'source': 'semmelhaack', 'active': True,
-            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': 50.0, 'max_area_m2': None,
-        }
-        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt, semm]):
-            keyboard = housing_monitor._self_manage_keyboard(544675510)
-
-        labels = [b.text for row in keyboard.inline_keyboard for b in row]
-        merged = [label for label in labels if housing_monitor.SOURCE_ICON['immowelt'] in label and housing_monitor.SOURCE_ICON['semmelhaack'] in label]
-        self.assertEqual(len(merged), 1)
-        callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
-        self.assertTrue(any(cb.startswith('housing:group_manage:') for cb in callbacks))
-        self.assertTrue(any(cb.startswith('housing:group_delete:') for cb in callbacks))
-        # Окремих edit/delete на кожне джерело з головного екрана більше нема.
-        self.assertNotIn('housing:delete:immowelt:1', callbacks)
-        self.assertNotIn('housing:delete:semmelhaack:5', callbacks)
-
-    def test_filters_with_different_rooms_stay_separate_rows(self):
-        immowelt = {
-            'filter_id': 1, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True,
-            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
-        }
-        semm = {
-            'filter_id': 5, 'user_id': 544675510, 'title': 'SEMM', 'source': 'semmelhaack', 'active': True,
-            'min_rooms': 3.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
-        }
-        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt, semm]):
-            keyboard = housing_monitor._self_manage_keyboard(544675510)
-
-        callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
-        self.assertIn('housing:delete:immowelt:1', callbacks)
-        self.assertIn('housing:delete:semmelhaack:5', callbacks)
-        self.assertFalse(any(cb.startswith('housing:group_manage:') for cb in callbacks))
-
-    def test_filters_with_no_shared_criteria_at_all_stay_separate(self):
-        """Обидва порожні за кімнатами/площею (наприклад, лишили тільки ціну
-        в пікері) — надійного сигналу для групування нема, кожен лишається окремим рядком."""
-        semm = {
-            'filter_id': 5, 'user_id': 544675510, 'title': 'SEMM', 'source': 'semmelhaack', 'active': True,
-            'min_rooms': None, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None, 'max_price_eur': 900.0,
-        }
-        schoba = {
-            'filter_id': 6, 'user_id': 544675510, 'title': 'SCHOBA', 'source': 'schoba', 'active': True,
-            'min_rooms': None, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None, 'max_price_eur': 900.0,
-        }
-        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[semm, schoba]):
-            keyboard = housing_monitor._self_manage_keyboard(544675510)
-
-        callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
-        self.assertIn('housing:delete:semmelhaack:5', callbacks)
-        self.assertIn('housing:delete:schoba:6', callbacks)
-
-    def test_group_manage_expands_into_the_per_source_list(self):
-        immowelt = {
-            'filter_id': 1, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True,
-            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': 50.0, 'max_area_m2': None,
-        }
-        semm = {
-            'filter_id': 5, 'user_id': 544675510, 'title': 'SEMM', 'source': 'semmelhaack', 'active': False,
-            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': 50.0, 'max_area_m2': None,
-        }
-        sig_key = housing_monitor._encode_group_sig((2.0, None, 50.0, None))
-        update = self._cb_update(f'housing:group_manage:{sig_key}')
-
-        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
-             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt, semm]):
-            housing_monitor.handle_callback(update, SimpleNamespace(user_data={}))
-
-        callbacks = [
-            b.callback_data
-            for row in update.callback_query.edit_message_text.call_args.kwargs['reply_markup'].inline_keyboard
-            for b in row
-        ]
-        self.assertIn('housing:delete:immowelt:1', callbacks)
-        self.assertIn('housing:delete:semmelhaack:5', callbacks)
-        self.assertIn('housing:toggle:semmelhaack:5:1', callbacks)  # SEMM була на паузі
-        self.assertIn('housing:self_manage', callbacks)  # кнопка "Назад"
-
-    def test_group_delete_asks_for_confirmation_listing_every_source(self):
-        immowelt = {
-            'filter_id': 1, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True,
-            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
-        }
-        semm = {
-            'filter_id': 5, 'user_id': 544675510, 'title': 'SEMM', 'source': 'semmelhaack', 'active': True,
-            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
-        }
-        sig_key = housing_monitor._encode_group_sig((2.0, None, None, None))
-        update = self._cb_update(f'housing:group_delete:{sig_key}')
-
-        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
-             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt, semm]):
-            housing_monitor.handle_callback(update, SimpleNamespace(user_data={}))
-
-        text = update.callback_query.edit_message_text.call_args.args[0]
-        self.assertIn('Immowelt', text)
-        self.assertIn('SEMMELHAACK', text)
-        callbacks = [
-            b.callback_data
-            for row in update.callback_query.edit_message_text.call_args.kwargs['reply_markup'].inline_keyboard
-            for b in row
-        ]
-        self.assertIn(f'housing:group_delete_confirm:{sig_key}', callbacks)
-
-    def test_confirming_group_delete_removes_every_member(self):
-        immowelt = {
-            'filter_id': 1, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True,
-            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
-        }
-        semm = {
-            'filter_id': 5, 'user_id': 544675510, 'title': 'SEMM', 'source': 'semmelhaack', 'active': True,
-            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
-        }
-        sig_key = housing_monitor._encode_group_sig((2.0, None, None, None))
-        update = self._cb_update(f'housing:group_delete_confirm:{sig_key}')
-
-        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
-             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[immowelt, semm]), \
-             mock.patch.object(housing_monitor, '_request', return_value={'ok': True}) as request, \
-             mock.patch.object(housing_monitor.semmelhaack_store, 'delete_filter', return_value=True) as delete_semm:
-            housing_monitor.handle_callback(update, SimpleNamespace(user_data={}))
-
-        request.assert_called_once_with('DELETE', '/api/housing/filters/1')
-        delete_semm.assert_called_once_with(5, user_id=544675510)
-        update.callback_query.answer.assert_called_with('Фільтр видалено.')
-
-    def test_group_delete_for_someone_elses_signature_is_rejected(self):
-        own = {
-            'filter_id': 1, 'user_id': 544675510, 'title': 'Immowelt', 'source': 'immowelt', 'active': True,
-            'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
-        }
-        sig_key = housing_monitor._encode_group_sig((9.0, None, None, None))
-        update = self._cb_update(f'housing:group_delete:{sig_key}')
-
-        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
-             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[own]):
-            housing_monitor.handle_callback(update, SimpleNamespace(user_data={}))
-
-        update.callback_query.answer.assert_called_with('Цей фільтр вам не належить.', show_alert=True)
 
 
 class HousingMultiSourceWizardTests(unittest.TestCase):
@@ -4223,14 +4021,6 @@ class HousingCoopSubscriptionTests(unittest.TestCase):
 
         self.assertNotIn(housing_monitor.BTN_COOPS, labels)
 
-    def test_self_manage_screen_offers_the_coops_button(self):
-        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[]):
-            labels = [
-                b.text for row in housing_monitor._self_manage_keyboard(544675510).inline_keyboard for b in row
-            ]
-
-        self.assertIn(housing_monitor.BTN_COOPS, labels)
-
     def test_admin_menu_also_offers_the_coops_button(self):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
             labels = [b.text for row in housing_monitor._menu_keyboard(312029534).inline_keyboard for b in row]
@@ -4593,7 +4383,7 @@ class HousingDuplicateFilterTests(unittest.TestCase):
         # копії, якої не створювали, показувати нема чого.
         offer.assert_not_called()
         text = update.callback_query.message.replies[-1][0]
-        self.assertIn('41', text)
+        self.assertIn('Такий фільтр у вас уже є', text)
 
     def test_a_filter_that_differs_by_one_bound_is_still_created(self):
         context = self._context()
@@ -4656,18 +4446,350 @@ class HousingUnboundedFilterWarningTests(unittest.TestCase):
             effective_user=SimpleNamespace(id=544675510),
         )
 
+        for patch in _search_db_patches():
+            patch.start()
+            self.addCleanup(patch.stop)
         with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
              mock.patch.object(housing_monitor, 'manageable_filters', return_value=[unbounded]), \
              mock.patch.object(housing_monitor.user_settings_store, 'get_language', return_value='ru'):
             housing_monitor.show_self_manage(update, SimpleNamespace(user_data={}))
 
-        text, kwargs = message.replies[-1]
+        text, _kwargs = message.replies[-1]
+        # Картка фільтра сама проговорює, якої межі бракує.
+        self.assertIn('Без ограничения: комнаты', text)
         self.assertIn('однокомнатные', text)
-        labels = [b.text for row in kwargs['reply_markup'].inline_keyboard for b in row]
-        self.assertTrue(
-            any(housing_monitor.UNBOUNDED_MARK in label for label in labels),
-            f"no warning mark on the filter button: {labels}",
+
+
+def _search_db_patches():
+    """Пошуки, підписки на кооперативи й мова — у свіжій базі в пам'яті.
+
+    Пошуки зберігаються, тож без цього тести бачили б чужі пошуки з тими
+    самими номерами записів, залишені попередніми тестами.
+    """
+    engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)
+    return [
+        mock.patch.object(housing_monitor.housing_search_store, 'DBSession', session),
+        mock.patch.object(housing_monitor.housing_search_store, 'engine', engine),
+        mock.patch.object(housing_monitor.coop_watchdog_store, 'DBSession', session),
+        mock.patch.object(housing_monitor.user_settings_store, 'DBSession', session),
+        mock.patch.object(housing_monitor, 'DBSession', session),
+    ]
+
+
+class HousingSearchTests(unittest.TestCase):
+    """«Мої фільтри»: один фільтр людини — одна картка.
+
+    Майстер заводить окремий запис у кожній площадці, і раніше список
+    показував їх дев'ятьма картками на один пошук (або вгадував групу за
+    кімнатами/площею, що часто не вдавалося). Тепер майстер зберігає сам
+    пошук, а «✏️ Редагувати» проганяє той самий майстер наново.
+    """
+
+    USER = 544675510
+    ADMIN = 312029534
+
+    def setUp(self):
+        for patch in _search_db_patches():
+            patch.start()
+            self.addCleanup(patch.stop)
+        for patch in (
+            mock.patch.object(housing_monitor, 'ADMIN_ID', self.ADMIN),
+            mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {self.USER}),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    @staticmethod
+    def _item(source, filter_id, **criteria):
+        return {'filter_id': filter_id, 'user_id': 544675510, 'source': source, 'active': True, **criteria}
+
+    def _message_update(self, user_id=USER):
+        message = FakeMessage(user_id=user_id)
+        return SimpleNamespace(
+            message=message, effective_message=message, callback_query=None,
+            effective_user=SimpleNamespace(id=user_id),
         )
+
+    def _cb_update(self, data, user_id=USER):
+        message = FakeMessage(user_id=user_id)
+        query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_text=mock.Mock(), message=message)
+        return SimpleNamespace(
+            callback_query=query, effective_message=message, effective_user=SimpleNamespace(id=user_id),
+        )
+
+    def _search(self, members, coops=(), **criteria):
+        return housing_monitor.housing_search_store.create(self.USER, {'districts': [], **criteria}, members, coops)
+
+    @staticmethod
+    def _callbacks(markup):
+        return [b.callback_data for row in markup.inline_keyboard for b in row if b.callback_data]
+
+    def test_one_filter_over_many_portals_is_one_card(self):
+        items = [
+            self._item('immowelt', 1, min_rooms=2.0, min_area_m2=50.0, max_price_eur=900.0),
+            self._item('semmelhaack', 5, min_rooms=2.0, min_area_m2=50.0, max_price_eur=900.0),
+            self._item('vonovia', 3, min_rooms=2.0, min_area_m2=50.0, max_price_eur=900.0),
+        ]
+        search_id = self._search(
+            [('immowelt', 1), ('semmelhaack', 5), ('vonovia', 3)], ['gewoba'],
+            min_rooms=2.0, min_area_m2=50.0, max_price_eur=900.0,
+        )
+        update = self._message_update()
+
+        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=items):
+            housing_monitor.show_self_manage(update, SimpleNamespace(user_data={}))
+
+        text, kwargs = update.effective_message.replies[-1]
+        self.assertIn('Фільтр 1', text)
+        self.assertNotIn('Фільтр 2', text)
+        for expected in ('Immowelt', 'SEMMELHAACK', 'Vonovia', 'Gewoba', 'від 2 кімн.', 'від 50 м²', 'до 900 €'):
+            self.assertIn(expected, text)
+        callbacks = self._callbacks(kwargs['reply_markup'])
+        self.assertIn(f'housing:s:edit:{search_id}', callbacks)
+        self.assertIn(f'housing:s:del:{search_id}', callbacks)
+        # Пауза окремої площадки й окрема кнопка кооперативів зникли з цього екрана.
+        self.assertFalse(any(cb.startswith('housing:toggle:') for cb in callbacks))
+        self.assertNotIn('housing:coops', callbacks)
+
+    def test_rows_made_before_searches_are_grouped_by_wizard_pass(self):
+        first, second = datetime(2026, 9, 27, 16, 31, 5), datetime(2026, 9, 27, 16, 34, 40)
+        items = [
+            self._item('semmelhaack', 52, min_rooms=2.0, max_area_m2=50.0, max_price_eur=562.0),
+            self._item('schoba', 49, min_rooms=2.0, max_area_m2=50.0, max_price_eur=562.0),
+            self._item('semmelhaack', 53, min_rooms=2.0, max_rooms=2.0, max_area_m2=50.0, max_price_eur=562.0),
+            self._item('schoba', 50, min_rooms=2.0, max_rooms=2.0, max_area_m2=50.0, max_price_eur=562.0),
+            # Immowelt без часу створення — іде до проходу з тими самими умовами.
+            self._item('immowelt', 79, min_rooms=2.0, max_rooms=2.0, max_area_m2=50.0, max_price_eur=562.0),
+            self._item('immowelt', 78, min_rooms=2.0, max_area_m2=50.0, max_price_eur=562.0),
+        ]
+        created = {
+            ('semmelhaack', 52): first, ('schoba', 49): first + timedelta(seconds=1),
+            ('semmelhaack', 53): second, ('schoba', 50): second + timedelta(seconds=1),
+        }
+
+        with mock.patch.object(housing_monitor.housing_search_store, 'local_created_at', return_value=created):
+            searches = housing_monitor.user_searches(self.USER, items=items)
+            again = housing_monitor.user_searches(self.USER, items=items)
+
+        self.assertEqual(
+            [set(search['members']) for search in searches],
+            [{('semmelhaack', 52), ('schoba', 49), ('immowelt', 78)},
+             {('semmelhaack', 53), ('schoba', 50), ('immowelt', 79)}],
+        )
+        self.assertEqual(searches[1]['criteria']['max_rooms'], 2.0)
+        # Удруге нічого не заводиться — записи вже мають свої пошуки.
+        self.assertEqual([s['search_id'] for s in again], [s['search_id'] for s in searches])
+
+    def test_edit_asks_the_same_questions_and_then_replaces_the_filter(self):
+        search_id = self._search([('semmelhaack', 5)], min_rooms=2.0)
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[self._item('semmelhaack', 5, min_rooms=2.0)]):
+            housing_monitor.handle_callback(self._cb_update(f'housing:s:edit:{search_id}'), context)
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'sources')
+        self.assertEqual(state['replace_search_id'], search_id)
+        self.assertEqual(state['sources_selected'], housing_monitor.AVAILABLE_SOURCE_KEYS)
+
+        state.update({'mode': 'multi', 'sources_selected': ['semmelhaack'], 'coops_selected': [], 'min_rooms': 3.0})
+        message = FakeMessage(user_id=self.USER)
+        with mock.patch.object(housing_monitor, '_existing_filters_by_source', return_value={}), \
+             mock.patch.object(housing_monitor, '_offer_recent_matches'), \
+             mock.patch.object(housing_monitor, '_maybe_send_first_filter_congrats'), \
+             mock.patch.object(housing_monitor.semmelhaack_store, 'delete_filter', return_value=True) as delete_filter, \
+             mock.patch.object(housing_monitor.semmelhaack_store, 'create_filter', return_value=9):
+            housing_monitor._finalize_multi_filter(message, context, state)
+
+        delete_filter.assert_called_once_with(5, user_id=self.USER)
+        searches = housing_monitor.housing_search_store.list_for_user(self.USER)
+        self.assertEqual([s['members'] for s in searches], [[('semmelhaack', 9)]])
+        self.assertEqual(searches[0]['criteria']['min_rooms'], 3.0)
+        self.assertIn('Фільтр оновлено', message.replies[-1][0])
+        self.assertIn('від 3 кімн.', message.replies[-1][0])
+
+    def test_delete_asks_first_then_removes_every_portal_row(self):
+        search_id = self._search([('semmelhaack', 5), ('schoba', 6)])
+        items = [self._item('semmelhaack', 5), self._item('schoba', 6)]
+
+        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=items):
+            ask = self._cb_update(f'housing:s:del:{search_id}')
+            housing_monitor.handle_callback(ask, SimpleNamespace(user_data={}))
+        confirm_text = ask.callback_query.edit_message_text.call_args.args[0]
+        # Після видалення площадки вже не віддають цих записів.
+        with mock.patch.object(housing_monitor, 'manageable_filters', side_effect=[items, []]), \
+             mock.patch.object(housing_monitor.semmelhaack_store, 'delete_filter', return_value=True) as del_semm, \
+             mock.patch.object(housing_monitor.schoba_store, 'delete_filter', return_value=True) as del_schoba:
+            housing_monitor.handle_callback(
+                self._cb_update(f'housing:s:delok:{search_id}'), SimpleNamespace(user_data={}),
+            )
+
+        self.assertIn('Видалити фільтр 1?', confirm_text)
+        del_semm.assert_called_once_with(5, user_id=self.USER)
+        del_schoba.assert_called_once_with(6, user_id=self.USER)
+        self.assertEqual(housing_monitor.housing_search_store.list_for_user(self.USER), [])
+
+    def test_someone_else_cannot_touch_the_filter(self):
+        search_id = self._search([('semmelhaack', 5)])
+
+        with mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {self.USER, 777}), \
+             mock.patch.object(housing_monitor, 'manageable_filters', return_value=[]), \
+             mock.patch.object(housing_monitor.semmelhaack_store, 'delete_filter') as delete_filter:
+            housing_monitor.handle_callback(self._cb_update(f'housing:s:delok:{search_id}', user_id=777), SimpleNamespace(user_data={}))
+            # Адмінські кнопки — лише адміну.
+            housing_monitor.handle_callback(
+                self._cb_update(f'housing:as:{self.USER}:delok:{search_id}', user_id=777), SimpleNamespace(user_data={}),
+            )
+
+        delete_filter.assert_not_called()
+        self.assertEqual(len(housing_monitor.housing_search_store.list_for_user(self.USER)), 1)
+
+    def test_cooperatives_come_and_go_with_the_filter(self):
+        state = {
+            'mode': 'multi', 'user_id': self.USER, 'sources_selected': ['semmelhaack'],
+            'coops_selected': ['gewoba', 'wbg1903'], 'min_rooms': 2.0,
+        }
+        with mock.patch.object(housing_monitor, '_existing_filters_by_source', return_value={}), \
+             mock.patch.object(housing_monitor, '_offer_recent_matches'), \
+             mock.patch.object(housing_monitor, '_maybe_send_first_filter_congrats'), \
+             mock.patch.object(housing_monitor.semmelhaack_store, 'create_filter', return_value=5):
+            housing_monitor._finalize_multi_filter(FakeMessage(user_id=self.USER), SimpleNamespace(user_data={}), state)
+
+        self.assertEqual(
+            housing_monitor._coop_subscription_state(self.USER), {'gewoba': True, 'wbg1903': True},
+        )
+        search_id = housing_monitor.housing_search_store.list_for_user(self.USER)[0]['search_id']
+        with mock.patch.object(housing_monitor, 'manageable_filters', side_effect=[[self._item('semmelhaack', 5)], []]), \
+             mock.patch.object(housing_monitor.semmelhaack_store, 'delete_filter', return_value=True):
+            housing_monitor.handle_callback(self._cb_update(f'housing:s:delok:{search_id}'), SimpleNamespace(user_data={}))
+
+        self.assertEqual(
+            housing_monitor._coop_subscription_state(self.USER), {'gewoba': False, 'wbg1903': False},
+        )
+
+    def test_new_filter_wizard_lists_portals_and_cooperatives_checked(self):
+        update = self._message_update()
+        context = SimpleNamespace(user_data={})
+
+        housing_monitor.start_self_add_flow(update, context)
+
+        labels = [b.text for row in update.effective_message.replies[-1][1]['reply_markup'].inline_keyboard for b in row]
+        for coop in housing_monitor.coop_watchdog.COOPERATIVES:
+            self.assertIn(f"✅ {housing_monitor.SOURCE_ICON[coop['key']]} {coop['label']}", labels)
+        housing_monitor.handle_callback(self._cb_update('housing:src:gewoba'), context)
+        self.assertNotIn('gewoba', context.user_data['housing_admin']['coops_selected'])
+        self.assertEqual(context.user_data['housing_admin']['sources_selected'], housing_monitor.AVAILABLE_SOURCE_KEYS)
+
+    def test_admin_opens_a_persons_filters_from_a_notification(self):
+        search_id = self._search([('semmelhaack', 5)], min_rooms=2.0)
+        update = self._cb_update(f'housing:au:{self.USER}', user_id=self.ADMIN)
+        bot = mock.Mock()
+        bot.get_chat.side_effect = RuntimeError('chat not found')
+
+        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[self._item('semmelhaack', 5, min_rooms=2.0)]):
+            housing_monitor.handle_callback(update, SimpleNamespace(user_data={}, bot=bot))
+
+        # Новим повідомленням: сповіщення, з якого прийшли, лишається.
+        update.callback_query.edit_message_text.assert_not_called()
+        text, kwargs = update.effective_message.replies[-1]
+        self.assertIn('Фільтри користувача', text)
+        self.assertIn(str(self.USER), text)
+        self.assertIn('Фільтр 1', text)
+        callbacks = self._callbacks(kwargs['reply_markup'])
+        self.assertIn(f'housing:as:{self.USER}:edit:{search_id}', callbacks)
+        self.assertIn(f'housing:as:{self.USER}:del:{search_id}', callbacks)
+        self.assertIn(f'housing:as:{self.USER}:send:0', callbacks)
+
+    def test_admin_edits_a_persons_filter_on_their_behalf(self):
+        search_id = self._search([('semmelhaack', 5)])
+        context = SimpleNamespace(user_data={})
+
+        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[self._item('semmelhaack', 5)]):
+            housing_monitor.handle_callback(
+                self._cb_update(f'housing:as:{self.USER}:edit:{search_id}', user_id=self.ADMIN), context,
+            )
+
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['user_id'], self.USER)
+        self.assertEqual(state['replace_search_id'], search_id)
+
+    def test_admin_sends_the_person_their_own_filters(self):
+        self._search([('semmelhaack', 5)], min_rooms=2.0)
+        bot = mock.Mock()
+
+        with mock.patch.object(housing_monitor, 'manageable_filters', return_value=[self._item('semmelhaack', 5, min_rooms=2.0)]):
+            housing_monitor.handle_callback(
+                self._cb_update(f'housing:as:{self.USER}:send:0', user_id=self.ADMIN),
+                SimpleNamespace(user_data={}, bot=bot),
+            )
+
+        kwargs = bot.send_message.call_args.kwargs
+        self.assertEqual(kwargs['chat_id'], self.USER)
+        self.assertIn('Фільтр 1', kwargs['text'])
+        self.assertTrue(any(cb.startswith('housing:s:edit:') for cb in self._callbacks(kwargs['reply_markup'])))
+
+    def test_admin_finds_a_person_by_username(self):
+        session = housing_monitor.DBSession()
+        session.add(housing_monitor.User(id=42, username='KateP'))
+        session.commit()
+        session.close()
+
+        self.assertEqual(housing_monitor._parse_user_ref('@katep'), 42)
+        self.assertEqual(housing_monitor._parse_user_ref('544675510'), 544675510)
+        self.assertIsNone(housing_monitor._parse_user_ref('@nobody'))
+
+    def test_admin_panel_and_notifications_lead_to_a_persons_filters(self):
+        callbacks = self._callbacks(housing_monitor._admin_keyboard())
+        self.assertIn('housing:au_ask', callbacks)
+        self.assertEqual(housing_monitor._admin_filters_button(7).callback_data, 'housing:au:7')
+
+
+class HousingSearchGroupingTests(unittest.TestCase):
+    def _item(self, source, filter_id, **criteria):
+        return {'source': source, 'filter_id': filter_id, **criteria}
+
+    def test_two_passes_a_minute_apart_stay_two_filters(self):
+        start = datetime(2026, 9, 22, 8, 27, 10)
+        orphans = [
+            self._item('propotsdam', 39, min_rooms=2.0), self._item('schoba', 30, min_rooms=2.0),
+            self._item('propotsdam', 40, min_rooms=2.0), self._item('schoba', 31, min_rooms=2.0),
+        ]
+        created = {
+            ('propotsdam', 39): start, ('schoba', 30): start + timedelta(seconds=1),
+            ('propotsdam', 40): start + timedelta(seconds=55), ('schoba', 31): start + timedelta(seconds=56),
+        }
+
+        groups, attach = housing_monitor.housing_search_grouping.cluster_legacy(orphans, created, [])
+
+        self.assertEqual(
+            [[item['filter_id'] for item in group] for group in groups], [[39, 30], [40, 31]],
+        )
+        self.assertEqual(attach, [])
+
+    def test_an_immowelt_row_joins_an_existing_filter_with_the_same_criteria(self):
+        search = {
+            'search_id': 3, 'members': [('propotsdam', 7)], 'created_at': datetime(2026, 9, 1),
+            'criteria': {'min_rooms': 3.0, 'max_price_eur': 1200.0},
+        }
+        immowelt = self._item('immowelt', 12, min_rooms=3.0, max_price_eur=1200.0)
+
+        groups, attach = housing_monitor.housing_search_grouping.cluster_legacy([immowelt], {}, [search])
+
+        self.assertEqual(groups, [])
+        self.assertEqual(attach, [(3, immowelt)])
+
+    def test_criteria_take_the_portal_names_into_account(self):
+        criteria = housing_monitor.housing_search_grouping.criteria_from_members([
+            self._item('propotsdam', 1, districts='Golm,Drewitz', max_total_rent_eur=900.0, min_rooms=2.0),
+            self._item('semmelhaack', 2, max_price_eur=700.0, max_price_warm_eur=900.0, min_rooms=2.0),
+        ])
+
+        self.assertEqual(criteria['districts'], ['Golm', 'Drewitz'])
+        self.assertEqual(criteria['max_price_warm_eur'], 900.0)
+        self.assertEqual(criteria['max_price_eur'], 700.0)
+        self.assertEqual(criteria['min_rooms'], 2.0)
 
 
 if __name__ == '__main__':

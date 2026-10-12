@@ -1011,6 +1011,28 @@ class HousingUserJourney(Base):
     digest_off = Column(BOOLEAN, nullable=False, default=False)
 
 
+class HousingSearch(Base):
+    """Один фільтр житла так, як його бачить людина.
+
+    Майстер заводить окремий запис у сховищі кожної площадки (Immowelt живе
+    взагалі в іншому сервісі), і «Мої фільтри» показували дев'ять карток на
+    один пошук. Тут — сам пошук: умови, як людина їх обрала, і перелік записів
+    площадок, які під нього заведено. Редагування й видалення йдуть звідси.
+    """
+
+    __tablename__ = 'housing_search'
+
+    search_id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    # JSON: райони, кімнати, площа, холодна й повна оренда.
+    criteria = Column(TEXT, nullable=False)
+    # JSON: [[джерело, filter_id], ...] — записи площадок цього пошуку.
+    members = Column(TEXT, nullable=False)
+    # JSON: ключі кооперативів, на які підписує цей пошук.
+    coops = Column(TEXT, nullable=False, default='[]')
+    created_at = Column(DATETIME, nullable=False)
+
+
 Base.metadata.create_all(engine)
 
 

@@ -175,6 +175,9 @@ job.run_repeating(housing_receiver.send_due_immowelt, interval=300, first=420)
 # Follow-ups: the "you haven't created a filter yet" nudge and the
 # two-weeks-after-the-first-filter survey.
 job.run_repeating(housing_monitor.housing_followups_job, interval=1800, first=450)
+# Once after start: group every person's per-portal filter rows into the one
+# filter they created (housing_search), so "My filters" shows one card each.
+job.run_once(housing_monitor.migrate_legacy_searches_job, 90)
 # Weekly digest: every new flat vs the ones that matched each person's filters.
 job.run_daily(
     housing_digest.weekly_digest_job, time=housing_digest.DIGEST_TIME, days=(housing_digest.DIGEST_WEEKDAY,),
