@@ -126,6 +126,25 @@ def set_digest_off(user_id: int) -> None:
         session.close()
 
 
+def quiet_nudge_due(user_id: int, not_since: datetime) -> bool:
+    """No "your filter is quiet" message to this person since `not_since`."""
+    session = DBSession()
+    try:
+        row = session.query(HousingUserJourney).get(int(user_id))
+        return row is None or row.quiet_nudge_at is None or row.quiet_nudge_at < not_since
+    finally:
+        session.close()
+
+
+def mark_quiet_nudge_sent(user_id: int) -> None:
+    session = DBSession()
+    try:
+        _row(session, user_id).quiet_nudge_at = utc_now()
+        session.commit()
+    finally:
+        session.close()
+
+
 def digest_off_ids() -> Set[int]:
     session = DBSession()
     try:

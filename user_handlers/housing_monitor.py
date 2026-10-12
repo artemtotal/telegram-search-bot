@@ -362,7 +362,9 @@ CRITERIA_PICKER_OPTIONS = [
     {"key": "max_rooms", "label_key": "housing.field.label.rooms_max"},
     {"key": "min_area_m2", "label_key": "housing.field.label.area_min"},
     {"key": "max_area_m2", "label_key": "housing.field.label.area_max"},
-    {"key": "min_price", "label_key": "housing.field.label.price_min"},
+    # Нижньої межі ціни тут нема: вона лише відсікала дешеві квартири, яких
+    # ніхто не просив прибирати («від 400 €», «від 600 € тепла»), і плутала
+    # людей. Старі фільтри з нею пропонуємо послабити в housing_relax.
     {"key": "max_price", "label_key": "housing.field.label.price_max"},
 ]
 CRITERIA_PICKER_KEYS = [opt["key"] for opt in CRITERIA_PICKER_OPTIONS]
@@ -1058,8 +1060,13 @@ def _hits_breakdown(hits: Dict[str, int]) -> str:
     return " · ".join(f"{SOURCE_LABEL.get(source, source)} {count}" for source, count in ordered)
 
 
-def _after_filter_saved(context: CallbackContext, user_id, saved: list, edited: bool = False) -> None:
+def _after_filter_saved(context: CallbackContext, user_id, saved: list, edited: bool = False,
+                        search_id: Optional[int] = None) -> None:
     """Called by every wizard once a filter is stored (or edited).
+
+    `search_id` - the whole filter from the multi-source wizard: the person
+    then also gets "loosen it a little and you'd get N more" (housing_relax),
+    after editing too.
 
     Counting runs on the job queue rather than here: it reads every listing
     of the last month per source and asks the Immowelt receiver over HTTP,
@@ -1078,7 +1085,7 @@ def _after_filter_saved(context: CallbackContext, user_id, saved: list, edited: 
     try:
         job_queue.run_once(
             _filter_report_job, 0,
-            context={"user_id": int(user_id), "saved": list(saved), "edited": bool(edited)},
+            context={"user_id": int(user_id), "saved": list(saved), "edited": bool(edited), "search_id": search_id},
         )
     except Exception:
         logger.exception("Could not schedule the filter report for %s", user_id)
@@ -1093,13 +1100,29 @@ def _filter_report_job(context: CallbackContext) -> None:
     total = sum(hits.values())
     thin = bool(hits) and total <= THIN_FILTER_MAX_HITS
     bot = context.bot
-    if hits and not edited:
+    search_id = data.get("search_id")
+    if hits and (not edited or search_id):
         lang = i18n.get_lang(user_id)
-        text = i18n.t("housing.report.user", lang, days=FILTER_REPORT_DAYS, total=total)
-        if thin:
+        relax_report = None
+        if search_id:
+            from user_handlers import housing_relax
+            try:
+                relax_report = housing_relax.report_for_search(user_id, int(search_id))
+            except Exception:
+                logger.exception("Could not count relaxations for search %s", search_id)
+        shown_total = relax_report[1] if relax_report and relax_report[1] is not None else total
+        text = i18n.t("housing.report.user", lang, days=FILTER_REPORT_DAYS, total=shown_total)
+        keyboard = None
+        if relax_report and relax_report[2]:
+            search, base, found = relax_report
+            text += "\n\n" + housing_relax.offers_block(search["criteria"], base, found, lang)
+            keyboard = InlineKeyboardMarkup(
+                housing_relax.offer_rows(search["search_id"], search["criteria"], base, found, lang)
+            )
+        elif thin:
             text += "\n\n" + i18n.t("housing.report.user_thin", lang)
         try:
-            bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
+            bot.send_message(chat_id=user_id, text=text, parse_mode="HTML", reply_markup=keyboard)
         except Exception:
             logger.exception("Could not send the filter report to %s", user_id)
     if ADMIN_ID and user_id != ADMIN_ID:
@@ -5894,7 +5917,7 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
     _after_filter_saved(context, state["user_id"], [
         (source, filter_id, source_criteria) for source, filter_id, source_criteria, error in results
         if not error and source not in duplicates
-    ], edited=bool(replaced))
+    ], edited=bool(replaced), search_id=search_id)
     message.reply_text(
         "\n".join(lines), parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(rows),
@@ -6400,6 +6423,9 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         show_self_manage(update, context, edit=True)
     elif query.data.startswith("housing:s:") or query.data.startswith("housing:as:"):
         _search_action(update, context)
+    elif query.data.startswith("housing:relax:"):
+        from user_handlers import housing_relax
+        housing_relax.apply(update, context)
     elif query.data == "housing:au_ask":
         query.answer()
         start_admin_user_lookup(update, context)

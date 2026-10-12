@@ -23,6 +23,7 @@ from user_handlers import (
     housing_monitor,
     housing_digest,
     housing_receiver,
+    housing_relax,
 )
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
@@ -191,6 +192,8 @@ job.run_daily(
 )
 # Admin: one evening summary of new/edited filters instead of a message per filter.
 job.run_daily(housing_monitor.daily_filter_summary_job, time=housing_monitor.FILTER_SUMMARY_TIME)
+# A week without a single flat: tell the person why and offer one-tap relaxations.
+job.run_daily(housing_relax.quiet_filters_job, time=housing_relax.QUIET_CHECK_TIME)
 
 
 dispatcher.add_handler(msg_ai.handler)

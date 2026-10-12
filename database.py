@@ -1080,6 +1080,8 @@ class HousingUserJourney(Base):
     jobcenter_household = Column(INTEGER)
     # Pressed "don't send statistics" under the weekly digest.
     digest_off = Column(BOOLEAN, nullable=False, default=False)
+    # Last "your filter has been quiet for a week" message (housing_relax).
+    quiet_nudge_at = Column(DATETIME)
 
 
 class HousingSearch(Base):
@@ -1196,6 +1198,7 @@ _ensure_column('equeue_status', 'last_admin_alert_at', 'DATETIME')
 _ensure_column('equeue_status', 'last_stale_alert_at', 'DATETIME')
 _ensure_column('user_settings', 'news_subscribed', 'BOOLEAN NOT NULL DEFAULT 1')
 _ensure_column('housing_user_journey', 'digest_off', 'BOOLEAN NOT NULL DEFAULT 0')
+_ensure_column('housing_user_journey', 'quiet_nudge_at', 'DATETIME')
 _ensure_column('econsul_state', 'token_reminded_for', 'DATETIME')
 _ensure_column('econsul_state', 'login_id', 'TEXT')
 _ensure_column('econsul_state', 'login_message_id', 'INTEGER')
