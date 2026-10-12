@@ -29,6 +29,10 @@ import i18n
 
 # Пошук віддає результати цим запитом — його ж робить і сама сторінка видачі.
 LIST_URL = "https://www.vonovia.de/api/real-estate/list"
+# З 10.2026 запит вище без токена відповідає 401. Токен видає цей адрес (живе
+# 15 хв), а сторінка шле його в заголовку SEARCH_TOKEN_HEADER — так само й ми.
+SEARCH_TOKEN_URL = "https://www.vonovia.de/api/real-estate/search-token"
+SEARCH_TOKEN_HEADER = "X-VON-Search-Token"
 # Сторінка видачі: потрібна не заради розмітки, а заради куки для запиту вище.
 SEARCH_PAGE_URL = "https://www.vonovia.de/zuhause-finden/immobilien"
 DETAIL_BASE_URL = "https://www.vonovia.de/zuhause-finden/immobilien"

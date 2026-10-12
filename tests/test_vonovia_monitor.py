@@ -59,11 +59,15 @@ class FakeSession:
         self.pages = pages
         self.visited = []
         self.headers = {}
+        self.list_headers = []
 
     def get(self, url, params=None, headers=None, timeout=None):
         self.visited.append(url)
         if url == vonovia_monitor.vonovia_parser.SEARCH_PAGE_URL:
             return FakeResponse(text='<html>Suchergebnisse</html>')
+        if url == vonovia_monitor.vonovia_parser.SEARCH_TOKEN_URL:
+            return FakeResponse(payload={'token': 'tok-123', 'ttl': 900})
+        self.list_headers.append(dict(headers or {}))
         offset = int((params or {}).get('offset') or 0)
         index = offset // vonovia_monitor.vonovia_parser.PAGE_SIZE
         results = self.pages[index] if index < len(self.pages) else []
@@ -79,7 +83,18 @@ class VonoviaFetchTests(unittest.TestCase):
             vonovia_monitor._fetch_listings()
 
         self.assertEqual(session.visited[0], vonovia_monitor.vonovia_parser.SEARCH_PAGE_URL)
-        self.assertEqual(session.visited[1], vonovia_monitor.vonovia_parser.LIST_URL)
+        self.assertEqual(session.visited[1], vonovia_monitor.vonovia_parser.SEARCH_TOKEN_URL)
+        self.assertEqual(session.visited[2], vonovia_monitor.vonovia_parser.LIST_URL)
+
+    def test_every_api_request_carries_the_search_token(self):
+        """З 10.2026 без заголовка X-VON-Search-Token API відповідає 401."""
+        session = FakeSession([[_api_result(str(index)) for index in range(15)], [_api_result('extra')]])
+        with mock.patch('requests.Session', return_value=session):
+            vonovia_monitor._fetch_listings()
+
+        self.assertEqual(len(session.list_headers), 2)
+        for headers in session.list_headers:
+            self.assertEqual(headers.get('X-VON-Search-Token'), 'tok-123')
 
     def test_a_second_page_is_fetched_when_the_portal_reports_more(self):
         first = [_api_result(str(index)) for index in range(15)]

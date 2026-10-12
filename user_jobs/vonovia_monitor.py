@@ -64,8 +64,23 @@ def _session() -> requests.Session:
     return session
 
 
+def _search_token(session: requests.Session) -> str:
+    """Токен, без якого API видачі з 10.2026 відповідає 401 Unauthorized."""
+    response = session.get(
+        vonovia_parser.SEARCH_TOKEN_URL,
+        headers={"Accept": "application/json", "Referer": vonovia_parser.SEARCH_PAGE_URL},
+        timeout=TIMEOUT,
+    )
+    response.raise_for_status()
+    token = str((response.json() or {}).get("token") or "")
+    if not token:
+        raise RuntimeError("Vonovia не видала токен пошуку")
+    return token
+
+
 def _fetch_listings() -> List[Dict]:
     session = _session()
+    token = _search_token(session)
     listings: List[Dict] = []
     seen = set()
     offset = 0
@@ -81,6 +96,7 @@ def _fetch_listings() -> List[Dict]:
             headers={
                 "Accept": "application/json, text/plain, */*",
                 "Referer": vonovia_parser.SEARCH_PAGE_URL,
+                vonovia_parser.SEARCH_TOKEN_HEADER: token,
             },
             timeout=TIMEOUT,
         )
