@@ -3141,6 +3141,21 @@ class HousingBroadcastTests(unittest.TestCase):
         self.assertEqual(context.bot.send_message.call_args.kwargs['chat_id'], 1)
         self.assertEqual(context.bot.send_message.call_count, 1)
 
+    def test_the_buy_button_goes_only_to_those_who_do_not_pay_yet(self):
+        self._seed_subscribers(1, 2)
+        context = SimpleNamespace(user_data={'housing_broadcast': {'text': 'hi', 'step': 'confirm'}}, bot=mock.Mock())
+        query = SimpleNamespace(data='housing:broadcast_send_buy', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=312029534))
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch.object(housing_monitor.time, 'sleep'), \
+             mock.patch.object(housing_monitor.housing_tier, 'is_premium', side_effect=lambda uid: uid == 2):
+            housing_monitor.handle_callback(update, context)
+
+        markups = {c.kwargs['chat_id']: c.kwargs['reply_markup'] for c in context.bot.send_message.call_args_list}
+        self.assertEqual(markups[1].inline_keyboard[0][0].callback_data, 'housing:access_request')
+        self.assertIsNone(markups[2])
+
     def test_a_send_failure_for_one_recipient_does_not_stop_the_rest(self):
         self._seed_subscribers(1, 2)
         context = SimpleNamespace(user_data={'housing_broadcast': {'text': 'hi', 'step': 'confirm'}}, bot=mock.Mock())

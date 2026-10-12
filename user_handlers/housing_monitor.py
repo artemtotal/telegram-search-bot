@@ -2994,6 +2994,7 @@ def start_admin_add_flow(update: Update, context: CallbackContext, edit: bool = 
 def _broadcast_confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Надіслати", callback_data="housing:broadcast_send")],
+        [InlineKeyboardButton("✅ Надіслати + кнопка «⚡ Отримувати одразу»", callback_data="housing:broadcast_send_buy")],
         [InlineKeyboardButton(BTN_CANCEL, callback_data="housing:broadcast_cancel")],
     ])
 
@@ -3019,12 +3020,21 @@ def start_broadcast_flow(update: Update, context: CallbackContext, edit: bool = 
         update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
-def _send_broadcast(context: CallbackContext, text: str) -> Dict[str, int]:
+def _send_broadcast(context: CallbackContext, text: str, buy_button: bool = False) -> Dict[str, int]:
+    """`buy_button` — під текстом кнопка платної підписки мовою отримувача;
+    тим, хто вже платить, її не показуємо."""
     sent = 0
     failed = 0
     for user_id in user_settings_store.list_subscribed_user_ids():
+        markup = None
+        if buy_button and not housing_tier.is_premium(user_id):
+            markup = InlineKeyboardMarkup([[InlineKeyboardButton(
+                i18n.t("housing.btn.request_access", i18n.get_lang(user_id)), callback_data="housing:access_request",
+            )]])
         try:
-            context.bot.send_message(chat_id=user_id, text=text, parse_mode="HTML", disable_web_page_preview=True)
+            context.bot.send_message(
+                chat_id=user_id, text=text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup,
+            )
             sent += 1
         except Exception:
             failed += 1
@@ -6100,7 +6110,7 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         if update.effective_user and int(update.effective_user.id) == ADMIN_ID:
             context.user_data.pop("housing_broadcast", None)
             query.edit_message_text("Скасовано.")
-    elif query.data == "housing:broadcast_send":
+    elif query.data in ("housing:broadcast_send", "housing:broadcast_send_buy"):
         if not update.effective_user or int(update.effective_user.id) != ADMIN_ID:
             query.answer()
         else:
@@ -6110,7 +6120,7 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
                 query.answer()
             else:
                 query.answer("Розсилаю…")
-                result = _send_broadcast(context, broadcast_text)
+                result = _send_broadcast(context, broadcast_text, buy_button=query.data.endswith("_buy"))
                 query.edit_message_text(
                     f"📢 Розсилку завершено.\n\nНадіслано: {result['sent']}\nНе вдалося: {result['failed']}",
                 )
