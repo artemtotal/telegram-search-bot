@@ -217,6 +217,21 @@ class ImmoscoutMonitorTests(_DbTest):
         self.assertIn("Wohnung new", bot.messages[0][1])
         self.assertEqual(len(immoscout_store.list_filters(user_id=7)), 1)
 
+    def test_a_karl_marx_only_filter_gets_no_immoscout(self):
+        housing_search_store.create(7, {"min_rooms": 2.0}, [("karlmarx", 2)], [])
+        with mock.patch.object(immoscout_monitor, "_fetch_listings", return_value=[self._listing("old")]),              mock.patch.object(immoscout_monitor, "_add_details", return_value=0),              mock.patch("user_jobs.housing_tier.premium_user_ids", return_value={7}):
+            immoscout_monitor.check_job(SimpleNamespace(bot=FakeBot()))
+
+        self.assertEqual(housing_search_store.list_for_user(7)[0]["members"], [("karlmarx", 2)])
+        self.assertEqual(immoscout_store.list_filters(user_id=7), [])
+
+    def test_remove_member(self):
+        search_id = housing_search_store.create(7, {}, [("karlmarx", 2), ("immoscout", 5)], [])
+
+        housing_search_store.remove_member(search_id, "immoscout", 5)
+
+        self.assertEqual(housing_search_store.list_for_user(7)[0]["members"], [("karlmarx", 2)])
+
     def test_a_listing_whose_page_was_not_read_waits(self):
         immoscout_store.create_filter(user_id=7, title="t")
         bot = FakeBot()

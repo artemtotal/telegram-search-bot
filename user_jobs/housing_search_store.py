@@ -114,6 +114,21 @@ def add_member(search_id: int, source: str, filter_id: int) -> None:
         session.close()
 
 
+def remove_member(search_id: int, source: str, filter_id: int) -> None:
+    session = DBSession()
+    try:
+        row = session.query(HousingSearch).filter(HousingSearch.search_id == int(search_id)).first()
+        if row is None:
+            return
+        members = json.loads(row.members or "[]")
+        if [source, int(filter_id)] in members:
+            members.remove([source, int(filter_id)])
+            row.members = json.dumps(members)
+            session.commit()
+    finally:
+        session.close()
+
+
 def delete(search_id: int, user_id: int) -> bool:
     session = DBSession()
     try:

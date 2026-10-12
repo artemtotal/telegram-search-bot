@@ -48,6 +48,8 @@ CAPTION_LIMIT = 1024
 # Позначка в immoscout_status: існуючим фільтрам частину ImmoScout24 вже додано.
 BACKFILL_KEY = "backfill_existing_searches"
 SOURCE = "immoscout"
+# Фільтри одного кооперативу — до них портали не додаємо.
+KARLMARX_ONLY = {"karlmarx"}
 
 
 def _headers() -> Dict[str, str]:
@@ -124,7 +126,12 @@ def _backfill_existing_searches() -> int:
         return 0
     added = 0
     for search in housing_search_store.list_all():
-        if any(source == SOURCE for source, _ in search["members"]):
+        sources = {source for source, _ in search["members"]}
+        if SOURCE in sources:
+            continue
+        if sources and sources <= KARLMARX_ONLY:
+            # Старий фільтр «лише Karl Marx» — без цін і районів: портал із
+            # ним розсилав би все підряд (12.10 так прийшли квартири по 2600 €).
             continue
         criteria = search["criteria"]
         filter_id = immoscout_store.create_filter(
