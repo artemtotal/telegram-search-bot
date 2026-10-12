@@ -465,5 +465,11 @@
   "housing.finalize.search_updated": "✅ <b>Фільтр оновлено</b>",
   "housing.finalize.already_exists": "ℹ️ Такий фільтр у вас уже є — дублювати не став. Його видно в «⚙️ Мої фільтри».",
   "housing.finalize.nothing_saved": "⚠️ Фільтр не збережено — спробуйте ще раз трохи згодом.",
-  "housing.immoscout.plus_only": "🔒 До {until} написати власнику можуть лише учасники ImmoScout24 Plus — потім і всі інші."
+  "housing.immoscout.plus_only": "🔒 До {until} написати власнику можуть лише учасники ImmoScout24 Plus — потім і всі інші.",
+  "housing.ptype.question": "🏠 <b>Що шукаєте?</b>\n\nЦе стосується лише Immowelt: там є не тільки квартири, а й будинки та кімнати в WG. Інші сайти показують лише квартири.\n\nЗніміть позначку з того, що не потрібно, і натисніть «Готово».",
+  "housing.ptype.apartment": "Квартири",
+  "housing.ptype.house": "Будинки",
+  "housing.ptype.room": "Кімнати в WG",
+  "housing.search.property_types": "🏠 Тип житла (Immowelt): {value}",
+  "housing.toast.pick_a_property_type": "Оберіть хоча б один тип житла."
 }

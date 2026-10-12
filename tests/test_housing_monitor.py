@@ -2730,6 +2730,9 @@ class HousingCriteriaPickerTests(unittest.TestCase):
         }})
 
         housing_monitor.handle_callback(self._cb_update('housing:multi_district_done'), context)
+        # Immowelt має й будинки та кімнати в WG — спершу питаємо тип житла.
+        self.assertEqual(context.user_data['housing_admin']['step'], 'property_types')
+        housing_monitor.handle_callback(self._cb_update('housing:ptype_done'), context)
         self.assertEqual(context.user_data['housing_admin']['step'], 'jobcenter')
         update = self._cb_update('housing:jc:no')
         housing_monitor.handle_callback(update, context)
@@ -2740,6 +2743,66 @@ class HousingCriteriaPickerTests(unittest.TestCase):
         self.assertIn('housing:crit_done', callbacks)
         for opt in housing_monitor.CRITERIA_PICKER_KEYS:
             self.assertIn(f'housing:crit_toggle:{opt}', callbacks)
+
+    def test_property_types_are_asked_only_for_immowelt_and_all_start_checked(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'districts', 'user_id': 544675510,
+            'sources_selected': ['propotsdam'], 'districts_selected': [],
+        }})
+        housing_monitor.handle_callback(self._cb_update('housing:multi_district_done'), context)
+        self.assertEqual(context.user_data['housing_admin']['step'], 'jobcenter')
+
+        context.user_data['housing_admin'].update({'step': 'districts', 'sources_selected': ['immowelt', 'propotsdam']})
+        update = self._cb_update('housing:multi_district_done')
+        housing_monitor.handle_callback(update, context)
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['step'], 'property_types')
+        self.assertEqual(state['property_types_selected'], list(housing_monitor.PROPERTY_TYPE_KEYS))
+        labels = [b.text for row in update.callback_query.edit_message_text.call_args.kwargs['reply_markup'].inline_keyboard for b in row]
+        self.assertIn('✅ Квартири', labels)
+        self.assertIn('✅ Будинки', labels)
+        self.assertIn('✅ Кімнати в WG', labels)
+
+    def test_unticking_houses_and_rooms_keeps_flats_only_and_nothing_ticked_is_refused(self):
+        context = SimpleNamespace(user_data={'housing_admin': {
+            'mode': 'multi', 'step': 'property_types', 'user_id': 544675510,
+            'sources_selected': ['immowelt'], 'property_types_selected': ['apartment', 'house', 'room'],
+        }})
+        housing_monitor.handle_callback(self._cb_update('housing:ptype:house'), context)
+        housing_monitor.handle_callback(self._cb_update('housing:ptype:room'), context)
+        state = context.user_data['housing_admin']
+        self.assertEqual(state['property_types_selected'], ['apartment'])
+        self.assertEqual(housing_monitor._search_criteria_from_state(state)['property_types'], ['apartment'])
+
+        housing_monitor.handle_callback(self._cb_update('housing:ptype:apartment'), context)
+        refused = self._cb_update('housing:ptype_done')
+        housing_monitor.handle_callback(refused, context)
+        self.assertEqual(state['step'], 'property_types')
+        self.assertTrue(refused.callback_query.answer.call_args.kwargs.get('show_alert'))
+
+    def test_all_three_types_mean_no_restriction(self):
+        self.assertEqual(housing_monitor.normalize_property_types(['room', 'apartment', 'house']), ())
+        self.assertEqual(housing_monitor.normalize_property_types(''), ())
+        self.assertEqual(housing_monitor.normalize_property_types('house,apartment'), ('apartment', 'house'))
+        self.assertNotEqual(
+            housing_monitor._dedup_key({'property_types': ['apartment']}),
+            housing_monitor._dedup_key({'property_types': []}),
+        )
+
+    def test_flats_only_reaches_the_immowelt_receiver_and_the_card(self):
+        state = {
+            'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
+            'sources_selected': ['immowelt'], 'districts_selected': [],
+            'property_types_selected': ['apartment'], 'criteria_selected': [],
+        }
+        with mock.patch.object(housing_monitor, '_request', return_value={'ok': True, 'filter_id': 11}) as request,              mock.patch.object(housing_monitor, '_existing_filters_by_source', return_value={}),              mock.patch.object(housing_monitor, '_offer_recent_matches'),              mock.patch.object(housing_monitor, '_maybe_send_first_filter_congrats'),              mock.patch.object(housing_monitor, '_after_filter_saved'),              mock.patch.object(housing_monitor.housing_search_store, 'create', return_value=1):
+            housing_monitor._finalize_multi_filter(FakeMessage(user_id=544675510), SimpleNamespace(user_data={}), state)
+
+        posts = [call for call in request.call_args_list if call.args[0] == 'POST']
+        self.assertEqual(posts[0].kwargs['json']['property_types'], ['apartment'])
+        card = housing_monitor._search_card(1, {'property_types': ['apartment']}, ['immowelt'], [], 'uk')
+        self.assertIn('Тип житла (Immowelt): Квартири', card)
+        self.assertNotIn('Тип житла', housing_monitor._search_card(1, {}, ['immowelt'], [], 'uk'))
 
     def test_a_jobcenter_household_sets_the_price_limits_and_skips_the_price_question(self):
         context = SimpleNamespace(user_data={'housing_admin': {

@@ -1514,6 +1514,21 @@ _DEDUP_NUMERIC_FIELDS = (
 )
 
 
+# Immowelt шукає квартири, будинки й кімнати в WG — інші сайти дають лише
+# квартири, тож тип житла питаємо тільки коли обрано Immowelt.
+PROPERTY_TYPE_KEYS = ("apartment", "house", "room")
+
+
+def normalize_property_types(value) -> tuple:
+    """Обрані типи житла; порожньо — «усі» (так само, як усі три позначені)."""
+    if isinstance(value, str):
+        value = value.split(",")
+    chosen = {str(item).strip() for item in (value or []) if str(item).strip() in PROPERTY_TYPE_KEYS}
+    if not chosen or chosen == set(PROPERTY_TYPE_KEYS):
+        return ()
+    return tuple(key for key in PROPERTY_TYPE_KEYS if key in chosen)
+
+
 def _dedup_key(criteria: Dict[str, object]) -> tuple:
     def num(value):
         try:
@@ -1527,7 +1542,9 @@ def _dedup_key(criteria: Dict[str, object]) -> tuple:
     names = tuple(sorted(
         str(name).strip().casefold() for name in (districts or []) if str(name).strip()
     ))
-    return (names,) + tuple(num(criteria.get(field)) for field in _DEDUP_NUMERIC_FIELDS)
+    return (names,) + tuple(num(criteria.get(field)) for field in _DEDUP_NUMERIC_FIELDS) + (
+        normalize_property_types(criteria.get("property_types")),
+    )
 
 
 def _stored_dedup_key(item: Dict[str, object], source: str) -> tuple:
@@ -3285,6 +3302,7 @@ def _search_criteria_from_state(state: dict) -> Dict[str, object]:
         "min_price_eur", "max_price_eur", "min_price_warm_eur", "max_price_warm_eur",
     ):
         criteria[key] = state.get(key)
+    criteria["property_types"] = list(normalize_property_types(state.get("property_types_selected")))
     return criteria
 
 
@@ -3321,6 +3339,11 @@ def _search_card(number: int, criteria: Dict[str, object], sources, coops, lang:
             ", ".join(coop_labels) if coop_labels else i18n.t("housing.search.coops_none", lang)
         )),
     ]
+    property_types = normalize_property_types(criteria.get("property_types"))
+    if property_types:
+        lines.insert(6, i18n.t("housing.search.property_types", lang, value=", ".join(
+            i18n.t(f"housing.ptype.{key}", lang) for key in property_types
+        )))
     note = _unbounded_note(criteria, lang)
     if note:
         lines.append(note)
@@ -5341,6 +5364,67 @@ def _finish_multi_districts(update: Update, context: CallbackContext, all_distri
         state["districts_selected"] = []
     query.answer()
     lang = i18n.get_lang(update.effective_user.id)
+    if "immowelt" in (state.get("sources_selected") or []):
+        _ask_property_types(query, state, lang)
+        return
+    _ask_jobcenter(query, state, lang)
+
+
+def _property_types_keyboard(selected, lang: str = "uk") -> InlineKeyboardMarkup:
+    selected = set(selected or [])
+    rows = [
+        [InlineKeyboardButton(
+            ("✅ " if key in selected else "☐ ") + i18n.t(f"housing.ptype.{key}", lang),
+            callback_data=f"housing:ptype:{key}",
+        )]
+        for key in PROPERTY_TYPE_KEYS
+    ]
+    rows.append([InlineKeyboardButton(i18n.t("housing.btn.done", lang), callback_data="housing:ptype_done")])
+    rows.append([InlineKeyboardButton(BTN_CANCEL, callback_data="housing:multi_cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _ask_property_types(query, state: dict, lang: str) -> None:
+    """Квартири / будинки / кімнати в WG — лише для Immowelt; спершу позначені всі."""
+    if state.get("property_types_selected") is None:
+        state["property_types_selected"] = list(PROPERTY_TYPE_KEYS)
+    state["step"] = "property_types"
+    query.edit_message_text(
+        i18n.t("housing.ptype.question", lang), parse_mode="HTML",
+        reply_markup=_property_types_keyboard(state["property_types_selected"], lang),
+    )
+
+
+def _toggle_property_type(update: Update, context: CallbackContext, key: str) -> None:
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    if state.get("mode") != "multi" or state.get("step") != "property_types" or key not in PROPERTY_TYPE_KEYS:
+        query.answer()
+        return
+    selected = list(state.get("property_types_selected") or [])
+    if key in selected:
+        selected.remove(key)
+    else:
+        selected.append(key)
+    state["property_types_selected"] = selected
+    query.answer()
+    lang = i18n.get_lang(update.effective_user.id)
+    query.edit_message_text(
+        i18n.t("housing.ptype.question", lang), parse_mode="HTML", reply_markup=_property_types_keyboard(selected, lang),
+    )
+
+
+def _finish_property_types(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    state = context.user_data.get("housing_admin") or {}
+    if state.get("mode") != "multi" or state.get("step") != "property_types":
+        query.answer()
+        return
+    lang = i18n.get_lang(update.effective_user.id)
+    if not state.get("property_types_selected"):
+        query.answer(i18n.t("housing.toast.pick_a_property_type", lang), show_alert=True)
+        return
+    query.answer()
     _ask_jobcenter(query, state, lang)
 
 
@@ -5506,6 +5590,10 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             "min_area_m2": state.get("min_area_m2"),
             "max_area_m2": state.get("max_area_m2"),
         }
+        property_types = normalize_property_types(state.get("property_types_selected"))
+        if property_types:
+            # Порожньо в приймачі й так означає «усе», тож шлемо лише звужений вибір.
+            criteria["property_types"] = list(property_types)
         title = _auto_title("immowelt", criteria)
         filter_id = _duplicate_filter_id(existing, "immowelt", criteria)
         if filter_id is not None:
@@ -6044,6 +6132,13 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
             reply_markup=_multi_district_keyboard(state, state.get("districts_selected"), lang),
         )
         return True
+    if step == "property_types":
+        lang = i18n.get_lang(update.effective_user.id)
+        update.message.reply_text(
+            i18n.t("housing.wizard.pick_criteria_hint", lang),
+            reply_markup=_property_types_keyboard(state.get("property_types_selected"), lang),
+        )
+        return True
     if step == "criteria_picker":
         lang = i18n.get_lang(update.effective_user.id)
         update.message.reply_text(
@@ -6212,6 +6307,10 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _finish_multi_districts(update, context)
     elif query.data == "housing:multi_district_all":
         _finish_multi_districts(update, context, all_districts=True)
+    elif query.data.startswith("housing:ptype:"):
+        _toggle_property_type(update, context, query.data.split(":", 2)[2])
+    elif query.data == "housing:ptype_done":
+        _finish_property_types(update, context)
     elif query.data == "housing:digest_off":
         housing_journey_store.set_digest_off(int(update.effective_user.id))
         query.answer(i18n.t("housing.digest.off_done", i18n.get_lang(update.effective_user.id)))

@@ -465,5 +465,11 @@
   "housing.finalize.search_updated": "✅ <b>Фильтр обновлён</b>",
   "housing.finalize.already_exists": "ℹ️ Такой фильтр у вас уже есть — дублировать не стал. Он виден в «⚙️ Мои фильтры».",
   "housing.finalize.nothing_saved": "⚠️ Фильтр не сохранён — попробуйте ещё раз чуть позже.",
-  "housing.immoscout.plus_only": "🔒 До {until} написать владельцу могут только участники ImmoScout24 Plus — потом и все остальные."
+  "housing.immoscout.plus_only": "🔒 До {until} написать владельцу могут только участники ImmoScout24 Plus — потом и все остальные.",
+  "housing.ptype.question": "🏠 <b>Что ищете?</b>\n\nЭто касается только Immowelt: там есть не только квартиры, но и дома и комнаты в WG. Другие сайты показывают только квартиры.\n\nСнимите отметку с того, что не нужно, и нажмите «Готово».",
+  "housing.ptype.apartment": "Квартиры",
+  "housing.ptype.house": "Дома",
+  "housing.ptype.room": "Комнаты в WG",
+  "housing.search.property_types": "🏠 Тип жилья (Immowelt): {value}",
+  "housing.toast.pick_a_property_type": "Выберите хотя бы один тип жилья."
 }

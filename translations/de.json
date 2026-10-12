@@ -465,5 +465,11 @@
   "housing.finalize.search_updated": "✅ <b>Filter aktualisiert</b>",
   "housing.finalize.already_exists": "ℹ️ Diesen Filter haben Sie schon — kein Duplikat angelegt. Er steht unter „⚙️ Meine Filter“.",
   "housing.finalize.nothing_saved": "⚠️ Filter nicht gespeichert — bitte etwas später noch einmal versuchen.",
-  "housing.immoscout.plus_only": "🔒 Bis {until} können nur ImmoScout24-Plus-Mitglieder den Anbieter kontaktieren — danach alle."
+  "housing.immoscout.plus_only": "🔒 Bis {until} können nur ImmoScout24-Plus-Mitglieder den Anbieter kontaktieren — danach alle.",
+  "housing.ptype.question": "🏠 <b>Was suchen Sie?</b>\n\nDas betrifft nur Immowelt: Dort gibt es nicht nur Wohnungen, sondern auch Häuser und WG-Zimmer. Die anderen Portale zeigen nur Wohnungen.\n\nEntfernen Sie das Häkchen bei allem, was Sie nicht brauchen, und tippen Sie auf „Fertig“.",
+  "housing.ptype.apartment": "Wohnungen",
+  "housing.ptype.house": "Häuser",
+  "housing.ptype.room": "WG-Zimmer",
+  "housing.search.property_types": "🏠 Art (Immowelt): {value}",
+  "housing.toast.pick_a_property_type": "Bitte wählen Sie mindestens eine Art."
 }
