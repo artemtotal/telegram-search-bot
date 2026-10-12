@@ -281,9 +281,19 @@ def check_job(context) -> Dict[str, int]:
             continue
         text = kleinanzeigen_matching.format_notification(listing, lang=i18n.get_lang(chat_id))
         text += gate.footer(chat_id)
-        posted_as_caption = _send_listing(bot, chat_id, listing, text)
-        if not posted_as_caption:
-            bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
+        try:
+            posted_as_caption = _send_listing(bot, chat_id, listing, text)
+            if not posted_as_caption:
+                bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
+        except Exception as exc:
+            # Людина заблокувала бота чи видалила акаунт: пробувати далі марно.
+            # Раніше виняток тут обривав увесь обхід, і всі фільтри після неї
+            # не отримували нічого (знайдено 12.10.2026).
+            if housing_tier.recipient_gone(exc):
+                kleinanzeigen_store.mark_delivered(int(filt["filter_id"]), listing_key)
+            else:
+                logger.exception("Could not send kleinanzeigen listing %s to %s", listing_key, chat_id)
+            continue
         kleinanzeigen_store.mark_delivered(int(filt["filter_id"]), listing_key)
         gate.sent(chat_id, listing_key, int(filt["filter_id"]))
         sent += 1

@@ -83,6 +83,22 @@ def log_sent(
         session.close()
 
 
+# Відповіді Telegram, після яких цій людині не дійде вже ніщо.
+_GONE_MARKERS = (
+    "bot was blocked", "user_is_blocked", "user is deactivated", "chat not found",
+    "bot was kicked", "peer_id_invalid",
+)
+
+
+def recipient_gone(exc: BaseException) -> bool:
+    """Чи означає помилка відправки, що людина недосяжна назавжди."""
+    from telegram.error import BadRequest, Unauthorized
+
+    if isinstance(exc, Unauthorized):
+        return True
+    return isinstance(exc, BadRequest) and any(marker in str(exc).lower() for marker in _GONE_MARKERS)
+
+
 class DeliveryGate:
     """One per scan of a source: decides whether a match may go out now.
 

@@ -17,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 from database import Base
 from user_jobs import (
     housing_search_store,
+    housing_tier,
     immoscout_matching,
     immoscout_monitor,
     immoscout_parser,
@@ -231,6 +232,34 @@ class ImmoscoutMonitorTests(_DbTest):
         housing_search_store.remove_member(search_id, "immoscout", 5)
 
         self.assertEqual(housing_search_store.list_for_user(7)[0]["members"], [("karlmarx", 2)])
+
+    def test_a_person_who_blocked_the_bot_does_not_stop_everyone_after_them(self):
+        from telegram.error import Unauthorized
+
+        class BlockedByFirst(FakeBot):
+            def send_message(self, chat_id, text, **kwargs):
+                if chat_id == 7:
+                    raise Unauthorized("Forbidden: bot was blocked by the user")
+                super().send_message(chat_id, text, **kwargs)
+
+        blocked = immoscout_store.create_filter(user_id=7, title="t")
+        immoscout_store.create_filter(user_id=8, title="t")
+        bot = BlockedByFirst()
+        with mock.patch.object(immoscout_monitor, "_fetch_listings", return_value=[self._listing("x")]),              mock.patch.object(immoscout_monitor, "_add_details", return_value=0),              mock.patch.object(immoscout_monitor, "_backfill_existing_searches"),              mock.patch.object(immoscout_monitor, "_send_listing", return_value=False),              mock.patch("user_jobs.housing_tier.premium_user_ids", return_value={7, 8}):
+            immoscout_monitor.check_job(SimpleNamespace(bot=bot))
+
+        self.assertEqual([chat for chat, _ in bot.messages], [8])
+        # Недосяжній людині не пробуємо слати те саме знову й знову.
+        self.assertIn((blocked, "x"), immoscout_store.delivered_pairs())
+
+    def test_only_a_gone_recipient_counts_as_gone(self):
+        from telegram.error import BadRequest, NetworkError, Unauthorized
+
+        self.assertTrue(housing_tier.recipient_gone(Unauthorized("Forbidden: bot was blocked by the user")))
+        self.assertTrue(housing_tier.recipient_gone(BadRequest('Failed to send message #1 with the error message "user_is_blocked"')))
+        self.assertTrue(housing_tier.recipient_gone(BadRequest("Chat not found")))
+        self.assertFalse(housing_tier.recipient_gone(BadRequest("Message is too long")))
+        self.assertFalse(housing_tier.recipient_gone(NetworkError("timed out")))
 
     def test_a_listing_whose_page_was_not_read_waits(self):
         immoscout_store.create_filter(user_id=7, title="t")
