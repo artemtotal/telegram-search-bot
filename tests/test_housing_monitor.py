@@ -3227,7 +3227,7 @@ class HousingAccessRequestTests(unittest.TestCase):
             housing_monitor.show_menu(update, context)
 
         text = update.effective_message.reply_text.call_args.args[0]
-        self.assertIn('9 порталами', text)
+        self.assertIn('10 порталами', text)
         self.assertIn('5 €', text)
 
     def test_district_pickers_bold_the_current_selection(self):
@@ -4027,10 +4027,10 @@ class HousingCoopSubscriptionTests(unittest.TestCase):
 
         self.assertIn(housing_monitor.BTN_COOPS, labels)
 
-    def test_all_twelve_sources_are_listed(self):
-        """Дев'ять порталів із фільтрами плюс три кооперативи під сторожем."""
-        self.assertEqual(len(housing_monitor.ALL_HOUSING_SOURCES), 12)
-        for key in ('vonovia', 'gewoba', 'wbg1903', 'wbg_daheim'):
+    def test_all_thirteen_sources_are_listed(self):
+        """Десять порталів із фільтрами плюс три кооперативи під сторожем."""
+        self.assertEqual(len(housing_monitor.ALL_HOUSING_SOURCES), 13)
+        for key in ('vonovia', 'immoscout', 'gewoba', 'wbg1903', 'wbg_daheim'):
             self.assertIn(key, housing_monitor.ALL_HOUSING_SOURCES)
 
     def test_toggling_on_subscribes_and_toggling_off_pauses(self):
@@ -4739,6 +4739,21 @@ class HousingSearchTests(unittest.TestCase):
         self.assertEqual(housing_monitor._parse_user_ref('@katep'), 42)
         self.assertEqual(housing_monitor._parse_user_ref('544675510'), 544675510)
         self.assertIsNone(housing_monitor._parse_user_ref('@nobody'))
+
+    def test_the_wizard_also_searches_immoscout_with_the_chosen_districts(self):
+        state = {
+            'mode': 'multi', 'user_id': self.USER, 'sources_selected': ['immoscout'], 'coops_selected': [],
+            'districts_selected': ['Babelsberg', 'Golm'], 'min_rooms': 2.0, 'max_price_warm_eur': 1100.0,
+        }
+        with mock.patch.object(housing_monitor, '_existing_filters_by_source', return_value={}),              mock.patch.object(housing_monitor, '_offer_recent_matches'),              mock.patch.object(housing_monitor, '_maybe_send_first_filter_congrats'),              mock.patch.object(housing_monitor.immoscout_store, 'create_filter', return_value=4) as create_filter:
+            housing_monitor._finalize_multi_filter(FakeMessage(user_id=self.USER), SimpleNamespace(user_data={}), state)
+
+        kwargs = create_filter.call_args.kwargs
+        self.assertEqual(kwargs['districts'], 'Babelsberg,Golm')
+        self.assertEqual(kwargs['max_price_warm_eur'], 1100.0)
+        members = housing_monitor.housing_search_store.list_for_user(self.USER)[0]['members']
+        self.assertEqual(members, [('immoscout', 4)])
+        self.assertIn('immoscout', housing_monitor.AVAILABLE_SOURCE_KEYS)
 
     def test_admin_panel_and_notifications_lead_to_a_persons_filters(self):
         callbacks = self._callbacks(housing_monitor._admin_keyboard())

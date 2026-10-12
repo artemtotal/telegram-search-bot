@@ -20,6 +20,7 @@ import i18n
 from database import (
     DBSession,
     HousingFilterEvent,
+    ImmoscoutListing,
     KarlmarxListing,
     KleinanzeigenListing,
     LocalsListing,
@@ -39,6 +40,8 @@ from user_jobs import (
     housing_search_grouping,
     housing_search_store,
     housing_tier,
+    immoscout_matching,
+    immoscout_store,
     karlmarx_matching,
     karlmarx_store,
     kleinanzeigen_matching,
@@ -304,6 +307,7 @@ VONOVIA_CRITERIA_BY_KEY = {spec["key"]: spec for spec in VONOVIA_CRITERIA_FIELDS
 # додавати нове джерело буде такий самий однорядковий запис, а не окремий майстер.
 AVAILABLE_SOURCES = [
     {"key": "immowelt", "icon": "🏠", "label": "Immowelt"},
+    {"key": "immoscout", "icon": "🔵", "label": "ImmoScout24"},
     {"key": "propotsdam", "icon": "🏢", "label": "ProPotsdam"},
     {"key": "semmelhaack", "icon": "🏘", "label": "SEMMELHAACK"},
     {"key": "schoba", "icon": "🏡", "label": "SCHOBA"},
@@ -316,7 +320,7 @@ AVAILABLE_SOURCES = [
 AVAILABLE_SOURCE_KEYS = [spec["key"] for spec in AVAILABLE_SOURCES]
 # Immowelt і ProPotsdam мають райони (Stadtteil); SEMMELHAACK — ні. Спільний крок
 # вибору району в майстрі показуємо, лише якщо серед обраних джерел є хоч одне звідси.
-DISTRICT_AWARE_SOURCES = {"immowelt", "propotsdam"}
+DISTRICT_AWARE_SOURCES = {"immowelt", "propotsdam", "immoscout"}
 
 # Район, кімнати й площу той самий фільтр питає лише раз — і Immowelt, і ProPotsdam
 # розуміють ці умови однаково. Ціну натомість питає окремо для кожного обраного
@@ -663,11 +667,12 @@ def _min_over_max_text(spec: dict, lang: str = "uk") -> str:
 # ProPotsdam теж сюди: його список друкує лише Gesamtmiete, але холодна
 # оренда стоїть усередині картки оголошення, і колектор її забирає.
 KALTMIETE_SOURCES = {"immowelt", "semmelhaack", "schoba", "regiomakler", "locals",
-                     "kleinanzeigen", "propotsdam", "vonovia"}
+                     "kleinanzeigen", "propotsdam", "vonovia", "immoscout"}
 # Повну оренду (з комуналкою) сьогодні публікують ці джерела: ProPotsdam —
 # як Gesamtmiete, Karl Marx — як Warmmiete, SEMMELHAACK, ImmoTeam/alpha і
 # Vonovia — поруч із холодною (у Vonovia — на сторінці оголошення).
-WARMMIETE_SOURCES = {"propotsdam", "karlmarx", "semmelhaack", "regiomakler", "vonovia"}
+# ImmoScout24 — Warmmiete з картки оголошення.
+WARMMIETE_SOURCES = {"propotsdam", "karlmarx", "semmelhaack", "regiomakler", "vonovia", "immoscout"}
 
 
 def _price_steps_for(sources_selected) -> list:
@@ -925,6 +930,7 @@ _LOCAL_SOURCE_MODULES = {
     "locals": (locals_store, locals_matching),
     "karlmarx": (karlmarx_store, karlmarx_matching),
     "vonovia": (vonovia_store, vonovia_matching),
+    "immoscout": (immoscout_store, immoscout_matching),
 }
 RECENT_WINDOWS = [("housing.recent.last_hour", 1), ("housing.recent.last_day", 24)]
 
@@ -989,6 +995,7 @@ _LISTING_MODELS = {
     "locals": LocalsListing,
     "karlmarx": KarlmarxListing,
     "vonovia": VonoviaListing,
+    "immoscout": ImmoscoutListing,
 }
 # How far back "this filter would have caught N flats" looks, and at how
 # many hits a filter counts as too narrow to be worth waiting on.
@@ -1347,7 +1354,7 @@ COOP_SOURCE_KEYS = [coop["key"] for coop in coop_watchdog.COOPERATIVES]
 COOP_PREFIXES = {"gewoba": "G", "wbg1903": "W", "wbg_daheim": "D"}
 ALL_HOUSING_SOURCES = [
     "immowelt", "propotsdam", "semmelhaack", "schoba",
-    "regiomakler", "kleinanzeigen", "locals", "karlmarx", "vonovia",
+    "regiomakler", "kleinanzeigen", "locals", "karlmarx", "vonovia", "immoscout",
     *COOP_SOURCE_KEYS,
 ]
 
@@ -1449,6 +1456,9 @@ def user_filters(user_id: Optional[int]) -> list:
     von = vonovia_store.list_filters(user_id=int(user_id), active_only=True)
     for item in von:
         item.setdefault("source", "vonovia")
+    scout = immoscout_store.list_filters(user_id=int(user_id), active_only=True)
+    for item in scout:
+        item.setdefault("source", "immoscout")
     coops = coop_watchdog_store.list_filters(user_id=int(user_id), active_only=True)
     for item in coops:
         item["source"] = item["coop_key"]
@@ -1486,6 +1496,9 @@ def manageable_filters(user_id: Optional[int]) -> list:
     von = vonovia_store.list_filters(user_id=int(user_id))
     for item in von:
         item.setdefault("source", "vonovia")
+    scout = immoscout_store.list_filters(user_id=int(user_id))
+    for item in scout:
+        item.setdefault("source", "immoscout")
     return immowelt + propot + semm + schoba + regio + kanz + loc + km + von
 
 
@@ -1948,6 +1961,7 @@ _GENERIC_STATUS_SOURCES = [
     (locals_store, "locals®", PROPOTSDAM_STALE_AFTER, "housing.status.checking"),
     (karlmarx_store, "Karl Marx", PROPOTSDAM_STALE_AFTER, "housing.status.checking"),
     (vonovia_store, "Vonovia", PROPOTSDAM_STALE_AFTER, "housing.status.checking"),
+    (immoscout_store, "ImmoScout24", PROPOTSDAM_STALE_AFTER, "housing.status.checking"),
 ]
 
 
@@ -2080,7 +2094,7 @@ def _render_menu(user_id: int, lang: str = "uk") -> str:
         prefixes = {
             "immowelt": "", "propotsdam": "P", "semmelhaack": "S", "schoba": "C",
             "regiomakler": "R", "kleinanzeigen": "K", "locals": "L", "karlmarx": "M",
-            "vonovia": "V",
+            "vonovia": "V", "immoscout": "I",
             **COOP_PREFIXES,
         }
         for item in filters:
@@ -2178,6 +2192,11 @@ def _admin_rows() -> list:
         rows.append({
             "user_id": int(item.get("user_id")), "label": f"V#{int(item.get('filter_id'))}",
             "title": html.escape(str(item.get("title") or "Vonovia")),
+        })
+    for item in immoscout_store.list_filters():
+        rows.append({
+            "user_id": int(item.get("user_id")), "label": f"I#{int(item.get('filter_id'))}",
+            "title": html.escape(str(item.get("title") or "ImmoScout24")),
         })
     for item in coop_watchdog_store.list_filters():
         prefix = COOP_PREFIXES.get(item["coop_key"], "?")
@@ -2646,7 +2665,7 @@ def _delete_all_filters_for_user(user_id: int) -> int:
         _sync_propot_filters()
 
     for store in (semmelhaack_store, schoba_store, regiomakler_store, kleinanzeigen_store,
-                  locals_store, karlmarx_store, vonovia_store):
+                  locals_store, karlmarx_store, vonovia_store, immoscout_store):
         for filt in store.list_filters(user_id=user_id):
             if store.delete_filter(int(filt["filter_id"]), user_id=user_id):
                 removed += 1
@@ -2681,7 +2700,7 @@ def _set_all_filters_active_for_user(user_id: int, active: bool) -> int:
         _sync_propot_filters()
 
     for store in (semmelhaack_store, schoba_store, regiomakler_store, kleinanzeigen_store,
-                  locals_store, karlmarx_store, vonovia_store):
+                  locals_store, karlmarx_store, vonovia_store, immoscout_store):
         for filt in store.list_filters(user_id=user_id):
             if store.set_filter_active(int(filt["filter_id"]), active, user_id=user_id):
                 changed += 1
@@ -3185,13 +3204,14 @@ def _item_source(item: Dict[str, object]) -> str:
 SOURCE_ICON = {
     "immowelt": "🏠", "propotsdam": "🏢", "semmelhaack": "🏘", "schoba": "🏡",
     "regiomakler": "🤝", "kleinanzeigen": "📋", "locals": "🔑", "karlmarx": "🧱",
-    "vonovia": "🏬",
+    "vonovia": "🏬", "immoscout": "🔵",
     "gewoba": "🏗", "wbg1903": "🏚", "wbg_daheim": "🛖",
 }
 SOURCE_LABEL = {
     "immowelt": "Immowelt", "propotsdam": "ProPotsdam", "semmelhaack": "SEMMELHAACK",
     "schoba": "SCHOBA", "regiomakler": "ImmoTeam/alpha", "kleinanzeigen": "Kleinanzeigen",
     "locals": "locals®", "karlmarx": "Karl Marx", "vonovia": "Vonovia",
+    "immoscout": "ImmoScout24",
     "all": "усі джерела",
     # Labels come straight from coop_watchdog.COOPERATIVES - one source of
     # truth for the human-readable name of each cooperative.
@@ -3220,6 +3240,8 @@ def _item_criteria_summary(item: Dict[str, object], source: str, lang: str = "uk
             "min_area_m2": item.get("min_area_m2"),
             "max_area_m2": item.get("max_area_m2"),
         }
+    elif source == "immoscout":
+        criteria = {**item, "districts": [d for d in str(item.get("districts") or "").split(",") if d]}
     else:
         criteria = item
     # _describe_criteria готує текст для HTML-повідомлення; кнопки HTML не
@@ -3752,6 +3774,8 @@ def _set_one_filter_active(source: str, filter_id: int, active: bool, user_id: i
         return karlmarx_store.set_filter_active(filter_id, active, user_id=user_id)
     if source == "vonovia":
         return vonovia_store.set_filter_active(filter_id, active, user_id=user_id)
+    if source == "immoscout":
+        return immoscout_store.set_filter_active(filter_id, active, user_id=user_id)
     try:
         _request("PATCH", f"/api/housing/filters/{filter_id}/active", json={"active": active})
         return True
@@ -3780,6 +3804,8 @@ def _delete_one_filter(source: str, filter_id: int, user_id: int) -> bool:
         return karlmarx_store.delete_filter(filter_id, user_id=user_id)
     if source == "vonovia":
         return vonovia_store.delete_filter(filter_id, user_id=user_id)
+    if source == "immoscout":
+        return immoscout_store.delete_filter(filter_id, user_id=user_id)
     try:
         _request("DELETE", f"/api/housing/filters/{filter_id}")
         return True
@@ -5689,6 +5715,34 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
                 max_price_warm_eur=state.get("max_price_warm_eur"),
             )
         results.append(("vonovia", filter_id, criteria, None))
+    if "immoscout" in sources:
+        # Райони — ті, що людина обрала (назви Immowelt чи ProPotsdam): ImmoScout24
+        # дрібніше ділить їх («Babelsberg Nord»), див. immoscout_matching.
+        criteria = {
+            "districts": districts,
+            "min_price_eur": state.get("min_price_eur"),
+            "max_price_eur": state.get("max_price_eur"),
+            "min_price_warm_eur": state.get("min_price_warm_eur"),
+            "max_price_warm_eur": state.get("max_price_warm_eur"),
+            "min_rooms": state.get("min_rooms"),
+            "max_rooms": state.get("max_rooms"),
+            "min_area_m2": state.get("min_area_m2"),
+            "max_area_m2": state.get("max_area_m2"),
+        }
+        title = _auto_title("immoscout", criteria)
+        filter_id = _duplicate_filter_id(existing, "immoscout", criteria)
+        if filter_id is not None:
+            duplicates.add("immoscout")
+        else:
+            filter_id = immoscout_store.create_filter(
+                user_id=state["user_id"], title=title, districts=",".join(districts),
+                min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
+                min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+                min_price_eur=state.get("min_price_eur"), max_price_eur=state.get("max_price_eur"),
+                min_price_warm_eur=state.get("min_price_warm_eur"),
+                max_price_warm_eur=state.get("max_price_warm_eur"),
+            )
+        results.append(("immoscout", filter_id, criteria, None))
     context.user_data.pop("housing_admin", None)
     lang = _dialog_lang(state)
     user_id = int(state["user_id"])

@@ -21,6 +21,7 @@ LOCAL_FILTER_TABLES = {
     "locals": "locals_filter",
     "karlmarx": "karlmarx_filter",
     "vonovia": "vonovia_filter",
+    "immoscout": "immoscout_filter",
 }
 
 
@@ -71,6 +72,15 @@ def list_for_user(user_id: int) -> List[Dict]:
             .order_by(HousingSearch.created_at.asc(), HousingSearch.search_id.asc())
             .all()
         )
+        return [_to_dict(row) for row in rows]
+    finally:
+        session.close()
+
+
+def list_all() -> List[Dict]:
+    session = DBSession()
+    try:
+        rows = session.query(HousingSearch).order_by(HousingSearch.search_id.asc()).all()
         return [_to_dict(row) for row in rows]
     finally:
         session.close()

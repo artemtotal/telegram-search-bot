@@ -1,0 +1,240 @@
+{
+ "header": {
+  "id": "171646044"
+ },
+ "sections": [
+  {
+   "type": "MEDIA",
+   "media": [
+    {
+     "type": "PICTURE",
+     "caption": "Ihr neues Zuhause!",
+     "previewImageUrl": "https://pictures.immobilienscout24.de/listings/38cfc4d1-307e-44a2-b7b7-e290fb0ae19e-2109553034.jpg/ORIG/resize/800x600/format/webp/quality/80",
+     "imageUrlForWeb": "https://pictures.immobilienscout24.de/listings/38cfc4d1-307e-44a2-b7b7-e290fb0ae19e-2109553034.jpg/ORIG/legacy_thumbnail/%WIDTH%x%HEIGHT%/format/jpg",
+     "fullImageUrl": "https://pictures.immobilienscout24.de/listings/38cfc4d1-307e-44a2-b7b7-e290fb0ae19e-2109553034.jpg/ORIG/resize/1500x1000/format/webp/quality/80"
+    },
+    {
+     "type": "PICTURE",
+     "caption": "Hier spielen die Kinder!",
+     "previewImageUrl": "https://pictures.immobilienscout24.de/listings/545a0d38-07e3-47c7-85dc-e2ceb9ce69e9-2109553050.jpg/ORIG/resize/800x600/format/webp/quality/80",
+     "imageUrlForWeb": "https://pictures.immobilienscout24.de/listings/545a0d38-07e3-47c7-85dc-e2ceb9ce69e9-2109553050.jpg/ORIG/legacy_thumbnail/%WIDTH%x%HEIGHT%/format/jpg",
+     "fullImageUrl": "https://pictures.immobilienscout24.de/listings/545a0d38-07e3-47c7-85dc-e2ceb9ce69e9-2109553050.jpg/ORIG/resize/1500x1000/format/webp/quality/80"
+    },
+    {
+     "type": "PICTURE",
+     "caption": "Wohnbereich Beispiel",
+     "previewImageUrl": "https://pictures.immobilienscout24.de/listings/6adbc93d-1059-41fa-a994-1043537232a9-2109553074.jpg/ORIG/resize/800x600/format/webp/quality/80",
+     "imageUrlForWeb": "https://pictures.immobilienscout24.de/listings/6adbc93d-1059-41fa-a994-1043537232a9-2109553074.jpg/ORIG/legacy_thumbnail/%WIDTH%x%HEIGHT%/format/jpg",
+     "fullImageUrl": "https://pictures.immobilienscout24.de/listings/6adbc93d-1059-41fa-a994-1043537232a9-2109553074.jpg/ORIG/resize/1500x1000/format/webp/quality/80"
+    }
+   ]
+  },
+  {
+   "type": "TOP_ATTRIBUTES",
+   "attributes": [
+    {
+     "label": "Kaltmiete 16,14 €/m²",
+     "highlighted": true,
+     "text": "1.069,39 €",
+     "type": "TEXT"
+    },
+    {
+     "label": "Zimmer",
+     "text": "2",
+     "type": "TEXT"
+    },
+    {
+     "label": "Wohnfläche",
+     "text": "66,24 m²",
+     "type": "TEXT"
+    },
+    {
+     "label": "Warmmiete",
+     "text": "1.345,39 €",
+     "type": "TEXT"
+    }
+   ]
+  },
+  {
+   "type": "MAP",
+   "title": "Karte",
+   "location": {
+    "lat": 52.393,
+    "lng": 13.08146
+   },
+   "addressLine1": "Edisonallee 14",
+   "addressLine2": "14473 Südliche Innenstadt, Potsdam",
+   "enableEnterFullAddressAction": true
+  },
+  {
+   "type": "ATTRIBUTE_LIST",
+   "title": "Hauptkriterien",
+   "attributes": [
+    {
+     "type": "TEXT",
+     "label": "Wohnungstyp:",
+     "text": "Etagenwohnung"
+    },
+    {
+     "type": "TEXT",
+     "label": "Wohnfläche ca.:",
+     "text": "66,24 m²"
+    },
+    {
+     "type": "TEXT",
+     "label": "Etage:",
+     "text": "2"
+    },
+    {
+     "type": "TEXT",
+     "label": "Bezugsfrei ab:",
+     "text": "01.11.2026"
+    },
+    {
+     "type": "CHECK",
+     "label": "Balkon/Terrasse:"
+    },
+    {
+     "type": "CHECK",
+     "label": "Personenaufzug:"
+    },
+    {
+     "type": "LINK",
+     "label": "SCHUFA-BonitätsCheck:",
+     "reference": {
+      "type": "URL_LINK",
+      "label": "Online anfordern",
+      "url": "https://bonitaetscheck.immobilienscout24.de/?utm_medium=app&utm_source=ios&utm_campaign=solvency_check&utm_content=residential_expose_criteria",
+      "target": "WEB_INTERNAL",
+      "trackingConfig": {
+       "category": "expose",
+       "action": "consumerservices",
+       "label": "solvencycheck_criteria",
+       "event_name": "productintegration_click",
+       "event_product": "search",
+       "parameters": {
+        "event_parameter_1": "solvencycheck_criteria"
+       }
+      }
+     }
+    },
+    {
+     "type": "LINK",
+     "label": "Internet:",
+     "reference": {
+      "type": "URL_LINK",
+      "label": "Verfügbarkeit prüfen",
+      "iconUrl": "https://www.immobilienscout24.de/content/dam/is24/expose-snippets/services/powered-by-telekom-new.png",
+      "url": "https://rebrand.ly/anodsl",
+      "target": "WEB_INTERNAL",
+      "trackingConfig": {
+       "category": "clickout",
+       "action": "relocation",
+       "label": "internet_checkavailability_criteria",
+       "event_name": "expose_clickout",
+       "event_product": "search",
+       "parameters": {
+        "event_parameter_1": "internet_checkavailability_criteria"
+       }
+      },
+      "additionalInfoForIcon": {
+       "title": "Warum diese Werbung?",
+       "text": "Für die Bereitstellung von Informationen zur Internet-Verfügbarkeit am Standort des Inserats arbeiten wir mit der Telekom Deutschland GmbH zusammen.",
+       "buttonText": "Weitere Informationen",
+       "buttonUrl": "https://www.immobilienscout24.de/anbieten/dsa-info/telekom.html"
+      },
+      "onClickTrackingTag": "INTERNET_AVAILABILITY_CHECK"
+     }
+    }
+   ]
+  },
+  {
+   "type": "ATTRIBUTE_LIST",
+   "title": "Kosten",
+   "attributes": [
+    {
+     "type": "TEXT",
+     "label": "Kaltmiete (zzgl. Nebenkosten):",
+     "text": "1.069,39 €"
+    },
+    {
+     "type": "TEXT",
+     "label": "Preis/m²:",
+     "text": "16,14 €/m²",
+     "additionalInfoText": "Kalkuliert von ImmoScout24"
+    },
+    {
+     "type": "TEXT",
+     "label": "Nebenkosten:",
+     "text": "276 €"
+    },
+    {
+     "type": "TEXT",
+     "label": "Heizkosten:",
+     "text": "173 €"
+    },
+    {
+     "type": "TEXT",
+     "label": "Heizkosten in Nebenkosten enthalten:",
+     "text": "Ja"
+    },
+    {
+     "type": "TEXT",
+     "label": "Gesamtmiete:",
+     "text": "1.345,39 €"
+    },
+    {
+     "type": "TEXT",
+     "label": "Kaution oder Genossenschaftsanteile:",
+     "text": "Kaution: 2.139,00 EUR"
+    }
+   ]
+  },
+  {
+   "type": "COST_CHECK",
+   "totalRent": 1345.39,
+   "expenses": []
+  },
+  {
+   "type": "ATTRIBUTE_LIST",
+   "title": "Bausubstanz & Energieausweis",
+   "attributes": [
+    {
+     "type": "TEXT",
+     "label": "Baujahr:",
+     "text": "2021"
+    },
+    {
+     "type": "TEXT",
+     "label": "Objektzustand:",
+     "text": "Gepflegt"
+    },
+    {
+     "type": "TEXT",
+     "label": "Heizungsart:",
+     "text": "Fernwärme"
+    },
+    {
+     "type": "TEXT",
+     "label": "Energieausweistyp:",
+     "text": "Bedarfsausweis"
+    },
+    {
+     "type": "TEXT",
+     "label": "Wesentliche Energieträger:",
+     "text": "Fernwärme"
+    },
+    {
+     "type": "TEXT",
+     "label": "Endenergiebedarf:",
+     "text": "66.4 kWh/(m²∙a)"
+    },
+    {
+     "type": "IMAGE",
+     "label": "Energieeffizienzklasse:",
+     "url": "https://is24-search-static.s3-eu-west-1.amazonaws.com/mobile-feed/energy-efficiency-labels/B.png"
+    }
+   ]
+  }
+ ]
+}

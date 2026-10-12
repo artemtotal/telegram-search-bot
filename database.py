@@ -808,6 +808,77 @@ class VonoviaDelivery(Base):
     sent_at = Column(DATETIME, nullable=False)
 
 
+class ImmoscoutListing(Base):
+    """Квартири ImmoScout24 у Потсдамі — з API мобільного застосунку.
+
+    Сайт закритий капчею AWS WAF (картинки «оберіть штори»), а застосунок
+    отримує ту саму видачу звичайним JSON. Ціна в списку — Kaltmiete; повна
+    оренда, район з повної адреси й галерея — з картки оголошення (`detail_fetched_at`).
+    """
+
+    __tablename__ = 'immoscout_listing'
+
+    listing_key = Column(TEXT, primary_key=True)
+    title = Column(TEXT, nullable=False)
+    address = Column(TEXT)
+    district = Column(TEXT)
+    rooms = Column(FLOAT)
+    area_m2 = Column(FLOAT)
+    price_eur = Column(FLOAT)
+    price_warm_eur = Column(FLOAT)
+    gallery_urls = Column(TEXT)
+    detail_url = Column(TEXT)
+    cover_image_url = Column(TEXT)
+    # «Noch exklusiv für Suchen+»: до цього часу написати можуть лише Plus-учасники.
+    plus_until = Column(TEXT)
+    detail_fetched_at = Column(DATETIME)
+    first_seen_at = Column(DATETIME, nullable=False)
+    last_seen_at = Column(DATETIME, nullable=False)
+    is_active = Column(BOOLEAN, nullable=False, default=True)
+
+
+class ImmoscoutFilter(Base):
+    __tablename__ = 'immoscout_filter'
+
+    filter_id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    title = Column(TEXT, nullable=False)
+    # Через кому; порожньо — усі райони. Назви як у майстрі (Immowelt/ProPotsdam).
+    districts = Column(TEXT)
+    min_rooms = Column(FLOAT)
+    max_rooms = Column(FLOAT)
+    min_area_m2 = Column(FLOAT)
+    max_area_m2 = Column(FLOAT)
+    min_price_eur = Column(FLOAT)
+    max_price_eur = Column(FLOAT)
+    min_price_warm_eur = Column(FLOAT)
+    max_price_warm_eur = Column(FLOAT)
+    active = Column(BOOLEAN, nullable=False, default=True)
+    created_at = Column(DATETIME, nullable=False)
+
+
+class ImmoscoutStatus(Base):
+    __tablename__ = 'immoscout_status'
+
+    key = Column(TEXT, primary_key=True)
+    last_checked_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_error = Column(TEXT)
+    listings_count = Column(INTEGER)
+
+
+class ImmoscoutDelivery(Base):
+    __tablename__ = 'immoscout_delivery'
+    __table_args__ = (
+        UniqueConstraint('filter_id', 'listing_key', name='uq_immoscout_delivery_filter_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    filter_id = Column(INTEGER, nullable=False, index=True)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    sent_at = Column(DATETIME, nullable=False)
+
+
 class CoopWatchdogStatus(Base):
     """Житлові кооперативи без жодного оголошення для парсингу (Gewoba, WBG 1903):
     замість повного скрейпера — лише стеження за текстом "немає вільного житла" на

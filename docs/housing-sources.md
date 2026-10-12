@@ -23,7 +23,7 @@
 нужен `docker compose build tgbot && docker compose up -d tgbot`, иначе
 контейнер работает со старым кодом (и тесты внутри него гоняются по старому).
 
-## Девять источников
+## Десять источников
 
 | Источник | Как берутся данные | Kaltmiete | Warmmiete | Фото | Интервал |
 |---|---|---|---|---|---|
@@ -36,6 +36,7 @@
 | locals® | `requests`, статическая посадочная страница | `Kaltmiete` в списке | Kaltmiete + `Nebenkosten` с деталки | glightbox с деталки | 15 мин |
 | Karl Marx | `requests`, статический HTML (TYPO3) | «Miete pro Monat» на деталке | `Warmmiete` в карточке | галерея с деталки | 15 мин |
 | **Vonovia** | `requests` + открытый JSON API | `preis` в JSON каталога | `warmRent` на странице объявления | **вся галерея приходит в каталоге** | 15 мин |
+| **ImmoScout24** | `requests` → API мобильного приложения (`api.mobile.immobilienscout24.de`) | третье значение списка (без подписи) | `Warmmiete` в карточке `/expose/<id>` того же API | `imageUrlForWeb` из карточки, JPEG | 15 мин |
 
 Плюс три кооператива (Gewoba, WBG 1903, WBG «Daheim») под лёгким сторожем
 `coop_watchdog` раз в 30 минут — у них полноценных объявлений нет, сторож ловит
@@ -150,6 +151,29 @@ GmbH». Открыть само Exposé не удалось: прямая ссы
 Weitmarer Str. 145 a: 841,89 → 1111,89 €; Kaulbachstr. 4: 761,40 → 919,40 €.
 В боевом контейнере первый обход: `Vonovia scan total=0 stored=0 full_rent=0`,
 статус `ok`.
+
+## ImmoScout24: почему через приложение
+
+Сайт на любой скрипт отвечает капчей **AWS WAF с картинками** («выберите шторы»),
+её не решает ни SeleniumBase, ни расширение — это не Cloudflare. Мобильное
+приложение берёт ту же выдачу простым JSON без капчи:
+
+- список: `POST https://api.mobile.immobilienscout24.de/search/list?searchType=region&geocodes=/de/brandenburg/potsdam&realestatetype=apartmentrent&sorting=-firstactivation&pagenumber=N`,
+  тело `{"supportedResultListType": [], "userData": {}}`, заголовок
+  `User-Agent: ImmoScout_27.12_26.2_._` (без «своего» User-Agent не пускает);
+  50 на страницу, в Потсдаме ≈210 квартир;
+- карточка: `GET …/expose/<id>` — секции `TOP_ATTRIBUTES` (Kaltmiete/Warmmiete),
+  `MAP` (адрес с районом), `MEDIA` (галерея).
+
+Карточку читаем один раз на объявление, не больше 40 за обход; объявление без
+прочитанной карточки не рассылается (нет Warmmiete и точного района). Районы
+ImmoScout24 дробнее мастерских («Babelsberg Nord», «Südliche Innenstadt») —
+совпадение по целым словам, `Waldstadt I` ≠ `Waldstadt II`. «Noch exklusiv für
+Suchen+» — до `earlyAccessExpiresAt` написать могут только Plus-участники,
+это видно строкой в уведомлении. При запуске 12.10.2026 часть ImmoScout24
+разово добавлена во все уже созданные фильтры (`immoscout_status`, ключ
+`backfill_existing_searches`) — после первого обхода, чтобы уже висящие
+объявления не разлетелись всем разом.
 
 ## Как добавить источник — чеклист
 

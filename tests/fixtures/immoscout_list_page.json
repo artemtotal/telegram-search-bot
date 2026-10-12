@@ -1,0 +1,212 @@
+{
+ "totalResults": 212,
+ "pageSize": 50,
+ "pageNumber": 1,
+ "numberOfPages": 5,
+ "numberOfListings": 212,
+ "resultListItems": [
+  {
+   "type": "EXPOSE_RESULT",
+   "item": {
+    "reportUrl": "https://angebot-melden.immobilienscout24.de/report?realEstateId=125780388&publicationState=live",
+    "id": "125780388",
+    "title": "Wunderschöne Wohnung in kernsanierter Stadtvilla am Schlosspark Babelsberg mit Gartenanteil",
+    "energyEfficiencyClass": "B",
+    "pictures": [
+     {
+      "urlScaleAndCrop": "https://pictures.immobilienscout24.de/listings/09d145ac-b1d8-45e5-a866-930e69d84e90-2036495827.jpg/ORIG/legacy_thumbnail/%WIDTH%x%HEIGHT%/format/webp/quality/80"
+     }
+    ],
+    "titlePicture": {
+     "preview": "https://pictures.immobilienscout24.de/listings/09d145ac-b1d8-45e5-a866-930e69d84e90-2036495827.jpg/ORIG/resize/800x600>/format/webp/quality/20",
+     "full": "https://pictures.immobilienscout24.de/listings/09d145ac-b1d8-45e5-a866-930e69d84e90-2036495827.jpg/ORIG/resize/800x600>/format/webp/quality/80"
+    },
+    "address": {
+     "line": "14482 Potsdam, Babelsberg Nord (unvollständige Adresse)",
+     "postcode": "14482"
+    },
+    "isProject": false,
+    "isPrivate": true,
+    "listingType": "L",
+    "paywallListing": {
+     "active": true,
+     "text": "Noch exklusiv für Suchen+",
+     "earlyAccessExpiresAt": "2026-10-12T19:45:06.890+02:00"
+    },
+    "published": "vor 2 Tagen",
+    "isNewObject": false,
+    "liveVideoTourAvailable": false,
+    "listOnlyOnIs24": false,
+    "attributes": [
+     {
+      "label": "",
+      "value": "1.600 €"
+     },
+     {
+      "label": "",
+      "value": "80 m²"
+     },
+     {
+      "label": "",
+      "value": "3 Zi."
+     }
+    ],
+    "realEstateType": "apartmentrent",
+    "tags": [
+     {
+      "tag": "paywall",
+      "value": {
+       "type": "NON_PLUS_USER",
+       "realEstateType": "apartmentrent"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "type": "EXPOSE_RESULT",
+   "item": {
+    "reportUrl": "https://angebot-melden.immobilienscout24.de/report?realEstateId=171651924&publicationState=live",
+    "id": "171651924",
+    "title": "Exklusive 2-Zimmer-Wohnung mit Dachterrasse in Babelsberg",
+    "energyEfficiencyClass": "B",
+    "pictures": [
+     {
+      "urlScaleAndCrop": "https://pictures.immobilienscout24.de/listings/a258f221-7234-4381-8e38-ce92fe4f0a83-2109656046.jpg/ORIG/legacy_thumbnail/%WIDTH%x%HEIGHT%/format/webp/quality/80"
+     }
+    ],
+    "titlePicture": {
+     "preview": "https://pictures.immobilienscout24.de/listings/a258f221-7234-4381-8e38-ce92fe4f0a83-2109656046.jpg/ORIG/resize/800x600>/format/webp/quality/20",
+     "full": "https://pictures.immobilienscout24.de/listings/a258f221-7234-4381-8e38-ce92fe4f0a83-2109656046.jpg/ORIG/resize/800x600>/format/webp/quality/80"
+    },
+    "address": {
+     "line": "14482 Potsdam / Babelsberg, Babelsberg Süd (unvollständige Adresse)",
+     "postcode": "14482"
+    },
+    "isProject": false,
+    "isPrivate": false,
+    "listingType": "L",
+    "published": "vor 3 Tagen",
+    "isNewObject": false,
+    "liveVideoTourAvailable": false,
+    "listOnlyOnIs24": false,
+    "attributes": [
+     {
+      "label": "",
+      "value": "1.850 €"
+     },
+     {
+      "label": "",
+      "value": "120 m²"
+     },
+     {
+      "label": "",
+      "value": "2 Zi."
+     }
+    ],
+    "realEstateType": "apartmentrent",
+    "realtor": {
+     "logoUrlScale": "https://pictures.immobilienscout24.de/usercontent/4a40ebfb-2b11-4ef6-ae7e-e3b16e07aa12.JPG/ORIG/resize/%WIDTH%x%HEIGHT%%3E/format/webp/quality/80"
+    },
+    "tags": []
+   }
+  },
+  {
+   "type": "EXPOSE_RESULT",
+   "item": {
+    "reportUrl": "https://angebot-melden.immobilienscout24.de/report?realEstateId=171650646&publicationState=live",
+    "id": "171650646",
+    "title": "1 Zimmerwohmung mit Balkon (ohne Fahrstuhl) in Potsdam sucht neuen Mieter ",
+    "pictures": [
+     {
+      "urlScaleAndCrop": "https://pictures.immobilienscout24.de/listings/c90c311c-7e6f-4127-bff9-b8cfe4bc8161-2109629740.jpg/ORIG/legacy_thumbnail/%WIDTH%x%HEIGHT%/format/webp/quality/80"
+     }
+    ],
+    "titlePicture": {
+     "preview": "https://pictures.immobilienscout24.de/listings/c90c311c-7e6f-4127-bff9-b8cfe4bc8161-2109629740.jpg/ORIG/resize/800x600>/format/webp/quality/20",
+     "full": "https://pictures.immobilienscout24.de/listings/c90c311c-7e6f-4127-bff9-b8cfe4bc8161-2109629740.jpg/ORIG/resize/800x600>/format/webp/quality/80"
+    },
+    "address": {
+     "line": "Zum Kahleberg 41, 14478 Potsdam, Waldstadt II",
+     "lat": 52.36617,
+     "lon": 13.0868
+    },
+    "isProject": false,
+    "isPrivate": false,
+    "listingType": "M",
+    "published": "vor 3 Tagen",
+    "isNewObject": false,
+    "liveVideoTourAvailable": false,
+    "listOnlyOnIs24": false,
+    "attributes": [
+     {
+      "label": "",
+      "value": "287 €"
+     },
+     {
+      "label": "",
+      "value": "27,1 m²"
+     },
+     {
+      "label": "",
+      "value": "1 Zi."
+     }
+    ],
+    "realEstateType": "apartmentrent",
+    "realtor": {
+     "logoUrlScale": "https://pictures.immobilienscout24.de/usercontent/9ccde920-7b2b-4024-aa0b-9fcf4790d163.JPG/ORIG/resize/%WIDTH%x%HEIGHT%%3E/format/webp/quality/80"
+    },
+    "tags": []
+   }
+  },
+  {
+   "type": "EXPOSE_RESULT",
+   "item": {
+    "reportUrl": "https://angebot-melden.immobilienscout24.de/report?realEstateId=171646044&publicationState=live",
+    "id": "171646044",
+    "title": "Lichtdurchflutete 2-Zimmer-Wohnung nahe des Nutheparks!",
+    "energyEfficiencyClass": "B",
+    "pictures": [
+     {
+      "urlScaleAndCrop": "https://pictures.immobilienscout24.de/listings/38cfc4d1-307e-44a2-b7b7-e290fb0ae19e-2109553034.jpg/ORIG/legacy_thumbnail/%WIDTH%x%HEIGHT%/format/webp/quality/80"
+     }
+    ],
+    "titlePicture": {
+     "preview": "https://pictures.immobilienscout24.de/listings/38cfc4d1-307e-44a2-b7b7-e290fb0ae19e-2109553034.jpg/ORIG/resize/800x600>/format/webp/quality/20",
+     "full": "https://pictures.immobilienscout24.de/listings/38cfc4d1-307e-44a2-b7b7-e290fb0ae19e-2109553034.jpg/ORIG/resize/800x600>/format/webp/quality/80"
+    },
+    "address": {
+     "line": "Edisonallee 14, 14473 Potsdam, Südliche Innenstadt",
+     "lat": 52.393,
+     "lon": 13.08146
+    },
+    "isProject": false,
+    "isPrivate": false,
+    "listingType": "L",
+    "published": "vor 3 Tagen",
+    "isNewObject": false,
+    "liveVideoTourAvailable": false,
+    "listOnlyOnIs24": false,
+    "attributes": [
+     {
+      "label": "",
+      "value": "1.070 €"
+     },
+     {
+      "label": "",
+      "value": "66 m²"
+     },
+     {
+      "label": "",
+      "value": "2 Zi."
+     }
+    ],
+    "realEstateType": "apartmentrent",
+    "realtor": {
+     "logoUrlScale": "https://pictures.immobilienscout24.de/usercontent/d24d531a-0bf4-4ef5-82a7-09d4847afe95.PNG/ORIG/resize/%WIDTH%x%HEIGHT%%3E/format/webp/quality/80"
+    },
+    "tags": []
+   }
+  }
+ ]
+}

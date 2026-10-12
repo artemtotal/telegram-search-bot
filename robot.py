@@ -35,6 +35,7 @@ from user_jobs import locals_monitor
 from user_jobs import coop_watchdog
 from user_jobs import karlmarx_monitor
 from user_jobs import vonovia_monitor
+from user_jobs import immoscout_monitor
 
 
 from userbot import run_telethon
@@ -164,6 +165,12 @@ if vonovia_monitor.CHECK_ENABLED:
         # Кожне джерело стартує на 30 секунд пізніше за попереднє, щоб усі
         # обходи не збігалися в одну мить.
         first=390,
+    )
+if immoscout_monitor.CHECK_ENABLED:
+    job.run_repeating(
+        immoscout_monitor.check_job,
+        interval=immoscout_monitor.CHECK_INTERVAL_SECONDS,
+        first=440,
     )
 
 # Housing access subscriptions: daily check for 3-day expiry warnings and

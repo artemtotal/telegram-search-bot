@@ -5,6 +5,7 @@ from datetime import datetime
 
 from database import (
     DBSession,
+    ImmoscoutListing,
     ImmoweltListing,
     KarlmarxListing,
     KleinanzeigenListing,
@@ -26,6 +27,7 @@ _SOURCES = (
     (KleinanzeigenListing, KleinanzeigenListing.price_eur),
     (LocalsListing, LocalsListing.price_eur),
     (KarlmarxListing, KarlmarxListing.price_eur),
+    (ImmoscoutListing, ImmoscoutListing.price_eur),
 )
 
 

@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 PASS_GAP = timedelta(minutes=3)
 
 SOURCE_ORDER = (
-    "immowelt", "propotsdam", "semmelhaack", "schoba", "regiomakler",
+    "immowelt", "immoscout", "propotsdam", "semmelhaack", "schoba", "regiomakler",
     "kleinanzeigen", "locals", "karlmarx", "vonovia",
 )
 
