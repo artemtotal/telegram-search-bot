@@ -115,6 +115,10 @@ GmbH». Открыть само Exposé не удалось: прямая ссы
 - **но только с сессии**: сначала GET страницы выдачи (за кукой), потом запрос с
   `Referer` и `Accept: application/json`. Без этого приходит **406** — без тела,
   и легко принять за поломку.
+- **и с токеном (с 10.2026)**: `GET /api/real-estate/search-token` отдаёт
+  `{"token": …, "ttl": 900}`, а каждый запрос `list` несёт его в заголовке
+  `X-VON-Search-Token`. Без него — **401** `{"error":"Unauthorized"}`. Так делает
+  сама страница (`app_js_vonovia_relaunch*.js`, класс с `_getTokenUrl`).
 
 Поля объекта: `wrk_id` (ключ), `titel`, `strasse`, `plz`, `ort`, `preis`
 (Kaltmiete), `groesse`, `anzahl_zimmer`, `imageUrls`, `slug`. Страница
