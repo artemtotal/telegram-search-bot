@@ -172,10 +172,7 @@ class Market:
         for source, filt in filters:
             filt = relax(filt, code) if code else filt
             if source == "immowelt":
-                criteria = {"districts": list(filt.get("districts") or [])}
-                for key in hm.IMMOWELT_CRITERIA_KEYS:
-                    criteria[key] = filt.get(key)
-                hits = hm._immowelt_hits_since(criteria, self.days)
+                hits = hm._immowelt_hits_since(filt, self.days)
             else:
                 matching = hm._LOCAL_SOURCE_MODULES[source][1]
                 hits = sum(1 for listing in self.local.get(source, []) if matching.matches_filter(listing, filt))

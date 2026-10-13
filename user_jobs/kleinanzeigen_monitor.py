@@ -25,6 +25,7 @@ Also filters out two kinds of noise the raw search page includes:
 import html
 import logging
 import os
+import re
 import time
 from datetime import timedelta
 from typing import Dict, List
@@ -133,11 +134,37 @@ def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
 # a real one slipped through notifications with only "tausch" excluded.
 _SWAP_KEYWORDS = ("tausch", "swap")
 
+# У розділі «Wohnung mieten» трапляються оголошення про кімнату в WG чи
+# суборенду: «Möbliertes Zimmer in Potsdam zur Untermiete – 400 €» парсер
+# прочитав як 2 кімнати й 56 м² (площа всієї квартири), і воно пішло людині
+# з фільтром «2–3 кімнати» (опитування 13.10.2026, «приходять не ті квартири»).
+# Кімната — це слово «Zimmer» без числа перед ним і без «Wohnung» після:
+# «2-Zimmer-Wohnung», «3 Zimmer, 75 m²», «Ein-Zimmer-Apartment» лишаються.
+_ZIMMER_RE = re.compile(r"\bzimmer\b", re.IGNORECASE)
+_FLAT_AFTER_ZIMMER_RE = re.compile(r"[\s-]*(wohnung|whg|apartment|appartement|maisonette)", re.IGNORECASE)
+_COUNT_BEFORE_ZIMMER_RE = re.compile(
+    r"(\d(?:[.,]\d)?|½|\b(?:ein|eine|zwei|drei|vier|fünf|fuenf|sechs))[\s-]*$", re.IGNORECASE
+)
+
+
+def _is_room_offer(title: str) -> bool:
+    for match in _ZIMMER_RE.finditer(title):
+        if _FLAT_AFTER_ZIMMER_RE.match(title, match.end()):
+            continue
+        if _COUNT_BEFORE_ZIMMER_RE.search(title[:match.start()]):
+            continue
+        return True
+    return False
+
 
 def _is_relevant(listing: Dict) -> bool:
     city = str(listing.get("city") or "").strip().casefold()
     title = str(listing.get("title") or "").casefold()
-    return city == "potsdam" and not any(keyword in title for keyword in _SWAP_KEYWORDS)
+    return (
+        city == "potsdam"
+        and not any(keyword in title for keyword in _SWAP_KEYWORDS)
+        and not _is_room_offer(title)
+    )
 
 
 def _should_alert_parse_broke(previous_status: Dict) -> bool:

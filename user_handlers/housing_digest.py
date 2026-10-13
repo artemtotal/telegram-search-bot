@@ -94,9 +94,7 @@ def _immowelt_matches(filters: List[Dict]) -> Dict[str, Dict]:
     """listing_key -> row, for Immowelt flats any of these filters caught."""
     matched = {}
     for filt in filters:
-        criteria = {"districts": list(filt.get("districts") or [])}
-        for key in hm.IMMOWELT_CRITERIA_KEYS:
-            criteria[key] = filt.get(key)
+        criteria = hm._immowelt_match_criteria(filt)
         preview = hm._preview_criteria({**criteria, "since_days": DIGEST_DAYS, "include_rows": True})
         for row in (preview.get("rows") or []) if isinstance(preview, dict) else []:
             if row.get("match"):

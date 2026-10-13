@@ -1381,6 +1381,7 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
                 'user_id': 544675510, 'title': mock.ANY,
                 'districts': ['Waldstadt I', 'Golm'],
                 'min_price_eur': 800.0, 'max_price_eur': 1200.0,
+                'min_price_warm_eur': 900.0, 'max_price_warm_eur': 1400.0,
                 'min_rooms': 2.0, 'max_rooms': None,
                 'min_area_m2': None, 'max_area_m2': None,
             },
@@ -1389,8 +1390,8 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
             user_id=544675510, title=mock.ANY,
             districts='Waldstadt 1,Golm',
             min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
-            # Холодну межу отримують обидва джерела, повну — лише ProPotsdam:
-            # Immowelt повної ціни не друкує.
+            # Обидві межі отримують обидва джерела: Immowelt частину оголошень
+            # публікує з повною орендою (Warmmiete) і звіряє їх із повною межею.
             min_total_rent_eur=900.0, max_total_rent_eur=1400.0,
             min_price_eur=800.0, max_price_eur=1200.0,
         )
@@ -1466,8 +1467,8 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
         """Питань про ціну два — холодна й повна, — і кожне ставиться один раз
         на всі обрані джерела, а не окремо під кожен портал.
 
-        SEMMELHAACK публікує обидві ціни, Immowelt — холодну; тож холодна межа
-        йде обом, а повна лише тому, хто її розуміє.
+        SEMMELHAACK публікує обидві ціни, Immowelt — здебільшого холодну, але
+        частину оголошень із повною, тож обидві межі йдуть обом.
         """
         context = SimpleNamespace(user_data={'housing_admin': {
             'mode': 'multi', 'step': 'min_rooms', 'user_id': 544675510,
@@ -1490,6 +1491,7 @@ class HousingMultiSourceWizardTests(unittest.TestCase):
             {
                 'user_id': 544675510, 'title': mock.ANY, 'districts': ['Golm'],
                 'min_price_eur': 800.0, 'max_price_eur': 1200.0,
+                'min_price_warm_eur': 1000.0, 'max_price_warm_eur': 1600.0,
                 'min_rooms': 2.0, 'max_rooms': None, 'min_area_m2': None, 'max_area_m2': None,
             },
         )

@@ -156,6 +156,33 @@ class KleinanzeigenMonitorCheckJobTests(unittest.TestCase):
 
         upsert.assert_called_once_with([potsdam])
 
+    def test_room_offers_are_not_flats(self):
+        # Опитування 13.10.2026: «Möbliertes Zimmer ... zur Untermiete» пішло
+        # людині з фільтром «2–3 кімнати», бо парсер узяв площу всієї квартири.
+        rooms = [
+            'Möbliertes Zimmer in Potsdam zur Untermiete – 400 €',
+            'WG Zimmer in Golm - Potsdam',
+            'zu vermieten eine Wg zimmer in Potsdam',
+            'Ca 25m Zimmer in einer Zweck!-WG in Potsdam-West ab 1.10. frei',
+            'Vermiete-Untermieter Zimmer 17 qm + in gute Wohnung 80 qm Potsdam',
+            'Zimmer in Potsdam zu vermieten',
+        ]
+        flats = [
+            '2-Zimmer-Wohnung in Potsdam zur Untermiete',
+            '3 Zimmer | EBK | Bad mit Fenster |INNENSTADT POTSDAM',
+            'Helle 2 - Zimmer Wohnung in Potsdam Zentrum Ost',
+            'Altbau Traum mit Kamin | 3,5 Zimmer in Potsdamer Innenstadt',
+            '1-Zimmer Apartment in Potsdam',
+            'Suche 1 Zimmer WHG/Appartement in Potsdam und Umgebung',
+            'Nachmieter gesucht für 2-1/2-Zimmer-Wohnung in Potsdam-Babelsberg',
+            '2 Raum Wohnung Potsdam Stern Evtl. WG tauglich',
+            'kleine 3 Zimmerwohnung in Potsdam wartet auf dich!',
+        ]
+        for title in rooms:
+            self.assertFalse(kleinanzeigen_monitor._is_relevant(_listing('1', title=title)), title)
+        for title in flats:
+            self.assertTrue(kleinanzeigen_monitor._is_relevant(_listing('1', title=title)), title)
+
     def test_matches_are_sent_and_marked_delivered(self):
         potsdam = _listing('1')
         filt = {'filter_id': 9, 'user_id': 544675510, 'max_price_eur': 1000.0}

@@ -203,6 +203,24 @@ IMMOWELT_CRITERIA_FIELDS = [
 ]
 IMMOWELT_CRITERIA_KEYS = [spec["key"] for spec in IMMOWELT_CRITERIA_FIELDS]
 IMMOWELT_CRITERIA_BY_KEY = {spec["key"]: spec for spec in IMMOWELT_CRITERIA_FIELDS}
+# Що ще приймач враховує при збігу, хоч старий майстер Immowelt цього не питає:
+# межа повної оренди (для оголошень із ціною Warmmiete) і тип житла.
+IMMOWELT_EXTRA_MATCH_KEYS = ("min_price_warm_eur", "max_price_warm_eur", "property_types")
+
+
+def _immowelt_match_criteria(filt: Dict[str, object]) -> Dict[str, object]:
+    """Умови збереженого фільтра Immowelt у вигляді, який розуміє preview
+    приймача, — щоб підрахунки «підійшло б N» збігались із тим, що реально
+    надійде людині."""
+    criteria = {"districts": list(filt.get("districts") or [])}
+    for key in IMMOWELT_CRITERIA_KEYS:
+        criteria[key] = filt.get(key)
+    for key in IMMOWELT_EXTRA_MATCH_KEYS:
+        if filt.get(key):
+            criteria[key] = list(filt[key]) if key == "property_types" else filt[key]
+    return criteria
+
+
 ADMIN_PAGE_SIZE = 20
 PROPOT_CRITERIA_FIELDS = [
     {"key": "min_rooms", "label": "Кімнати: мінімум (від)", "prompt": _numeric_prompt("Мінімальна кількість кімнат", "2"), "label_key": "housing.field.label.rooms_min", "question_key": "housing.field.q.rooms_min", "example": "2"},
@@ -1027,9 +1045,7 @@ def _local_hits_since(source: str, filter_id, cutoff: datetime) -> Optional[int]
 
 
 def _immowelt_hits_since(criteria: Dict[str, object], days: int) -> Optional[int]:
-    payload = {"districts": list(criteria.get("districts") or [])}
-    for key in IMMOWELT_CRITERIA_KEYS:
-        payload[key] = criteria.get(key)
+    payload = _immowelt_match_criteria(criteria)
     preview = _preview_criteria({**payload, "since_days": days})
     count = preview.get("match_count") if isinstance(preview, dict) else None
     return int(count) if isinstance(count, (int, float)) else None
@@ -1328,10 +1344,7 @@ def _current_matches(source: str, filt: Dict[str, object]) -> list:
     see for themselves whether their filter is actually finding anything,
     instead of guessing from the crawl-freshness traffic lights."""
     if source == "immowelt":
-        criteria = {"districts": list(filt.get("districts") or [])}
-        for key in IMMOWELT_CRITERIA_KEYS:
-            criteria[key] = filt.get(key)
-        preview = _preview_criteria(criteria)
+        preview = _preview_criteria(_immowelt_match_criteria(filt))
         return list(preview.get("matches") or [])
     modules = _LOCAL_SOURCE_MODULES.get(source)
     if not modules:
@@ -5608,6 +5621,11 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
             "districts": districts,
             "min_price_eur": state.get("min_price_eur"),
             "max_price_eur": state.get("max_price_eur"),
+            # Частину оголошень Immowelt публікує з повною орендою (Warmmiete).
+            # Без цієї межі приймач не мав з чим її порівняти й пропускав
+            # квартиру за 1790 € warm до фільтра «до 562 € холодна».
+            "min_price_warm_eur": state.get("min_price_warm_eur"),
+            "max_price_warm_eur": state.get("max_price_warm_eur"),
             "min_rooms": state.get("min_rooms"),
             "max_rooms": state.get("max_rooms"),
             "min_area_m2": state.get("min_area_m2"),
