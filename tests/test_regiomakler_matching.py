@@ -37,4 +37,7 @@ class WarmRentBoundTests(unittest.TestCase):
         """Портал теплої ціни не назвав — умова просто не застосовується, як і
         для будь-якого іншого невідомого показника."""
         self.assertTrue(regiomakler_matching.matches_filter(
+            self._listing(price_eur=800.0, price_warm_eur=None), {"max_price_warm_eur": 900}))
+        # Але холодна, що вже більша за межу повної, — точно задорого.
+        self.assertFalse(regiomakler_matching.matches_filter(
             self._listing(price_warm_eur=None), {"max_price_warm_eur": 900}))

@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional
 
-from user_jobs import propotsdam_parser
+from user_jobs import propotsdam_parser, rent_bounds
 
 
 def _norm(value: Any) -> str:
@@ -53,6 +53,12 @@ def matches_filter(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
         # як для будь-якого іншого невідомого показника.
         and _within_min(price, _num(filt.get("min_price_eur")))
         and _within_max(price, _num(filt.get("max_price_eur")))
+        # Холодної в списку немає, тож межа «лише холодна» інакше не діяла
+        # б тут зовсім — див. rent_bounds.
+        and rent_bounds.missing_price_within(
+            price, rent, area,
+            _num(filt.get("max_price_eur")), _num(filt.get("max_total_rent_eur")),
+        )
     )
 
 

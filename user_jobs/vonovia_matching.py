@@ -8,7 +8,7 @@ Warmmiete, so both bounds actually apply here.
 
 from typing import Any, Dict, Optional
 
-from user_jobs import vonovia_parser
+from user_jobs import vonovia_parser, rent_bounds
 
 
 def _num(value: Any) -> Optional[float]:
@@ -46,6 +46,10 @@ def matches_filter(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
         # за невідоме число.
         and _within_min(price_warm, _num(filt.get("min_price_warm_eur")))
         and _within_max(price_warm, _num(filt.get("max_price_warm_eur")))
+        and rent_bounds.missing_price_within(
+            price, price_warm, area,
+            _num(filt.get("max_price_eur")), _num(filt.get("max_price_warm_eur")),
+        )
     )
 
 

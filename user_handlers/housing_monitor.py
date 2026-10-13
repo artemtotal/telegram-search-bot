@@ -5806,7 +5806,10 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
         results.append(("kleinanzeigen", filter_id, criteria, None))
     if "karlmarx" in sources:
         # Картка називає ціну Warmmiete — це повна оренда, спільне друге питання.
+        # Холодну межу теж зберігаємо: коли людина задала лише її, матчинг
+        # оцінює з неї стелю повної (rent_bounds), а не пропускає будь-яку ціну.
         criteria = {
+            "max_price_eur": state.get("max_price_eur"),
             "min_price_warm_eur": state.get("min_price_warm_eur"),
             "max_price_warm_eur": state.get("max_price_warm_eur"),
             "min_rooms": state.get("min_rooms"),
@@ -5823,6 +5826,7 @@ def _finalize_multi_filter(message, context: CallbackContext, state: dict) -> No
                 user_id=state["user_id"], title=title,
                 min_rooms=state.get("min_rooms"), max_rooms=state.get("max_rooms"),
                 min_area_m2=state.get("min_area_m2"), max_area_m2=state.get("max_area_m2"),
+                max_price_eur=state.get("max_price_eur"),
                 min_price_warm_eur=state.get("min_price_warm_eur"), max_price_warm_eur=state.get("max_price_warm_eur"),
             )
         results.append(("karlmarx", filter_id, criteria, None))

@@ -15,7 +15,14 @@ from user_jobs import housing_journey_store, housing_tier, kleinanzeigen_store
 
 
 class HousingDigestTests(unittest.TestCase):
-    MODULES = (housing_monitor, housing_digest, housing_tier, housing_journey_store, kleinanzeigen_store)
+    # Усі сховища площадок, а не перелічені вручну: ImmoScout24 (12.10.2026)
+    # сюди не потрапив, читав справжню тестову базу з чужими фільтрами, і два
+    # тести падали.
+    MODULES = tuple({
+        id(module): module
+        for module in (housing_monitor, housing_digest, housing_tier, housing_journey_store, kleinanzeigen_store)
+        + tuple(store for store, _ in housing_monitor._LOCAL_SOURCE_MODULES.values())
+    }.values())
 
     def setUp(self):
         self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)

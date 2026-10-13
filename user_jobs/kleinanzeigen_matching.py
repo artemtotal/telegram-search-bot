@@ -6,7 +6,7 @@ bounds, same shape as the other sources.
 
 from typing import Any, Dict, Optional
 
-from user_jobs import kleinanzeigen_parser
+from user_jobs import kleinanzeigen_parser, rent_bounds
 
 
 def _num(value: Any) -> Optional[float]:
@@ -44,6 +44,10 @@ def matches_filter(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
         # показника: інакше квартиру відкинуло б за те, чого портал не публікує.
         and _within_min(price_warm, _num(filt.get("min_price_warm_eur")))
         and _within_max(price_warm, _num(filt.get("max_price_warm_eur")))
+        and rent_bounds.missing_price_within(
+            price, price_warm, area,
+            _num(filt.get("max_price_eur")), _num(filt.get("max_price_warm_eur")),
+        )
     )
 
 

@@ -1912,6 +1912,7 @@ class HousingKarlmarxWizardTests(unittest.TestCase):
         create_filter.assert_called_once_with(
             user_id=544675510, title=mock.ANY,
             min_rooms=2.0, max_rooms=None, min_area_m2=None, max_area_m2=None,
+            max_price_eur=1200.0,
             min_price_warm_eur=900.0, max_price_warm_eur=1500.0,
         )
 

@@ -1039,6 +1039,9 @@ class HousingSendLog(Base):
     # True when the person is on the free tier and got it after the delay.
     delayed = Column(BOOLEAN, nullable=False, default=False)
     sent_at = Column(DATETIME, nullable=False, index=True)
+    # "rooms|area|price" of the flat (housing_tier.flat_signature): the same
+    # flat re-posted under a new ID must not reach the same person again.
+    signature = Column(TEXT)
 
 
 class HousingPendingDelivery(Base):
@@ -1123,6 +1126,7 @@ def _ensure_column(table_name: str, column_name: str, column_type: str) -> None:
 
 
 _ensure_column('propotsdam_filter', 'min_total_rent_eur', 'FLOAT')
+_ensure_column('housing_send_log', 'signature', 'TEXT')
 _ensure_column('semmelhaack_listing', 'price_warm_eur', 'FLOAT')
 _ensure_column('propotsdam_listing', 'price_eur', 'FLOAT')
 _ensure_column('propotsdam_listing', 'nebenkosten_eur', 'FLOAT')

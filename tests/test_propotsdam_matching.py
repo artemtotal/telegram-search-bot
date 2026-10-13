@@ -79,9 +79,17 @@ class BothRentBoundsTests(unittest.TestCase):
 
     def test_a_flat_whose_card_was_never_opened_is_not_dropped_by_a_cold_bound(self):
         """Холодна ціна відома лише після відкриття картки; доки її немає,
-        квартиру не можна відкидати за те, чого список не друкує."""
+        квартиру не можна відкидати за те, чого список не друкує. Межу оцінює
+        повна оренда з запасом на комунальні (rent_bounds): 485,52 € повної
+        при 37,44 м² вкладаються в «до 340 € холодна» (340 + 4 × 37,44 ≈ 490)."""
         self.assertTrue(propotsdam_matching.matches_filter(
-            self._listing(price_eur=None), {"max_price_eur": 300}))
+            self._listing(price_eur=None), {"max_price_eur": 340}))
+
+    def test_a_flat_far_above_a_cold_only_bound_is_dropped_without_its_card(self):
+        """Аудит 13.10.2026: без цього межа «лише холодна» на ProPotsdam не
+        діяла зовсім."""
+        self.assertFalse(propotsdam_matching.matches_filter(
+            self._listing(price_eur=None, total_rent_eur=1100), {"max_price_eur": 562.1}))
 
     def test_both_bounds_apply_together(self):
         self.assertTrue(propotsdam_matching.matches_filter(

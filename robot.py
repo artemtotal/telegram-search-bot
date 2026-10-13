@@ -24,6 +24,7 @@ from user_handlers import (
     housing_digest,
     housing_receiver,
     housing_relax,
+    housing_send_audit,
 )
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
@@ -194,6 +195,10 @@ job.run_daily(
 job.run_daily(housing_monitor.daily_filter_summary_job, time=housing_monitor.FILTER_SUMMARY_TIME)
 # A week without a single flat: tell the person why and offer one-tap relaxations.
 job.run_daily(housing_relax.quiet_filters_job, time=housing_relax.QUIET_CHECK_TIME)
+# Admin: every evening re-check the day's sends (implausible numbers, flats that
+# no longer fit the filter they went out under) - a parsing bug shows up the
+# same day instead of weeks later in a survey.
+job.run_daily(housing_send_audit.daily_send_audit_job, time=housing_send_audit.AUDIT_TIME)
 
 
 dispatcher.add_handler(msg_ai.handler)

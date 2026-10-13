@@ -223,6 +223,16 @@ def handle_immowelt_result(bot, payload, release=False):
         # сообщение при этом уже у человека, так что второй раз слать нечего.
         logger.info("Immowelt listing %s already delivered to %s; skipping", listing_id, user_id)
         return {"ok": True, "duplicate": True}
+    signature = housing_tier.flat_signature({
+        "rooms": _parse_number(listing.get("rooms")),
+        "area_m2": _parse_number(listing.get("area")),
+        "price_eur": _parse_number(listing.get("price")),
+    })
+    if signature and signature in housing_tier.recent_signatures(user_id).get(user_id, set()):
+        # Та сама квартира під новим ID: агенція подала її двічі чи перевиставила.
+        logger.info("Immowelt listing %s: %s already got this flat (%s); skipping", listing_id, user_id, signature)
+        _mark_delivered(user_id, listing_id)
+        return {"ok": True, "duplicate": True}
 
     premium = housing_tier.is_premium(user_id)
     if not premium and not release:
@@ -273,7 +283,7 @@ def handle_immowelt_result(bot, payload, release=False):
         # сообщение доставляет, поэтому отмечаем его отправленным: повтор
         # прислал бы человеку вторую копию той же квартиры.
         _mark_delivered(user_id, listing_id)
-        housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium)
+        housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium, signature=signature)
         logger.warning(
             "Immowelt listing %s to %s: response lost, assuming delivered (%s)",
             listing_id, user_id, exc,
@@ -281,7 +291,7 @@ def handle_immowelt_result(bot, payload, release=False):
         return {"ok": True, "assumed_delivered": True}
 
     _mark_delivered(user_id, listing_id)
-    housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium)
+    housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium, signature=signature)
     return {"ok": True}
 
 
