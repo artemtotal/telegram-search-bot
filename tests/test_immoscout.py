@@ -27,17 +27,6 @@ from user_jobs import (
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def setUpModule():
-    # Тестова база config/bot.db спільна для всіх прогонів, і відбитки квартир,
-    # надісланих попередніми тестами, блокували б ці відправки як дублі
-    # (housing_tier.flat_signature). Тут перевіряється монітор, не дедуплікація.
-    from unittest import mock as _mock
-    from user_jobs import housing_tier as _housing_tier
-    patcher = _mock.patch.object(_housing_tier, "recent_signatures", side_effect=lambda *a, **k: {})
-    patcher.start()
-    unittest.addModuleCleanup(patcher.stop)
-
-
 def _fixture(name):
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 

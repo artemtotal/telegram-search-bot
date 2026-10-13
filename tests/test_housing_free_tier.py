@@ -92,37 +92,6 @@ class DeliveryGateTests(_InMemoryDb):
         session.close()
 
 
-class SameFlatTests(_InMemoryDb):
-    """Аудит 13.10.2026: та сама квартира під новим ID приходила вдруге."""
-
-    FLAT = {'rooms': 2, 'area_m2': 52.04, 'price_eur': 520}
-
-    def test_signature_needs_rooms_area_and_price(self):
-        self.assertEqual(housing_tier.flat_signature(self.FLAT), '2|52.0|520')
-        self.assertEqual(housing_tier.flat_signature({'rooms': 3, 'area_m2': 70, 'total_rent_eur': 899.6}), '3|70.0|900')
-        self.assertIsNone(housing_tier.flat_signature({'rooms': 2, 'area_m2': 52}))
-
-    def test_a_reposted_flat_does_not_reach_the_same_person_twice(self):
-        with mock.patch.object(housing_tier, 'premium_user_ids', return_value={777}):
-            first = housing_tier.DeliveryGate('immoscout')
-            self.assertTrue(first.due(777, {'listing_key': 'a', **self.FLAT}))
-            first.sent(777, 'a', 1)
-            # Той самий обхід: друга копія під іншим ID.
-            self.assertFalse(first.due(777, {'listing_key': 'b', **self.FLAT}))
-            # Наступний обхід, інша площадка.
-            later = housing_tier.DeliveryGate('kleinanzeigen')
-            self.assertFalse(later.due(777, {'listing_key': 'c', **self.FLAT}))
-            # Іншій людині — як і раніше.
-            self.assertTrue(later.due(888, {'listing_key': 'c', **self.FLAT}))
-
-    def test_the_same_listing_under_a_second_filter_is_left_to_the_per_user_dedup(self):
-        with mock.patch.object(housing_tier, 'premium_user_ids', return_value={777}):
-            gate = housing_tier.DeliveryGate('immoscout')
-            gate.due(777, {'listing_key': 'a', **self.FLAT})
-            gate.sent(777, 'a', 1)
-            self.assertTrue(gate.due(777, {'listing_key': 'a', **self.FLAT}))
-
-
 class KleinanzeigenMonitorFreeTierTests(_InMemoryDb):
     """The gate wired into a real monitor: a fresh match waits, then goes."""
 

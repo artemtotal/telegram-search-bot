@@ -15,7 +15,7 @@ from telegram.error import NetworkError
 
 import i18n
 from database import DBSession, HousingDelivery, HousingPendingDelivery, ImmoweltListing
-from user_jobs import housing_tier
+from user_jobs import housing_tier, sublet
 
 
 logger = logging.getLogger(__name__)
@@ -174,7 +174,7 @@ def send_due_immowelt(context):
         done = True
         try:
             result = handle_immowelt_result(bot, json.loads(raw), release=True)
-            sent += int(bool(result.get("ok")) and not result.get("duplicate"))
+            sent += int(bool(result.get("ok")) and not result.get("duplicate") and not result.get("skipped"))
         except Exception:
             logger.exception("Could not send a delayed Immowelt flat to %s", user_id)
             done = attempts + 1 >= PENDING_MAX_ATTEMPTS
@@ -223,16 +223,10 @@ def handle_immowelt_result(bot, payload, release=False):
         # сообщение при этом уже у человека, так что второй раз слать нечего.
         logger.info("Immowelt listing %s already delivered to %s; skipping", listing_id, user_id)
         return {"ok": True, "duplicate": True}
-    signature = housing_tier.flat_signature({
-        "rooms": _parse_number(listing.get("rooms")),
-        "area_m2": _parse_number(listing.get("area")),
-        "price_eur": _parse_number(listing.get("price")),
-    })
-    if signature and signature in housing_tier.recent_signatures(user_id).get(user_id, set()):
-        # Та сама квартира під новим ID: агенція подала її двічі чи перевиставила.
-        logger.info("Immowelt listing %s: %s already got this flat (%s); skipping", listing_id, user_id, signature)
-        _mark_delivered(user_id, listing_id)
-        return {"ok": True, "duplicate": True}
+    if sublet.is_sublet(listing.get("title")) and not sublet.wants_rooms(user_id):
+        # «WG-Zimmer zur Miete auf Zeit» тощо — лише тим, хто шукає кімнату.
+        logger.info("Immowelt listing %s is a sublet; %s is not looking for a room", listing_id, user_id)
+        return {"ok": True, "skipped": "sublet"}
 
     premium = housing_tier.is_premium(user_id)
     if not premium and not release:
@@ -283,7 +277,7 @@ def handle_immowelt_result(bot, payload, release=False):
         # сообщение доставляет, поэтому отмечаем его отправленным: повтор
         # прислал бы человеку вторую копию той же квартиры.
         _mark_delivered(user_id, listing_id)
-        housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium, signature=signature)
+        housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium)
         logger.warning(
             "Immowelt listing %s to %s: response lost, assuming delivered (%s)",
             listing_id, user_id, exc,
@@ -291,7 +285,7 @@ def handle_immowelt_result(bot, payload, release=False):
         return {"ok": True, "assumed_delivered": True}
 
     _mark_delivered(user_id, listing_id)
-    housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium, signature=signature)
+    housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium)
     return {"ok": True}
 
 

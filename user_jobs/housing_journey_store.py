@@ -145,6 +145,25 @@ def mark_quiet_nudge_sent(user_id: int) -> None:
         session.close()
 
 
+def near_miss_due(user_id: int, not_since: datetime) -> bool:
+    """No "slightly over your limit, but may fit" flat to this person since `not_since`."""
+    session = DBSession()
+    try:
+        row = session.query(HousingUserJourney).get(int(user_id))
+        return row is None or row.near_miss_at is None or row.near_miss_at < not_since
+    finally:
+        session.close()
+
+
+def mark_near_miss_sent(user_id: int) -> None:
+    session = DBSession()
+    try:
+        _row(session, user_id).near_miss_at = utc_now()
+        session.commit()
+    finally:
+        session.close()
+
+
 def digest_off_ids() -> Set[int]:
     session = DBSession()
     try:

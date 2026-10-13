@@ -35,7 +35,10 @@ from telegram import InputMediaPhoto
 
 import i18n
 from database import KleinanzeigenListing
-from user_jobs import alert_cooldown, delivery_dedup, housing_tier, kleinanzeigen_matching, kleinanzeigen_parser, kleinanzeigen_store
+from user_jobs import (
+    alert_cooldown, delivery_dedup, housing_journey_store, housing_tier, kleinanzeigen_matching,
+    kleinanzeigen_parser, kleinanzeigen_store,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -324,8 +327,72 @@ def check_job(context) -> Dict[str, int]:
         kleinanzeigen_store.mark_delivered(int(filt["filter_id"]), listing_key)
         gate.sent(chat_id, listing_key, int(filt["filter_id"]))
         sent += 1
+    near_misses = _send_near_misses(bot, filters, gate)
     logger.info(
-        "Kleinanzeigen scan total=%s relevant=%s stored=%s full_rent=%s filters=%s sent=%s",
-        len(all_listings), len(relevant), stored, enriched, len(filters), sent,
+        "Kleinanzeigen scan total=%s relevant=%s stored=%s full_rent=%s filters=%s sent=%s near_miss=%s",
+        len(all_listings), len(relevant), stored, enriched, len(filters), sent, near_misses,
     )
-    return {"ok": 1, "enabled": 1, "stored": stored, "filters": len(filters), "sent": sent}
+    return {"ok": 1, "enabled": 1, "stored": stored, "filters": len(filters), "sent": sent, "near_miss": near_misses}
+
+
+# «Трохи дорожче, але може підійти» — не частіше разу на 4 дні на людину і
+# лише про свіжі оголошення: це підказка, а не друга стрічка.
+NEAR_MISS_EVERY = timedelta(days=4)
+NEAR_MISS_FRESH = timedelta(days=2)
+
+
+def _send_near_misses(bot, filters: List[Dict], gate) -> int:
+    """Квартири, що не пройшли лише через холодну межу, хоча показана ціна
+    може бути повною орендою (див. kleinanzeigen_matching.near_miss_over).
+
+    Кожній людині — щонайбільше одна, з найменшим перевищенням. Доставленою
+    вона позначається всім фільтрам людини, для яких це той самий випадок,
+    щоб за 4 дні та сама квартира не прийшла вдруге.
+    """
+    fresh = kleinanzeigen_store.list_active_listings_since(kleinanzeigen_store.utc_now() - NEAR_MISS_FRESH)
+    if not fresh:
+        return 0
+    delivered = kleinanzeigen_store.delivered_pairs()
+    not_since = kleinanzeigen_store.utc_now() - NEAR_MISS_EVERY
+    allowed: Dict[int, bool] = {}
+    best: Dict[int, tuple] = {}
+    for filt in filters:
+        if not filt.get("active", True):
+            continue
+        user_id = int(filt["user_id"])
+        if user_id not in allowed:
+            allowed[user_id] = housing_journey_store.near_miss_due(user_id, not_since)
+        if not allowed[user_id]:
+            continue
+        for listing in fresh:
+            key = str(listing.get("listing_key") or "")
+            if not key or (int(filt["filter_id"]), key) in delivered:
+                continue
+            over = kleinanzeigen_matching.near_miss_over(listing, filt)
+            if over is None or not gate.due(user_id, listing):
+                continue
+            if user_id not in best or over < best[user_id][0]:
+                best[user_id] = (over, filt, listing)
+    sent = 0
+    for user_id, (over, filt, listing) in best.items():
+        listing_key = str(listing["listing_key"])
+        lang = i18n.get_lang(user_id)
+        text = (
+            i18n.t("housing.near_miss.header", lang, over=f"{over:.0f}", limit=f"{float(filt['max_price_eur']):.0f}")
+            + "\n\n" + kleinanzeigen_matching.format_notification(listing, lang=lang)
+            + gate.footer(user_id)
+        )
+        try:
+            if not _send_listing(bot, user_id, listing, text):
+                bot.send_message(chat_id=user_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
+        except Exception as exc:
+            if not housing_tier.recipient_gone(exc):
+                logger.exception("Could not send a Kleinanzeigen near miss %s to %s", listing_key, user_id)
+                continue
+        for other in filters:
+            if int(other["user_id"]) == user_id and kleinanzeigen_matching.near_miss_over(listing, other) is not None:
+                kleinanzeigen_store.mark_delivered(int(other["filter_id"]), listing_key)
+        gate.sent(user_id, listing_key, int(filt["filter_id"]))
+        housing_journey_store.mark_near_miss_sent(user_id)
+        sent += 1
+    return sent

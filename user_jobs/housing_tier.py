@@ -15,10 +15,11 @@ could never say how many flats a person actually got.
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, Optional, Set
 
 import i18n
 from database import DBSession, HousingAccessUser, HousingSendLog
+from user_jobs import sublet
 
 logger = logging.getLogger(__name__)
 
@@ -61,65 +62,8 @@ def free_footer(user_id: int) -> str:
     )
 
 
-# Одну й ту саму квартиру площадки викладають під кількома ID: оголошення
-# перевиставили, агенція подала двічі, той самий об'єкт на двох порталах.
-# Аудит 13.10.2026: 124 рази людина отримала вже надіслану їй квартиру ще раз
-# (Farmont Immo на Immowelt — двома ID кожному з 20 людей).
-SAME_FLAT_WINDOW = timedelta(days=30)
-
-
-def _number(value) -> Optional[float]:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if number > 0 else None
-
-
-def flat_signature(listing: Dict) -> Optional[str]:
-    """"кімнати|площа|ціна" — або None, якщо чогось із трьох немає.
-
-    Без адреси: портали пишуть її кожен по-своєму. Площа до десятої м² і ціна
-    до євро разом із кімнатами збігаються в різних квартир рідко; однакові
-    квартири одного новобуду теж зливаються в одне повідомлення — посилання
-    веде на той самий будинок.
-    """
-    rooms = _number(listing.get("rooms"))
-    area = _number(listing.get("area_m2"))
-    price = None
-    for key in ("price_eur", "price_warm_eur", "total_rent_eur"):
-        price = _number(listing.get(key))
-        if price is not None:
-            break
-    if rooms is None or area is None or price is None:
-        return None
-    return f"{rooms:g}|{area:.1f}|{round(price)}"
-
-
-def recent_signatures(user_id: Optional[int] = None) -> Dict[int, Set[str]]:
-    """{людина: відбитки квартир, надісланих їй за SAME_FLAT_WINDOW}."""
-    session = DBSession()
-    try:
-        query = session.query(HousingSendLog.user_id, HousingSendLog.signature).filter(
-            HousingSendLog.sent_at >= utc_now() - SAME_FLAT_WINDOW,
-            HousingSendLog.signature.isnot(None),
-        )
-        if user_id is not None:
-            query = query.filter(HousingSendLog.user_id == int(user_id))
-        result: Dict[int, Set[str]] = {}
-        for uid, signature in query:
-            result.setdefault(int(uid), set()).add(str(signature))
-        return result
-    except Exception:
-        logger.exception("Could not read recent flat signatures")
-        return {}
-    finally:
-        session.close()
-
-
 def log_sent(
     user_id: int, source: str, listing_key: str, filter_id: Optional[int] = None, delayed: bool = False,
-    signature: Optional[str] = None,
 ) -> None:
     """Never lets a logging problem get in the way of the send itself."""
     session = DBSession()
@@ -131,7 +75,6 @@ def log_sent(
             filter_id=int(filter_id) if filter_id is not None else None,
             delayed=bool(delayed),
             sent_at=utc_now(),
-            signature=signature,
         ))
         session.commit()
     except Exception:
@@ -172,9 +115,7 @@ class DeliveryGate:
         self.premium = premium_user_ids()
         self._listing_model = listing_model
         self._first_seen: Optional[Dict[str, datetime]] = None
-        self._sent_signatures: Optional[Dict[int, Set[str]]] = None
-        self._pending_signature: Dict[Tuple[int, str], str] = {}
-        self._sent_keys: Set[Tuple[int, str]] = set()
+        self._wants_rooms: Dict[int, bool] = {}
 
     def is_premium(self, user_id: int) -> bool:
         return int(user_id) in self.premium
@@ -196,30 +137,19 @@ class DeliveryGate:
                 session.close()
         return self._first_seen.get(str(listing.get("listing_key") or ""))
 
-    def _already_got_this_flat(self, user_id: int, listing: Dict) -> bool:
-        signature = flat_signature(listing)
-        if signature is None:
+    def _sublet_unwanted(self, user_id: int, listing: Dict) -> bool:
+        if not sublet.is_sublet(listing.get("title")):
             return False
-        if (int(user_id), str(listing.get("listing_key") or "")) in self._sent_keys:
-            # Те саме оголошення під другим фільтром цієї людини: це справа
-            # PerUserDedup, який ще й позначить доставку і цьому фільтру.
-            return False
-        if self._sent_signatures is None:
-            self._sent_signatures = recent_signatures()
-        if signature in self._sent_signatures.get(int(user_id), set()):
-            logger.info(
-                "%s %s: %s already got this flat (%s) under another ID; skipping",
-                self.source, listing.get("listing_key"), user_id, signature,
-            )
-            return True
-        self._pending_signature[(int(user_id), str(listing.get("listing_key") or ""))] = signature
-        return False
+        user_id = int(user_id)
+        if user_id not in self._wants_rooms:
+            self._wants_rooms[user_id] = sublet.wants_rooms(user_id)
+        return not self._wants_rooms[user_id]
 
     def due(self, user_id: int, listing: Dict) -> bool:
-        # Дубль не позначається доставленим: якщо квартира висітиме довше за
-        # вікно відбитків, вона прийде — краще так, ніж назавжди проковтнути
-        # іншу квартиру через випадковий збіг чисел.
-        if self._already_got_this_flat(user_id, listing):
+        # Суборенда — лише тим, хто шукає кімнату (див. user_jobs/sublet.py).
+        # Не позначається доставленою: якщо людина потім обере кімнати, вона
+        # отримає й це оголошення.
+        if self._sublet_unwanted(user_id, listing):
             return False
         if self.is_premium(user_id):
             return True
@@ -232,11 +162,4 @@ class DeliveryGate:
         return "" if self.is_premium(user_id) else free_footer(user_id)
 
     def sent(self, user_id: int, listing_key: str, filter_id: Optional[int] = None) -> None:
-        self._sent_keys.add((int(user_id), str(listing_key)))
-        signature = self._pending_signature.pop((int(user_id), str(listing_key)), None)
-        log_sent(
-            user_id, self.source, listing_key, filter_id,
-            delayed=not self.is_premium(user_id), signature=signature,
-        )
-        if signature is not None and self._sent_signatures is not None:
-            self._sent_signatures.setdefault(int(user_id), set()).add(signature)
+        log_sent(user_id, self.source, listing_key, filter_id, delayed=not self.is_premium(user_id))

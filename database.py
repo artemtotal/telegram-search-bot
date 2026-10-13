@@ -1039,9 +1039,6 @@ class HousingSendLog(Base):
     # True when the person is on the free tier and got it after the delay.
     delayed = Column(BOOLEAN, nullable=False, default=False)
     sent_at = Column(DATETIME, nullable=False, index=True)
-    # "rooms|area|price" of the flat (housing_tier.flat_signature): the same
-    # flat re-posted under a new ID must not reach the same person again.
-    signature = Column(TEXT)
 
 
 class HousingPendingDelivery(Base):
@@ -1085,6 +1082,8 @@ class HousingUserJourney(Base):
     digest_off = Column(BOOLEAN, nullable=False, default=False)
     # Last "your filter has been quiet for a week" message (housing_relax).
     quiet_nudge_at = Column(DATETIME)
+    # Last "slightly over your cold-rent limit, but may fit" Kleinanzeigen flat.
+    near_miss_at = Column(DATETIME)
 
 
 class HousingSearch(Base):
@@ -1126,7 +1125,6 @@ def _ensure_column(table_name: str, column_name: str, column_type: str) -> None:
 
 
 _ensure_column('propotsdam_filter', 'min_total_rent_eur', 'FLOAT')
-_ensure_column('housing_send_log', 'signature', 'TEXT')
 _ensure_column('semmelhaack_listing', 'price_warm_eur', 'FLOAT')
 _ensure_column('propotsdam_listing', 'price_eur', 'FLOAT')
 _ensure_column('propotsdam_listing', 'nebenkosten_eur', 'FLOAT')
@@ -1153,44 +1151,11 @@ _ensure_column('kleinanzeigen_listing', 'price_warm_eur', 'FLOAT')
 _ensure_column('kleinanzeigen_listing', 'gallery_urls', 'TEXT')
 
 
-def _move_karlmarx_bounds_to_the_warm_column() -> None:
-    """Ціна у фільтрах Karl Marx завжди означала повну оренду.
-
-    Портал друкує Warmmiete, і парсер клав її в price_eur — єдину колонку, що
-    тоді існувала. Тепер повна ціна має власну колонку, тож старі межі треба
-    перенести туди, інакше вони мовчки порівнювалися б із холодною ціною,
-    якої Karl Marx не публікує, і фільтр перестав би обмежувати ціну взагалі.
-
-    Переносяться лише записи, де нова колонка ще порожня, — повторний запуск
-    нічого не робить.
-    """
-    fairy = engine.raw_connection()
-    try:
-        dbapi_con = getattr(fairy, "driver_connection", None) or fairy.connection
-        cur = dbapi_con.cursor()
-        cur.execute(
-            """
-            UPDATE karlmarx_filter
-               SET min_price_warm_eur = min_price_eur,
-                   max_price_warm_eur = max_price_eur,
-                   min_price_eur = NULL,
-                   max_price_eur = NULL
-             WHERE min_price_warm_eur IS NULL
-               AND max_price_warm_eur IS NULL
-               AND (min_price_eur IS NOT NULL OR max_price_eur IS NOT NULL)
-            """
-        )
-        moved = cur.rowcount
-        dbapi_con.commit()
-        if moved:
-            logging.getLogger(__name__).info(
-                "Karl Marx: %s фільтрів переведено на межу повної оренди", moved,
-            )
-    finally:
-        fairy.close()
-
-
-_move_karlmarx_bounds_to_the_warm_column()
+# Тут була разова міграція 01.09.2026 (e2963b7): межу ціни Karl Marx з
+# price_eur переносили в колонку повної оренди. Вона запускалась при кожному
+# старті й будь-якому імпорті database, тож із 13.10.2026, коли фільтри Karl
+# Marx знову зберігають і холодну межу (rent_bounds), перетворювала «до 640 €
+# холодна» на «до 640 € повна». Старі записи вона давно перенесла — прибрано.
 _ensure_column('kleinanzeigen_listing', 'cover_image_url', 'TEXT')
 _ensure_column('locals_listing', 'cover_image_url', 'TEXT')
 _ensure_column('karlmarx_listing', 'cover_image_url', 'TEXT')
@@ -1203,6 +1168,7 @@ _ensure_column('equeue_status', 'last_stale_alert_at', 'DATETIME')
 _ensure_column('user_settings', 'news_subscribed', 'BOOLEAN NOT NULL DEFAULT 1')
 _ensure_column('housing_user_journey', 'digest_off', 'BOOLEAN NOT NULL DEFAULT 0')
 _ensure_column('housing_user_journey', 'quiet_nudge_at', 'DATETIME')
+_ensure_column('housing_user_journey', 'near_miss_at', 'DATETIME')
 _ensure_column('econsul_state', 'token_reminded_for', 'DATETIME')
 _ensure_column('econsul_state', 'login_id', 'TEXT')
 _ensure_column('econsul_state', 'login_message_id', 'INTEGER')

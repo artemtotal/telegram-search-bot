@@ -51,5 +51,31 @@ def matches_filter(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
     )
 
 
+def near_miss_over(listing: Dict[str, Any], filt: Dict[str, Any]) -> Optional[float]:
+    """На скільки євро квартира дорожча за холодну межу — якщо лише цим вона
+    й не проходить, а показана ціна може бути повною орендою.
+
+    Kleinanzeigen не підписує ціну в списку, і приватні оголошення часто
+    ставлять туди повну оренду: у 49 із 95 оголошень, де портал назвав
+    Warmmiete, вона дорівнює показаній ціні. Тоді «холодна» 750 € проти межі
+    700 € — насправді 750 € повної, і квартира може підійти. Таку не
+    відкидаємо мовчки: людина отримує її окремою підказкою (рішення Артема
+    13.10.2026). None — не той випадок.
+    """
+    price = _num(listing.get("price_eur"))
+    limit = _num(filt.get("max_price_eur"))
+    if price is None or limit is None or price <= limit:
+        return None
+    warm = _num(listing.get("price_warm_eur"))
+    if warm is not None and warm != price:
+        # Портал назвав окрему повну оренду — показана ціна справді холодна.
+        return None
+    if matches_filter(listing, filt):
+        return None
+    if not matches_filter({**listing, "price_eur": None, "price_warm_eur": price}, filt):
+        return None
+    return price - limit
+
+
 def format_notification(listing: Dict[str, Any], lang: str = "uk") -> str:
     return kleinanzeigen_parser.format_listing_message(listing, lang=lang)
