@@ -902,7 +902,19 @@ def _unbounded_note(criteria: Dict[str, object], lang: str = "uk") -> str:
     missing = _unbounded_fields(criteria, lang)
     if not missing:
         return ""
-    return i18n.t("housing.unbounded.note", lang, fields=", ".join(missing))
+    if not _has_room_bound(criteria):
+        return i18n.t("housing.unbounded.note", lang, fields=", ".join(missing))
+    # Кімнати обмежені — однокімнатних не буде, тож лякати ними не можна:
+    # кажемо лише, що саме не відсіюється (площа й/або ціна).
+    any_values = [
+        i18n.t(key.replace("housing.unbounded.", "housing.unbounded.any."), lang)
+        for fields, key in _UNBOUNDED_FIELDS
+        if fields != ("min_rooms",) and all(criteria.get(field) in (None, "") for field in fields)
+    ]
+    return i18n.t(
+        "housing.unbounded.note_any", lang,
+        fields=", ".join(missing), any=i18n.t("housing.unbounded.any.joiner", lang).join(any_values),
+    )
 
 
 def _summary_suffix(criteria: Dict[str, object], lang: str = "uk") -> str:

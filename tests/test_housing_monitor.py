@@ -4506,6 +4506,20 @@ class HousingUnboundedFilterWarningTests(unittest.TestCase):
         self.assertIn('комнаты', note)
         self.assertNotIn('площадь', note)
 
+    def test_a_filter_with_rooms_but_no_area_does_not_promise_one_room_flats(self):
+        """«Від 2 кімнат» без площі — однокімнатних не буде (скарга 13.10.2026)."""
+        note = housing_monitor._unbounded_note({'min_rooms': 2.0, 'min_area_m2': None, 'max_price_eur': 681.0}, 'uk')
+
+        self.assertIn('Без обмеження: площа', note)
+        self.assertIn('будь-якої площі', note)
+        self.assertNotIn('однокімнатні', note)
+
+    def test_area_and_price_both_open_are_named_together(self):
+        note = housing_monitor._unbounded_note({'min_rooms': 2.0}, 'ru')
+
+        self.assertIn('любой площади и по любой цене', note)
+        self.assertNotIn('однокомнатные', note)
+
     def test_a_fully_bounded_filter_says_nothing(self):
         note = housing_monitor._unbounded_note(
             {'min_rooms': 3.0, 'min_area_m2': 70.0, 'max_price_eur': 1200.0}, 'uk',
