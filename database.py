@@ -2,23 +2,40 @@
 import logging
 import os
 
-from sqlalchemy import Column, INTEGER, TEXT, BOOLEAN, DATETIME, FLOAT, create_engine, UniqueConstraint
+from sqlalchemy import Column, INTEGER, TEXT, BOOLEAN, DATETIME, FLOAT, create_engine, event, UniqueConstraint
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import QueuePool
 
 # Local test and first-run environments may not have the mounted directory yet.
 os.makedirs('./config', exist_ok=True)
 
+# A pool, not StaticPool: StaticPool hands the SAME sqlite connection to every
+# thread, so two scheduler jobs hitting the DB in the same second reset each
+# other's cursors ("Cursor needed to be reset", "cannot rollback - no
+# transaction is active"). ProPotsdam and the Immowelt release job both fire
+# at xx:09:27 / xx:39:27, and every 2nd-4th ProPotsdam scan died that way
+# (16.10.2026). Each session now checks out its own connection.
 engine = create_engine('sqlite:///./config/bot.db',
                        connect_args={'check_same_thread': False},
-                       poolclass=StaticPool,
+                       poolclass=QueuePool,
+                       pool_size=10,
+                       max_overflow=20,
                        echo=False)
+
+
+@event.listens_for(engine, 'connect')
+def _sqlite_pragmas(dbapi_connection, _record):
+    # busy_timeout is per connection, so it must be set on every new one.
+    cursor = dbapi_connection.cursor()
+    cursor.execute('PRAGMA busy_timeout=10000')
+    cursor.close()
+
+
 # WAL mode allows concurrent readers while a writer is active,
 # which is essential because robot.py and json_receive.py both
 # import this module at startup.
 engine.execute('PRAGMA journal_mode=WAL')
-engine.execute('PRAGMA busy_timeout=5000')
 DBSession = sessionmaker(bind=engine)
 Base = declarative_base()
 
