@@ -152,7 +152,10 @@ def _sections(payload: Any) -> list[dict]:
 
 def parse_expose(payload: Any) -> dict[str, Any]:
     """Що дає картка оголошення: обидві ціни, повна адреса з районом, галерея."""
-    cold = warm = None
+    cold = warm = side = heating = total_rent = None
+    # «Gesamtmiete: 2.903,56 € zzgl. Heiz- und Nebenkosten» — це холодна, не повна; тоді й
+    # totalRent у COST_CHECK — та сама холодна.
+    total_is_cold = False
     address = ""
     gallery: list[str] = []
     for section in _sections(payload):
@@ -166,19 +169,32 @@ def parse_expose(payload: Any) -> dict[str, Any]:
         elif kind in ("TOP_ATTRIBUTES", "ATTRIBUTE_LIST"):
             for attr in section.get("attributes") or []:
                 label = clean_text((attr or {}).get("label"))
-                value = parse_decimal((attr or {}).get("text"))
+                text = clean_text((attr or {}).get("text"))
+                value = parse_decimal(text)
                 if value is None:
                     continue
-                if cold is None and label.startswith("Kaltmiete"):
+                if label.startswith("Gesamtmiete") and "zzgl" in text:
+                    total_is_cold = True
+                elif cold is None and label.startswith("Kaltmiete"):
                     cold = value
                 elif warm is None and (label.startswith("Warmmiete") or label.startswith("Gesamtmiete")):
                     warm = value
-        elif kind == "COST_CHECK" and warm is None:
-            warm = parse_decimal(section.get("totalRent"))
+                elif side is None and label.startswith("Nebenkosten"):
+                    side = value
+                elif heating is None and label.startswith("Heizkosten:"):
+                    heating = value
+        elif kind == "COST_CHECK" and total_rent is None:
+            total_rent = parse_decimal(section.get("totalRent"))
         elif kind == "MAP" and not address:
             address = ", ".join(
                 part for part in (clean_text(section.get("addressLine1")), clean_text(section.get("addressLine2"))) if part
             )
+    if warm is None and not total_is_cold:
+        warm = total_rent
+    if warm is not None and cold is not None and warm < cold:
+        # Орендодавець суперечить сам собі («Kaltmiete 1.440 €, Nebenkosten 329 €, Warmmiete
+        # 1.410 €»): повна = холодна + додаткові, а без них повна невідома.
+        warm = cold + side + (heating or 0) if side is not None else None
     district = None
     if address:
         # «14473 Südliche Innenstadt, Potsdam» — тут район іде перед містом.

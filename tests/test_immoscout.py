@@ -78,6 +78,40 @@ class ImmoscoutParserTests(unittest.TestCase):
         self.assertEqual(len(details["gallery_urls"]), 3)
         self.assertTrue(all("/format/jpg" in url and "1200x900" in url for url in details["gallery_urls"]))
 
+    @staticmethod
+    def _expose(*attrs, total_rent=None):
+        sections = [{"type": "ATTRIBUTE_LIST", "title": "Kosten",
+                     "attributes": [{"label": label, "text": text} for label, text in attrs]}]
+        if total_rent is not None:
+            sections.append({"type": "COST_CHECK", "totalRent": total_rent})
+        return {"sections": sections}
+
+    def test_gesamtmiete_plus_side_costs_is_not_the_warm_rent(self):
+        # 16.10.2026, expose 171820799: Warmmiete «keine Angabe», Gesamtmiete «zzgl. Heiz- und
+        # Nebenkosten», totalRent — та сама холодна.
+        details = immoscout_parser.parse_expose(self._expose(
+            ("Kaltmiete (zzgl. Nebenkosten):", "2.903,56 €"), ("Warmmiete", "keine Angabe"),
+            ("Gesamtmiete:", "2.903,56 € zzgl. Heiz- und Nebenkosten"), total_rent=2903.56))
+
+        self.assertEqual(details["price_eur"], 2903.56)
+        self.assertIsNone(details["price_warm_eur"])
+
+    def test_warm_below_cold_is_rebuilt_from_side_costs(self):
+        # 16.10.2026, expose 171728016: Kalt 1.440, NK 329 (Heizung drin), Warm 1.410.
+        details = immoscout_parser.parse_expose(self._expose(
+            ("Kaltmiete (zzgl. Nebenkosten):", "1.440 €"), ("Nebenkosten:", "329 €"),
+            ("Heizkosten in Nebenkosten enthalten:", "Ja"), ("Gesamtmiete:", "1.410 €"), total_rent=1410))
+        self.assertEqual(details["price_warm_eur"], 1769.0)
+
+        no_side = immoscout_parser.parse_expose(self._expose(
+            ("Kaltmiete (zzgl. Nebenkosten):", "1.440 €"), ("Gesamtmiete:", "1.410 €")))
+        self.assertIsNone(no_side["price_warm_eur"])
+
+    def test_all_inclusive_rent_stays_equal(self):
+        details = immoscout_parser.parse_expose(self._expose(
+            ("Kaltmiete (zzgl. Nebenkosten):", "1.728,55 €"), ("Gesamtmiete:", "1.728,55 €"), total_rent=1728.55))
+        self.assertEqual((details["price_eur"], details["price_warm_eur"]), (1728.55, 1728.55))
+
     def test_message_mentions_both_rents_and_the_plus_window(self):
         listing = dict(self.listings["171646044"], price_warm_eur=1345.39)
         future = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
@@ -152,6 +186,19 @@ class ImmoscoutStoreTests(_DbTest):
         self.assertEqual(stored["district"], "Babelsberg Nord")
         self.assertTrue(stored["detail_fetched"])
         self.assertEqual(immoscout_store.keys_with_details(), {"1"})
+
+    def test_the_rounded_list_price_keeps_the_exact_one_from_the_listing_page(self):
+        # 16.10.2026: видача 2.904 € затирала 2.903,56 € з картки → «повна менша за холодну».
+        immoscout_store.upsert_listings([self._listing("1", price_eur=2903.56, price_warm_eur=3300.0)])
+        immoscout_store.upsert_listings([self._listing("1", detail=False, price_eur=2904.0)])
+        stored = immoscout_store.list_active_listings()[0]
+        self.assertEqual((stored["price_eur"], stored["price_warm_eur"]), (2903.56, 3300.0))
+
+        immoscout_store.upsert_listings([self._listing("1", detail=False, price_eur=2800.0)])  # real change
+        self.assertEqual(immoscout_store.list_active_listings()[0]["price_eur"], 2800.0)
+
+        immoscout_store.upsert_listings([self._listing("1", price_eur=2800.0, price_warm_eur=None)])
+        self.assertIsNone(immoscout_store.list_active_listings()[0]["price_warm_eur"])
 
 
 class FakeBot:

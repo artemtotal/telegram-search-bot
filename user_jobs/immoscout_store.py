@@ -256,8 +256,15 @@ def upsert_listings(listings: Iterable[Dict]) -> int:
                 row.district = listing.get("district")
             row.rooms = listing.get("rooms")
             row.area_m2 = listing.get("area_m2")
-            row.price_eur = listing.get("price_eur")
-            if listing.get("price_warm_eur") is not None:
+            price = listing.get("price_eur")
+            # Видача округлює холодну до євро (2.904 € проти 2.903,56 € у картці): точну ціну
+            # з картки вона не перезаписує, лише справжню зміну ціни.
+            if (listing.get("detail_fetched") or row.detail_fetched_at is None or row.price_eur is None
+                    or price is None or abs(float(price) - float(row.price_eur)) >= 1):
+                row.price_eur = price
+            if listing.get("detail_fetched"):
+                row.price_warm_eur = listing.get("price_warm_eur")  # картка без повної: невідома
+            elif listing.get("price_warm_eur") is not None:
                 row.price_warm_eur = listing.get("price_warm_eur")
             row.plus_until = listing.get("plus_until") or ""
             if listing.get("detail_fetched"):
