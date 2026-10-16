@@ -23,6 +23,26 @@ class ProPotsdamMatchingTests(unittest.TestCase):
 
         self.assertTrue(propotsdam_matching.matches_filter(listing, filt))
 
+    def test_portal_aggregate_districts_match_wizard_names(self):
+        # The portal labels flats "Am Stern", "Nördl. VS/IS", "Potsdam Nord";
+        # the filter wizard offers "Stern", "Innenstadt", "Bornstedt".
+        cases = [
+            ('Am Stern', 'Stern'),
+            ('Nördl. VS/IS', 'Innenstadt'),
+            ('Nördl. VS/IS', 'Jägervorstadt'),
+            ('Südl. VS/IS', 'Teltower Vorstadt'),
+            ('Potsdam Nord', 'Bornstedt'),
+            ('Babelsberg', 'Babelsberg Nord'),
+        ]
+        for district, chosen in cases:
+            with self.subTest(district=district, chosen=chosen):
+                self.assertTrue(propotsdam_matching.matches_filter({'district': district}, {'districts': chosen}))
+
+    def test_portal_aggregate_district_does_not_leak_elsewhere(self):
+        for district, chosen in [('Am Stern', 'Drewitz'), ('Potsdam Nord', 'Innenstadt'), ('Nördl. VS/IS', 'Babelsberg')]:
+            with self.subTest(district=district, chosen=chosen):
+                self.assertFalse(propotsdam_matching.matches_filter({'district': district}, {'districts': chosen}))
+
     def test_rejects_listing_below_minimum_rent(self):
         listing = {'district': 'Babelsberg', 'rooms': 2.0, 'area_m2': 64.0, 'total_rent_eur': 700.0}
         filt = {'districts': 'Babelsberg', 'min_total_rent_eur': 800.0}

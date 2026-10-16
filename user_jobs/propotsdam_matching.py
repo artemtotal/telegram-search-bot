@@ -18,12 +18,29 @@ def _num(value: Any) -> Optional[float]:
         return propotsdam_parser.parse_decimal(value)
 
 
+# Портал пише свої зведені райони, а майстер фільтра пропонує звичні назви
+# (PROPOT_DISTRICTS у housing_monitor). Без перекладу «Am Stern» не збігався
+# з «Stern», а «Nördl. VS/IS» - з «Innenstadt», і квартири з цих районів не
+# отримував ніхто (16.10.2026). Склад зведених районів - за індексами адрес:
+# 14467 - центр і північні передмістя, 14473 - Teltower Vorstadt і Zentrum
+# Ost, 14469 - Bornstedter Feld і північ.
+_PORTAL_DISTRICTS = {
+    "am stern": {"stern"},
+    "nördl. vs/is": {"innenstadt", "nauener vorstadt", "jägervorstadt", "berliner vorstadt"},
+    "südl. vs/is": {"innenstadt", "teltower vorstadt"},
+    "potsdam nord": {"bornstedt", "bornim", "eiche", "golm"},
+}
+# Портал не ділить Babelsberg, а майстер пропонує ще й Nord/Süd.
+_WANTED_ALIASES = {"babelsberg nord": "babelsberg", "babelsberg süd": "babelsberg"}
+
+
 def _district_allowed(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
     raw = str(filt.get("districts") or "").strip()
     if not raw:
         return True
-    wanted = {_norm(part) for part in raw.split(",") if _norm(part)}
-    return _norm(listing.get("district")) in wanted
+    wanted = {_WANTED_ALIASES.get(_norm(part), _norm(part)) for part in raw.split(",") if _norm(part)}
+    district = _norm(listing.get("district"))
+    return district in wanted or bool(_PORTAL_DISTRICTS.get(district, set()) & wanted)
 
 
 def _within_min(value: Optional[float], bound: Optional[float]) -> bool:
