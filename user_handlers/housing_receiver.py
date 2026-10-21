@@ -104,22 +104,30 @@ def _parse_number(raw):
 def _record_listing_for_stats(listing_id, listing):
     """Immowelt has no full-catalogue scan of its own in this bot — a
     separate relay service just forwards matches. So this is the only place
-    we ever see an Immowelt listing; recording it here (once per listing_key)
-    is what the housing stats dashboard (housing:stats) draws on."""
+    we ever see an Immowelt listing; recording it here is what the housing
+    stats dashboard (housing:stats) and the evening send audit draw on.
+
+    Later deliveries refresh the numbers: the relay re-reads a card, and
+    the audit has to judge a send by what was sent. Kept from the first
+    one, a flat Immowelt first showed as 63 m² and then as 95 m² looked
+    like it had gone to "from 80 m²" filters by mistake (audit 20.10.2026)."""
+    fields = {
+        "title": str(listing.get("title") or "").strip() or None,
+        "address": str(listing.get("address") or "").strip() or None,
+        "rooms": _parse_number(listing.get("rooms")),
+        "area_m2": _parse_number(listing.get("area")),
+        "price_eur": _parse_number(listing.get("price")),
+        "detail_url": str(listing.get("url") or "").strip() or None,
+    }
     session = DBSession()
     try:
-        if session.query(ImmoweltListing).get(listing_id) is not None:
-            return
-        session.add(ImmoweltListing(
-            listing_key=listing_id,
-            title=str(listing.get("title") or "").strip() or None,
-            address=str(listing.get("address") or "").strip() or None,
-            rooms=_parse_number(listing.get("rooms")),
-            area_m2=_parse_number(listing.get("area")),
-            price_eur=_parse_number(listing.get("price")),
-            detail_url=str(listing.get("url") or "").strip() or None,
-            first_seen_at=datetime.utcnow(),
-        ))
+        row = session.query(ImmoweltListing).get(listing_id)
+        if row is None:
+            session.add(ImmoweltListing(listing_key=listing_id, first_seen_at=datetime.utcnow(), **fields))
+        else:
+            for name, value in fields.items():
+                if value is not None:
+                    setattr(row, name, value)
         session.commit()
     finally:
         session.close()

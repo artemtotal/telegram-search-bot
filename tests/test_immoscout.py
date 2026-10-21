@@ -273,6 +273,19 @@ class ImmoscoutMonitorTests(_DbTest):
         self.assertEqual(housing_search_store.list_for_user(7)[0]["members"], [("karlmarx", 2)])
         self.assertEqual(immoscout_store.list_filters(user_id=7), [])
 
+    def test_a_flat_swap_is_not_sent(self):
+        housing_search_store.create(7, {"min_rooms": 2.0}, [("semmelhaack", 3)], [])
+        context = SimpleNamespace(bot=FakeBot())
+        with mock.patch.object(immoscout_monitor, "_fetch_listings", return_value=[]),              mock.patch.object(immoscout_monitor, "_add_details", return_value=0),              mock.patch("user_jobs.housing_tier.premium_user_ids", return_value={7}):
+            immoscout_monitor.check_job(context)
+        fresh = [self._listing("swap", title="Tauschwohnung: 2-Zimmer-Wohnung in Potsdams Innenstadt"),
+                 self._listing("flat")]
+        with mock.patch.object(immoscout_monitor, "_fetch_listings", return_value=fresh),              mock.patch.object(immoscout_monitor, "_add_details", return_value=0),              mock.patch("user_jobs.housing_tier.premium_user_ids", return_value={7}):
+            immoscout_monitor.check_job(context)
+
+        self.assertEqual(len(context.bot.messages), 1)
+        self.assertIn("Wohnung flat", context.bot.messages[0][1])
+
     def test_remove_member(self):
         search_id = housing_search_store.create(7, {}, [("karlmarx", 2), ("immoscout", 5)], [])
 

@@ -153,6 +153,25 @@ class HousingReceiverTests(unittest.TestCase):
             session.close()
         self.assertEqual(count, 1)
 
+    def test_a_later_delivery_refreshes_the_recorded_numbers(self):
+        """Immowelt показав 63 м², потім 95 м²: аудит міряє тим, що пішло."""
+        bot = FakeBot()
+        first, later = _payload(), _payload(user_id=1)
+        first["listing"]["area"] = "63 m²"
+        later["listing"]["area"] = "95 m²"
+        del later["listing"]["price"]
+
+        housing_receiver.handle_immowelt_result(bot, first)
+        housing_receiver.handle_immowelt_result(bot, later)
+
+        session = housing_receiver.DBSession()
+        try:
+            row = session.query(ImmoweltListing).get("abc")
+        finally:
+            session.close()
+        self.assertEqual(row.area_m2, 95.0)
+        self.assertEqual(row.price_eur, 1119.0)  # не прийшло — лишається
+
     def test_parse_number_handles_missing_and_unparseable_values(self):
         self.assertIsNone(housing_receiver._parse_number(None))
         self.assertIsNone(housing_receiver._parse_number(""))

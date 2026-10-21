@@ -164,7 +164,12 @@ def collect_findings(since: datetime, until: datetime) -> "OrderedDict[tuple, Di
         if filt is not None:
             matching = hm._LOCAL_SOURCE_MODULES[source][1]
             try:
-                if not matching.matches_filter(listing, filt):
+                # Підказка «дорожче лише на N €» (Kleinanzeigen) теж пишеться
+                # у журнал відправок, хоч під фільтр свідомо не підходить.
+                near_miss = getattr(matching, "near_miss_over", None)
+                if not matching.matches_filter(listing, filt) and not (
+                    near_miss is not None and near_miss(listing, filt) is not None
+                ):
                     problems.append(f"не підходить під фільтр #{filter_id}, з якого пішла")
             except Exception:
                 logger.exception("Audit could not re-match %s %s", source, key)

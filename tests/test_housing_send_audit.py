@@ -9,9 +9,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from database import Base, HousingSendLog, ImmoweltListing, KarlmarxListing
+from database import Base, HousingSendLog, ImmoweltListing, KarlmarxListing, KleinanzeigenListing
 from user_handlers import housing_monitor, housing_send_audit
-from user_jobs import karlmarx_store
+from user_jobs import karlmarx_store, kleinanzeigen_store
 
 
 class ListingProblemsTests(unittest.TestCase):
@@ -37,7 +37,7 @@ class AuditJobTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
         Base.metadata.create_all(self.engine)
-        self._saved = [(m, m.DBSession) for m in (housing_send_audit, karlmarx_store)]
+        self._saved = [(m, m.DBSession) for m in (housing_send_audit, karlmarx_store, kleinanzeigen_store)]
         for module, _ in self._saved:
             module.DBSession = sessionmaker(bind=self.engine)
 
@@ -95,6 +95,22 @@ class AuditJobTests(unittest.TestCase):
 
         self.assertEqual([key for _source, key in findings], ['ev'])
         self.assertIn('не підходить під жоден Immowelt-фільтр людини', findings[('immowelt', 'ev')]['problems'])
+
+    def test_a_kleinanzeigen_near_miss_hint_is_not_a_wrong_send(self):
+        """Підказка «дорожче лише на N €» теж у журналі відправок (20.10.2026:
+        1050 € за 63 м² фільтру «до 811 € холодна»)."""
+        now = datetime.utcnow()
+        filter_id = kleinanzeigen_store.create_filter(user_id=1, title='t', max_price_eur=810.7)
+        self._add(
+            KleinanzeigenListing(listing_key='ka', title='EG-Wohnung in Potsdam Eiche', rooms=3, area_m2=63,
+                                 price_eur=1050, first_seen_at=now, last_seen_at=now, is_active=True),
+            HousingSendLog(user_id=1, source='kleinanzeigen', listing_key='ka', filter_id=filter_id,
+                           delayed=True, sent_at=now - timedelta(hours=1)),
+        )
+        with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[]):
+            findings = housing_send_audit.collect_findings(now - timedelta(days=1), now)
+
+        self.assertEqual(dict(findings), {})
 
     def test_a_quiet_day_sends_nothing(self):
         bot = mock.Mock()

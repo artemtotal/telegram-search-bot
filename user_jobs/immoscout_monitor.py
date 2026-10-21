@@ -50,6 +50,15 @@ BACKFILL_KEY = "backfill_existing_searches"
 SOURCE = "immoscout"
 # Фільтри одного кооперативу — до них портали не додаємо.
 KARLMARX_ONLY = {"karlmarx"}
+# Обмін квартир («Tauschwohnung: 2-Zimmer-Wohnung …»): зняти її може лише
+# той, хто віддає свою. Kleinanzeigen їх відкидає давно, тут вони за 20.10
+# пішли 53 людям (вечірня самоперевірка 20.10.2026).
+SWAP_KEYWORDS = ("tausch", "swap")
+
+
+def _is_swap(listing: Dict) -> bool:
+    title = str(listing.get("title") or "").casefold()
+    return any(keyword in title for keyword in SWAP_KEYWORDS)
 
 
 def _headers() -> Dict[str, str]:
@@ -219,7 +228,10 @@ def check_job(context) -> Dict[str, int]:
     except Exception:
         logger.exception("Could not add ImmoScout24 to existing filters")
     # Лише ті, чию картку прочитано: до того невідомі повна оренда й точний район.
-    active_listings = [item for item in immoscout_store.list_active_listings() if item.get("detail_fetched")]
+    active_listings = [
+        item for item in immoscout_store.list_active_listings()
+        if item.get("detail_fetched") and not _is_swap(item)
+    ]
     filters = immoscout_store.list_filters(active_only=True)
     matches = immoscout_store.select_unsent_matches(active_listings, filters, immoscout_store.delivered_pairs())
     sent = 0
