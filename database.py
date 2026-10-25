@@ -951,6 +951,9 @@ class UserSettings(Base):
     language = Column(TEXT, nullable=False, default='uk')
     news_subscribed = Column(BOOLEAN, nullable=False, default=True)
     updated_at = Column(DATETIME, nullable=False)
+    # «🌙 Тиха ніч» - функція підписки, увімкнена за замовчуванням. Тут лише
+    # явне «вимкнути» від платної людини (25.10.2026: Артем).
+    quiet_night_off = Column(BOOLEAN, nullable=False, default=False)
 
 
 class KarlmarxListing(Base):
@@ -1162,6 +1165,7 @@ def _ensure_column(table_name: str, column_name: str, column_type: str) -> None:
 
 
 _ensure_column('propotsdam_filter', 'min_total_rent_eur', 'FLOAT')
+_ensure_column('user_settings', 'quiet_night_off', 'BOOLEAN NOT NULL DEFAULT 0')
 _ensure_column('semmelhaack_listing', 'price_warm_eur', 'FLOAT')
 _ensure_column('propotsdam_listing', 'price_eur', 'FLOAT')
 _ensure_column('propotsdam_listing', 'nebenkosten_eur', 'FLOAT')

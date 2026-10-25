@@ -3039,27 +3039,27 @@ class HousingNotificationSettingsTests(unittest.TestCase):
             'GET', '/api/housing/notification-prefs', params={'user_id': 544675510}
         )
         text = update.callback_query.edit_message_text.call_args.args[0]
-        self.assertIn('увімкнена', text)
+        # Тиха ніч - функція підписки (25.10.2026), а 544675510 тут безкоштовний.
+        self.assertIn('лише з підпискою', text)
         self.assertIn('раз на день', text)
 
-    def test_toggle_quiet_hours_sends_the_new_value(self):
-        update = self._update(data='housing:notify_quiet:1')
+    def test_toggle_quiet_hours_is_kept_by_the_bot_for_subscribers(self):
+        update = self._update(data='housing:notify_quiet:0')
         context = SimpleNamespace(user_data={})
 
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
              mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}), \
+             mock.patch.object(housing_monitor.housing_tier, 'is_premium', return_value=True), \
              mock.patch.object(
                  housing_monitor, '_request',
                  return_value={'ok': True, 'quiet_hours_enabled': True, 'digest_mode': 'instant'},
              ) as request:
             housing_monitor.handle_callback(update, context)
 
-        calls = [c for c in request.call_args_list if c.args[0] == 'POST']
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(
-            calls[0].kwargs['json'],
-            {'user_id': 544675510, 'quiet_hours_enabled': True},
-        )
+        self.assertEqual([c for c in request.call_args_list if c.args[0] == 'POST'], [])
+        self.assertTrue(housing_monitor.user_settings_store.get_quiet_night_off(544675510))
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        self.assertIn('вимкнена', text)
 
     def test_set_digest_mode_sends_daily(self):
         update = self._update(data='housing:notify_digest:daily')

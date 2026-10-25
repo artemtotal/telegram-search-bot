@@ -72,9 +72,6 @@ services:
       # ADMIN_ID and users with existing housing filters are always allowed.
       - HOUSING_ALLOWED_USER_IDS=${HOUSING_ALLOWED_USER_IDS:-}
       - CHECK_WOHNUNG_BASE_URL=http://host.docker.internal:18765
-      # Безкоштовний тариф уночі (23–08 за Берліном) мовчить: нічні квартири
-      # приходять зранку. 0 - повернути нічні сповіщення.
-      - HOUSING_FREE_QUIET_NIGHT=${HOUSING_FREE_QUIET_NIGHT:-1}
       - PROPOTSDAM_CHECK_ENABLED=${PROPOTSDAM_CHECK_ENABLED:-0}
       - PROPOTSDAM_RECEIVER_URL=http://host.docker.internal:18766
       - PROPOTSDAM_TIMEOUT=120

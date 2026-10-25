@@ -2136,9 +2136,7 @@ def _tier_line(user_id: int, lang: str = "uk") -> str:
     text = i18n.t(
         "housing.tier.free", lang, hours=housing_tier.free_delay_hours(), price=housing_tier.PREMIUM_PRICE_EUR,
     )
-    if housing_tier.FREE_QUIET_NIGHT:
-        text += "\n" + i18n.t("housing.tier.free_night", lang, quiet_hours=housing_tier.quiet_hours_label())
-    return text
+    return text + "\n" + i18n.t("housing.tier.free_night", lang, quiet_hours=housing_tier.quiet_hours_label())
 
 
 def _render_menu(user_id: int, lang: str = "uk") -> str:
@@ -3786,10 +3784,10 @@ def _set_notification_prefs(user_id: int, **kwargs) -> Dict[str, object]:
 
 
 def _notify_settings_text(
-    prefs: Dict[str, object], lang: str = "uk", news_subscribed: bool = True, free_quiet: bool = False,
+    prefs: Dict[str, object], lang: str = "uk", news_subscribed: bool = True, premium: bool = True,
 ) -> str:
-    if free_quiet:
-        quiet = i18n.t("housing.notify.quiet_free", lang)
+    if not premium:
+        quiet = i18n.t("housing.notify.quiet_locked", lang)
     elif prefs.get("quiet_hours_enabled"):
         quiet = i18n.t("housing.notify.quiet_on", lang)
     else:
@@ -3807,15 +3805,22 @@ def _notify_settings_text(
 
 
 def _notify_settings_keyboard(
-    prefs: Dict[str, object], lang: str = "uk", news_subscribed: bool = True, free_quiet: bool = False,
+    prefs: Dict[str, object], lang: str = "uk", news_subscribed: bool = True, premium: bool = True,
 ) -> InlineKeyboardMarkup:
     quiet_on = bool(prefs.get("quiet_hours_enabled"))
     mode = str(prefs.get("digest_mode") or "instant")
-    # На безкоштовному тарифі тиха ніч діє завжди - перемикач нічого б не змінив.
-    quiet_row = [] if free_quiet else [[InlineKeyboardButton(
-        i18n.t("housing.notify.btn.quiet_on", lang) if quiet_on else i18n.t("housing.notify.btn.quiet_off", lang),
-        callback_data=f"housing:notify_quiet:{0 if quiet_on else 1}",
-    )]]
+    if premium:
+        quiet_row = [[InlineKeyboardButton(
+            i18n.t("housing.notify.btn.quiet_on", lang) if quiet_on else i18n.t("housing.notify.btn.quiet_off", lang),
+            callback_data=f"housing:notify_quiet:{0 if quiet_on else 1}",
+        )]]
+    else:
+        # Безкоштовні бачать тиху ніч, але це функція підписки: кнопка лише
+        # пояснює це, а нижче - кнопка підписки.
+        quiet_row = [
+            [InlineKeyboardButton(i18n.t("housing.notify.btn.quiet_locked", lang), callback_data="housing:notify_quiet_locked")],
+            [InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request")],
+        ]
     return InlineKeyboardMarkup(quiet_row + [
         [
             InlineKeyboardButton(
@@ -3840,11 +3845,13 @@ def show_notify_settings(update: Update, context: CallbackContext, edit: bool = 
     if not user or not is_allowed(user.id):
         return
     lang = i18n.get_lang(user.id)
-    prefs = _notification_prefs(int(user.id))
+    prefs = dict(_notification_prefs(int(user.id)))
+    # Тиху ніч тепер веде бот (housing_tier.night_hold), не приймач.
+    prefs["quiet_hours_enabled"] = housing_tier.wants_quiet_night(int(user.id))
     news_subscribed = user_settings_store.get_news_subscribed(int(user.id))
-    free_quiet = housing_tier.free_quiet_always(int(user.id))
-    text = _notify_settings_text(prefs, lang, news_subscribed, free_quiet)
-    keyboard = _notify_settings_keyboard(prefs, lang, news_subscribed, free_quiet)
+    premium = housing_tier.is_premium(int(user.id))
+    text = _notify_settings_text(prefs, lang, news_subscribed, premium)
+    keyboard = _notify_settings_keyboard(prefs, lang, news_subscribed, premium)
     if edit and update.callback_query:
         try:
             update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
@@ -3860,14 +3867,14 @@ def toggle_quiet_hours(update: Update, context: CallbackContext, enabled: bool) 
     user = update.effective_user
     if not query or not user or not is_allowed(user.id):
         return
-    try:
-        _set_notification_prefs(int(user.id), quiet_hours_enabled=enabled)
-        housing_tier.forget_quiet_pref(int(user.id))
-    except Exception:
-        logger.exception("Could not update notification prefs")
-        query.answer(i18n.t("housing.toast.settings_update_failed", i18n.get_lang(user.id)), show_alert=True)
+    lang = i18n.get_lang(user.id)
+    if not housing_tier.is_premium(int(user.id)):
+        query.answer(
+            i18n.t("housing.toast.quiet_locked", lang, price=housing_tier.PREMIUM_PRICE_EUR), show_alert=True,
+        )
         return
-    query.answer(i18n.t("housing.toast.updated", i18n.get_lang(user.id)))
+    user_settings_store.set_quiet_night_off(int(user.id), not enabled)
+    query.answer(i18n.t("housing.toast.updated", lang))
     show_notify_settings(update, context, edit=True)
 
 
@@ -6467,6 +6474,8 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:notify_settings":
         query.answer()
         show_notify_settings(update, context, edit=True)
+    elif query.data == "housing:notify_quiet_locked":
+        toggle_quiet_hours(update, context, True)
     elif query.data.startswith("housing:notify_quiet:"):
         raw = query.data.split(":")[2]
         toggle_quiet_hours(update, context, raw == "1")

@@ -71,6 +71,32 @@ def set_news_subscribed(user_id: int, subscribed: bool) -> None:
         session.close()
 
 
+def get_quiet_night_off(user_id: int) -> bool:
+    session = DBSession()
+    try:
+        row = session.query(UserSettings).filter(UserSettings.user_id == int(user_id)).first()
+        return bool(row.quiet_night_off) if row is not None else False
+    finally:
+        session.close()
+
+
+def set_quiet_night_off(user_id: int, off: bool) -> None:
+    session = DBSession()
+    try:
+        uid = int(user_id)
+        row = session.query(UserSettings).filter(UserSettings.user_id == uid).first()
+        if row is None:
+            row = UserSettings(
+                user_id=uid, language=DEFAULT_LANGUAGE, news_subscribed=True, updated_at=utc_now(),
+            )
+            session.add(row)
+        row.quiet_night_off = bool(off)
+        row.updated_at = utc_now()
+        session.commit()
+    finally:
+        session.close()
+
+
 def list_subscribed_user_ids() -> list:
     """Recipients for the admin broadcast: every known private-chat user
     (see get_language) who hasn't opted out."""

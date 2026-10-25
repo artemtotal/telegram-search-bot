@@ -134,7 +134,7 @@ def _record_listing_for_stats(listing_id, listing):
         session.close()
 
 
-def _queue_for_later(user_id, listing_id, payload):
+def _queue_for_later(user_id, listing_id, payload, delay=None):
     """Free tier: keeps the flat and sends it once FREE_DELAY has passed
     (see `send_due_immowelt`). Returns False if it was already queued."""
     session = DBSession()
@@ -150,7 +150,7 @@ def _queue_for_later(user_id, listing_id, payload):
             user_id=int(user_id),
             listing_id=str(listing_id),
             payload=json.dumps(payload, ensure_ascii=False),
-            due_at=now + housing_tier.FREE_DELAY,
+            due_at=now + (housing_tier.FREE_DELAY if delay is None else delay),
             attempts=0,
             created_at=now,
         ))
@@ -227,9 +227,14 @@ def send_due_immowelt(context):
         done = True
         try:
             listing_id = str((json.loads(raw).get("listing") or {}).get("listing_id") or "")
-            if user_id not in premium and listing_id and immowelt_alive(listing_id) is False:
+            alive = immowelt_alive(listing_id) if listing_id else None
+            if alive is False and user_id not in premium:
                 _tell_taken_down(bot, user_id, raw)
                 logger.info("Immowelt %s was taken down before the free delay ran out; told %s", listing_id, user_id)
+                result = {}
+            elif alive is False:
+                # Підписка, квартира чекала тихої ночі й зникла: мертве посилання не шлемо.
+                logger.info("Immowelt %s was taken down during %s's quiet night; dropped", listing_id, user_id)
                 result = {}
             else:
                 result = handle_immowelt_result(bot, json.loads(raw), release=True)
@@ -290,6 +295,10 @@ def handle_immowelt_result(bot, payload, release=False):
     premium = housing_tier.is_premium(user_id)
     if not premium and not release:
         queued = _queue_for_later(user_id, listing_id, payload)
+        return {"ok": True, "queued": True, "duplicate": not queued}
+    if premium and not release and housing_tier.night_hold(user_id, True):
+        # Тиха ніч підписки: квартира чекає в черзі до ранку (send_due_immowelt).
+        queued = _queue_for_later(user_id, listing_id, payload, delay=timedelta(0))
         return {"ok": True, "queued": True, "duplicate": not queued}
 
     lang = i18n.get_lang(user_id)

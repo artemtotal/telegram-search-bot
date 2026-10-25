@@ -570,7 +570,7 @@ class ImmoweltFreeTierTests(unittest.TestCase):
         self.assertEqual(len(bot.messages), 1)
         self.assertNotIn('вже зняли', bot.messages[0]['text'])
 
-    def test_a_due_free_flat_waits_out_the_night_and_goes_in_the_morning(self):
+    def test_a_due_free_flat_goes_out_at_night_too(self):
         housing_receiver.handle_immowelt_result(FakeBot(), dict(self.PAYLOAD))
         session = housing_receiver.DBSession()
         session.query(HousingPendingDelivery).update({"due_at": datetime.utcnow() - timedelta(minutes=1)})
@@ -578,18 +578,27 @@ class ImmoweltFreeTierTests(unittest.TestCase):
         session.close()
         bot = FakeBot()
 
-        with mock.patch.object(housing_tier, 'FREE_QUIET_NIGHT', True), \
-                mock.patch.object(housing_tier, 'is_quiet_hours', return_value=True):
+        with mock.patch.object(housing_tier, 'is_quiet_hours', return_value=True):
             housing_receiver.send_due_immowelt(SimpleNamespace(bot=bot))
+
+        self.assertEqual(len(bot.messages), 1)
+
+    def test_a_subscriber_flat_at_night_waits_for_the_morning(self):
+        self.premium_ids.add(777)
+        bot = FakeBot()
+        with mock.patch.object(housing_tier, 'is_quiet_hours', return_value=True), \
+                mock.patch.object(housing_tier, 'wants_quiet_night', return_value=True):
+            result = housing_receiver.handle_immowelt_result(bot, dict(self.PAYLOAD))
+            housing_receiver.send_due_immowelt(SimpleNamespace(bot=bot))
+        self.assertTrue(result['queued'])
         self.assertEqual(bot.messages, [])
         self.assertEqual(len(self._pending()), 1)
 
-        with mock.patch.object(housing_tier, 'FREE_QUIET_NIGHT', True), \
-                mock.patch.object(housing_tier, 'is_quiet_hours', return_value=False):
+        with mock.patch.object(housing_tier, 'is_quiet_hours', return_value=False):
             housing_receiver.send_due_immowelt(SimpleNamespace(bot=bot))
         self.assertEqual(len(bot.messages), 1)
+        self.assertNotIn('5 €', bot.messages[0]['text'])
         self.assertEqual(self._pending(), [])
-
 
 if __name__ == '__main__':
     unittest.main()
