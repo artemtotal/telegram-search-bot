@@ -38,6 +38,7 @@ from user_jobs import coop_watchdog
 from user_jobs import karlmarx_monitor
 from user_jobs import vonovia_monitor
 from user_jobs import immoscout_monitor
+from user_jobs import housing_missed
 
 
 from userbot import run_telethon
@@ -181,6 +182,9 @@ job.run_repeating(housing_monitor.check_access_expiry, interval=86400, first=360
 # Free tier: Immowelt flats held back for FREE_DELAY go out from here (the
 # other sources just wait until a listing is old enough on their own scans).
 job.run_repeating(housing_receiver.send_due_immowelt, interval=300, first=420)
+# Free tier: a held flat taken down before its delay ran out -> a short note
+# instead of silence (user_jobs/housing_missed.py).
+job.run_repeating(housing_missed.missed_flats_job, interval=600, first=480)
 # Follow-ups: the "you haven't created a filter yet" nudge and the
 # two-weeks-after-the-first-filter survey.
 job.run_repeating(housing_monitor.housing_followups_job, interval=1800, first=450)

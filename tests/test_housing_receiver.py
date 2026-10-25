@@ -76,8 +76,12 @@ class HousingReceiverTests(unittest.TestCase):
         housing_tier.DBSession = sessionmaker(bind=self.engine)
         self._premium = mock.patch.object(housing_tier, 'is_premium', return_value=True)
         self._premium.start()
+        # Без живого приёмника: «не знаю» - квартира уходит як звичайно.
+        self._alive = mock.patch.object(housing_receiver, 'immowelt_alive', return_value=None)
+        self._alive.start()
 
     def tearDown(self):
+        self._alive.stop()
         self._premium.stop()
         housing_tier.DBSession = self._original_tier_session
         housing_receiver.DBSession = self._original_session
@@ -387,8 +391,12 @@ class ImmoweltPriceLabelTests(unittest.TestCase):
         housing_tier.DBSession = sessionmaker(bind=self.engine)
         self._premium = mock.patch.object(housing_tier, 'is_premium', return_value=True)
         self._premium.start()
+        # Без живого приёмника: «не знаю» - квартира уходит як звичайно.
+        self._alive = mock.patch.object(housing_receiver, 'immowelt_alive', return_value=None)
+        self._alive.start()
 
     def tearDown(self):
+        self._alive.stop()
         self._premium.stop()
         housing_tier.DBSession = self._original_tier_session
         housing_receiver.DBSession = self._original_session
@@ -444,8 +452,12 @@ class ImmoweltFreeTierTests(unittest.TestCase):
         self.premium_ids = set()
         self._premium = mock.patch.object(housing_tier, 'premium_user_ids', side_effect=lambda: set(self.premium_ids))
         self._premium.start()
+        # Без живого приёмника: «не знаю» - квартира уходит як звичайно.
+        self._alive = mock.patch.object(housing_receiver, 'immowelt_alive', return_value=None)
+        self._alive.start()
 
     def tearDown(self):
+        self._alive.stop()
         self._premium.stop()
         for module, session in self._sessions:
             module.DBSession = session
@@ -526,6 +538,37 @@ class ImmoweltFreeTierTests(unittest.TestCase):
 
         self.assertEqual(len(bot.messages), 1)
         self.assertEqual(self._pending(), [])
+
+    def test_a_flat_taken_down_meanwhile_brings_a_note_instead_of_a_dead_link(self):
+        housing_receiver.handle_immowelt_result(FakeBot(), dict(self.PAYLOAD))
+        session = housing_receiver.DBSession()
+        session.query(HousingPendingDelivery).update({"due_at": datetime.utcnow() - timedelta(minutes=1)})
+        session.commit()
+        session.close()
+        bot = FakeBot()
+
+        with mock.patch.object(housing_receiver, 'immowelt_alive', return_value=False):
+            housing_receiver.send_due_immowelt(SimpleNamespace(bot=bot))
+
+        [message] = bot.messages
+        self.assertIn('вже зняли', message['text'])
+        self.assertIn('Immowelt', message['text'])
+        self.assertEqual(self._pending(), [])
+        self.assertEqual(self._logged(), [])
+
+    def test_when_the_receiver_cannot_tell_the_flat_goes_out_as_usual(self):
+        housing_receiver.handle_immowelt_result(FakeBot(), dict(self.PAYLOAD))
+        session = housing_receiver.DBSession()
+        session.query(HousingPendingDelivery).update({"due_at": datetime.utcnow() - timedelta(minutes=1)})
+        session.commit()
+        session.close()
+        bot = FakeBot()
+
+        with mock.patch.object(housing_receiver, 'immowelt_alive', return_value=None):
+            housing_receiver.send_due_immowelt(SimpleNamespace(bot=bot))
+
+        self.assertEqual(len(bot.messages), 1)
+        self.assertNotIn('вже зняли', bot.messages[0]['text'])
 
     def test_a_due_free_flat_waits_out_the_night_and_goes_in_the_morning(self):
         housing_receiver.handle_immowelt_result(FakeBot(), dict(self.PAYLOAD))

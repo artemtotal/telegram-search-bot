@@ -1081,6 +1081,26 @@ class HousingPendingDelivery(Base):
     created_at = Column(DATETIME, nullable=False)
 
 
+class HousingHeldMatch(Base):
+    """A flat that matched a free-tier person's filter but is still waiting
+    out the delay (or the night) - polled sources only, Immowelt keeps its
+    own queue above. Removed when the flat goes out; if the flat disappears
+    from the site first, housing_missed tells the person it was taken down
+    while they waited, instead of it vanishing without a word."""
+
+    __tablename__ = 'housing_held_match'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'source', 'listing_key', name='uq_housing_held_user_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    source = Column(TEXT, nullable=False)
+    listing_key = Column(TEXT, nullable=False)
+    summary = Column(TEXT)
+    held_at = Column(DATETIME, nullable=False)
+
+
 class HousingUserJourney(Base):
     """One row per person who touched housing monitoring: the moments the
     one-off follow-ups hang off (the no-filter nudge, the two-week survey)

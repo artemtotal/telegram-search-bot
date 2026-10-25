@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import urlparse
 
+import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.error import NetworkError
 
@@ -159,6 +160,44 @@ def _queue_for_later(user_id, listing_id, payload):
         session.close()
 
 
+def immowelt_alive(listing_id):
+    """True/False - is the flat still on Immowelt according to the latest
+    wide pass of check-Wohnung; None - can't tell (receiver down, no recent
+    pass, flat too old to judge). Only False holds a flat back."""
+    try:
+        response = requests.get(
+            f"{housing_tier.CHECK_WOHNUNG_BASE_URL}/api/housing/immowelt/alive",
+            params={"listing_id": str(listing_id)}, timeout=5,
+        )
+        response.raise_for_status()
+        alive = response.json().get("alive")
+    except Exception as exc:
+        logger.warning("Could not ask whether Immowelt %s is still online: %s", listing_id, exc)
+        return None
+    return alive if isinstance(alive, bool) else None
+
+
+def _immowelt_summary(payload):
+    listing = payload.get("listing") if isinstance(payload, dict) else None
+    listing = listing if isinstance(listing, dict) else {}
+    parts = [
+        _text(listing.get("title")), _text(listing.get("address")),
+        _text(listing.get("rooms")), _text(listing.get("area")), _text(listing.get("price")),
+    ]
+    return " · ".join(part for part in parts if part)
+
+
+def _tell_taken_down(bot, user_id, raw):
+    """The free-tier flat waited out its delay but is gone from Immowelt:
+    a short note instead of a dead link (25.10.2026)."""
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        payload = {}
+    text, keyboard = housing_tier.missed_notice(user_id, "Immowelt", html.unescape(_immowelt_summary(payload)))
+    bot.send_message(chat_id=int(user_id), text=text, parse_mode="HTML", reply_markup=keyboard)
+
+
 def send_due_immowelt(context):
     """Job: sends the free tier's Immowelt flats whose delay has run out.
 
@@ -187,7 +226,13 @@ def send_due_immowelt(context):
     for row_id, user_id, raw, attempts in pending:
         done = True
         try:
-            result = handle_immowelt_result(bot, json.loads(raw), release=True)
+            listing_id = str((json.loads(raw).get("listing") or {}).get("listing_id") or "")
+            if user_id not in premium and listing_id and immowelt_alive(listing_id) is False:
+                _tell_taken_down(bot, user_id, raw)
+                logger.info("Immowelt %s was taken down before the free delay ran out; told %s", listing_id, user_id)
+                result = {}
+            else:
+                result = handle_immowelt_result(bot, json.loads(raw), release=True)
             sent += int(bool(result.get("ok")) and not result.get("duplicate") and not result.get("skipped"))
         except Exception:
             logger.exception("Could not send a delayed Immowelt flat to %s", user_id)

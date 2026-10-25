@@ -16,8 +16,9 @@ from database import (
     HousingSendLog,
     KleinanzeigenListing,
 )
+from database import HousingHeldMatch, HousingSearch
 from user_handlers import housing_monitor
-from user_jobs import housing_journey_store, housing_tier, kleinanzeigen_store
+from user_jobs import housing_journey_store, housing_missed, housing_tier, kleinanzeigen_store
 
 
 def _engine():
@@ -27,7 +28,7 @@ def _engine():
 
 
 class _InMemoryDb(unittest.TestCase):
-    MODULES = (housing_tier, housing_journey_store, kleinanzeigen_store)
+    MODULES = (housing_tier, housing_journey_store, kleinanzeigen_store, housing_missed)
 
     def setUp(self):
         self.engine = _engine()
@@ -179,6 +180,132 @@ class QuietNightTests(_InMemoryDb):
         self.assertIn('безкоштовній', text)
         callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
         self.assertFalse(any(c.startswith('housing:notify_quiet') for c in callbacks))
+
+
+class MissedFlatTests(_InMemoryDb):
+    """25.10.2026: a held free-tier flat taken down before its delay ran out
+    gets a short note instead of silence."""
+
+    def _listing(self, key, age=timedelta(minutes=20), active=True, first_seen=None):
+        session = self._session()
+        session.add(KleinanzeigenListing(
+            listing_key=key, title='Wohnung', address='Babelsberg', rooms=3, area_m2=75, price_eur=850,
+            first_seen_at=first_seen or datetime.utcnow() - age, last_seen_at=datetime.utcnow(), is_active=active,
+        ))
+        session.commit()
+        session.close()
+        return {'listing_key': key, 'title': 'Wohnung', 'address': 'Babelsberg',
+                'rooms': 3, 'area_m2': 75, 'price_eur': 850}
+
+    def _has_filter(self, user_id):
+        session = self._session()
+        session.add(HousingSearch(user_id=user_id, criteria='{}', members='[]', coops='[]',
+                                  created_at=datetime.utcnow()))
+        session.commit()
+        session.close()
+
+    def _deactivate(self, key):
+        session = self._session()
+        session.query(KleinanzeigenListing).filter_by(listing_key=key).update({'is_active': False})
+        session.commit()
+        session.close()
+
+    def _held(self):
+        session = self._session()
+        try:
+            return [(r.user_id, r.source, r.listing_key) for r in session.query(HousingHeldMatch).all()]
+        finally:
+            session.close()
+
+    def test_a_held_flat_is_written_down_once_and_forgotten_when_sent(self):
+        listing = self._listing('k')
+        gate = housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing)
+        self.assertFalse(gate.due(777, listing))
+        self.assertFalse(gate.due(777, listing))
+        self.assertFalse(housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing).due(777, listing))
+        self.assertEqual(self._held(), [(777, 'kleinanzeigen', 'k')])
+
+        gate.sent(777, 'k', 1)
+        self.assertEqual(self._held(), [])
+
+    def test_near_misses_and_subscribers_are_not_written_down(self):
+        listing = self._listing('k')
+        housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing).due(777, listing, remember=False)
+        self.assertEqual(self._held(), [])
+
+    def test_a_flat_taken_down_while_held_brings_a_note_with_the_upgrade_button(self):
+        self._has_filter(777)
+        listing = self._listing('k')
+        self._listing('still-there')
+        housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing).due(777, listing)
+        bot = mock.Mock()
+
+        housing_missed.missed_flats_job(SimpleNamespace(bot=bot))
+        bot.send_message.assert_not_called()
+        self.assertEqual(len(self._held()), 1)
+
+        self._deactivate('k')
+        housing_missed.missed_flats_job(SimpleNamespace(bot=bot))
+        [call] = bot.send_message.call_args_list
+        self.assertEqual(call.kwargs['chat_id'], 777)
+        self.assertIn('вже зняли', call.kwargs['text'])
+        self.assertIn('Kleinanzeigen', call.kwargs['text'])
+        self.assertIn('75 m²', call.kwargs['text'])
+        callbacks = [b.callback_data for row in call.kwargs['reply_markup'].inline_keyboard for b in row]
+        self.assertEqual(callbacks, ['housing:access_request'])
+        self.assertEqual(self._held(), [])
+
+    def test_a_broken_scan_that_deactivated_everything_sends_nothing(self):
+        self._has_filter(777)
+        listing = self._listing('k')
+        housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing).due(777, listing)
+        self._deactivate('k')
+        bot = mock.Mock()
+
+        housing_missed.missed_flats_job(SimpleNamespace(bot=bot))
+
+        bot.send_message.assert_not_called()
+        self.assertEqual(len(self._held()), 1)
+
+    def test_a_flat_pushed_off_a_one_page_feed_is_not_called_gone(self):
+        self._has_filter(777)
+        listing = self._listing('k', first_seen=datetime.utcnow() - timedelta(hours=1))
+        for n in range(housing_missed.PUSHED_OFF_AFTER + 1):
+            self._listing(f'newer-{n}', first_seen=datetime.utcnow() - timedelta(minutes=n))
+        housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing).due(777, listing)
+        self._deactivate('k')
+        bot = mock.Mock()
+
+        housing_missed.missed_flats_job(SimpleNamespace(bot=bot))
+
+        bot.send_message.assert_not_called()
+        self.assertEqual(self._held(), [])
+
+    def test_many_flats_gone_at_once_look_like_a_glitch(self):
+        self._has_filter(777)
+        self._listing('still-there')
+        listings = [self._listing(f'k{n}') for n in range(housing_missed.SUSPICIOUS_GONE + 1)]
+        gate = housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing)
+        for n, listing in enumerate(listings):
+            self.assertFalse(gate.due(777, listing))
+            self._deactivate(f'k{n}')
+        bot = mock.Mock()
+
+        housing_missed.missed_flats_job(SimpleNamespace(bot=bot))
+
+        bot.send_message.assert_not_called()
+
+    def test_no_note_without_filters(self):
+        listing = self._listing('k')
+        self._listing('still-there')
+        housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing).due(777, listing)
+        self._deactivate('k')
+        bot = mock.Mock()
+
+        housing_missed.missed_flats_job(SimpleNamespace(bot=bot))
+
+        bot.send_message.assert_not_called()
+        self.assertEqual(self._held(), [])
 
 
 class KleinanzeigenMonitorFreeTierTests(_InMemoryDb):

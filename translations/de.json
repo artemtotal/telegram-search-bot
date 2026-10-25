@@ -357,6 +357,7 @@
   "housing.describe.price_cold": "kalt",
   "housing.describe.price_warm": "warm",
   "housing.free.footer": "⏱ Kostenlose Version: diese Wohnung kam mit ~{hours} Std. Verzögerung. ⚡ Sofort erhalten — {price} €/Monat (Schaltfläche im Menü „Wohnung“).",
+  "housing.missed.notice": "⏳ <b>Diese Wohnung ist schon weg</b>\n{source}: {summary}\n\nSie passte zu Ihrem Filter, war aber von der Website verschwunden, bevor die kostenlose Version sie senden konnte (~{hours} Std. Verzögerung). ⚡ Mit dem Abo für {price} €/Monat kommen solche Wohnungen sofort.",
   "housing.near_miss.header": "💡 <b>Passt nicht ganz zu Ihrem Filter — nur {over} € über Ihrer Kaltmiete-Grenze ({limit} €), könnte aber passen.</b>\nKleinanzeigen zeigt oft die Warmmiete (inkl. Nebenkosten) statt der Kaltmiete — prüfen Sie den Preis in der Anzeige. Solche Hinweise kommen höchstens alle 4 Tage.",
   "housing.tier.free": "🆓 <b>Kostenlos.</b> Wohnungen kommen mit ~{hours} Std. Verzögerung nach dem Erscheinen.\n⚡ Sofort-Benachrichtigungen — <b>{price} €/Monat</b>: in Potsdam sind gute Wohnungen oft in wenigen Stunden weg.",
   "housing.tier.free_night": "🌙 Nachts ({quiet_hours}) stören wir nicht: nächtliche Wohnungen kommen morgens.",

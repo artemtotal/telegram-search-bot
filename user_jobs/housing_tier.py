@@ -12,6 +12,7 @@ silent baseline taken at filter creation and die with the filter, so they
 could never say how many flats a person actually got.
 """
 
+import html
 import logging
 import os
 import time
@@ -22,7 +23,7 @@ import pytz
 import requests
 
 import i18n
-from database import DBSession, HousingAccessUser, HousingSendLog
+from database import DBSession, HousingAccessUser, HousingHeldMatch, HousingSendLog
 from user_jobs import sublet
 
 logger = logging.getLogger(__name__)
@@ -182,7 +183,8 @@ class DeliveryGate:
     A free-tier match that isn't old enough yet is simply skipped - not
     marked delivered - so the same match comes up again on a later scan and
     goes out once it is. A listing taken down before then is never sent to
-    the free tier at all.
+    the free tier - instead it is written down as held (HousingHeldMatch) and
+    housing_missed tells the person it was taken down while they waited.
     """
 
     def __init__(
@@ -198,6 +200,7 @@ class DeliveryGate:
         # людина сама попросила й чекає відповіді просто зараз.
         self._quiet_hours = quiet_hours
         self._night_hold: Dict[int, bool] = {}
+        self._held: Optional[Set[Tuple[int, str]]] = None
 
     def _held_for_night(self, user_id: int) -> bool:
         if not self._quiet_hours:
@@ -235,23 +238,110 @@ class DeliveryGate:
             self._wants_rooms[user_id] = sublet.wants_rooms(user_id)
         return not self._wants_rooms[user_id]
 
-    def due(self, user_id: int, listing: Dict) -> bool:
+    def due(self, user_id: int, listing: Dict, remember: bool = True) -> bool:
+        """`remember=False` - for flats that don't really match the filter
+        (Kleinanzeigen near-misses): no "it was taken down while you waited"
+        notice for those."""
         # Суборенда — лише тим, хто шукає кімнату (див. user_jobs/sublet.py).
         # Не позначається доставленою: якщо людина потім обере кімнати, вона
         # отримає й це оголошення.
         if self._sublet_unwanted(user_id, listing):
             return False
+        premium = self.is_premium(user_id)
         if self._held_for_night(user_id):
+            if remember and not premium:
+                self._remember_held(user_id, listing)
             return False
-        if self.is_premium(user_id):
+        if premium:
             return True
         first_seen = self._first_seen_at(listing)
-        if first_seen is None:
+        if first_seen is None or self.now - first_seen >= FREE_DELAY:
             return True
-        return self.now - first_seen >= FREE_DELAY
+        if remember:
+            self._remember_held(user_id, listing)
+        return False
+
+    def _remember_held(self, user_id: int, listing: Dict) -> None:
+        """Записує, що квартира чекає на безкоштовну людину: якщо її знімуть
+        раніше, housing_missed скаже про це (а не мовчки викине)."""
+        key = str(listing.get("listing_key") or "")
+        if not key:
+            return
+        session = DBSession()
+        try:
+            if self._held is None:
+                self._held = {
+                    (int(uid), str(k))
+                    for uid, k in session.query(HousingHeldMatch.user_id, HousingHeldMatch.listing_key)
+                    .filter(HousingHeldMatch.source == self.source)
+                }
+            if (int(user_id), key) in self._held:
+                return
+            session.add(HousingHeldMatch(
+                user_id=int(user_id), source=self.source, listing_key=key,
+                summary=listing_summary(listing), held_at=self.now,
+            ))
+            session.commit()
+            self._held.add((int(user_id), key))
+        except Exception:
+            session.rollback()
+            logger.exception("Could not remember a held %s flat for %s", self.source, user_id)
+        finally:
+            session.close()
 
     def footer(self, user_id: int) -> str:
         return "" if self.is_premium(user_id) else free_footer(user_id)
 
     def sent(self, user_id: int, listing_key: str, filter_id: Optional[int] = None) -> None:
         log_sent(user_id, self.source, listing_key, filter_id, delayed=not self.is_premium(user_id))
+        forget_held(user_id, self.source, listing_key)
+
+
+def listing_summary(listing: Dict) -> str:
+    """«Wohnung · Babelsberg · 3 кімн. · 75 м² · 850 €» без мови: цифри й
+    позначки, які зрозумілі українською, російською й німецькою."""
+    def num(value):
+        try:
+            return f"{float(value):g}"
+        except (TypeError, ValueError):
+            return ""
+    parts = [str(listing.get("title") or "").strip()[:80], str(listing.get("address") or "").strip()[:60]]
+    if num(listing.get("rooms")):
+        parts.append(f"🚪 {num(listing.get('rooms'))}")
+    if num(listing.get("area_m2")):
+        parts.append(f"{num(listing.get('area_m2'))} m²")
+    if num(listing.get("price_eur")):
+        parts.append(f"{num(listing.get('price_eur'))} €")
+    return " · ".join(part for part in parts if part)
+
+
+def forget_held(user_id: int, source: str, listing_key: str) -> None:
+    session = DBSession()
+    try:
+        session.query(HousingHeldMatch).filter(
+            HousingHeldMatch.user_id == int(user_id),
+            HousingHeldMatch.source == str(source),
+            HousingHeldMatch.listing_key == str(listing_key),
+        ).delete(synchronize_session=False)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Could not forget a held %s flat for %s", source, user_id)
+    finally:
+        session.close()
+
+
+def missed_notice(user_id: int, source_label: str, summary: str):
+    """(text, keyboard) of "this flat was taken down before the free tier
+    could send it" - the same for polled sources and Immowelt."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    lang = i18n.get_lang(int(user_id))
+    text = i18n.t(
+        "housing.missed.notice", lang, source=html.escape(source_label), summary=html.escape(summary or "—"),
+        hours=free_delay_hours(), price=PREMIUM_PRICE_EUR,
+    )
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(
+        i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request",
+    )]])
+    return text, keyboard

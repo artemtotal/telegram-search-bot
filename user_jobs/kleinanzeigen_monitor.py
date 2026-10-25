@@ -369,7 +369,7 @@ def _send_near_misses(bot, filters: List[Dict], gate) -> int:
             if not key or (int(filt["filter_id"]), key) in delivered:
                 continue
             over = kleinanzeigen_matching.near_miss_over(listing, filt)
-            if over is None or not gate.due(user_id, listing):
+            if over is None or not gate.due(user_id, listing, remember=False):
                 continue
             if user_id not in best or over < best[user_id][0]:
                 best[user_id] = (over, filt, listing)
