@@ -311,7 +311,7 @@ def _send_admin(bot, key: str, **kwargs) -> bool:
         return False
 
 
-LOGIN_STATUSES = {"login_needed", "login_link", "login_failed", "login_done", "login_timeout"}
+LOGIN_STATUSES = {"login_needed", "login_reminder", "login_link", "login_failed", "login_done", "login_timeout"}
 CHECK_WOHNUNG_BASE_URL = os.getenv("CHECK_WOHNUNG_BASE_URL", "http://host.docker.internal:18765").rstrip("/")
 
 
@@ -322,9 +322,11 @@ def _request_button(login_id: str, key: str, lang: str) -> InlineKeyboardButton:
 def _login_message(status: str, payload: Dict[str, object], login_id: str, lang: str):
     """Текст і кнопки повідомлення входу для кожного кроку."""
     minutes = int(payload.get("wait_minutes") or 40)
-    if status == "login_needed":
+    if status in ("login_needed", "login_reminder"):
+        key = "econsul.admin.login_reminder" if status == "login_reminder" else "econsul.admin.login_needed"
+        since = _parse_iso(payload.get("since")) or utc_now()
         return (
-            i18n.t("econsul.admin.login_needed", lang, minutes=minutes),
+            i18n.t(key, lang, minutes=minutes, since=_berlin(since)),
             InlineKeyboardMarkup([[_request_button(login_id, "econsul.btn.get_link", lang)]]),
         )
     if status == "login_link":
@@ -359,6 +361,20 @@ def _handle_login(bot, state: EconsulState, status: str, payload: Dict[str, obje
     text, keyboard = _login_message(status, payload, login_id, lang)
     same_login = state.login_id == login_id and state.login_message_id
     edited = False
+    if status == "login_reminder":
+        # Нагадування в годину розкладу: старе повідомлення прибираємо, щоб у
+        # чаті висіло одне, а нове спливає сповіщенням. Без нього вхід, не
+        # підтверджений 05.10, мовчки зупинив перевірки на три тижні.
+        if state.login_message_id:
+            try:
+                bot.delete_message(ADMIN_ID, state.login_message_id)
+            except Exception:
+                # Старше 48 год Telegram видаляти не дає - тоді хоча б знімаємо кнопки.
+                try:
+                    bot.edit_message_reply_markup(ADMIN_ID, state.login_message_id, reply_markup=None)
+                except Exception:
+                    logger.info("Could not retire the old e-Consul login message %s", state.login_message_id)
+        same_login = False
     if same_login:
         try:
             bot.edit_message_text(
@@ -371,7 +387,7 @@ def _handle_login(bot, state: EconsulState, status: str, payload: Dict[str, obje
                 edited = True
             else:
                 logger.exception("Could not update the e-Consul login message")
-    if not edited and status in ("login_needed", "login_link", "login_failed"):
+    if not edited and status in ("login_needed", "login_reminder", "login_link", "login_failed"):
         try:
             message = bot.send_message(
                 ADMIN_ID, text, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=True,

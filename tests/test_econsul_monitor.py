@@ -282,6 +282,35 @@ class EconsulMonitorTest(unittest.TestCase):
         self.assertEqual(rows[0][0].url, "https://mbnk.app/nbi")
         self.assertEqual(rows[1][0].callback_data, "econsul:login:c3")
 
+    def test_login_reminder_replaces_the_old_message_with_a_fresh_one(self):
+        self.bot.send_message.side_effect = [SimpleNamespace(message_id=11), SimpleNamespace(message_id=12)]
+        monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_needed",
+                                                 "login_id": "r1"})
+        monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_reminder",
+                                                 "login_id": "r1", "since": "2026-10-05T14:01:21Z"})
+
+        self.bot.delete_message.assert_called_once_with(ADMIN, 11)
+        reminder = self.bot.send_message.call_args_list[1]
+        self.assertIn("Нагадування", reminder.args[1])
+        self.assertIn("05.10.2026 16:01", reminder.args[1])
+        self.assertEqual(reminder.kwargs["reply_markup"].inline_keyboard[0][0].callback_data, "econsul:login:r1")
+        self.bot.edit_message_text.assert_not_called()
+
+        monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_link",
+                                                 "login_id": "r1", "link": "https://mbnk.app/x"})
+        self.assertEqual(self.bot.edit_message_text.call_args.kwargs["message_id"], 12)
+
+    def test_login_reminder_strips_buttons_when_the_old_message_cannot_be_deleted(self):
+        self.bot.send_message.side_effect = [SimpleNamespace(message_id=21), SimpleNamespace(message_id=22)]
+        self.bot.delete_message.side_effect = Exception("Message can't be deleted for everyone")
+        monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_needed",
+                                                 "login_id": "r2"})
+        monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_reminder",
+                                                 "login_id": "r2"})
+
+        self.bot.edit_message_reply_markup.assert_called_once_with(ADMIN, 21, reply_markup=None)
+        self.assertEqual(self.bot.send_message.call_count, 2)
+
     def test_login_link_is_one_message_that_gets_updated_and_closed(self):
         self.bot.send_message.return_value = SimpleNamespace(message_id=77)
         link = {"source": "econsul_berlin", "status": "login_link", "login_id": "a1",
