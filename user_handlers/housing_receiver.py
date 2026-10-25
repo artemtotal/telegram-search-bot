@@ -163,7 +163,8 @@ def send_due_immowelt(context):
     """Job: sends the free tier's Immowelt flats whose delay has run out.
 
     Someone who subscribed in the meantime gets theirs right away too - the
-    delay is only for people who are still on the free tier.
+    delay is only for people who are still on the free tier. At night
+    (housing_tier.night_hold) the flat waits for the morning instead.
     """
     bot = context.bot
     premium = housing_tier.premium_user_ids()
@@ -177,6 +178,11 @@ def send_due_immowelt(context):
         ]
     finally:
         session.close()
+    held = {}
+    for _row_id, user_id, _raw, _attempts in pending:
+        if user_id not in held:
+            held[user_id] = housing_tier.night_hold(user_id, user_id in premium, now)
+    pending = [item for item in pending if not held[item[1]]]
     sent = 0
     for row_id, user_id, raw, attempts in pending:
         done = True

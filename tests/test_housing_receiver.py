@@ -527,6 +527,26 @@ class ImmoweltFreeTierTests(unittest.TestCase):
         self.assertEqual(len(bot.messages), 1)
         self.assertEqual(self._pending(), [])
 
+    def test_a_due_free_flat_waits_out_the_night_and_goes_in_the_morning(self):
+        housing_receiver.handle_immowelt_result(FakeBot(), dict(self.PAYLOAD))
+        session = housing_receiver.DBSession()
+        session.query(HousingPendingDelivery).update({"due_at": datetime.utcnow() - timedelta(minutes=1)})
+        session.commit()
+        session.close()
+        bot = FakeBot()
+
+        with mock.patch.object(housing_tier, 'FREE_QUIET_NIGHT', True), \
+                mock.patch.object(housing_tier, 'is_quiet_hours', return_value=True):
+            housing_receiver.send_due_immowelt(SimpleNamespace(bot=bot))
+        self.assertEqual(bot.messages, [])
+        self.assertEqual(len(self._pending()), 1)
+
+        with mock.patch.object(housing_tier, 'FREE_QUIET_NIGHT', True), \
+                mock.patch.object(housing_tier, 'is_quiet_hours', return_value=False):
+            housing_receiver.send_due_immowelt(SimpleNamespace(bot=bot))
+        self.assertEqual(len(bot.messages), 1)
+        self.assertEqual(self._pending(), [])
+
 
 if __name__ == '__main__':
     unittest.main()

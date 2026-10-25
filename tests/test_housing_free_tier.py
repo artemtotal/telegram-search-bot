@@ -92,6 +92,95 @@ class DeliveryGateTests(_InMemoryDb):
         session.close()
 
 
+class QuietNightTests(_InMemoryDb):
+    """25.10.2026: free-tier flats no longer arrive at 2 a.m., and the
+    "quiet night" setting now holds back every source, not just Immowelt."""
+
+    def _listing(self, key):
+        session = self._session()
+        session.add(KleinanzeigenListing(
+            listing_key=key, title='W', address='Potsdam',
+            first_seen_at=datetime.utcnow() - housing_tier.FREE_DELAY - timedelta(minutes=1),
+            last_seen_at=datetime.utcnow(), is_active=True,
+        ))
+        session.commit()
+        session.close()
+        return {'listing_key': key}
+
+    def _subscribe(self, user_id):
+        session = self._session()
+        session.add(HousingAccessUser(
+            user_id=user_id, display_name='x', active=True, is_trial=False,
+            created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+        ))
+        session.commit()
+        session.close()
+
+    def test_the_window_is_berlin_time_in_summer_and_winter(self):
+        with mock.patch.object(housing_tier, 'QUIET_START_HOUR', 23), \
+                mock.patch.object(housing_tier, 'QUIET_END_HOUR', 8):
+            # CEST: UTC+2
+            self.assertTrue(housing_tier.is_quiet_hours(datetime(2026, 7, 1, 21, 30)))   # 23:30
+            self.assertTrue(housing_tier.is_quiet_hours(datetime(2026, 7, 1, 0, 16)))    # 02:16
+            self.assertFalse(housing_tier.is_quiet_hours(datetime(2026, 7, 1, 6, 0)))    # 08:00
+            self.assertFalse(housing_tier.is_quiet_hours(datetime(2026, 7, 1, 20, 59)))  # 22:59
+            # CET: UTC+1
+            self.assertTrue(housing_tier.is_quiet_hours(datetime(2026, 12, 1, 22, 0)))   # 23:00
+            self.assertTrue(housing_tier.is_quiet_hours(datetime(2026, 12, 1, 6, 59)))   # 07:59
+            self.assertFalse(housing_tier.is_quiet_hours(datetime(2026, 12, 1, 7, 0)))   # 08:00
+
+    def test_a_free_user_gets_nothing_at_night_without_touching_the_setting(self):
+        listing = self._listing('k')
+        with mock.patch.object(housing_tier, 'FREE_QUIET_NIGHT', True), \
+                mock.patch.object(housing_tier, 'is_quiet_hours', return_value=True), \
+                mock.patch.object(housing_tier, 'wants_quiet_night') as wants:
+            gate = housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing)
+            self.assertFalse(gate.due(777, listing))
+        wants.assert_not_called()
+
+    def test_by_day_the_free_user_gets_it_as_before(self):
+        listing = self._listing('k')
+        with mock.patch.object(housing_tier, 'FREE_QUIET_NIGHT', True), \
+                mock.patch.object(housing_tier, 'is_quiet_hours', return_value=False):
+            gate = housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing)
+            self.assertTrue(gate.due(777, listing))
+
+    def test_a_subscriber_gets_flats_at_night_unless_they_asked_for_quiet(self):
+        listing = self._listing('k')
+        self._subscribe(777)
+        self._subscribe(888)
+        with mock.patch.object(housing_tier, 'FREE_QUIET_NIGHT', True), \
+                mock.patch.object(housing_tier, 'is_quiet_hours', return_value=True), \
+                mock.patch.object(housing_tier, 'wants_quiet_night', side_effect=lambda uid: uid == 888):
+            gate = housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing)
+            self.assertTrue(gate.due(777, listing))
+            self.assertFalse(gate.due(888, listing))
+
+    def test_a_manual_last_hour_send_ignores_the_night(self):
+        listing = self._listing('k')
+        with mock.patch.object(housing_tier, 'FREE_QUIET_NIGHT', True), \
+                mock.patch.object(housing_tier, 'is_quiet_hours', return_value=True):
+            gate = housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing, quiet_hours=False)
+            self.assertTrue(gate.due(777, listing))
+
+    def test_the_setting_is_read_once_and_an_unreachable_receiver_means_no_hold(self):
+        housing_tier.forget_quiet_pref(777)
+        with mock.patch.object(housing_tier.requests, 'get', side_effect=OSError('down')) as get:
+            self.assertFalse(housing_tier.wants_quiet_night(777))
+            self.assertFalse(housing_tier.wants_quiet_night(777))
+        self.assertEqual(get.call_count, 1)
+        housing_tier.forget_quiet_pref(777)
+
+    def test_free_users_see_the_night_in_the_menu_and_settings_without_a_toggle(self):
+        with mock.patch.object(housing_tier, 'FREE_QUIET_NIGHT', True):
+            self.assertIn('23:00', housing_monitor._tier_line(777))
+            text = housing_monitor._notify_settings_text({}, 'uk', True, free_quiet=True)
+            keyboard = housing_monitor._notify_settings_keyboard({}, 'uk', True, free_quiet=True)
+        self.assertIn('безкоштовній', text)
+        callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+        self.assertFalse(any(c.startswith('housing:notify_quiet') for c in callbacks))
+
+
 class KleinanzeigenMonitorFreeTierTests(_InMemoryDb):
     """The gate wired into a real monitor: a fresh match waits, then goes."""
 
@@ -296,6 +385,42 @@ class FollowupTests(_InMemoryDb):
         self.assertEqual(admin_call.kwargs['chat_id'], 312029534)
         self.assertIn('задорого', admin_call.kwargs['text'])
         self.assertIn('вже відповіли', query.answer.call_args.args[0])
+
+
+class SurveyHardFollowupTests(_InMemoryDb):
+    def _press(self, data, context):
+        query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(
+            callback_query=query,
+            effective_user=SimpleNamespace(id=777, first_name='Ігор', last_name='', username=None),
+        )
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+            housing_monitor.handle_callback(update, context)
+        return query
+
+    def test_hard_asks_what_exactly_and_the_detail_reaches_the_admin(self):
+        context = SimpleNamespace(bot=mock.Mock())
+        query = self._press('housing:survey:hard', context)
+        markup = query.edit_message_text.call_args.kwargs['reply_markup']
+        callbacks = [b.callback_data for row in markup.inline_keyboard for b in row]
+        self.assertEqual(callbacks, [f'housing:survey_hard:{d}' for d in housing_monitor.SURVEY_HARD_DETAILS])
+
+        self._press('housing:survey_hard:night', context)
+        again = self._press('housing:survey_hard:many', context)
+
+        session = self._session()
+        from database import HousingUserJourney
+        self.assertEqual(session.query(HousingUserJourney).get(777).survey_answer, 'hard:night')
+        session.close()
+        texts = [c.kwargs['text'] for c in context.bot.send_message.call_args_list]
+        self.assertEqual(len(texts), 2)
+        self.assertIn('Незручно', texts[0])
+        self.assertIn('уночі', texts[1])
+        self.assertIn('вже відповіли', again.answer.call_args.args[0])
+
+    def test_a_detail_without_the_hard_answer_is_ignored(self):
+        housing_journey_store.save_survey_answer(777, 'few')
+        self.assertFalse(housing_journey_store.save_survey_detail(777, 'hard', 'night'))
 
 
 class OpenToAllMenuTests(_InMemoryDb):

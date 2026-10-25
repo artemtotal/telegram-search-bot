@@ -1331,7 +1331,7 @@ def _send_recent_matches(update: Update, context: CallbackContext, hours: int) -
         owner_id = int(filt["user_id"])
         # The free tier's delay holds here too - otherwise "the last hour"
         # would be a way round it.
-        gate = housing_tier.DeliveryGate(source, _LISTING_MODELS.get(source))
+        gate = housing_tier.DeliveryGate(source, _LISTING_MODELS.get(source), quiet_hours=False)
         for listing in store.list_active_listings_since(cutoff):
             if not matching.matches_filter(listing, filt):
                 continue
@@ -2133,9 +2133,12 @@ def _tier_line(user_id: int, lang: str = "uk") -> str:
         )
         until = i18n.t("housing.access.until", lang, date=expires_at.strftime("%d.%m.%Y")) if expires_at else ""
         return i18n.t("housing.tier.premium", lang, until=until)
-    return i18n.t(
+    text = i18n.t(
         "housing.tier.free", lang, hours=housing_tier.free_delay_hours(), price=housing_tier.PREMIUM_PRICE_EUR,
     )
+    if housing_tier.FREE_QUIET_NIGHT:
+        text += "\n" + i18n.t("housing.tier.free_night", lang, quiet_hours=housing_tier.quiet_hours_label())
+    return text
 
 
 def _render_menu(user_id: int, lang: str = "uk") -> str:
@@ -2888,6 +2891,9 @@ NO_FILTER_NUDGE_NOT_BEFORE = datetime(2026, 9, 27)
 # Опитування — через два тижні після першого фільтра, один раз.
 SURVEY_AFTER = timedelta(days=14)
 SURVEY_OPTIONS = ("found", "fine", "few", "mismatch", "price", "hard")
+# «Незручно / незрозуміло» саме по собі нічого не каже - двічі поспіль (Юлія
+# 12.10, Ігор 25.10) доводилося гадати. Тому одразу питаємо, що саме.
+SURVEY_HARD_DETAILS = ("night", "many", "prices", "filters", "other")
 
 
 def _survey_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
@@ -2934,6 +2940,46 @@ def housing_followups_job(context) -> None:
         housing_journey_store.mark_survey_sent(user_id)
 
 
+def _survey_write_keyboard(lang: str) -> Optional[InlineKeyboardMarkup]:
+    if not ADMIN_ID:
+        return None
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(i18n.t("housing.survey.btn_write", lang), url=f"tg://user?id={ADMIN_ID}"),
+    ]])
+
+
+def _answer_survey_hard(update: Update, context: CallbackContext, detail: str) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or detail not in SURVEY_HARD_DETAILS:
+        if query:
+            query.answer()
+        return
+    lang = i18n.get_lang(user.id)
+    if not housing_journey_store.save_survey_detail(int(user.id), "hard", detail):
+        query.answer(i18n.t("housing.survey.already", lang))
+        return
+    query.answer()
+    text_key = "housing.survey.hard.thanks_other" if detail == "other" else "housing.survey.thanks"
+    query.edit_message_text(i18n.t(text_key, lang), reply_markup=_survey_write_keyboard(lang))
+    if ADMIN_ID:
+        try:
+            context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(
+                    f"📝 <b>Опитування, уточнення</b>: {html.escape(i18n.t(f'housing.survey.hard.opt.{detail}', 'uk'))}\n"
+                    f"👤 {html.escape(_display_name(user))} · <code>{int(user.id)}</code>"
+                ),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("💌 Написати", url=f"tg://user?id={int(user.id)}"),
+                    _admin_filters_button(user.id),
+                ]]),
+            )
+        except Exception:
+            logger.exception("Could not forward a survey detail from %s", user.id)
+
+
 def _answer_survey(update: Update, context: CallbackContext, code: str) -> None:
     query = update.callback_query
     user = update.effective_user
@@ -2946,12 +2992,18 @@ def _answer_survey(update: Update, context: CallbackContext, code: str) -> None:
         query.answer(i18n.t("housing.survey.already", lang))
         return
     query.answer()
-    rows = []
-    if ADMIN_ID:
-        rows.append([InlineKeyboardButton(i18n.t("housing.survey.btn_write", lang), url=f"tg://user?id={ADMIN_ID}")])
-    query.edit_message_text(
-        i18n.t("housing.survey.thanks", lang), reply_markup=InlineKeyboardMarkup(rows) if rows else None,
-    )
+    if code == "hard":
+        query.edit_message_text(
+            i18n.t("housing.survey.hard.question", lang),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    i18n.t(f"housing.survey.hard.opt.{detail}", lang), callback_data=f"housing:survey_hard:{detail}",
+                )]
+                for detail in SURVEY_HARD_DETAILS
+            ]),
+        )
+    else:
+        query.edit_message_text(i18n.t("housing.survey.thanks", lang), reply_markup=_survey_write_keyboard(lang))
     if ADMIN_ID:
         tier = "💎 платний" if housing_tier.is_premium(user.id) else "🆓 безкоштовний"
         try:
@@ -3717,7 +3769,7 @@ def _send_filters_to_owner(update: Update, context: CallbackContext, owner_id: i
 # Вікно тихої ночі й ліміт на годину задаються приймачу через змінні
 # оточення (HOUSING_QUIET_HOURS_*, HOUSING_HOURLY_SEND_CAP) і спільні для всіх
 # користувачів; тут лише типові значення для тексту, самі не змінюють нічого.
-QUIET_HOURS_LABEL = "23:00–08:00"
+QUIET_HOURS_LABEL = housing_tier.quiet_hours_label()
 DEFAULT_HOURLY_CAP_LABEL = "5 оголошень"
 
 
@@ -3733,11 +3785,15 @@ def _set_notification_prefs(user_id: int, **kwargs) -> Dict[str, object]:
     return _request("POST", "/api/housing/notification-prefs", json={"user_id": user_id, **kwargs})
 
 
-def _notify_settings_text(prefs: Dict[str, object], lang: str = "uk", news_subscribed: bool = True) -> str:
-    quiet = (
-        i18n.t("housing.notify.quiet_on", lang) if prefs.get("quiet_hours_enabled")
-        else i18n.t("housing.notify.quiet_off", lang)
-    )
+def _notify_settings_text(
+    prefs: Dict[str, object], lang: str = "uk", news_subscribed: bool = True, free_quiet: bool = False,
+) -> str:
+    if free_quiet:
+        quiet = i18n.t("housing.notify.quiet_free", lang)
+    elif prefs.get("quiet_hours_enabled"):
+        quiet = i18n.t("housing.notify.quiet_on", lang)
+    else:
+        quiet = i18n.t("housing.notify.quiet_off", lang)
     mode = (
         i18n.t("housing.notify.mode_daily", lang) if prefs.get("digest_mode") == "daily"
         else i18n.t("housing.notify.mode_instant", lang)
@@ -3750,14 +3806,17 @@ def _notify_settings_text(prefs: Dict[str, object], lang: str = "uk", news_subsc
     return base + "\n\n" + i18n.t("housing.notify.news_line", lang, news=news)
 
 
-def _notify_settings_keyboard(prefs: Dict[str, object], lang: str = "uk", news_subscribed: bool = True) -> InlineKeyboardMarkup:
+def _notify_settings_keyboard(
+    prefs: Dict[str, object], lang: str = "uk", news_subscribed: bool = True, free_quiet: bool = False,
+) -> InlineKeyboardMarkup:
     quiet_on = bool(prefs.get("quiet_hours_enabled"))
     mode = str(prefs.get("digest_mode") or "instant")
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(
-            i18n.t("housing.notify.btn.quiet_on", lang) if quiet_on else i18n.t("housing.notify.btn.quiet_off", lang),
-            callback_data=f"housing:notify_quiet:{0 if quiet_on else 1}",
-        )],
+    # На безкоштовному тарифі тиха ніч діє завжди - перемикач нічого б не змінив.
+    quiet_row = [] if free_quiet else [[InlineKeyboardButton(
+        i18n.t("housing.notify.btn.quiet_on", lang) if quiet_on else i18n.t("housing.notify.btn.quiet_off", lang),
+        callback_data=f"housing:notify_quiet:{0 if quiet_on else 1}",
+    )]]
+    return InlineKeyboardMarkup(quiet_row + [
         [
             InlineKeyboardButton(
                 ("✅ " if mode == "instant" else "") + i18n.t("housing.notify.btn.instant", lang),
@@ -3783,8 +3842,9 @@ def show_notify_settings(update: Update, context: CallbackContext, edit: bool = 
     lang = i18n.get_lang(user.id)
     prefs = _notification_prefs(int(user.id))
     news_subscribed = user_settings_store.get_news_subscribed(int(user.id))
-    text = _notify_settings_text(prefs, lang, news_subscribed)
-    keyboard = _notify_settings_keyboard(prefs, lang, news_subscribed)
+    free_quiet = housing_tier.free_quiet_always(int(user.id))
+    text = _notify_settings_text(prefs, lang, news_subscribed, free_quiet)
+    keyboard = _notify_settings_keyboard(prefs, lang, news_subscribed, free_quiet)
     if edit and update.callback_query:
         try:
             update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
@@ -3802,6 +3862,7 @@ def toggle_quiet_hours(update: Update, context: CallbackContext, enabled: bool) 
         return
     try:
         _set_notification_prefs(int(user.id), quiet_hours_enabled=enabled)
+        housing_tier.forget_quiet_pref(int(user.id))
     except Exception:
         logger.exception("Could not update notification prefs")
         query.answer(i18n.t("housing.toast.settings_update_failed", i18n.get_lang(user.id)), show_alert=True)
@@ -6377,6 +6438,8 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
             pass
     elif query.data.startswith("housing:survey:"):
         _answer_survey(update, context, query.data.split(":", 2)[2])
+    elif query.data.startswith("housing:survey_hard:"):
+        _answer_survey_hard(update, context, query.data.split(":", 2)[2])
     elif query.data.startswith("housing:jc:"):
         _answer_jobcenter(update, context, query.data.split(":", 2)[2])
     elif query.data.startswith("housing:crit_toggle:"):

@@ -117,6 +117,22 @@ def save_survey_answer(user_id: int, answer: str) -> bool:
         session.close()
 
 
+def save_survey_detail(user_id: int, answer: str, detail: str) -> bool:
+    """The follow-up to an answer ("hard" -> what exactly), stored as
+    "hard:night". False unless the answer is exactly `answer` and has no
+    detail yet - one detail per person."""
+    session = DBSession()
+    try:
+        row = _row(session, user_id)
+        if row.survey_answer != str(answer):
+            return False
+        row.survey_answer = f"{answer}:{detail}"[:64]
+        session.commit()
+        return True
+    finally:
+        session.close()
+
+
 def set_digest_off(user_id: int) -> None:
     session = DBSession()
     try:

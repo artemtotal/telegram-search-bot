@@ -14,8 +14,12 @@ could never say how many flats a person actually got.
 
 import logging
 import os
+import time
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Set
+from typing import Dict, Optional, Set, Tuple
+
+import pytz
+import requests
 
 import i18n
 from database import DBSession, HousingAccessUser, HousingSendLog
@@ -26,6 +30,20 @@ logger = logging.getLogger(__name__)
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 FREE_DELAY = timedelta(hours=float(os.getenv("HOUSING_FREE_DELAY_HOURS", "2") or 2))
 PREMIUM_PRICE_EUR = 5
+
+# Тиха ніч за берлінським часом. Вікно те саме, що й у приймача check-Wohnung
+# (HOUSING_QUIET_HOURS_*): там воно стримує Immowelt, тут - решту площадок.
+BERLIN = pytz.timezone("Europe/Berlin")
+QUIET_START_HOUR = int(os.getenv("HOUSING_QUIET_HOURS_START", "23") or 23) % 24
+QUIET_END_HOUR = int(os.getenv("HOUSING_QUIET_HOURS_END", "8") or 8) % 24
+# Безкоштовний тариф уночі мовчить завжди, не питаючи налаштування: квартири й
+# так приходять із затримкою, а сповіщення о другій ночі - найчастіша причина
+# «незручно» в опитуванні (25.10.2026). Вмикається в docker-compose; без
+# змінної вимкнено, щоб тести не залежали від години запуску.
+FREE_QUIET_NIGHT = os.getenv("HOUSING_FREE_QUIET_NIGHT", "0") == "1"
+CHECK_WOHNUNG_BASE_URL = os.getenv("CHECK_WOHNUNG_BASE_URL", "http://host.docker.internal:18765")
+_QUIET_PREF_TTL = 600
+_quiet_pref_cache: Dict[int, Tuple[float, bool]] = {}
 
 
 def utc_now() -> datetime:
@@ -48,6 +66,64 @@ def premium_user_ids() -> Set[int]:
 
 def is_premium(user_id: int) -> bool:
     return int(user_id) in premium_user_ids()
+
+
+def is_quiet_hours(now: Optional[datetime] = None) -> bool:
+    """`now` - naive UTC, як усюди в базі бота. Вікно 23-8 переходить через
+    північ, тому просте `start <= h < end` для нього не годиться."""
+    if QUIET_START_HOUR == QUIET_END_HOUR:
+        return False
+    hour = pytz.utc.localize(now or utc_now()).astimezone(BERLIN).hour
+    if QUIET_START_HOUR < QUIET_END_HOUR:
+        return QUIET_START_HOUR <= hour < QUIET_END_HOUR
+    return hour >= QUIET_START_HOUR or hour < QUIET_END_HOUR
+
+
+def quiet_hours_label() -> str:
+    return f"{QUIET_START_HOUR:02d}:00–{QUIET_END_HOUR:02d}:00"
+
+
+def wants_quiet_night(user_id: int) -> bool:
+    """Чи ввімкнула людина «🌙 Тиху ніч». Налаштування живе в приймачі
+    check-Wohnung; запит іде лише вночі й кешується на 10 хвилин, щоб обхід
+    десяти площадок не смикав приймач на кожну квартиру. Приймач недоступний -
+    вважаємо, що ні: краще прийде вночі, ніж не прийде."""
+    user_id = int(user_id)
+    cached = _quiet_pref_cache.get(user_id)
+    if cached and time.monotonic() - cached[0] < _QUIET_PREF_TTL:
+        return cached[1]
+    try:
+        response = requests.get(
+            f"{CHECK_WOHNUNG_BASE_URL}/api/housing/notification-prefs",
+            params={"user_id": user_id}, timeout=3,
+        )
+        response.raise_for_status()
+        wants = bool(response.json().get("quiet_hours_enabled"))
+    except Exception as exc:
+        logger.warning("Could not read quiet-night setting of %s: %s", user_id, exc)
+        wants = False
+    _quiet_pref_cache[user_id] = (time.monotonic(), wants)
+    return wants
+
+
+def forget_quiet_pref(user_id: int) -> None:
+    """Після перемикання в налаштуваннях - щоб нове значення діяло одразу."""
+    _quiet_pref_cache.pop(int(user_id), None)
+
+
+def free_quiet_always(user_id: int) -> bool:
+    return FREE_QUIET_NIGHT and not is_premium(user_id)
+
+
+def night_hold(user_id: int, premium: bool, now: Optional[datetime] = None) -> bool:
+    """Притримати квартиру до ранку: зараз тиха ніч, і людина або на
+    безкоштовному тарифі (FREE_QUIET_NIGHT), або сама ввімкнула тиху ніч.
+    Квартира не позначається доставленою - її підбере перший ранковий обхід."""
+    if not is_quiet_hours(now):
+        return False
+    if not premium and FREE_QUIET_NIGHT:
+        return True
+    return wants_quiet_night(user_id)
 
 
 def free_delay_hours() -> str:
@@ -109,13 +185,27 @@ class DeliveryGate:
     the free tier at all.
     """
 
-    def __init__(self, source: str, listing_model=None, now: Optional[datetime] = None) -> None:
+    def __init__(
+        self, source: str, listing_model=None, now: Optional[datetime] = None, quiet_hours: bool = True,
+    ) -> None:
         self.source = source
         self.now = now or utc_now()
         self.premium = premium_user_ids()
         self._listing_model = listing_model
         self._first_seen: Optional[Dict[str, datetime]] = None
         self._wants_rooms: Dict[int, bool] = {}
+        # quiet_hours=False - для ручного «надіслати за останню годину»: там
+        # людина сама попросила й чекає відповіді просто зараз.
+        self._quiet_hours = quiet_hours
+        self._night_hold: Dict[int, bool] = {}
+
+    def _held_for_night(self, user_id: int) -> bool:
+        if not self._quiet_hours:
+            return False
+        user_id = int(user_id)
+        if user_id not in self._night_hold:
+            self._night_hold[user_id] = night_hold(user_id, self.is_premium(user_id), self.now)
+        return self._night_hold[user_id]
 
     def is_premium(self, user_id: int) -> bool:
         return int(user_id) in self.premium
@@ -150,6 +240,8 @@ class DeliveryGate:
         # Не позначається доставленою: якщо людина потім обере кімнати, вона
         # отримає й це оголошення.
         if self._sublet_unwanted(user_id, listing):
+            return False
+        if self._held_for_night(user_id):
             return False
         if self.is_premium(user_id):
             return True
