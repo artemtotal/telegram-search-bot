@@ -3825,8 +3825,13 @@ class HousingCurrentMatchesTests(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         self.original_session = housing_monitor.user_settings_store.DBSession
         housing_monitor.user_settings_store.DBSession = sessionmaker(bind=self.engine)
+        # Список квартир - у підписці (25.10.2026); безкоштовний варіант
+        # перевіряє tests/test_housing_letter.FreeCurrentMatchesTests.
+        self._premium = mock.patch.object(housing_monitor.housing_tier, 'is_premium', return_value=True)
+        self._premium.start()
 
     def tearDown(self):
+        self._premium.stop()
         housing_monitor.user_settings_store.DBSession = self.original_session
         self.engine.dispose()
 

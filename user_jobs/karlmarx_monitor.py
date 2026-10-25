@@ -172,7 +172,7 @@ def check_job(context) -> Dict[str, int]:
             karlmarx_store.mark_delivered(int(filt["filter_id"]), listing_key)
             continue
         text = karlmarx_matching.format_notification(listing, lang=i18n.get_lang(chat_id))
-        text += gate.footer(chat_id)
+        text += gate.footer(chat_id, listing_key)
         try:
             posted_as_caption = _send_listing(bot, chat_id, listing, text)
             if not posted_as_caption:

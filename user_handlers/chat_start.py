@@ -30,6 +30,11 @@ def start(update, context):
     from_user_id = update.message.from_user.id
 
     if update.effective_chat.type == 'private':
+        # «✍️ Лист орендодавцю» під квартирою - посилання t.me/<bot>?start=lt<id>.
+        if context.args and str(context.args[0]).startswith('lt'):
+            from user_handlers import housing_letter
+            housing_letter.handle_start(update, context, str(context.args[0]))
+            return
         from user_handlers.anonymous_posts import show_home
         show_home(update, context)
         return

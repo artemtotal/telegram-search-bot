@@ -16,7 +16,7 @@ from telegram.error import NetworkError
 
 import i18n
 from database import DBSession, HousingDelivery, HousingPendingDelivery, ImmoweltListing
-from user_jobs import housing_tier, sublet
+from user_jobs import housing_letter_store, housing_tier, sublet
 
 
 logger = logging.getLogger(__name__)
@@ -334,6 +334,7 @@ def handle_immowelt_result(bot, payload, release=False):
     text = "\n".join(lines)
     if not premium:
         text += housing_tier.free_footer(user_id)
+    text += housing_letter_store.letter_link(user_id, "immowelt", listing_id, premium)
     images = [str(u).strip() for u in (listing.get("images") or []) if str(u).strip()][:GALLERY_ALBUM_MAX]
 
     try:

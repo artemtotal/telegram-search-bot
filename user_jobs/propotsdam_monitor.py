@@ -333,7 +333,7 @@ def _check_job_locked(context) -> Dict[str, int]:
             propotsdam_store.mark_delivered(int(filt["filter_id"]), listing_key)
             continue
         text = propotsdam_matching.format_notification(listing, PROPOTSDAM_PORTAL_URL, lang=i18n.get_lang(chat_id))
-        text += gate.footer(chat_id)
+        text += gate.footer(chat_id, listing_key)
         try:
             photos, posted_as_caption = _send_listing(bot, chat_id, listing, text)
             photos_sent += photos

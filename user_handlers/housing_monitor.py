@@ -17,6 +17,7 @@ from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, 
 from telegram.error import BadRequest
 
 import i18n
+from user_handlers import housing_letter
 from database import (
     DBSession,
     HousingFilterEvent,
@@ -91,7 +92,7 @@ BTN_ADMIN_BROADCAST = "📢 Розсилка новин"
 BTN_CANCEL = "✖ Скасувати"
 BTN_SELF_ADD = "➕ Додати фільтр"
 BTN_SELF_MANAGE = "⚙️ Мої фільтри"
-BTN_CURRENT_MATCHES = "🔍 Квартири, що підходять"
+BTN_CURRENT_MATCHES = "🔍 Квартири, що підходять зараз"
 BTN_COOPS = "🏘 Кооперативи (Gewoba/WBG)"
 ACCESS_MONTH_OPTIONS = [1, 3, 6, 12]
 EXPIRY_WARNING_DAYS = 3
@@ -1337,7 +1338,7 @@ def _send_recent_matches(update: Update, context: CallbackContext, hours: int) -
                 continue
             if not gate.due(owner_id, listing):
                 continue
-            text = matching.format_notification(listing) + gate.footer(owner_id)
+            text = matching.format_notification(listing) + gate.footer(owner_id, str(listing["listing_key"]))
             context.bot.send_message(
                 chat_id=owner_id, text=text, parse_mode="HTML", disable_web_page_preview=False,
             )
@@ -1431,6 +1432,29 @@ def show_current_matches(update: Update, context: CallbackContext) -> None:
         )
         return
 
+    if not housing_tier.is_premium(chat_id):
+        # Список - у підписці; безкоштовні бачать лише, скільки квартир є.
+        seen = set()
+        for item in filters:
+            source = item.get("source") or "immowelt"
+            for listing in _current_matches(source, item):
+                seen.add((source, str(listing.get("listing_key") or listing.get("url") or listing.get("title"))))
+        if seen:
+            text = i18n.t(
+                "housing.matches.free_count", lang, n=len(seen),
+                price=housing_tier.PREMIUM_PRICE_EUR, hours=housing_tier.free_delay_hours(),
+            )
+        else:
+            text = i18n.t("housing.matches.free_none", lang)
+        context.bot.send_message(
+            chat_id=chat_id, text=text, parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(i18n.t("housing.matches.btn.subscribe_to_see", lang), callback_data="housing:access_request")],
+                [InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")],
+            ]),
+        )
+        return
+
     total = 0
     blocks = []
     for item in filters:
@@ -1510,7 +1534,9 @@ def user_filters(user_id: Optional[int]) -> list:
     coops = coop_watchdog_store.list_filters(user_id=int(user_id), active_only=True)
     for item in coops:
         item["source"] = item["coop_key"]
-    return immowelt + propot + semm + schoba + regio + kanz + loc + km + von + coops
+    # ImmoScout24 з 12.10 рахувався, але не повертався: у «Квартири, що
+    # підходять» і в меню його фільтри не потрапляли (знайдено 25.10.2026).
+    return immowelt + propot + semm + schoba + regio + kanz + loc + km + von + scout + coops
 
 
 def manageable_filters(user_id: Optional[int]) -> list:
@@ -1705,6 +1731,7 @@ def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKey
         rows.insert(1, [InlineKeyboardButton(i18n.t("housing.btn.self_manage", lang), callback_data="housing:self_manage")])
         rows.insert(2, [InlineKeyboardButton(i18n.t("housing.btn.current_matches", lang), callback_data="housing:current_matches")])
         rows.insert(3, [InlineKeyboardButton(i18n.t("housing.btn.notify_settings", lang), callback_data="housing:notify_settings")])
+        rows.insert(4, [InlineKeyboardButton(i18n.t("housing.btn.letters", lang), callback_data="housing:letter:menu")])
         if not housing_tier.is_premium(user_id):
             rows.insert(0, [InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request")])
     rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="housing:lang:menu")])
@@ -5224,6 +5251,8 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
     if user_id != ADMIN_ID and not is_allowed(user_id):
         return False
     text = update.message.text.strip()
+    if housing_letter.handle_text(update, context):
+        return True
     if user_id != ADMIN_ID:
         lang = i18n.get_lang(user_id)
         if text == i18n.t("housing.btn.self_add", lang):
@@ -6474,6 +6503,8 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data == "housing:notify_settings":
         query.answer()
         show_notify_settings(update, context, edit=True)
+    elif query.data.startswith("housing:letter:"):
+        housing_letter.handle_callback(update, context)
     elif query.data == "housing:notify_quiet_locked":
         toggle_quiet_hours(update, context, True)
     elif query.data.startswith("housing:notify_quiet:"):

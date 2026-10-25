@@ -255,8 +255,16 @@ class DeliveryGate:
         finally:
             session.close()
 
-    def footer(self, user_id: int) -> str:
-        return "" if self.is_premium(user_id) else free_footer(user_id)
+    def footer(self, user_id: int, listing_key: Optional[str] = None) -> str:
+        """Under every flat: the free-tier note, and the «✍️ Лист орендодавцю»
+        link (a subscription feature; free people see it with a ⚡)."""
+        premium = self.is_premium(user_id)
+        text = "" if premium else free_footer(user_id)
+        if listing_key:
+            from user_jobs import housing_letter_store
+
+            text += housing_letter_store.letter_link(user_id, self.source, str(listing_key), premium)
+        return text
 
     def sent(self, user_id: int, listing_key: str, filter_id: Optional[int] = None) -> None:
         log_sent(user_id, self.source, listing_key, filter_id, delayed=not self.is_premium(user_id))

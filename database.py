@@ -1084,6 +1084,38 @@ class HousingPendingDelivery(Base):
     created_at = Column(DATETIME, nullable=False)
 
 
+class HousingLetterProfile(Base):
+    """What a subscriber told the bot once about themselves, for «✍️ Лист
+    орендодавцю» - the German cover letter written per flat (housing_letter).
+    Free text in any language; the letter itself is German."""
+
+    __tablename__ = 'housing_letter_profile'
+
+    user_id = Column(INTEGER, primary_key=True)
+    full_name = Column(TEXT)
+    household = Column(TEXT)
+    income = Column(TEXT)
+    move_in = Column(TEXT)
+    contact = Column(TEXT)
+    about = Column(TEXT)
+    updated_at = Column(DATETIME)
+
+
+class HousingLetterRef(Base):
+    """Short number for a flat in the «✍️ Лист» deep link: a Telegram start
+    parameter is at most 64 characters, listing keys can be longer."""
+
+    __tablename__ = 'housing_letter_ref'
+    __table_args__ = (
+        UniqueConstraint('source', 'listing_key', name='uq_housing_letter_ref'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    source = Column(TEXT, nullable=False)
+    listing_key = Column(TEXT, nullable=False)
+    created_at = Column(DATETIME, nullable=False)
+
+
 class HousingHeldMatch(Base):
     """A flat that matched a free-tier person's filter but is still waiting
     out the delay (or the night) - polled sources only, Immowelt keeps its

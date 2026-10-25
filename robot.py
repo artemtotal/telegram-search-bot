@@ -39,6 +39,7 @@ from user_jobs import karlmarx_monitor
 from user_jobs import vonovia_monitor
 from user_jobs import immoscout_monitor
 from user_jobs import housing_missed
+from user_jobs import housing_letter_store
 
 
 from userbot import run_telethon
@@ -63,6 +64,11 @@ dispatcher = updater.dispatcher
 
 job = updater.job_queue
 job.run_once(set_bot_commands, 30)
+# «✍️ Лист орендодавцю» під квартирою - посилання t.me/<бот>?start=lt<id>.
+try:
+    housing_letter_store.set_bot_username(updater.bot.get_me().username)
+except Exception as exc:
+    print(f"Could not read the bot username for letter links: {exc}")
 
 
 def _next_sunday_3am_utc(now=None):
