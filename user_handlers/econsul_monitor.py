@@ -322,13 +322,50 @@ def _notify_text(fresh: Dict[str, List[dict]], codes: set, names: Dict[str, str]
     return "\n".join(parts)
 
 
+def _booked_callback(codes: Iterable[str]) -> str:
+    """«✅ Я записався» несе коди послуг цього сповіщення, щоб далі спитати:
+    відписати лише від них чи від усіх. Telegram дає 64 байти на callback -
+    якщо коди не вміщаються, питання буде без «лише від цих»."""
+    data = "econsul:bk:" + ",".join(sorted(codes))
+    return data if len(data.encode()) <= 64 else "econsul:bk:"
+
+
+def _codes_from(data: str, prefix: str) -> set:
+    return {code for code in data[len(prefix):].split(",") if code and code != "*"}
+
+
+def _unsubscribe_codes(session, user, codes: set) -> None:
+    """Відписує лише від `codes`. Хто підписаний на «усі послуги», той далі
+    отримує решту обслуговуваних послуг - уже окремими підписками."""
+    active = _active_codes(_user_subscriptions(session, user.id))
+    if "*" in active:
+        _set_subscription(session, user, SUB_ALL, False)
+        for service in _served_services(session):
+            if service.code not in codes:
+                _set_subscription(session, user, SUB_PREFIX + service.code, True)
+        return
+    for code in codes:
+        _set_subscription(session, user, SUB_PREFIX + code, False)
+
+
+def _booked_choice_keyboard(codes: set, lang: str) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(
+            i18n.t("econsul.booked.only_these", lang, names=_service_names(codes, lang)[:40]),
+            callback_data=_booked_callback(codes).replace("econsul:bk:", "econsul:bko:", 1),
+        )],
+        [InlineKeyboardButton(i18n.t("econsul.booked.all", lang), callback_data="econsul:bka")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
 def _notify_subscribers(bot, fresh: Dict[str, List[dict]], names: Dict[str, str], institution: str) -> int:
     sent = 0
     for user_id, codes in _subscribers_for(fresh).items():
         lang = i18n.get_lang(user_id)
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(i18n.t("econsul.btn.book", lang), url=BOOKING_URL)],
-            [InlineKeyboardButton(i18n.t("support.btn.booked", lang), callback_data="econsul:booked")],
+            [InlineKeyboardButton(i18n.t("support.btn.booked", lang), callback_data=_booked_callback(codes))],
             [InlineKeyboardButton(i18n.t("econsul.btn.settings", lang), callback_data="econsul:menu")],
         ])
         try:
@@ -873,19 +910,53 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
             _edit(query, *render_manage(user.id, lang))
         else:
             show_menu(update, context, edit=True, prefix=i18n.t("econsul.prefix.unsubscribed_all", lang))
-    elif data == "econsul:booked":
+    elif data.startswith("econsul:bk:"):
+        # Спершу питаємо: лише від послуг цього сповіщення чи від усіх. Якщо
+        # іншої підписки в людини немає, різниці нема - відписуємо одразу.
+        codes = _codes_from(data, "econsul:bk:")
         session = DBSession()
         try:
-            _unsubscribe(session, user, None)
+            active = _active_codes(_user_subscriptions(session, user.id))
+        finally:
+            session.close()
+        if not codes or "*" not in active and active <= codes:
+            _booked_all(query, context, user, lang)
+            return
+        query.answer()
+        try:
+            query.edit_message_reply_markup(reply_markup=_booked_choice_keyboard(codes, lang))
+        except BadRequest as exc:
+            if "Message is not modified" not in str(exc):
+                raise
+    elif data.startswith("econsul:bko:"):
+        codes = _codes_from(data, "econsul:bko:")
+        if not codes:
+            _booked_all(query, context, user, lang)
+            return
+        session = DBSession()
+        try:
+            _unsubscribe_codes(session, user, codes)
             session.commit()
         finally:
             session.close()
-        support.booked(query, context.bot, i18n.t("anon.btn.econsul", lang), "econsul:menu")
+        support.booked(query, context.bot, _service_names(codes, lang), "econsul:menu")
+    elif data in ("econsul:bka", "econsul:booked"):
+        _booked_all(query, context, user, lang)
     elif data == "econsul:free":
         query.answer()
         _edit(query, *render_free(lang))
     else:
         query.answer()
+
+
+def _booked_all(query, context: CallbackContext, user, lang: str) -> None:
+    session = DBSession()
+    try:
+        _unsubscribe(session, user, None)
+        session.commit()
+    finally:
+        session.close()
+    support.booked(query, context.bot, i18n.t("anon.btn.econsul", lang), "econsul:menu")
 
 
 command_handler = CommandHandler("embassy", show_menu, Filters.chat_type.private)

@@ -156,13 +156,60 @@ class BookedTest(_Base):
         keyboard = self.context.bot.send_message.call_args.kwargs["reply_markup"]
         self.assertIn("equeue:booked", [b.callback_data for row in keyboard.inline_keyboard for b in row])
 
-    def test_embassy_booked_unsubscribes_from_every_service(self):
+    def _services(self, *codes):
+        session = sessionmaker(bind=self.engine)()
+        now = datetime.utcnow()
+        for code in codes:
+            session.add(econsul_monitor.EconsulService(code=code, name=f"Послуга {code}", served=True, updated_at=now))
+        session.commit()
+        session.close()
+
+    def _embassy_tap(self, data):
+        update = _callback(data)
+        with mock.patch.object(econsul_monitor, 'is_allowed', return_value=True):
+            econsul_monitor.handle_callback(update, self.context)
+        return update.callback_query
+
+    def test_embassy_booked_asks_this_service_or_all(self):
+        self._services("1", "40")
         self._subscribe(econsul_monitor.SUB_PREFIX + "1")
         self._subscribe(econsul_monitor.SUB_PREFIX + "40")
-        with mock.patch.object(econsul_monitor, 'is_allowed', return_value=True):
-            econsul_monitor.handle_callback(_callback("econsul:booked"), self.context)
-        self.assertEqual(self._active(econsul_monitor.SUB_PREFIX), [])
+        query = self._embassy_tap("econsul:bk:1")
+        keyboard = query.edit_message_reply_markup.call_args.kwargs["reply_markup"]
+        data = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+        self.assertEqual(data, ["econsul:bko:1", "econsul:bka"])
+        self.assertIn("Послуга 1", keyboard.inline_keyboard[0][0].text)
+        self.assertEqual(len(self._active(econsul_monitor.SUB_PREFIX)), 2)  # ще нічого не вимкнено
+
+        self._embassy_tap("econsul:bko:1")
+        self.assertEqual(self._active(econsul_monitor.SUB_PREFIX), [econsul_monitor.SUB_PREFIX + "40"])
         self.assertEqual(self.context.bot.send_message.call_args_list[0].kwargs["chat_id"], USER)
+
+    def test_embassy_booked_all(self):
+        self._services("1", "40")
+        self._subscribe(econsul_monitor.SUB_PREFIX + "1")
+        self._subscribe(econsul_monitor.SUB_PREFIX + "40")
+        self._embassy_tap("econsul:bka")
+        self.assertEqual(self._active(econsul_monitor.SUB_PREFIX), [])
+
+    def test_only_one_subscription_needs_no_question(self):
+        self._subscribe(econsul_monitor.SUB_PREFIX + "1")
+        query = self._embassy_tap("econsul:bk:1")
+        query.edit_message_reply_markup.assert_called_once_with(reply_markup=None)  # кнопки знято
+        self.assertEqual(self._active(econsul_monitor.SUB_PREFIX), [])
+
+    def test_all_services_subscriber_keeps_the_rest(self):
+        self._services("1", "40", "42")
+        self._subscribe(econsul_monitor.SUB_ALL)
+        self._embassy_tap("econsul:bko:1")
+        self.assertEqual(
+            sorted(self._active(econsul_monitor.SUB_PREFIX)),
+            [econsul_monitor.SUB_PREFIX + "40", econsul_monitor.SUB_PREFIX + "42"],
+        )
+
+    def test_alert_button_carries_the_alert_services(self):
+        self.assertEqual(econsul_monitor._booked_callback({"40", "1"}), "econsul:bk:1,40")
+        self.assertEqual(econsul_monitor._booked_callback({str(n) for n in range(100, 140)}), "econsul:bk:")
 
 
 class EmbassyScheduleTest(_Base):
