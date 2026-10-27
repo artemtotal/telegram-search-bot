@@ -20,7 +20,7 @@ from user_handlers.anonymous_validation import (
     text_fingerprint,
     validate_submission as validate_submission_text,
 )
-from user_handlers import econsul_monitor, equeue_monitor, housing_monitor, housing_payment
+from user_handlers import econsul_monitor, equeue_monitor, housing_monitor, housing_payment, support
 from user_jobs import user_settings_store
 from user_jobs.reindex_queue import enqueue_message_reindex
 
@@ -59,6 +59,7 @@ def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
     rows.extend(equeue_monitor.private_home_rows(user_id))
     rows.extend(econsul_monitor.private_home_rows(user_id))
     rows.extend(housing_monitor.private_home_rows(user_id))
+    rows.extend(support.home_rows(user_id))
     rows.append([InlineKeyboardButton(i18n.t("anon.btn.feedback", lang), callback_data="anon:feedback")])
     rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="anon:lang:menu")])
     return InlineKeyboardMarkup(rows)
@@ -414,6 +415,8 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
     feedback_state = context.user_data.get("feedback") or {}
     if feedback_state.get("step") == "text":
         _handle_feedback_text(update, context)
+        return
+    if support.handle_text(update, context):
         return
     state = context.user_data.get("anonymous") or {}
     text = update.message.text.strip()

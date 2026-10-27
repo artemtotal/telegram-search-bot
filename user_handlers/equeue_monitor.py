@@ -18,6 +18,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
 
 import i18n
+from user_handlers import support
 from database import DBSession, EqueueAvailableSighting, EqueueCheckLog, EqueueStatus, EqueueSubscription
 
 
@@ -645,6 +646,7 @@ def _notify_available(bot, subscribers, result: Dict[str, object]) -> int:
         text = i18n.t("equeue.notify.available", lang, title=html.escape(SERVICE_TITLE))
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(i18n.t("equeue.btn.open_queue", lang), url=SERVICE_URL)],
+            [InlineKeyboardButton(i18n.t("support.btn.booked", lang), callback_data="equeue:booked")],
             [InlineKeyboardButton(i18n.t("equeue.btn.unsubscribe_short", lang), callback_data="equeue:unsubscribe")],
         ])
         try:
@@ -988,6 +990,9 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _deactivate_subscription(user.id)
         query.answer(i18n.t("equeue.toast.unsubscribed", lang))
         show_menu(update, context, edit=True, prefix=i18n.t("equeue.prefix.unsubscribed", lang))
+    elif query.data == "equeue:booked":
+        _deactivate_subscription(user.id)
+        support.booked(query, context.bot, i18n.t("anon.btn.equeue", lang), "equeue:menu")
     elif query.data == "equeue:cf_done":
         if user.id != ADMIN_ID:
             query.answer(i18n.t("equeue.no_access", lang), show_alert=True)

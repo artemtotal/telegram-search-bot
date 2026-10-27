@@ -49,6 +49,10 @@ class EconsulMonitorTest(unittest.TestCase):
         lang = mock.patch.object(monitor.i18n, "get_lang", return_value="uk")
         lang.start()
         self.addCleanup(lang.stop)
+        # Без підписників бот не кличе адміна входити (див. test_support).
+        people = mock.patch.object(monitor, "active_people", return_value=1)
+        people.start()
+        self.addCleanup(people.stop)
         self.addCleanup(self._clean)
 
     def _clean(self):

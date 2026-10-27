@@ -26,6 +26,7 @@ from user_handlers import (
     housing_receiver,
     housing_relax,
     housing_send_audit,
+    support,
 )
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
@@ -188,6 +189,8 @@ if immoscout_monitor.CHECK_ENABLED:
 job.run_repeating(housing_monitor.check_access_expiry, interval=86400, first=360)
 # The 1-day access given while a payment receipt waits for the admin.
 job.run_repeating(housing_payment.provisional_expiry_job, interval=600, first=300)
+# e-Consul: fewer checks (and no login prompts) when few people subscribe.
+job.run_repeating(econsul_monitor.schedule_job, interval=1800, first=60)
 # Free tier: Immowelt flats held back for FREE_DELAY go out from here (the
 # other sources just wait until a listing is old enough on their own scans).
 job.run_repeating(housing_receiver.send_due_immowelt, interval=300, first=420)
@@ -221,6 +224,8 @@ dispatcher.add_handler(equeue_monitor.callback_handler)
 dispatcher.add_handler(equeue_monitor.stats_handler)
 dispatcher.add_handler(econsul_monitor.command_handler)
 dispatcher.add_handler(econsul_monitor.callback_handler)
+dispatcher.add_handler(support.command_handler)
+dispatcher.add_handler(support.callback_handler)
 dispatcher.add_handler(housing_monitor.command_handler)
 dispatcher.add_handler(housing_monitor.callback_handler)
 dispatcher.add_handler(housing_monitor.add_handler)

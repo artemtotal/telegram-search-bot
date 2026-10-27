@@ -23,6 +23,7 @@ from telegram.error import BadRequest
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler, Filters
 
 import i18n
+from user_handlers import support
 from database import (
     DBSession,
     EconsulDay,
@@ -53,6 +54,14 @@ LIFETIME_WINDOW = timedelta(days=14)
 LIFETIME_MIN_EPISODES = 3
 DAYS_PER_SERVICE_IN_NOTIFY = 5
 BROKEN_STATUSES = {"auth_required", "error"}
+# Скільки разів на день перевіряти залежно від кількості людей із підпискою
+# (рішення Артёма 27.10.2026): кожна перевірка - вхід через monobank. Години -
+# берлінські, ті самі вікна, де з'являлися нові дати (див. econsul_snapshot).
+# Нікого немає - запрошень увійти бот адміну не шле, перевірки стоять.
+SCHEDULE_FULL = [6, 11, 16, 20]
+SCHEDULE_FEW = [6, 20]
+FEW_PEOPLE = int(os.getenv("ECONSUL_FEW_PEOPLE", "5") or 5)
+_pushed_hours: Optional[List[int]] = None
 
 
 def utc_now() -> datetime:
@@ -260,6 +269,46 @@ def _subscribers_for(fresh: Dict[str, List[dict]]) -> Dict[int, set]:
         session.close()
 
 
+def active_people() -> int:
+    """Скільки різних людей має хоч одну активну підписку на посольство."""
+    session = DBSession()
+    try:
+        rows = (
+            session.query(EqueueSubscription.user_id)
+            .filter(EqueueSubscription.service.like(SUB_PREFIX + "%"), EqueueSubscription.active == 1)
+            .distinct()
+            .all()
+        )
+        return len(rows)
+    finally:
+        session.close()
+
+
+def wanted_hours(people: int) -> List[int]:
+    return SCHEDULE_FULL if people >= FEW_PEOPLE else SCHEDULE_FEW
+
+
+def push_schedule(hours: List[int]) -> bool:
+    try:
+        response = requests.post(
+            f"{CHECK_WOHNUNG_BASE_URL}/api/econsul/schedule", json={"hours": hours}, timeout=10,
+        )
+        return response.ok
+    except requests.RequestException:
+        logger.warning("Could not push the e-Consul schedule %s", hours, exc_info=True)
+        return False
+
+
+def schedule_job(context) -> None:
+    """Раз на пів години: розклад перевірок за кількістю підписників.
+    Надсилає приймачу check-Wohnung лише зміни (і раз після старту бота)."""
+    global _pushed_hours
+    hours = wanted_hours(active_people())
+    if hours != _pushed_hours and push_schedule(hours):
+        logger.info("e-Consul schedule set to %s", hours)
+        _pushed_hours = hours
+
+
 def _notify_text(fresh: Dict[str, List[dict]], codes: set, names: Dict[str, str], institution: str, lang: str) -> str:
     parts = [i18n.t("econsul.notify.title", lang, institution=html.escape(institution))]
     for code in sorted(codes, key=lambda item: names.get(item, item)):
@@ -279,6 +328,7 @@ def _notify_subscribers(bot, fresh: Dict[str, List[dict]], names: Dict[str, str]
         lang = i18n.get_lang(user_id)
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(i18n.t("econsul.btn.book", lang), url=BOOKING_URL)],
+            [InlineKeyboardButton(i18n.t("support.btn.booked", lang), callback_data="econsul:booked")],
             [InlineKeyboardButton(i18n.t("econsul.btn.settings", lang), callback_data="econsul:menu")],
         ])
         try:
@@ -434,6 +484,11 @@ def handle_browser_result(bot, payload: Dict[str, object]) -> Dict[str, object]:
     session = DBSession()
     try:
         state = _get_state(session)
+        if status in ("login_needed", "login_reminder", "auth_required") and active_people() == 0:
+            # Ніхто не підписаний - не просимо адміна входити через monobank.
+            # Розширення чекатиме входу; з першим підписником нагадування
+            # знову прийде в годину розкладу.
+            return {"ok": True, "status": status, "suppressed": "no subscribers"}
         if status in LOGIN_STATUSES:
             _handle_login(bot, state, status, payload)
             session.commit()
@@ -818,6 +873,14 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
             _edit(query, *render_manage(user.id, lang))
         else:
             show_menu(update, context, edit=True, prefix=i18n.t("econsul.prefix.unsubscribed_all", lang))
+    elif data == "econsul:booked":
+        session = DBSession()
+        try:
+            _unsubscribe(session, user, None)
+            session.commit()
+        finally:
+            session.close()
+        support.booked(query, context.bot, i18n.t("anon.btn.econsul", lang), "econsul:menu")
     elif data == "econsul:free":
         query.answer()
         _edit(query, *render_free(lang))

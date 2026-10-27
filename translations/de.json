@@ -549,5 +549,21 @@
   "housing.letter.limit": "Für heute genug Anschreiben ({n}). Morgen wieder.",
   "housing.letter.menu": "✍️ <b>Anschreiben an Vermieter</b>\n\nUnter jeder Wohnung vom Bot steht der Link „✍️ Anschreiben an den Vermieter“. Tippen — und der Bot schreibt ein fertiges Anschreiben für diese Wohnung.",
   "housing.letter.profile_summary": "<b>Ihr Fragebogen:</b>\n👤 {full_name}\n👨‍👩‍👧 {household}\n💼 {income}\n📅 {move_in}\n📞 {contact}\n📝 {about}",
-  "housing.letter.profile_empty": "Der Fragebogen ist noch leer — der Bot fragt beim ersten Anschreiben."
+  "housing.letter.profile_empty": "Der Fragebogen ist noch leer — der Bot fragt beim ersten Anschreiben.",
+  "support.btn.open": "☕ Projekt unterstützen",
+  "support.btn.custom": "✏️ Eigener Betrag",
+  "support.btn.done": "✅ Ich habe überwiesen",
+  "support.btn.other": "⬅️ Anderer Betrag",
+  "support.btn.booked": "✅ Ich habe einen Termin",
+  "support.btn.resubscribe": "🔔 Wieder abonnieren",
+  "support.amount_btn": "{eur} € · {uah} UAH",
+  "support.choose": "☕ <b>Projekt unterstützen</b>\n\nDer Bot ist kostenlos: Termine bei DP Dokument und der Botschaft, Wohnungen, anonyme Fragen im Chat. Wenn er Ihnen geholfen hat, können Sie ihn mit einem beliebigen Betrag unterstützen.\n\nÜberweisung in Hrywnja auf eine ukrainische Karte ({rate} UAH für 1 €). Betrag wählen:",
+  "support.custom_prompt": "Schreiben Sie den Betrag in Euro — z. B. 4 oder 7,5 (1 bis {max} €). Der Bot rechnet ihn in Hrywnja um.",
+  "support.card": "☕ <b>{eur} € = {uah} UAH</b>\n\nÜberweisen Sie <b>{uah} UAH</b> auf die Karte:\n<code>{card}</code>{holder}\n\n(auf die Nummer tippen, um sie zu kopieren)",
+  "support.thanks_toast": "Danke!",
+  "support.thanks": "💛 Danke für die Unterstützung! Das hilft dem Bot weiterzulaufen.",
+  "support.unavailable": "Unterstützung ist gerade nicht verfügbar.",
+  "support.booked_toast": "Glückwunsch!",
+  "support.booked": "🎉 <b>Glückwunsch zum Termin!</b>\n\nDie Benachrichtigungen „{service}“ sind ausgeschaltet, damit sie nicht mehr stören. Sie können jederzeit wieder abonnieren.\n\nWenn der Bot geholfen hat, können Sie das Projekt mit einem Kaffee unterstützen ☕",
+  "support.booked_plain": "🎉 <b>Glückwunsch zum Termin!</b>\n\nDie Benachrichtigungen „{service}“ sind ausgeschaltet, damit sie nicht mehr stören. Sie können jederzeit wieder abonnieren."
 }
