@@ -22,6 +22,7 @@ from user_handlers import (
     econsul_monitor,
     housing_monitor,
     housing_digest,
+    housing_payment,
     housing_receiver,
     housing_relax,
     housing_send_audit,
@@ -224,6 +225,8 @@ dispatcher.add_handler(housing_monitor.add_handler)
 dispatcher.add_handler(housing_monitor.list_handler)
 dispatcher.add_handler(housing_monitor.enable_handler)
 dispatcher.add_handler(housing_monitor.disable_handler)
+# Payment receipts (photo/PDF) - own group so msg_store and the rest still see them.
+dispatcher.add_handler(housing_payment.receipt_handler, group=3)
 dispatcher.add_handler(chat_start.handler)
 dispatcher.add_handler(chat_stop.handler)
 dispatcher.add_handler(chat_delete.handler)

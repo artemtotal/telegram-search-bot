@@ -71,6 +71,10 @@ services:
       # Comma-separated Telegram IDs that may open housing monitoring before filters exist.
       # ADMIN_ID and users with existing housing filters are always allowed.
       - HOUSING_ALLOWED_USER_IDS=${HOUSING_ALLOWED_USER_IDS:-}
+      # «⚡ Підписка»: карта для оплати в гривнях (housing_payment). Порожньо -
+      # кнопка підписки знову просто шле запит адміну.
+      - HOUSING_PAY_CARD=${HOUSING_PAY_CARD:-}
+      - HOUSING_PAY_CARD_HOLDER=${HOUSING_PAY_CARD_HOLDER:-}
       - CHECK_WOHNUNG_BASE_URL=http://host.docker.internal:18765
       - PROPOTSDAM_CHECK_ENABLED=${PROPOTSDAM_CHECK_ENABLED:-0}
       - PROPOTSDAM_RECEIVER_URL=http://host.docker.internal:18766

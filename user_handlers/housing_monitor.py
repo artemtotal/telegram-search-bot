@@ -18,6 +18,7 @@ from telegram.error import BadRequest
 
 import i18n
 from user_handlers import housing_letter
+from user_handlers import housing_payment
 from database import (
     DBSession,
     HousingFilterEvent,
@@ -2445,6 +2446,12 @@ def request_access(update: Update, context: CallbackContext) -> None:
     if not query or not user:
         return
     lang = i18n.get_lang(user.id)
+    if housing_payment.enabled():
+        # З 27.10.2026: людина сама обирає місяці, бачить суму й карту і
+        # надсилає квитанцію - адмін лише підтверджує (housing_payment).
+        # Чинні підписники тут подовжують підписку.
+        housing_payment.show_months(update, context)
+        return
     if housing_tier.is_premium(user.id) and not housing_access_store.is_trial(user.id):
         query.answer(i18n.t("housing.access.already_open", lang))
         show_menu(update, context, edit=True)
@@ -2599,6 +2606,28 @@ def _resolve_access_request(update: Update, context: CallbackContext, grant: boo
         logger.exception("Could not notify user %s about the housing access denial", target_id)
 
 
+def grant_paid_months(target_id: int, name: str, months: int) -> datetime:
+    """Opens (or extends) the subscription for `months` and returns the new
+    expiry. A subscription still running is extended from its current end,
+    so paying early never eats the days already paid for."""
+    now = datetime.utcnow()
+    base = now
+    for row in housing_access_store.list_users():
+        if int(row["user_id"]) == int(target_id):
+            current = row.get("expires_at")
+            if row.get("active") and not row.get("is_trial") and current and current > now:
+                base = current
+            name = name or str(row.get("display_name") or "")
+            break
+    expires_at = _add_months(base, months)
+    housing_access_store.grant_access(target_id, name, expires_at=expires_at)
+    # Switches back on any filters left paused from before 27.09.2026, when
+    # an expired trial still paused them. A no-op for everyone else, since
+    # expiry no longer touches the filters (see _downgrade_to_free).
+    _set_all_filters_active_for_user(target_id, True)
+    return expires_at
+
+
 def _finalize_access_grant(update: Update, context: CallbackContext) -> None:
     """Handles the `housing:access_months:{user_id}:{months}` tap from either
     a fresh request (_resolve_access_request) or a manual/renewal grant
@@ -2616,12 +2645,7 @@ def _finalize_access_grant(update: Update, context: CallbackContext) -> None:
         return
     context.bot_data.get("housing_access_pending", {}).pop(target_id, None)
     name = str(context.bot_data.get("housing_access_names", {}).pop(target_id, ""))
-    expires_at = _add_months(datetime.utcnow(), months)
-    housing_access_store.grant_access(target_id, name, expires_at=expires_at)
-    # Switches back on any filters left paused from before 27.09.2026, when
-    # an expired trial still paused them. A no-op for everyone else, since
-    # expiry no longer touches the filters (see _downgrade_to_free).
-    _set_all_filters_active_for_user(target_id, True)
+    expires_at = grant_paid_months(target_id, name, months)
     expires_str = expires_at.strftime("%d.%m.%Y")
     query.answer("✅ Доступ надано")
     query.edit_message_text(
@@ -2856,6 +2880,9 @@ def _handle_access_continue(update: Update, context: CallbackContext) -> None:
         return
     if int(user.id) != target_id:
         query.answer()
+        return
+    if housing_payment.enabled():
+        housing_payment.show_months(update, context)
         return
     lang = i18n.get_lang(user.id)
     query.answer(i18n.t("housing.access.continue_toast", lang))
@@ -6324,6 +6351,8 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
 def handle_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     if not query or not query.data:
+        return
+    if housing_payment.handle_callback(update, context):
         return
     if query.data == "housing:menu":
         query.answer()

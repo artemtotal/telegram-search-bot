@@ -20,7 +20,7 @@ from user_handlers.anonymous_validation import (
     text_fingerprint,
     validate_submission as validate_submission_text,
 )
-from user_handlers import econsul_monitor, equeue_monitor, housing_monitor
+from user_handlers import econsul_monitor, equeue_monitor, housing_monitor, housing_payment
 from user_jobs import user_settings_store
 from user_jobs.reindex_queue import enqueue_message_reindex
 
@@ -439,6 +439,8 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
             return
         if text == i18n.t("anon.btn.menu", lang):
             show_anon_submenu(update, context)
+            return
+        if housing_payment.remind_receipt(update, context):
             return
         show_home(update, context)
         return

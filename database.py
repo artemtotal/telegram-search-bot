@@ -1180,6 +1180,32 @@ class HousingSearch(Base):
     created_at = Column(DATETIME, nullable=False)
 
 
+class HousingPayment(Base):
+    """One «⚡ subscribe» attempt (27.10.2026, housing_payment): the person
+    picks 1-6 months, sees the sum in hryvnias and the card, sends a receipt,
+    and the admin approves or rejects it with one tap.
+
+    status: awaiting_receipt -> sent -> approved | rejected (or cancelled).
+    The amount and rate are frozen at the moment the months were picked, so
+    the admin checks the receipt against what the person was actually shown.
+    """
+
+    __tablename__ = 'housing_payment'
+
+    id = Column(INTEGER, primary_key=True, autoincrement=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    display_name = Column(TEXT, nullable=False, default='')
+    months = Column(INTEGER, nullable=False)
+    amount_eur = Column(FLOAT, nullable=False)
+    amount_uah = Column(INTEGER, nullable=False)
+    eur_uah_rate = Column(FLOAT, nullable=False)
+    status = Column(TEXT, nullable=False, default='awaiting_receipt')
+    created_at = Column(DATETIME, nullable=False)
+    receipt_at = Column(DATETIME)
+    decided_at = Column(DATETIME)
+    expires_at = Column(DATETIME)
+
+
 Base.metadata.create_all(engine)
 
 
