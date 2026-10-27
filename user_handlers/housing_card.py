@@ -476,9 +476,12 @@ def _districts_screen(update: Update, context: CallbackContext) -> None:
     ])
     rows.append([
         InlineKeyboardButton(_t("btn.all_districts", lang), callback_data=f"{PREFIX}dall"),
-        InlineKeyboardButton(_t("btn.save", lang), callback_data=f"{PREFIX}dok"),
+        InlineKeyboardButton(_t("btn.no_districts", lang), callback_data=f"{PREFIX}dnone"),
     ])
-    rows.append([InlineKeyboardButton(_t("btn.back", lang), callback_data=f"{PREFIX}open")])
+    rows.append([
+        InlineKeyboardButton(_t("btn.save", lang), callback_data=f"{PREFIX}dok"),
+        InlineKeyboardButton(_t("btn.back", lang), callback_data=f"{PREFIX}open"),
+    ])
     hm._edit_or_reply(update, _t("districts_text", lang), InlineKeyboardMarkup(rows), True)
 
 
@@ -516,7 +519,13 @@ def _load_drafts(context: CallbackContext, search: Dict) -> None:
     st = _state(context)
     st["draft_sources"] = _sources(search)
     st["draft_coops"] = list(search.get("coops") or [])
-    st["draft_districts"] = [str(item) for item in (search["criteria"].get("districts") or [])]
+    # Порожній список у фільтрі - «усі райони». На екрані це всі галочки, а
+    # не жодної: інакше людина бачила «нічого не вибрано» й думала, що
+    # квартир не буде ніде (27.10.2026).
+    st["draft_districts"] = (
+        [str(item) for item in search["criteria"].get("districts") or []]
+        or list(hm._canonical_districts(st["draft_sources"]))
+    )
     types = hm.normalize_property_types(search["criteria"].get("property_types"))
     st["draft_ptypes"] = list(types) if types else list(hm.PROPERTY_TYPE_KEYS)
 
@@ -664,8 +673,20 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         st["draft_districts"] = _toggle(list(st.get("draft_districts") or []), name)
         query.answer()
         _districts_screen(update, context)
-    elif action in ("dall", "dok"):
-        districts = [] if action == "dall" else list(st.get("draft_districts") or [])
+    elif action in ("dall", "dnone"):
+        names = hm._canonical_districts(st.get("draft_sources") or [])
+        st["draft_districts"] = list(names) if action == "dall" else []
+        query.answer()
+        _districts_screen(update, context)
+    elif action == "dok":
+        chosen = list(st.get("draft_districts") or [])
+        if not chosen:
+            query.answer(_t("pick_a_district", lang), show_alert=True)
+            return
+        names = hm._canonical_districts(st.get("draft_sources") or [])
+        # Усі позначені - зберігаємо як «усі»: тоді й нові райони порталу,
+        # яких ще нема в списку, теж підходитимуть.
+        districts = [] if set(names) <= set(chosen) else chosen
         criteria = dict(search["criteria"], districts=districts)
         failed = apply_criteria(search, criteria)
         st["dirty"] = True

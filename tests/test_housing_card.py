@@ -195,9 +195,29 @@ class HousingCardTest(unittest.TestCase):
 
     # --- райони й портали --------------------------------------------------------------
 
+    def test_new_filter_shows_every_district_ticked(self):
+        self._new('no')
+        query = self._tap('hcard:dist')
+        markup = query.edit_message_text.call_args.kwargs['reply_markup']
+        district_buttons = [b.text for row in markup.inline_keyboard for b in row if b.callback_data.startswith('hcard:dt:')]
+        self.assertTrue(district_buttons)
+        self.assertTrue(all(label.startswith('✅') for label in district_buttons))
+        # Зберегти все як є - лишається «усі райони».
+        self._tap('hcard:dok')
+        self.assertEqual(self._search()['criteria']['districts'], [])
+
+    def test_no_district_at_all_cannot_be_saved(self):
+        self._new('no')
+        self._tap('hcard:dist')
+        self._tap('hcard:dnone')
+        query = self._tap('hcard:dok')
+        query.answer.assert_called_with(housing_card._t('pick_a_district', 'uk'), show_alert=True)
+        self.assertEqual(self._search()['criteria']['districts'], [])
+
     def test_districts_are_saved_for_each_portal_in_its_own_names(self):
         self._new('no')
         self._tap('hcard:dist')
+        self._tap('hcard:dnone')
         names = hm._canonical_districts(hm.AVAILABLE_SOURCE_KEYS)
         for name in ('Babelsberg', 'Waldstadt II'):
             self._tap(f'hcard:dt:{names.index(name)}')

@@ -609,7 +609,7 @@
   "housing.card.btn.done": "✅ Fertig",
   "housing.card.btn.back": "⬅️ Zurück",
   "housing.card.btn.no_limit": "✖ Keine Grenze",
-  "housing.card.btn.all_districts": "🌍 Alle Stadtteile",
+  "housing.card.btn.all_districts": "✅ Alle Stadtteile",
   "housing.card.btn.save": "✅ Speichern",
   "housing.card.ask.max_price_eur": "Wie hoch darf die <b>Kaltmiete</b> höchstens sein?",
   "housing.card.ask.max_price_warm_eur": "Wie hoch darf die <b>Warmmiete</b> (mit Nebenkosten und Heizung) höchstens sein?",
@@ -623,10 +623,12 @@
   "housing.card.bad_number": "Diese Zahl passt nicht. Bitte noch einmal.",
   "housing.card.saved": "✅ Gespeichert",
   "housing.card.save_failed": "⚠️ Konnte nicht aktualisiert werden: {sources}. Bitte in einer Minute noch einmal.",
-  "housing.card.districts_text": "🏙 <b>Stadtteile</b>\n\nMarkieren Sie die gewünschten. Nichts markiert — alle Stadtteile.",
+  "housing.card.districts_text": "🏙 <b>Stadtteile</b>\n\nEntfernen Sie das Häkchen bei Stadtteilen, die nicht passen. Nur wenige gewünscht — „☐ Alle abwählen“ und dann Ihre markieren.",
   "housing.card.sources_text": "🌐 <b>Wo suchen</b>\n\nEntfernen Sie das Häkchen bei Portalen, die Sie nicht brauchen. Genossenschaften: Der Bot meldet sich, sobald dort eine Wohnung frei wird. Untere Reihe — was auf Immowelt gesucht wird.",
   "housing.card.paused_toast": "⏸ Suche pausiert",
   "housing.card.started_toast": "▶️ Suche aktiv",
   "housing.card.not_found": "Dieser Filter wurde bereits gelöscht.",
-  "housing.card.no_rooms": "⚠️ Zimmer ohne Grenze — es kommen auch 1-Zimmer-Wohnungen. Tippen Sie auf „🛏 ab“, um zu begrenzen."
+  "housing.card.no_rooms": "⚠️ Zimmer ohne Grenze — es kommen auch 1-Zimmer-Wohnungen. Tippen Sie auf „🛏 ab“, um zu begrenzen.",
+  "housing.card.btn.no_districts": "☐ Alle abwählen",
+  "housing.card.pick_a_district": "Markieren Sie mindestens einen Stadtteil oder tippen Sie auf „✅ Alle Stadtteile“."
 }

@@ -609,7 +609,7 @@
   "housing.card.btn.done": "✅ Готово",
   "housing.card.btn.back": "⬅️ Назад",
   "housing.card.btn.no_limit": "✖ Без предела",
-  "housing.card.btn.all_districts": "🌍 Все районы",
+  "housing.card.btn.all_districts": "✅ Все районы",
   "housing.card.btn.save": "✅ Сохранить",
   "housing.card.ask.max_price_eur": "Какая максимальная <b>Kaltmiete</b> (холодная аренда)?",
   "housing.card.ask.max_price_warm_eur": "Какая максимальная <b>Warmmiete</b> (с коммунальными и отоплением)?",
@@ -623,10 +623,12 @@
   "housing.card.bad_number": "Такое число не подходит. Попробуйте ещё раз.",
   "housing.card.saved": "✅ Сохранено",
   "housing.card.save_failed": "⚠️ Не удалось обновить: {sources}. Попробуйте ещё раз через минуту.",
-  "housing.card.districts_text": "🏙 <b>Районы</b>\n\nОтметьте нужные. Ничего не отмечено — все районы.",
+  "housing.card.districts_text": "🏙 <b>Районы</b>\n\nСнимите галочку с районов, которые не подходят. Нужны только несколько — «☐ Снять все», а потом отметьте свои.",
   "housing.card.sources_text": "🌐 <b>Где искать</b>\n\nСнимите галочку с ненужных порталов. Кооперативы: бот напишет, когда там появится свободное жильё. Нижний ряд — что искать на Immowelt.",
   "housing.card.paused_toast": "⏸ Поиск на паузе",
   "housing.card.started_toast": "▶️ Поиск работает",
   "housing.card.not_found": "Этот фильтр уже удалён.",
-  "housing.card.no_rooms": "⚠️ Комнаты без ограничения — будут приходить и однокомнатные. Нажмите «🛏 от», чтобы ограничить."
+  "housing.card.no_rooms": "⚠️ Комнаты без ограничения — будут приходить и однокомнатные. Нажмите «🛏 от», чтобы ограничить.",
+  "housing.card.btn.no_districts": "☐ Снять все",
+  "housing.card.pick_a_district": "Отметьте хотя бы один район или нажмите «✅ Все районы»."
 }
