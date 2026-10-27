@@ -46,7 +46,7 @@ class HousingPaymentTest(unittest.TestCase):
         for module in self.MODULES:
             module.DBSession = sessionmaker(bind=self.engine)
         self.patches = [
-            mock.patch.object(housing_payment, 'PAY_CARD', '5100947333267789'),
+            mock.patch.object(housing_payment, 'PAY_CARD', '4111111111111111'),
             mock.patch.object(housing_payment, 'PAY_CARD_HOLDER', 'Тарасюк'),
             mock.patch.object(housing_payment, 'ADMIN_ID', ADMIN),
             mock.patch.object(housing_payment, 'eur_uah_rate', return_value=48.3),
@@ -106,7 +106,7 @@ class HousingPaymentTest(unittest.TestCase):
         update = _callback("housing:pay:m:2")
         housing_payment.handle_callback(update, self.context)
         text = update.callback_query.edit_message_text.call_args.args[0]
-        self.assertIn("<code>5100 9473 3326 7789</code>", text)
+        self.assertIn("<code>4111 1111 1111 1111</code>", text)
         self.assertIn("Тарасюк", text)
         self.assertIn("490", text)  # 2 × 5 € × 48.3 = 483 -> 490
         self.assertEqual(self._payments(), [(2, 490, "awaiting_receipt")])
