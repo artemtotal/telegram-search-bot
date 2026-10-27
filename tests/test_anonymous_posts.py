@@ -80,8 +80,29 @@ class AnonymousPostValidationTests(unittest.TestCase):
         flattened = [button["text"] for row in keyboard for button in row]
 
         self.assertIn(anonymous_posts.BTN_HOME, flattened)
-        self.assertIn(anonymous_posts.i18n.t("anon.btn.menu"), flattened)
+        self.assertIn(anonymous_posts.i18n.t("anon.kb.menu"), flattened)
         self.assertIn(anonymous_posts.BTN_EQUEUE, flattened)
+
+    def test_bottom_menu_mirrors_the_top_one_two_per_row(self):
+        with mock.patch.object(anonymous_posts.econsul_monitor, "is_allowed", return_value=True), \
+             mock.patch.object(anonymous_posts.support, "enabled", return_value=True):
+            keyboard = anonymous_posts.reply_menu_keyboard(user_id=123).to_dict()["keyboard"]
+        self.assertTrue(all(len(row) <= 2 for row in keyboard))
+        flattened = [button["text"] for row in keyboard for button in row]
+        for name in ("home", "menu", "equeue", "econsul", "housing", "support", "feedback", "lang"):
+            self.assertIn(anonymous_posts.i18n.t(f"anon.kb.{name}"), flattened)
+        self.assertEqual(len(keyboard), 4)
+
+    def test_old_long_bottom_labels_still_work(self):
+        message = SimpleNamespace(text="🏠 Моніторинг житла", chat=SimpleNamespace(type="private"))
+        update = SimpleNamespace(
+            message=message, effective_message=message, callback_query=None,
+            effective_user=SimpleNamespace(id=999),
+        )
+        context = SimpleNamespace(user_data={})
+        with mock.patch("user_handlers.anonymous_posts.housing_monitor.show_menu") as show_menu:
+            anonymous_posts.handle_private_text(update, context)
+        show_menu.assert_called_once_with(update, context)
 
     def test_housing_button_is_shown_for_allowed_user(self):
         with mock.patch("user_handlers.anonymous_posts.housing_monitor.is_allowed", return_value=True):
@@ -364,7 +385,7 @@ class AnonSubmenuTests(unittest.TestCase):
         ]
         texts = [b["text"] for b in labels]
 
-        self.assertIn(anonymous_posts.i18n.t("anon.btn.menu"), texts)
+        self.assertIn(anonymous_posts.i18n.t("anon.kb.menu"), texts)
         self.assertNotIn("📋 Мої публікації", texts)
 
     def test_tapping_the_reply_keyboard_button_opens_the_submenu(self):

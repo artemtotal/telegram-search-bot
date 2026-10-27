@@ -38,8 +38,8 @@ CAPTCHA_LOCK_MINUTES = 15
 TOPICS_PER_PAGE = 8
 BTN_HOME = "🏠 Меню"
 BTN_EQUEUE = "🛂 ДП Документ"
-BTN_HOUSING = "🏠 Моніторинг житла"
-BTN_FEEDBACK = "💬 Зворотній звʼязок"
+BTN_HOUSING = "🏘 Житло"
+BTN_FEEDBACK = "💬 Написати нам"
 FEEDBACK_MIN_LENGTH = 5
 FEEDBACK_MAX_LENGTH = 2000
 
@@ -95,18 +95,31 @@ def _lang_picker_keyboard() -> InlineKeyboardMarkup:
 
 
 def reply_menu_keyboard(user_id=None) -> ReplyKeyboardMarkup:
+    """Нижнє меню - ті самі розділи, що й верхнє (_home_keyboard), по два в
+    ряд і з короткими підписами (27.10.2026): раніше внизу бракувало
+    «Підтримати» й «Мова», і воно займало пів екрана."""
     lang = i18n.get_lang(user_id) if user_id else "uk"
-    rows = [[i18n.t("anon.btn.home", lang), i18n.t("anon.btn.menu", lang)]]
+    names = ["home", "menu"]
     if equeue_monitor.is_allowed(user_id):
-        rows.append([i18n.t("anon.btn.equeue", lang)])
+        names.append("equeue")
     if econsul_monitor.is_allowed(user_id):
-        rows.append([i18n.t("anon.btn.econsul", lang)])
+        names.append("econsul")
     # Shown to everyone, allowed or not: housing_monitor.show_menu() renders
     # its own locked screen (pricing + "request access") for people without
     # access yet, same as the top inline menu already does.
-    rows.append([i18n.t("anon.btn.housing", lang)])
-    rows.append([i18n.t("anon.btn.feedback", lang)])
+    names.append("housing")
+    if support.enabled():
+        names.append("support")
+    names += ["feedback", "lang"]
+    labels = [i18n.t(f"anon.kb.{name}", lang) for name in names]
+    rows = [labels[i:i + 2] for i in range(0, len(labels), 2)]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
+
+
+def _is_button(text: str, name: str, lang: str) -> bool:
+    """Нижня кнопка - і нова коротка, і стара довга підпис (anon.btn.*): у
+    людей ще висять клавіатури, надіслані до 27.10.2026."""
+    return text in (i18n.t(f"anon.kb.{name}", lang), i18n.t(f"anon.btn.{name}", lang))
 
 
 def _cancel_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
@@ -423,24 +436,32 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id if update.effective_user else None
     lang = i18n.get_lang(user_id) if user_id else "uk"
     if state.get("step") != "text":
-        if text == i18n.t("anon.btn.home", lang):
+        if _is_button(text, "home", lang):
             show_home(update, context)
             return
-        if text == i18n.t("anon.btn.feedback", lang):
+        if _is_button(text, "feedback", lang):
             start_feedback(update, context)
             return
-        if text == i18n.t("anon.btn.equeue", lang) and equeue_monitor.is_allowed(user_id):
+        if _is_button(text, "equeue", lang) and equeue_monitor.is_allowed(user_id):
             equeue_monitor.show_menu(update, context)
             return
-        if text == i18n.t("anon.btn.econsul", lang) and econsul_monitor.is_allowed(user_id):
+        if _is_button(text, "econsul", lang) and econsul_monitor.is_allowed(user_id):
             econsul_monitor.show_menu(update, context)
             return
-        if text == i18n.t("anon.btn.housing", lang):
+        if _is_button(text, "housing", lang):
             housing_monitor.show_menu(update, context)
+            return
+        if text == i18n.t("anon.kb.support", lang):
+            support.show_amounts(update, context)
+            return
+        if text == i18n.t("anon.kb.lang", lang):
+            update.message.reply_text(
+                "🌐 Оберіть мову / Выберите язык / Sprache wählen", reply_markup=_lang_picker_keyboard(),
+            )
             return
         if housing_monitor.handle_private_text(update, context):
             return
-        if text == i18n.t("anon.btn.menu", lang):
+        if _is_button(text, "menu", lang):
             show_anon_submenu(update, context)
             return
         if housing_payment.remind_receipt(update, context):

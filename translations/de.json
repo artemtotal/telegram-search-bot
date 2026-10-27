@@ -567,5 +567,13 @@
   "support.booked": "🎉 <b>Glückwunsch zum Termin!</b>\n\nDie Benachrichtigungen „{service}“ sind ausgeschaltet, damit sie nicht mehr stören. Sie können jederzeit wieder abonnieren.\n\nWenn der Bot geholfen hat, können Sie das Projekt mit einem Kaffee unterstützen ☕",
   "support.booked_plain": "🎉 <b>Glückwunsch zum Termin!</b>\n\nDie Benachrichtigungen „{service}“ sind ausgeschaltet, damit sie nicht mehr stören. Sie können jederzeit wieder abonnieren.",
   "econsul.booked.only_these": "🔕 Nur abbestellen: {names}",
-  "econsul.booked.all": "🔕 Alle Dienste abbestellen"
+  "econsul.booked.all": "🔕 Alle Dienste abbestellen",
+  "anon.kb.home": "🏠 Menü",
+  "anon.kb.menu": "✍️ Anonyme Fragen",
+  "anon.kb.equeue": "🛂 DP Dokument",
+  "anon.kb.econsul": "🇺🇦 Botschaft",
+  "anon.kb.housing": "🏘 Wohnungen",
+  "anon.kb.support": "☕ Unterstützen",
+  "anon.kb.feedback": "💬 Schreiben Sie uns",
+  "anon.kb.lang": "🌐 Sprache"
 }
