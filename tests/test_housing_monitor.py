@@ -71,11 +71,15 @@ class HousingAdminFlowTests(unittest.TestCase):
     def test_allowed_user_menu_has_self_service_filter_controls(self):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
              mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
-            labels = [button.text for row in housing_monitor._menu_keyboard(544675510).inline_keyboard for button in row]
+            keyboard = housing_monitor._menu_keyboard(544675510).inline_keyboard
+        labels = [button.text for row in keyboard for button in row]
+        callbacks = [button.callback_data for row in keyboard for button in row]
 
-        self.assertIn('➕ Додати фільтр', labels)
-        self.assertIn('⚙️ Мої фільтри', labels)
+        self.assertIn('housing:self_add', callbacks)
+        self.assertIn('housing:self_manage', callbacks)
         self.assertNotIn('⚙️ Адмінка житла', labels)
+        # Меню житла - по дві кнопки в ряд (27.10.2026), інакше не вміщалось.
+        self.assertLessEqual(len(keyboard), 7)
 
     def test_database_allowed_user_gets_self_service_controls_without_env_access(self):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
@@ -83,14 +87,14 @@ class HousingAdminFlowTests(unittest.TestCase):
              mock.patch.object(housing_monitor.housing_access_store, 'is_allowed', return_value=True), \
              mock.patch.object(housing_monitor, 'user_filters', return_value=[]):
             self.assertTrue(housing_monitor.is_allowed(777))
-            labels = [
-                button.text
+            callbacks = [
+                button.callback_data
                 for row in housing_monitor._menu_keyboard(777).inline_keyboard
                 for button in row
             ]
 
-        self.assertIn('➕ Додати фільтр', labels)
-        self.assertIn('⚙️ Мої фільтри', labels)
+        self.assertIn('housing:self_add', callbacks)
+        self.assertIn('housing:self_manage', callbacks)
 
     def test_admin_can_add_housing_access_user(self):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
@@ -3266,13 +3270,13 @@ class HousingAccessRequestTests(unittest.TestCase):
     def test_allowed_menu_offers_the_faq(self):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
              mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
-            labels = [
-                button.text
+            callbacks = [
+                button.callback_data
                 for row in housing_monitor._menu_keyboard(544675510).inline_keyboard
                 for button in row
             ]
 
-        self.assertIn('❓ Довідка / Часті питання', labels)
+        self.assertIn('housing:faq', callbacks)
 
     def test_faq_screen_mentions_the_price_and_returns_to_the_menu(self):
         query = SimpleNamespace(data='housing:faq', answer=mock.Mock(), edit_message_text=mock.Mock())
@@ -3823,15 +3827,15 @@ class HousingCurrentMatchesTests(unittest.TestCase):
     def test_menu_offers_the_current_matches_button(self):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
              mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
-            labels = [b.text for row in housing_monitor._menu_keyboard(544675510).inline_keyboard for b in row]
+            callbacks = [b.callback_data for row in housing_monitor._menu_keyboard(544675510).inline_keyboard for b in row]
 
-        self.assertIn(housing_monitor.BTN_CURRENT_MATCHES, labels)
+        self.assertIn('housing:current_matches', callbacks)
 
     def test_admin_menu_also_offers_the_current_matches_button(self):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
-            labels = [b.text for row in housing_monitor._menu_keyboard(312029534).inline_keyboard for b in row]
+            callbacks = [b.callback_data for row in housing_monitor._menu_keyboard(312029534).inline_keyboard for b in row]
 
-        self.assertIn(housing_monitor.BTN_CURRENT_MATCHES, labels)
+        self.assertIn('housing:current_matches', callbacks)
 
     def test_current_matches_for_a_local_source_filters_active_listings(self):
         filt = {'user_id': 544675510, 'min_rooms': 2}
@@ -4041,12 +4045,14 @@ class HousingMonitoringStatusScreenTests(unittest.TestCase):
         housing_monitor.user_settings_store.DBSession = self.original_session
         self.engine.dispose()
 
-    def test_main_menu_button_points_at_the_status_screen(self):
-        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
-             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
-            keyboard = housing_monitor._menu_keyboard(544675510)
+    def test_status_screen_is_reached_from_the_faq(self):
+        """З 27.10.2026 «Статус моніторингу» - у «Довідці», не в меню."""
+        query = SimpleNamespace(data='housing:faq', answer=mock.Mock(), edit_message_text=mock.Mock())
+        update = SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=544675510))
+        housing_monitor.handle_callback(update, SimpleNamespace(user_data={}))
 
-        button = next(b for row in keyboard.inline_keyboard for b in row if b.callback_data == 'housing:status')
+        markup = query.edit_message_text.call_args.kwargs['reply_markup']
+        button = next(b for row in markup.inline_keyboard for b in row if b.callback_data == 'housing:status')
         self.assertEqual(button.text, housing_monitor.i18n.t('housing.btn.monitoring_status'))
 
     def test_main_menu_text_no_longer_contains_the_status_lines(self):
@@ -4099,9 +4105,9 @@ class HousingCoopSubscriptionTests(unittest.TestCase):
 
     def test_admin_menu_also_offers_the_coops_button(self):
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
-            labels = [b.text for row in housing_monitor._menu_keyboard(312029534).inline_keyboard for b in row]
+            callbacks = [b.callback_data for row in housing_monitor._menu_keyboard(312029534).inline_keyboard for b in row]
 
-        self.assertIn(housing_monitor.BTN_COOPS, labels)
+        self.assertIn('housing:coops', callbacks)
 
     def test_all_thirteen_sources_are_listed(self):
         """Десять порталів із фільтрами плюс три кооперативи під сторожем."""
@@ -4220,9 +4226,9 @@ class HousingLanguageSwitcherTests(unittest.TestCase):
         self.engine.dispose()
 
     def test_menu_offers_a_language_button(self):
-        labels = [b.text for row in housing_monitor._menu_keyboard(999999).inline_keyboard for b in row]
+        callbacks = [b.callback_data for row in housing_monitor._menu_keyboard(999999).inline_keyboard for b in row]
 
-        self.assertIn("🌐 Мова / Язык / Sprache", labels)
+        self.assertIn('housing:lang:menu', callbacks)
 
     def test_opening_the_picker_shows_all_three_languages(self):
         update = self._query_update('housing:lang:menu')
@@ -4298,8 +4304,8 @@ class HousingTranslationSmokeTests(unittest.TestCase):
 
         self.assertIn('Мониторинг жилья', ru_text)
         self.assertIn('Wohnungs-Monitoring', de_text)
-        self.assertIn('➕ Добавить фильтр', ru_labels)
-        self.assertIn('➕ Filter hinzufügen', de_labels)
+        self.assertIn('⚙️ Мои фильтры', ru_labels)
+        self.assertIn('⚙️ Meine Filter', de_labels)
 
     def test_locked_screen_in_russian_and_german(self):
         ru_text = housing_monitor.i18n.t('housing.locked.text', 'ru')

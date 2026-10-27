@@ -630,5 +630,15 @@
   "housing.card.not_found": "Цей фільтр уже видалено.",
   "housing.card.no_rooms": "⚠️ Кімнати без межі — приходитимуть і однокімнатні. Натисніть «🛏 від», щоб обмежити.",
   "housing.card.btn.no_districts": "☐ Зняти всі",
-  "housing.card.pick_a_district": "Позначте хоча б один район або натисніть «✅ Усі райони»."
+  "housing.card.pick_a_district": "Позначте хоча б один район або натисніть «✅ Усі райони».",
+  "housing.menu.btn.filters": "⚙️ Мої фільтри",
+  "housing.menu.btn.add": "➕ Додати",
+  "housing.menu.btn.matches": "🔍 Підходять зараз",
+  "housing.menu.btn.letters": "✍️ Листи",
+  "housing.menu.btn.notify": "🔔 Сповіщення",
+  "housing.menu.btn.stats": "📊 Статистика",
+  "housing.menu.btn.coops": "🏘 Кооперативи",
+  "housing.menu.btn.status": "📡 Статус",
+  "housing.menu.btn.faq": "❓ Довідка",
+  "housing.menu.btn.lang": "🌐 Мова"
 }

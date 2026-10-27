@@ -630,5 +630,15 @@
   "housing.card.not_found": "Этот фильтр уже удалён.",
   "housing.card.no_rooms": "⚠️ Комнаты без ограничения — будут приходить и однокомнатные. Нажмите «🛏 от», чтобы ограничить.",
   "housing.card.btn.no_districts": "☐ Снять все",
-  "housing.card.pick_a_district": "Отметьте хотя бы один район или нажмите «✅ Все районы»."
+  "housing.card.pick_a_district": "Отметьте хотя бы один район или нажмите «✅ Все районы».",
+  "housing.menu.btn.filters": "⚙️ Мои фильтры",
+  "housing.menu.btn.add": "➕ Добавить",
+  "housing.menu.btn.matches": "🔍 Подходят сейчас",
+  "housing.menu.btn.letters": "✍️ Письма",
+  "housing.menu.btn.notify": "🔔 Уведомления",
+  "housing.menu.btn.stats": "📊 Статистика",
+  "housing.menu.btn.coops": "🏘 Кооперативы",
+  "housing.menu.btn.status": "📡 Статус",
+  "housing.menu.btn.faq": "❓ Справка",
+  "housing.menu.btn.lang": "🌐 Язык"
 }

@@ -1710,32 +1710,30 @@ def private_home_rows(user_id: Optional[int]) -> Iterable[list]:
 
 
 def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(i18n.t("housing.btn.monitoring_status", lang), callback_data="housing:status")],
-        [InlineKeyboardButton(i18n.t("housing.btn.stats", lang), callback_data="housing:stats")],
-        [InlineKeyboardButton(i18n.t("housing.btn.faq", lang), callback_data="housing:faq")],
-    ]
-    if user_id and int(user_id) == ADMIN_ID:
-        rows.insert(0, [InlineKeyboardButton(i18n.t("housing.btn.admin", lang), callback_data="housing:admin")])
-        rows.insert(1, [InlineKeyboardButton(i18n.t("housing.btn.current_matches", lang), callback_data="housing:current_matches")])
-        rows.insert(2, [InlineKeyboardButton(i18n.t("housing.btn.coops", lang), callback_data="housing:coops")])
-        rows.insert(3, [InlineKeyboardButton(i18n.t("housing.btn.notify_settings", lang), callback_data="housing:notify_settings")])
-        # Адмін теж шукає собі житло: is_allowed() і так True для ADMIN_ID
-        # (housing_monitor.py:is_allowed), і start_self_add_flow/show_self_manage
-        # не мають окремого блоку на ADMIN_ID - бракувало лише кнопок у меню.
-        rows.insert(4, [InlineKeyboardButton(i18n.t("housing.btn.self_add", lang), callback_data="housing:self_add")])
-        rows.insert(5, [InlineKeyboardButton(i18n.t("housing.btn.self_manage", lang), callback_data="housing:self_manage")])
-    elif is_allowed(user_id):
-        # Кооперативи звідси прибрані - вони живуть у "Мої фільтри"
-        # (_self_manage_keyboard), туди й підписки на фільтри одразу видно.
-        rows.insert(0, [InlineKeyboardButton(i18n.t("housing.btn.self_add", lang), callback_data="housing:self_add")])
-        rows.insert(1, [InlineKeyboardButton(i18n.t("housing.btn.self_manage", lang), callback_data="housing:self_manage")])
-        rows.insert(2, [InlineKeyboardButton(i18n.t("housing.btn.current_matches", lang), callback_data="housing:current_matches")])
-        rows.insert(3, [InlineKeyboardButton(i18n.t("housing.btn.notify_settings", lang), callback_data="housing:notify_settings")])
-        rows.insert(4, [InlineKeyboardButton(i18n.t("housing.btn.letters", lang), callback_data="housing:letter:menu")])
-        if not housing_tier.is_premium(user_id):
-            rows.insert(0, [InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request")])
-    rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="housing:lang:menu")])
+    """Меню житла - по дві кнопки в ряд з короткими підписами (27.10.2026):
+    було 10-11 кнопок на всю ширину, і меню не вміщалось на екран.
+    «Статус моніторингу» переїхав у «Довідку» - туди він потрібен рідко."""
+
+    def btn(key: str, callback: str) -> InlineKeyboardButton:
+        return InlineKeyboardButton(i18n.t(f"housing.menu.btn.{key}", lang), callback_data=callback)
+
+    rows = []
+    is_admin = bool(user_id) and int(user_id) == ADMIN_ID
+    if is_admin:
+        rows.append([InlineKeyboardButton(i18n.t("housing.btn.admin", lang), callback_data="housing:admin")])
+    if is_admin or is_allowed(user_id):
+        if not is_admin and not housing_tier.is_premium(user_id):
+            rows.append([InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request")])
+        rows += [
+            [btn("filters", "housing:self_manage"), btn("add", "housing:self_add")],
+            [btn("matches", "housing:current_matches"), btn("letters", "housing:letter:menu")],
+            [btn("notify", "housing:notify_settings"), btn("stats", "housing:stats")],
+        ]
+        if is_admin:
+            rows.append([btn("coops", "housing:coops"), btn("status", "housing:status")])
+    else:
+        rows.append([btn("stats", "housing:stats")])
+    rows.append([btn("faq", "housing:faq"), btn("lang", "housing:lang:menu")])
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.back_home", lang), callback_data="anon:home")])
     return InlineKeyboardMarkup(rows)
 
@@ -1832,7 +1830,10 @@ def _faq_text(lang: str = "uk") -> str:
 
 def show_faq(update: Update, context: CallbackContext, edit: bool = False) -> None:
     lang = i18n.get_lang(update.effective_user.id) if update.effective_user else "uk"
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")]])
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(i18n.t("housing.btn.monitoring_status", lang), callback_data="housing:status")],
+        [InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")],
+    ])
     text = _faq_text(lang)
     if edit and update.callback_query:
         try:

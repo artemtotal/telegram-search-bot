@@ -630,5 +630,15 @@
   "housing.card.not_found": "Dieser Filter wurde bereits gelöscht.",
   "housing.card.no_rooms": "⚠️ Zimmer ohne Grenze — es kommen auch 1-Zimmer-Wohnungen. Tippen Sie auf „🛏 ab“, um zu begrenzen.",
   "housing.card.btn.no_districts": "☐ Alle abwählen",
-  "housing.card.pick_a_district": "Markieren Sie mindestens einen Stadtteil oder tippen Sie auf „✅ Alle Stadtteile“."
+  "housing.card.pick_a_district": "Markieren Sie mindestens einen Stadtteil oder tippen Sie auf „✅ Alle Stadtteile“.",
+  "housing.menu.btn.filters": "⚙️ Meine Filter",
+  "housing.menu.btn.add": "➕ Hinzufügen",
+  "housing.menu.btn.matches": "🔍 Passt jetzt",
+  "housing.menu.btn.letters": "✍️ Anschreiben",
+  "housing.menu.btn.notify": "🔔 Benachrichtigungen",
+  "housing.menu.btn.stats": "📊 Statistik",
+  "housing.menu.btn.coops": "🏘 Genossenschaften",
+  "housing.menu.btn.status": "📡 Status",
+  "housing.menu.btn.faq": "❓ Hilfe",
+  "housing.menu.btn.lang": "🌐 Sprache"
 }
