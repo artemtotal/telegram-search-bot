@@ -159,3 +159,30 @@ def local_created_at(user_id: int) -> Dict[Tuple[str, int], datetime]:
             if created_at is not None:
                 result[(source, int(filter_id))] = created_at
     return result
+
+
+def get_any(search_id: int) -> Optional[Dict]:
+    """Пошук за номером без перевірки власника - для адміна, що відкрив
+    картку чужого фільтра."""
+    session = DBSession()
+    try:
+        row = session.query(HousingSearch).filter(HousingSearch.search_id == int(search_id)).first()
+        return _to_dict(row) if row else None
+    finally:
+        session.close()
+
+
+def update(search_id: int, criteria: Optional[Dict] = None, coops: Optional[Iterable[str]] = None) -> None:
+    """Картка фільтра (housing_card) змінює умови на місці, не пересоздаючи пошук."""
+    session = DBSession()
+    try:
+        row = session.query(HousingSearch).filter(HousingSearch.search_id == int(search_id)).first()
+        if row is None:
+            return
+        if criteria is not None:
+            row.criteria = json.dumps(criteria, ensure_ascii=False)
+        if coops is not None:
+            row.coops = json.dumps(list(coops))
+        session.commit()
+    finally:
+        session.close()

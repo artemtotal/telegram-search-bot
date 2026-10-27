@@ -1574,7 +1574,7 @@ def manageable_filters(user_id: Optional[int]) -> list:
     scout = immoscout_store.list_filters(user_id=int(user_id))
     for item in scout:
         item.setdefault("source", "immoscout")
-    return immowelt + propot + semm + schoba + regio + kanz + loc + km + von
+    return immowelt + propot + semm + schoba + regio + kanz + loc + km + von + scout
 
 
 # Один прохід майстра заводить по запису в кожному обраному джерелі. Якщо
@@ -3359,14 +3359,9 @@ def start_self_add_flow(update: Update, context: CallbackContext, edit: bool = F
     user = update.effective_user
     if not user or not is_allowed(user.id):
         return
-    state = _new_search_state(int(user.id))
-    context.user_data["housing_admin"] = state
-    lang = i18n.get_lang(user.id)
-    text, keyboard = _sources_screen(state, lang)
-    if edit and update.callback_query:
-        update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
-    else:
-        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+    # З 27.10.2026 - картка фільтра (housing_card) замість покрокового майстра.
+    from user_handlers import housing_card
+    housing_card.start_new(update, context, edit=edit)
 
 
 def _item_source(item: Dict[str, object]) -> str:
@@ -3640,6 +3635,11 @@ def show_self_manage(update: Update, context: CallbackContext, edit: bool = Fals
         return
     lang = i18n.get_lang(user.id)
     searches = user_searches(int(user.id))
+    if len(searches) == 1:
+        # Один фільтр - одразу його картка, як у XATA, без проміжного списку.
+        from user_handlers import housing_card
+        housing_card.open_card(update, context, searches[0]["search_id"], edit=edit)
+        return
     _edit_or_reply(update, _self_manage_text(searches, lang), _self_manage_keyboard(user.id, lang, searches), edit)
 
 
@@ -3758,14 +3758,9 @@ def _search_action(update: Update, context: CallbackContext) -> None:
         return
 
     if action == "edit":
+        from user_handlers import housing_card
         query.answer()
-        state = _new_search_state(owner_id, replace_search_id=search_id)
-        context.user_data["housing_admin"] = state
-        text, keyboard = _sources_screen(state, lang)
-        query.edit_message_text(
-            i18n.t("housing.search.edit_intro", lang, n=number) + "\n\n" + text,
-            parse_mode="HTML", reply_markup=keyboard,
-        )
+        housing_card.open_card(update, context, search_id)
     elif action == "del":
         query.answer()
         card = _search_card(number, search["criteria"], _search_sources(search), search["coops"], lang)
@@ -5282,6 +5277,9 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
         return False
     text = update.message.text.strip()
     if housing_letter.handle_text(update, context):
+        return True
+    from user_handlers import housing_card
+    if housing_card.handle_text(update, context):
         return True
     if user_id != ADMIN_ID:
         lang = i18n.get_lang(user_id)

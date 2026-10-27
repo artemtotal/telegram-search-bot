@@ -21,6 +21,7 @@ from user_handlers import (
     equeue_receiver,
     econsul_monitor,
     housing_monitor,
+    housing_card,
     housing_digest,
     housing_payment,
     housing_receiver,
@@ -228,6 +229,7 @@ dispatcher.add_handler(support.command_handler)
 dispatcher.add_handler(support.callback_handler)
 dispatcher.add_handler(housing_monitor.command_handler)
 dispatcher.add_handler(housing_monitor.callback_handler)
+dispatcher.add_handler(housing_card.callback_handler)
 dispatcher.add_handler(housing_monitor.add_handler)
 dispatcher.add_handler(housing_monitor.list_handler)
 dispatcher.add_handler(housing_monitor.enable_handler)
