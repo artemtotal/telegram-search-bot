@@ -142,6 +142,8 @@
   "housing.pay.instructions": "💳 <b>Abo für {months} Mon. — {uah} UAH</b> ({eur} €)\n\nÜberweisen Sie <b>{uah} UAH</b> auf die Karte:\n<code>{card}</code>{holder}\n\n(auf die Nummer tippen, um sie zu kopieren)\n\nSenden Sie danach einen Screenshot oder Beleg (Foto oder PDF) in diesen Chat. Der Administrator prüft die Zahlung und schaltet das Abo frei — Sie bekommen hier eine Nachricht.",
   "housing.pay.cancelled": "Abgebrochen",
   "housing.pay.receipt_received": "✅ Danke! Beleg erhalten. Der Administrator prüft die Zahlung und schaltet das Abo frei — die Nachricht kommt hierher.",
+  "housing.pay.receipt_received_provisional": "✅ Danke! Beleg erhalten.\n\n⚡ Während der Administrator die Zahlung prüft, sind die Sofort-Benachrichtigungen schon für 1 Tag aktiv — Sie können sie gleich nutzen. Nach der Bestätigung schalten wir das ganze bezahlte Abo frei, die Nachricht kommt hierher.",
+  "housing.pay.provisional_ended": "⏳ Der Tag mit Sofort-Benachrichtigungen ist vorbei, die Zahlung wird noch geprüft. Bis dahin kommen Wohnungen wieder mit Verzögerung. Sobald der Administrator die Zahlung bestätigt, wird das Abo aktiviert — die Nachricht kommt hierher.",
   "housing.pay.receipt_reminder": "Um die Zahlung zu bestätigen, senden Sie bitte einen Screenshot oder Beleg (Foto oder PDF) in diesen Chat.",
   "housing.pay.rejected": "❌ Die Zahlung konnte nicht bestätigt werden. Prüfen Sie Betrag und Kartennummer oder schreiben Sie dem Administrator. Sie können es erneut versuchen:",
   "housing.access.until": " bis {date}",

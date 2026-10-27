@@ -5,6 +5,11 @@
 надсилає сюди скриншот або квитанцію; адміну приходить копія з кнопками
 «✅ Дозволити» / «✖ Відхилити», і підписка вмикається одним натиском.
 
+Щоб людина не чекала на перевірку, одразу після квитанції миттєві
+сповіщення вмикаються на PROVISIONAL (1 день). Після «Дозволити» оплачені
+місяці рахуються від моменту підтвердження; після «Відхилити» або коли день
+минув без рішення - знову безкоштовний рівень.
+
 Карта задається HOUSING_PAY_CARD / HOUSING_PAY_CARD_HOLDER у .env. Без карти
 кнопка підписки працює по-старому: запит адміну, оплата домовляється вручну.
 """
@@ -21,7 +26,7 @@ from telegram.ext import CallbackContext, Filters, MessageHandler
 
 import i18n
 from database import DBSession, HousingAccessUser, HousingPayment
-from user_jobs import housing_tier
+from user_jobs import housing_access_store, housing_tier
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +46,11 @@ RECEIPT_WINDOW = timedelta(days=3)
 # Текст замість квитанції: нагадуємо, що потрібне фото, лише одразу після
 # показу реквізитів, щоб не перехоплювати звичайні повідомлення пізніше.
 TEXT_REMINDER_WINDOW = timedelta(hours=2)
+# Миттєві сповіщення на час перевірки квитанції (рішення Артёма 27.10.2026:
+# «одного дня не жалко»). Не частіше ніж раз на PROVISIONAL_COOLDOWN, щоб
+# будь-яке фото не перетворювалось на безкоштовні дні.
+PROVISIONAL = timedelta(days=1)
+PROVISIONAL_COOLDOWN = timedelta(days=30)
 
 def utc_now() -> datetime:
     return datetime.utcnow()
@@ -158,6 +168,97 @@ def _set_status(payment_id: int, status: str, **fields) -> bool:
         session.close()
 
 
+def _provisional_running(payment: HousingPayment) -> bool:
+    """Чи досі діє саме тимчасовий день цієї оплати (а не підписка, яку
+    адмін тим часом видав інакше)."""
+    if not payment.provisional_until:
+        return False
+    session = DBSession()
+    try:
+        row = session.query(HousingAccessUser).get(int(payment.user_id))
+        if row is None or not row.active or not row.expires_at:
+            return False
+        return abs(row.expires_at - payment.provisional_until) < timedelta(minutes=1)
+    finally:
+        session.close()
+
+
+def _grant_provisional(payment: HousingPayment) -> Optional[datetime]:
+    """Вмикає миттєві сповіщення на PROVISIONAL, якщо людина ще не платна й
+    не отримувала такого дня останні PROVISIONAL_COOLDOWN."""
+    user_id = int(payment.user_id)
+    if housing_tier.is_premium(user_id):
+        return None
+    session = DBSession()
+    try:
+        recent = (
+            session.query(HousingPayment.id)
+            .filter(HousingPayment.user_id == user_id)
+            .filter(HousingPayment.provisional_until.isnot(None))
+            .filter(HousingPayment.provisional_until >= utc_now() - PROVISIONAL_COOLDOWN)
+            .first()
+        )
+    finally:
+        session.close()
+    if recent is not None:
+        return None
+    until = utc_now() + PROVISIONAL
+    housing_access_store.grant_access(user_id, payment.display_name, expires_at=until)
+    # Інакше щоденна перевірка одразу надішле «за 3 дні закінчується підписка».
+    housing_access_store.mark_notice_sent(user_id)
+    _set_status(payment.id, payment.status, provisional_until=until)
+    payment.provisional_until = until
+    return until
+
+
+def expire_provisional(bot) -> int:
+    """Тимчасовий день минув, а адмін ще не вирішив: тихо повертаємо
+    безкоштовний рівень (без загального «підписка закінчилась») і нагадуємо
+    адміну. Викликається кожні 10 хв і перед щоденною перевіркою підписок."""
+    session = DBSession()
+    try:
+        due = (
+            session.query(HousingPayment)
+            .filter(HousingPayment.status == "sent")
+            .filter(HousingPayment.provisional_until.isnot(None))
+            .filter(HousingPayment.provisional_until <= utc_now())
+            .all()
+        )
+        for row in due:
+            session.expunge(row)
+    finally:
+        session.close()
+    expired = 0
+    for payment in due:
+        if not _provisional_running(payment):
+            continue
+        housing_access_store.set_active(payment.user_id, False)
+        expired += 1
+        lang = i18n.get_lang(payment.user_id)
+        try:
+            bot.send_message(chat_id=payment.user_id, text=i18n.t("housing.pay.provisional_ended", lang))
+        except Exception:
+            logger.exception("Could not tell user %s the provisional day is over", payment.user_id)
+        if ADMIN_ID:
+            try:
+                bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=(
+                        f"⏳ Тимчасовий день для {html.escape(payment.display_name or str(payment.user_id))} "
+                        f"(<code>{int(payment.user_id)}</code>) минув, а оплату {payment.amount_uah} грн "
+                        f"за {payment.months} міс. ще не перевірено. Кнопки — під квитанцією вище."
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                logger.exception("Could not remind the admin about payment %s", payment.id)
+    return expired
+
+
+def provisional_expiry_job(context) -> None:
+    expire_provisional(context.bot)
+
+
 def cancel_open(user_id: int) -> None:
     session = DBSession()
     try:
@@ -259,7 +360,12 @@ def _admin_caption(payment: HousingPayment, user_id: int, note: str = "") -> str
         f"Сума: <b>{payment.amount_uah} грн</b> ({int(payment.amount_eur)} € за курсом {_format_rate(payment.eur_uah_rate)})",
     ]
     expiry = _current_expiry(user_id)
-    if expiry:
+    if payment.provisional_until:
+        lines.append(
+            f"⏳ До перевірки видано 1 день миттєвих сповіщень "
+            f"(до {payment.provisional_until.strftime('%d.%m %H:%M')} UTC)."
+        )
+    elif expiry:
         lines.append(f"Зараз підписка до {expiry.strftime('%d.%m.%Y')} — місяці додадуться після.")
     if note:
         lines += ["", f"Підпис: {html.escape(note[:300])}"]
@@ -287,6 +393,9 @@ def handle_receipt(update: Update, context: CallbackContext) -> None:
     if payment is None:
         return
     lang = i18n.get_lang(user.id)
+    provisional = None
+    if payment.status == "awaiting_receipt":
+        provisional = _grant_provisional(payment)
     try:
         context.bot.copy_message(
             chat_id=ADMIN_ID,
@@ -302,7 +411,10 @@ def handle_receipt(update: Update, context: CallbackContext) -> None:
         return
     if payment.status == "awaiting_receipt":
         _set_status(payment.id, "sent", receipt_at=utc_now())
-    message.reply_text(i18n.t("housing.pay.receipt_received", lang))
+    if provisional:
+        message.reply_text(i18n.t("housing.pay.receipt_received_provisional", lang))
+    else:
+        message.reply_text(i18n.t("housing.pay.receipt_received", lang))
 
 
 def remind_receipt(update: Update, context: CallbackContext) -> bool:
@@ -354,7 +466,11 @@ def _decide(update: Update, context: CallbackContext, approve: bool) -> None:
         query.answer(f"Цю оплату {verdict}.", show_alert=True)
         _edit_admin_message(query, f"{base}\n\n<b>{verdict}</b>")
         return
+    provisional_running = _provisional_running(payment)
     if approve:
+        if provisional_running:
+            # Оплачені місяці - від підтвердження, а не після тимчасового дня.
+            housing_access_store.set_active(target_id, False)
         expires_at = housing_monitor.grant_paid_months(target_id, payment.display_name, payment.months)
         if not _set_status(payment.id, "approved", decided_at=utc_now(), expires_at=expires_at):
             query.answer("Цю оплату вже оброблено.", show_alert=True)
@@ -366,6 +482,8 @@ def _decide(update: Update, context: CallbackContext, approve: bool) -> None:
     if not _set_status(payment.id, "rejected", decided_at=utc_now()):
         query.answer("Цю оплату вже оброблено.", show_alert=True)
         return
+    if provisional_running:
+        housing_access_store.set_active(target_id, False)
     query.answer("✖ Відхилено")
     _edit_admin_message(query, f"{base}\n\n<b>✖ Відхилено</b>")
     lang = i18n.get_lang(target_id)

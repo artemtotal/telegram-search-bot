@@ -3085,6 +3085,9 @@ def check_access_expiry(context) -> None:
     Either way the filters are kept (`_pause_access`), never deleted.
     """
     bot = context.bot
+    # The 1-day access given while a receipt is checked ends quietly with its
+    # own message, not as "your subscription ended" below.
+    housing_payment.expire_provisional(bot)
     for row in housing_access_store.list_expiring_soon(within_days=EXPIRY_WARNING_DAYS, trial=False):
         target_id = int(row["user_id"])
         name = str(row.get("display_name") or "")

@@ -158,8 +158,53 @@ class HousingPaymentTest(unittest.TestCase):
     def test_only_admin_can_approve(self):
         payment_id = self._pay_and_send_receipt()
         housing_payment.handle_callback(_callback(f"housing:pay:ok:{payment_id}", user_id=USER), self.context)
-        self.assertFalse(housing_tier.is_premium(USER))
+        row = self._session().query(HousingAccessUser).get(USER)
+        self.assertLess(row.expires_at, datetime.utcnow() + timedelta(days=2))  # лише тимчасовий день
         self.assertEqual(self._payments()[-1][2], "sent")
+
+    def test_receipt_gives_one_day_while_admin_checks(self):
+        before = datetime.utcnow()
+        message = _photo()
+        housing_payment.handle_callback(_callback("housing:pay:m:1"), self.context)
+        housing_payment.handle_receipt(message, self.context)
+        self.assertTrue(housing_tier.is_premium(USER))
+        row = self._session().query(HousingAccessUser).get(USER)
+        self.assertGreater(row.expires_at, before + timedelta(hours=23))
+        self.assertLess(row.expires_at, before + timedelta(hours=25))
+        self.assertTrue(row.expiry_notice_sent)  # без «за 3 дні закінчується»
+        self.assertIn("1 день", message.effective_message.reply_text.call_args.args[0])
+        self.assertIn("1 день", self.context.bot.copy_message.call_args.kwargs["caption"])
+
+    def test_one_day_is_given_at_most_once_a_month(self):
+        payment_id = self._pay_and_send_receipt(months=1)
+        housing_payment.handle_callback(_callback(f"housing:pay:no:{payment_id}", user_id=ADMIN), self.context)
+        self.assertFalse(housing_tier.is_premium(USER))
+        self._pay_and_send_receipt(months=1)
+        self.assertFalse(housing_tier.is_premium(USER))
+
+    def test_paid_months_count_from_approval_not_after_the_day(self):
+        payment_id = self._pay_and_send_receipt(months=1)
+        before = datetime.utcnow()
+        housing_payment.handle_callback(_callback(f"housing:pay:ok:{payment_id}", user_id=ADMIN), self.context)
+        row = self._session().query(HousingAccessUser).get(USER)
+        self.assertLess(row.expires_at, before + timedelta(days=31, hours=1))
+        self.assertGreater(row.expires_at, before + timedelta(days=27))
+
+    def test_unchecked_day_runs_out_quietly_and_reminds_admin(self):
+        self._pay_and_send_receipt(months=2)
+        self.context.bot.send_message.reset_mock()
+        self.assertEqual(housing_payment.expire_provisional(self.context.bot), 0)  # ще не минув
+        later = datetime.utcnow() + timedelta(days=1, minutes=5)
+        with mock.patch.object(housing_payment, 'utc_now', return_value=later):
+            self.assertEqual(housing_payment.expire_provisional(self.context.bot), 1)
+            self.assertEqual(housing_payment.expire_provisional(self.context.bot), 0)
+        self.assertFalse(housing_tier.is_premium(USER))
+        recipients = [c.kwargs["chat_id"] for c in self.context.bot.send_message.call_args_list]
+        self.assertEqual(recipients, [USER, ADMIN])
+        # Адмін усе ще може підтвердити - підписка вмикається.
+        payment_id = self._session().query(HousingPayment).order_by(HousingPayment.id.desc()).first().id
+        housing_payment.handle_callback(_callback(f"housing:pay:ok:{payment_id}", user_id=ADMIN), self.context)
+        self.assertTrue(housing_tier.is_premium(USER))
 
     def test_rejection_tells_the_person_and_offers_retry(self):
         payment_id = self._pay_and_send_receipt()

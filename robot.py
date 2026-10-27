@@ -186,6 +186,8 @@ if immoscout_monitor.CHECK_ENABLED:
 # Housing access subscriptions: daily check for 3-day expiry warnings and
 # auto-closing access once the paid period actually runs out.
 job.run_repeating(housing_monitor.check_access_expiry, interval=86400, first=360)
+# The 1-day access given while a payment receipt waits for the admin.
+job.run_repeating(housing_payment.provisional_expiry_job, interval=600, first=300)
 # Free tier: Immowelt flats held back for FREE_DELAY go out from here (the
 # other sources just wait until a listing is old enough on their own scans).
 job.run_repeating(housing_receiver.send_due_immowelt, interval=300, first=420)

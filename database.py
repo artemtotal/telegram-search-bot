@@ -1204,6 +1204,9 @@ class HousingPayment(Base):
     receipt_at = Column(DATETIME)
     decided_at = Column(DATETIME)
     expires_at = Column(DATETIME)
+    # До кінця якого дня діяли миттєві сповіщення, видані одразу після
+    # квитанції, поки адмін перевіряє оплату. None - не видавались.
+    provisional_until = Column(DATETIME)
 
 
 Base.metadata.create_all(engine)
@@ -1271,6 +1274,7 @@ _ensure_column('housing_user_journey', 'near_miss_at', 'DATETIME')
 _ensure_column('econsul_state', 'token_reminded_for', 'DATETIME')
 _ensure_column('econsul_state', 'login_id', 'TEXT')
 _ensure_column('econsul_state', 'login_message_id', 'INTEGER')
+_ensure_column('housing_payment', 'provisional_until', 'DATETIME')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword
 # `text_lower LIKE '%word%'` queries per user message, each filtered by
