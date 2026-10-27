@@ -4914,3 +4914,26 @@ class HousingSearchGroupingTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MediaMessageCallbackTest(unittest.TestCase):
+    """«Повернутися до моніторингу» під графіком статистики (27.10.2026)."""
+
+    def test_button_under_a_photo_sends_a_new_message_instead_of_editing(self):
+        from types import SimpleNamespace as NS
+        query = mock.MagicMock()
+        query.data = "housing:menu"
+        query.message = NS(text=None, chat_id=777, caption="stats")
+        update = NS(callback_query=query, effective_user=NS(id=777), effective_message=query.message)
+        bot = mock.MagicMock()
+
+        def fake_show_menu(upd, ctx, edit=False):
+            upd.callback_query.edit_message_text("menu", parse_mode="HTML", reply_markup=None)
+
+        with mock.patch.object(housing_monitor, "show_menu", side_effect=fake_show_menu):
+            housing_monitor.handle_callback(update, NS(bot=bot, user_data={}, bot_data={}))
+        query.edit_message_text.assert_not_called()
+        bot.send_message.assert_called_once()
+        self.assertEqual(bot.send_message.call_args.kwargs["chat_id"], 777)
+        self.assertEqual(bot.send_message.call_args.kwargs["text"], "menu")
+        query.answer.assert_called()

@@ -6351,7 +6351,45 @@ def _handle_multi_flow(update: Update, context: CallbackContext, state: dict, te
     return False
 
 
+class _MediaQuery:
+    """Кнопка під фото (графік статистики, тижнева зведення, квартира з одним
+    фото): текст такого повідомлення редагувати не можна - Telegram відповідає
+    «There is no text in the message to edit», і кнопка «зависала». Тут
+    edit_message_text надсилає новий текст окремим повідомленням, усе інше
+    йде до справжнього запиту."""
+
+    def __init__(self, query, bot):
+        self._query = query
+        self._bot = bot
+
+    def __getattr__(self, name):
+        return getattr(self._query, name)
+
+    def edit_message_text(self, text, parse_mode=None, reply_markup=None, disable_web_page_preview=None, **_):
+        return self._bot.send_message(
+            chat_id=self._query.message.chat_id, text=text, parse_mode=parse_mode,
+            reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview,
+        )
+
+
+class _MediaUpdate:
+    def __init__(self, update, query):
+        self._update = update
+        self.callback_query = query
+
+    def __getattr__(self, name):
+        return getattr(self._update, name)
+
+
 def handle_callback(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    message = getattr(query, "message", None)
+    if message is not None and getattr(message, "text", "") is None:
+        update = _MediaUpdate(update, _MediaQuery(query, context.bot))
+    _handle_callback(update, context)
+
+
+def _handle_callback(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     if not query or not query.data:
         return
