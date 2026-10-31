@@ -57,6 +57,11 @@ MAX_CONTEXT   = 15000
 SLOW_SEARCH_FALLBACK_SECONDS = int(os.getenv("SLOW_SEARCH_FALLBACK_SECONDS", "45") or 45)
 KEYWORD_SEARCH_BUDGET_SECONDS = float(os.getenv("KEYWORD_SEARCH_BUDGET_SECONDS", "25") or 25)
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
+# Plan A, 31.10.2026: fast model for query terms and ranking, older years always
+# searched, no interim "still searching" post in the chat.
+FAST_AI_MODEL = os.getenv("FAST_AI_MODEL", "gemini/gemini-3-flash-preview")
+ALWAYS_SEARCH_HISTORY = os.getenv("ALWAYS_SEARCH_HISTORY", "1") == "1"
+SLOW_FALLBACK_TO_CHAT = os.getenv("SLOW_FALLBACK_TO_CHAT", "0") == "1"
 
 OPENROUTER_URL = os.getenv(
     "OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions"
@@ -105,6 +110,10 @@ SYSTEM_PROMPT_CHAT = """
 Правила відповіді:
 - МОВА: відповідай ТІЛЬКИ українською мовою, незалежно від мови запитання.
 - Пріоритет свіжим повідомленням — завжди дивись на дату.
+- Не здавайся: якщо свіжого немає, але про це писали раніше — дай і старе, з роком.
+- Якщо відповіді з різних років — групуй за роками, від свіжих до старих
+  (напр. «2026: …», «2024–2025: …», «2022–2023: …»). Якщо одну людину/сервіс
+  радили кілька разів — скажи, скільки разів і чи хвалили.
 - Якщо є ДОВІДКОВА ІНФОРМАЦІЯ (FAQ) — це перевірені дані, вони мають найвищий пріоритет.
 - Якщо FAQ немає або він неповний — використовуй виключно КОНТЕКСТ З ЧАТУ (повідомлення учасників).
 - Не вигадуй того, чого немає в контексті.
@@ -1254,7 +1263,9 @@ def _search_keywords_with_fallback(session, chat_ids: List[int],
     )
     logger.info(f"Keyword search (last {recent_days}d): {len(recent_ids)} ids")
 
-    if provider_query:
+    # 31.10.2026: older years always get their own quota (not only for provider
+    # questions) - the chat's busiest year 2022 holds a lot of answers.
+    if provider_query or ALWAYS_SEARCH_HISTORY:
         historical_ids = _search_keyword_ids(
             session, chat_ids, keywords, anchor_words, before=cutoff, deadline=deadline,
         )
@@ -1387,7 +1398,8 @@ def _normalize_source_line(answer: str, messages: List[Dict]) -> str:
 
 # ── OpenRouter / OmniRoute calls ──────────────────────────────────────────
 
-def _call_ai(prompt: str, max_tokens: int = 8192, timeout: int = 90) -> str:
+def _call_ai(prompt: str, max_tokens: int = 8192, timeout: int = 90,
+             model: Optional[str] = None) -> str:
     """Call the configured OpenAI-compatible endpoint."""
     headers = {
         "Content-Type": "application/json",
@@ -1395,7 +1407,7 @@ def _call_ai(prompt: str, max_tokens: int = 8192, timeout: int = 90) -> str:
     if OPENROUTER_API_KEY:
         headers["Authorization"] = f"Bearer {OPENROUTER_API_KEY}"
     payload = {
-        "model": AI_MODEL,
+        "model": model or AI_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
         "temperature": 0.2,
@@ -1439,6 +1451,42 @@ def _normalize_query(query: str) -> str:
         return normalized
     logger.warning("Query normalization failed, using original query")
     return query
+
+
+LLM_TERMS_PROMPT = """
+Користувач шукає в історії чату українців у Потсдамі. Чат пишуть українською,
+російською й німецькою. Дай слова для текстового пошуку (LIKE '%слово%'), щоб
+знайти повідомлення з відповіддю: синоніми, як це називають люди в чаті, назви
+послуг/професій, німецькі терміни. Пиши основи слів без закінчень (напр.
+"перевез", "вантажн", "грузчик", "переїзд", "переезд", "umzug", "sprinter").
+Від 8 до 20 штук, кожне 3–20 символів, малими літерами.
+Поверни ТІЛЬКИ JSON-масив рядків.
+Запит: {query}
+""".strip()
+
+
+def _llm_search_terms(query: str) -> List[str]:
+    """Plan A, 31.10.2026: search words in ru/uk/de from a fast model.
+
+    Hand-written synonym lists only cover topics someone thought of; this
+    makes "грузчики" also find "перевезення меблів" / "Umzug" / "Sprinter".
+    """
+    raw = _call_ai(LLM_TERMS_PROMPT.format(query=query[:300]), max_tokens=400,
+                   timeout=20, model=FAST_AI_MODEL)
+    match = re.search(r"\[.*\]", raw or "", re.S)
+    if not match:
+        return []
+    try:
+        terms = json.loads(match.group())
+    except ValueError:
+        return []
+    result = []
+    for term in terms:
+        term = str(term).strip().lower()
+        if 3 <= len(term) <= 30 and term not in result:
+            result.append(term)
+    logger.info(f"LLM search terms: {result[:20]}")
+    return result[:20]
 
 
 def _expand_keywords(query: str) -> List[str]:
@@ -1635,7 +1683,9 @@ def _rerank(query: str, messages: List[Dict], top_k: int = 25,
         f"{numbered}"
     )
     try:
-        raw = _call_ai(prompt, max_tokens=1500, timeout=30)
+        # 31.10.2026: the strong model kept timing out here (30 s), so ranking
+        # was silently skipped; a fast model does this job in a few seconds.
+        raw = _call_ai(prompt, max_tokens=1500, timeout=40, model=FAST_AI_MODEL)
         if not raw or raw == "RATE_LIMIT":
             raise RuntimeError("rerank AI call returned empty")
         match = re.search(r'\[[\d,\s]+\]', raw)
@@ -1720,10 +1770,13 @@ class _SlowSearchFallbackNotifier:
             self._sent = True
             sources = list(self._sources)
         text = _build_slow_search_fallback_text(self.query, sources)
-        try:
-            self.message.reply_text(text, parse_mode=None, disable_web_page_preview=True)
-        except Exception:
-            logger.exception("Failed to send slow search fallback to user")
+        # 31.10.2026: the interim "still searching" post only cluttered the chat
+        # (usually with no links yet); the wait indicator already tells the user.
+        if SLOW_FALLBACK_TO_CHAT:
+            try:
+                self.message.reply_text(text, parse_mode=None, disable_web_page_preview=True)
+            except Exception:
+                logger.exception("Failed to send slow search fallback to user")
         if self.admin_id and self.bot is not None:
             try:
                 self.bot.send_message(
@@ -1731,7 +1784,7 @@ class _SlowSearchFallbackNotifier:
                     text=(
                         "⚠️ Потсдамбот: повільний пошук\n"
                         f"Запит: {self.query}\n"
-                        f"Фолбэк користувачу відправлено після {self.delay_seconds} сек."
+                        f"Шукає вже {self.delay_seconds} сек."
                     ),
                     parse_mode=None,
                     disable_web_page_preview=True,
@@ -1742,6 +1795,8 @@ class _SlowSearchFallbackNotifier:
 
 def _send_answer(message, text: str) -> None:
     text = text.replace("**", "").replace("*", "\u2022")
+    # Plain-text reply: markdown headers would show up as literal "###".
+    text = re.sub(r"(?m)^#{1,6}\s+", "", text)
     MAX = 3900
     if len(text) <= MAX:
         message.reply_text(text, parse_mode=None)
@@ -1866,19 +1921,17 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
                 # knowledge. Search the complete vector history directly.
                 vec_msgs = _vector_search(query, n_results=80)
             else:
-                # Non-temporal: last year first, fallback all time
-                vec_msgs = _vector_search(query, n_results=50, since_days=365)
-                if len(vec_msgs) < 5:
-                    logger.info("Too few results in 365d, searching all time")
-                    vec_msgs = _vector_search(query, n_results=50)
+                # Non-temporal: every year at once (31.10.2026, was last year first).
+                vec_msgs = _vector_search(query, n_results=60)
         else:
             logger.warning("Vector backend not ready, falling back to keyword search")
             vec_msgs = []
 
         # ── Step B: Keyword fallback / supplement ────────────────────────
+        llm_terms = _llm_search_terms(query)
         if not vector_ready:
             # Vector backend not available — full keyword search
-            keywords = _expand_keywords(query)
+            keywords = _expand_keywords(query) + llm_terms
             if _is_hair_query(query):
                 keywords += _HAIR_SERVICE_KEYWORDS
             if is_temporal:
@@ -1891,13 +1944,17 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
             # Contact replies often embed poorly, so provider queries also keep
             # the deterministic local synonym channel.
             keyword_msgs = []
-            if anchor_words or is_provider_query or is_job_application_advice:
+            if anchor_words or is_provider_query or is_job_application_advice or llm_terms:
                 if is_provider_query:
                     supplement_keywords = _expand_keywords(query)
                 elif is_job_application_advice:
                     supplement_keywords = _job_application_advice_keywords(query)
                 else:
                     supplement_keywords = []
+                # LLM terms first: they are what people actually write in the chat.
+                supplement_keywords = llm_terms + [
+                    k for k in supplement_keywords if k not in llm_terms
+                ]
                 keyword_msgs = _search_keywords_with_fallback(
                     session, chat_ids, supplement_keywords, anchor_words=anchor_words,
                     provider_query=is_provider_query,

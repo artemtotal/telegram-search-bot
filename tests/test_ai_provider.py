@@ -54,7 +54,8 @@ class AiProviderTests(unittest.TestCase):
         self.assertTrue(notifier._timer.cancelled)
         message.reply_text.assert_not_called()
 
-    def test_slow_search_notifier_sends_user_and_admin_alert_once(self):
+    def test_slow_search_notifier_alerts_admin_once_and_keeps_chat_clean(self):
+        # 31.10.2026: the interim post no longer goes to the chat by default.
         message = Mock()
         message.chat_id = -1001
         bot = Mock()
@@ -68,9 +69,16 @@ class AiProviderTests(unittest.TestCase):
         notifier._send_fallback()
         notifier._send_fallback()
 
-        message.reply_text.assert_called_once()
+        message.reply_text.assert_not_called()
         bot.send_message.assert_called_once()
         self.assertIn("Потсдамбот: повільний пошук", bot.send_message.call_args.kwargs["text"])
+
+    def test_slow_search_notifier_can_still_post_to_chat(self):
+        message = Mock()
+        notifier = msg_ai._SlowSearchFallbackNotifier(message, "лор врач")
+        with patch.object(msg_ai, "SLOW_FALLBACK_TO_CHAT", True):
+            notifier._send_fallback()
+        message.reply_text.assert_called_once()
 
     def test_keyword_search_stops_when_time_budget_is_exhausted(self):
         class FakeQuery:
