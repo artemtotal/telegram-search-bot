@@ -21,6 +21,7 @@ from telegram.ext import CallbackContext, MessageHandler, Filters
 
 from database import Chat, DBSession, Message, User
 from user_jobs.local_embeddings import LOCAL_COLLECTION
+from user_handlers import kb_search
 
 # ── ChromaDB (lazy init) ──────────────────────────────────────────────────
 _chroma_col = None
@@ -1885,6 +1886,19 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
     # ── 2. Deep chat history search ───────────────────────────────────────
     session = DBSession()
     try:
+        # Plan B, 31.10.2026: once the knowledge base has read the whole chat,
+        # answer from it; the keyword pipeline below stays as the fallback.
+        if kb_search.ready():
+            try:
+                kb_text, kb_sources = kb_search.answer(query)
+            except Exception:
+                logger.exception("Knowledge-base answer failed, using the old search")
+                kb_text, kb_sources = "", []
+            if kb_text:
+                _send_answer(update.message, _normalize_source_line(kb_text, kb_sources))
+                logger.info("KB answer sent for query: %r", query)
+                return
+
         chat_ids = [c.id for c in session.query(Chat).filter(Chat.enable == 1).all()]
         if not chat_ids:
             update.message.reply_text("Немає активних чатів для пошуку.")

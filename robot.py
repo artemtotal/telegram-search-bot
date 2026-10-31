@@ -14,6 +14,7 @@ from user_handlers import (
     chat_stop,
     chat_delete,
     chatid_get,
+    kb_search,
     msg_ai,
     msg_store,
     faq_admin,
@@ -119,6 +120,26 @@ def run_qdrant_update(context=None):
 if os.getenv("QDRANT_UPDATER_ENABLED", "0") == "1":
     job.run_repeating(run_qdrant_update, interval=3600, first=300)
 
+_kb_builder_process = None
+
+
+def run_kb_builder(context=None):
+    """Chat knowledge base (31.10.2026). The subprocess itself only works on
+    weekdays 09:00-17:00 (KB_WINDOW, Artem: nobody is at home then) and exits
+    right away otherwise, so a 15-minute tick is cheap."""
+    global _kb_builder_process
+    if _kb_builder_process is not None and _kb_builder_process.poll() is None:
+        return False
+    _kb_builder_process = subprocess.Popen(
+        [sys.executable, "-m", "user_jobs.kb_builder", "--once"],
+        env=os.environ.copy(),
+    )
+    return True
+
+
+if os.getenv("KB_BUILDER_ENABLED", "1") == "1":
+    job.run_repeating(run_kb_builder, interval=900, first=240)
+
 job.run_repeating(equeue_monitor.check_job, interval=900, first=90)
 # DP Document test weeks: the check-log report goes to the admin on day 7 and 14.
 job.run_daily(equeue_monitor.report_job, time=equeue_monitor.REPORT_TIME)
@@ -219,6 +240,7 @@ job.run_daily(housing_send_audit.daily_send_audit_job, time=housing_send_audit.A
 
 
 dispatcher.add_handler(msg_ai.handler)
+dispatcher.add_handler(kb_search.callback_handler)
 dispatcher.add_handler(faq_admin.handler)
 dispatcher.add_handler(equeue_monitor.command_handler)
 dispatcher.add_handler(equeue_monitor.callback_handler)
@@ -253,6 +275,9 @@ dispatcher.add_handler(anonymous_posts.reset_user_handler, group=1)
 dispatcher.add_handler(anonymous_posts.callback_handler, group=1)
 dispatcher.add_handler(anonymous_posts.private_text_handler, group=1)
 dispatcher.add_handler(anonymous_posts.forum_observer_handler, group=2)
+# Proactive answers to questions in the chat: own group, so storing and the
+# other handlers still see every message (31.10.2026, KB_PROACTIVE).
+dispatcher.add_handler(kb_search.group_handler, group=4)
 
 def run_telethon_thread():
     loop = asyncio.new_event_loop()

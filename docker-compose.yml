@@ -56,6 +56,20 @@ services:
 
       - EMBED_BOOTSTRAP_DAYS=730
       - SEARCH_RECENT_DAYS=730
+      # Chat knowledge base (31.10.2026): ChatGPT via OmniRoute reads the whole
+      # chat into cards on weekdays 09:00-17:00 only (Artem: nobody at home then).
+      - KB_BUILDER_ENABLED=1
+      - KB_WINDOW=0-4 09:00-17:00
+      - KB_FAST_MODELS=codex/gpt-5.6-luna-low,gemini/gemini-3-flash-preview,cx/gpt-5.6-terra-low
+      - KB_ANSWER_MODELS=opus-first,gemini/gemini-3-flash-preview
+      - KB_EMBED_MODEL=gemini/gemini-embedding-001
+      # auto = answer from the cards once the whole chat has been read.
+      - KB_SEARCH=auto
+      # preview = drafts of answers to chat questions go to ADMIN_ID with buttons;
+      # on = reply in the chat directly; off = disabled.
+      - KB_PROACTIVE=preview
+      - KB_PROACTIVE_MAX_PER_DAY=12
+      - FAST_AI_MODEL=gemini/gemini-3-flash-preview
       - ADMIN_ID=312029534
       # Comma-separated Telegram IDs that may use the DP Document e-queue watcher.
       # ADMIN_ID is always allowed.
