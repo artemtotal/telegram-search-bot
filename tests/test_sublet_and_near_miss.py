@@ -60,6 +60,11 @@ class SubletTitlesTests(unittest.TestCase):
             'WG-Zimmer zur Miete auf Zeit',
             'Möbliertes Studio in Potsdam 01.09.2026 – 14.09.2026',
             'Wohnung in Potsdam Untervermietung 1 Jahr',
+            # Лише для студентів / під студентську WG (01.11.2026).
+            '4 Zimmerwohnung, Nähe S-Bahn Griebnitzsee,WG Studenten,Potsdam',
+            'Möbliertes Appartement mit Balkon nur für Studenten!',
+            'Gemütliches teilmöbliertes 1 Zimmer Apartment in Potsdam nur für Studenten/Azubis',
+            'Helle 3-Zimmer-Wohnung für eine 3er WG',
         ):
             self.assertTrue(sublet.is_sublet(title), title)
 
@@ -70,6 +75,8 @@ class SubletTitlesTests(unittest.TestCase):
             'Stilvolle möblierte Wohnung in Potsdam',
             'Nachmieter für 3 Zimmer-Wohnung in Potsdam gesucht!',
             'Helle 3-Zimmer Wohnung mitten in Potsdam Waldstadt',
+            'WG-geeignete 4-Zimmer-Wohnung am Park',
+            'Wohnung nahe Uni Potsdam, ideal für Studenten und Familien',
         ):
             self.assertFalse(sublet.is_sublet(title), title)
 

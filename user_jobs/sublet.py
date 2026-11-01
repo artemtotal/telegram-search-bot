@@ -32,8 +32,23 @@ SUBLET_RE = re.compile(
 )
 
 
+# Житло лише для студентів або під студентську WG (аудит 01.11.2026: «4 Zimmerwohnung …
+# WG Studenten», «1 Zimmer … nur für Studenten») — сім'ї, що шукають квартиру, його не
+# отримають, тож воно йде тим самим людям, що й суборенда. «WG-geeignet» (можна й WG)
+# сюди не входить: таку квартиру здають і родині.
+STUDENT_WG_RE = re.compile(
+    r"nur\s+f(?:ü|ue|u)r\s+studen"
+    r"|studenten[\s-]*wg"
+    r"|\bwg[\s-]+(?:f(?:ü|ue|u)r\s+)?studen"
+    r"|f(?:ü|ue|u)r\s+(?:eine\s+)?(?:\d\s*er[\s-]*)?(?:studenten[\s-]*)?wg\b",
+    re.IGNORECASE,
+)
+
+
 def is_sublet(title: Any) -> bool:
-    return bool(SUBLET_RE.search(str(title or "")))
+    """Суборенда, тимчасова оренда чи житло лише для студентів / під WG."""
+    text = str(title or "")
+    return bool(SUBLET_RE.search(text) or STUDENT_WG_RE.search(text))
 
 
 def wants_rooms(user_id: int) -> bool:
