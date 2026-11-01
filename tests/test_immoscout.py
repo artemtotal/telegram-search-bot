@@ -146,6 +146,13 @@ class ImmoscoutMatchingTests(unittest.TestCase):
         self.assertFalse(immoscout_matching.matches_filter(listing, {"max_price_warm_eur": 950}))
         self.assertFalse(immoscout_matching.matches_filter(listing, {"districts": "Drewitz"}))
 
+    def test_a_flat_swap_matches_no_filter(self):
+        """Кнопка «за останні години» йшла повз монітор і слала обміни."""
+        listing = {"title": "Tauschwohnung: Perfekt für Einzelpersonen in Potsdam", "rooms": 1.5,
+                   "area_m2": 42.0, "price_eur": 500.0}
+
+        self.assertFalse(immoscout_matching.matches_filter(listing, {}))
+
 
 class _DbTest(unittest.TestCase):
     def setUp(self):

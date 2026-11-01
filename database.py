@@ -1059,6 +1059,10 @@ class HousingSendLog(Base):
     # True when the person is on the free tier and got it after the delay.
     delayed = Column(BOOLEAN, nullable=False, default=False)
     sent_at = Column(DATETIME, nullable=False, index=True)
+    # JSON with the flat's numbers as they were when sent (rooms, area,
+    # prices, district). Landlords raise prices after publishing, so the
+    # evening self-check must judge the send by these, not by today's row.
+    snapshot = Column(TEXT)
 
 
 class HousingPendingDelivery(Base):
@@ -1291,6 +1295,7 @@ _ensure_column('econsul_state', 'token_reminded_for', 'DATETIME')
 _ensure_column('econsul_state', 'login_id', 'TEXT')
 _ensure_column('econsul_state', 'login_message_id', 'INTEGER')
 _ensure_column('housing_payment', 'provisional_until', 'DATETIME')
+_ensure_column('housing_send_log', 'snapshot', 'TEXT')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword
 # `text_lower LIKE '%word%'` queries per user message, each filtered by

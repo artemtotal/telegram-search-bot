@@ -58,7 +58,21 @@ def district_matches(listing_district: Any, wanted: Iterable[str]) -> bool:
     return any(re.search(rf"(?<!\w){re.escape(item)}(?!\w)", district) for item in wanted)
 
 
+# Обмін квартир («Tauschwohnung: 2-Zimmer-Wohnung …»): зняти її може лише
+# той, хто віддає свою. Перевірка тут, а не лише в моніторі: кнопка «надіслати
+# за останні години» після нового фільтра йшла повз монітор і до 01.11.2026
+# слала обміни (7 відправок за 22.10–01.11).
+SWAP_KEYWORDS = ("tausch", "swap")
+
+
+def is_swap(listing: Dict[str, Any]) -> bool:
+    title = str(listing.get("title") or "").casefold()
+    return any(keyword in title for keyword in SWAP_KEYWORDS)
+
+
 def matches_filter(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
+    if is_swap(listing):
+        return False
     rooms = _num(listing.get("rooms"))
     area = _num(listing.get("area_m2"))
     price = _num(listing.get("price_eur"))

@@ -13,6 +13,7 @@ could never say how many flats a person actually got.
 """
 
 import html
+import json
 import logging
 import os
 from datetime import datetime, timedelta
@@ -108,8 +109,28 @@ def free_footer(user_id: int) -> str:
     )
 
 
+# Що з квартири запам'ятати в журналі відправок (housing_send_log.snapshot).
+SNAPSHOT_FIELDS = ("rooms", "area_m2", "price_eur", "price_warm_eur", "total_rent_eur", "district")
+
+
+def listing_snapshot(listing: Optional[Dict]) -> Optional[str]:
+    """Числа квартири на момент відправки — JSON для вечірньої самоперевірки.
+
+    Орендодавці піднімають ціну вже після публікації: Krampnitz 31.10.2026
+    пішла за 903,75 €, а ввечері в базі стояло 1039 €, і самоперевірка
+    вирішила, що квартира пішла не тим фільтрам."""
+    if not listing:
+        return None
+    values = {key: listing.get(key) for key in SNAPSHOT_FIELDS if listing.get(key) not in (None, "")}
+    try:
+        return json.dumps(values, ensure_ascii=False, default=str) if values else None
+    except (TypeError, ValueError):
+        return None
+
+
 def log_sent(
     user_id: int, source: str, listing_key: str, filter_id: Optional[int] = None, delayed: bool = False,
+    snapshot: Optional[str] = None,
 ) -> None:
     """Never lets a logging problem get in the way of the send itself."""
     session = DBSession()
@@ -121,6 +142,7 @@ def log_sent(
             filter_id=int(filter_id) if filter_id is not None else None,
             delayed=bool(delayed),
             sent_at=utc_now(),
+            snapshot=snapshot,
         ))
         session.commit()
     except Exception:
@@ -267,8 +289,26 @@ class DeliveryGate:
         return text
 
     def sent(self, user_id: int, listing_key: str, filter_id: Optional[int] = None) -> None:
-        log_sent(user_id, self.source, listing_key, filter_id, delayed=not self.is_premium(user_id))
+        log_sent(
+            user_id, self.source, listing_key, filter_id, delayed=not self.is_premium(user_id),
+            snapshot=self._snapshot(listing_key),
+        )
         forget_held(user_id, self.source, listing_key)
+
+    def _snapshot(self, listing_key: str) -> Optional[str]:
+        if self._listing_model is None:
+            return None
+        session = DBSession()
+        try:
+            row = session.query(self._listing_model).get(str(listing_key))
+            if row is None:
+                return None
+            return listing_snapshot({column.name: getattr(row, column.name) for column in row.__table__.columns})
+        except Exception:
+            logger.exception("Could not snapshot %s %s", self.source, listing_key)
+            return None
+        finally:
+            session.close()
 
 
 def listing_summary(listing: Dict) -> str:

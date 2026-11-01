@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from database import Base, HousingSendLog, ImmoweltListing, KarlmarxListing, KleinanzeigenListing
+from database import Base, HousingFilterEvent, HousingSendLog, ImmoweltListing, KarlmarxListing, KleinanzeigenListing
 from user_handlers import housing_monitor, housing_send_audit
 from user_jobs import karlmarx_store, kleinanzeigen_store
 
@@ -106,6 +106,37 @@ class AuditJobTests(unittest.TestCase):
                                  price_eur=1050, first_seen_at=now, last_seen_at=now, is_active=True),
             HousingSendLog(user_id=1, source='kleinanzeigen', listing_key='ka', filter_id=filter_id,
                            delayed=True, sent_at=now - timedelta(hours=1)),
+        )
+        with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[]):
+            findings = housing_send_audit.collect_findings(now - timedelta(days=1), now)
+
+        self.assertEqual(dict(findings), {})
+
+    def test_judged_by_the_price_at_send_time(self):
+        """Krampnitz 31.10.2026: пішла за 903,75 €, потім ціну підняли до 1039 €."""
+        now = datetime.utcnow()
+        filter_id = karlmarx_store.create_filter(user_id=1, title='t', max_price_warm_eur=950)
+        self._add(
+            KarlmarxListing(listing_key='km', title='Neubau', rooms=2, area_m2=60, price_warm_eur=1039.32,
+                            first_seen_at=now, last_seen_at=now, is_active=True),
+            HousingSendLog(user_id=1, source='karlmarx', listing_key='km', filter_id=filter_id, delayed=False,
+                           sent_at=now - timedelta(hours=1), snapshot='{"price_warm_eur": 903.75}'),
+        )
+        with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[]):
+            findings = housing_send_audit.collect_findings(now - timedelta(days=1), now)
+
+        self.assertEqual(dict(findings), {})
+
+    def test_a_filter_edited_after_the_send_is_not_held_against_it(self):
+        now = datetime.utcnow()
+        filter_id = karlmarx_store.create_filter(user_id=1, title='t', max_price_warm_eur=600)
+        self._add(
+            KarlmarxListing(listing_key='km', title='Neubau', rooms=2, area_m2=60, price_warm_eur=900,
+                            first_seen_at=now, last_seen_at=now, is_active=True),
+            HousingSendLog(user_id=1, source='karlmarx', listing_key='km', filter_id=filter_id, delayed=False,
+                           sent_at=now - timedelta(hours=3)),
+            HousingFilterEvent(user_id=1, edited=True, sources='karlmarx', total_hits=1,
+                               created_at=now - timedelta(hours=1)),
         )
         with mock.patch.object(housing_monitor, '_all_immowelt_filters', return_value=[]):
             findings = housing_send_audit.collect_findings(now - timedelta(days=1), now)

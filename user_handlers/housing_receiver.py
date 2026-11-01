@@ -102,6 +102,19 @@ def _parse_number(raw):
         return None
 
 
+def _numbers(listing):
+    return {
+        "rooms": _parse_number(listing.get("rooms")),
+        "area_m2": _parse_number(listing.get("area")),
+        "price_eur": _parse_number(listing.get("price")),
+    }
+
+
+def _snapshot(listing):
+    """Числа саме цієї відправки — для вечірньої самоперевірки."""
+    return housing_tier.listing_snapshot(_numbers(listing))
+
+
 def _record_listing_for_stats(listing_id, listing):
     """Immowelt has no full-catalogue scan of its own in this bot — a
     separate relay service just forwards matches. So this is the only place
@@ -115,11 +128,9 @@ def _record_listing_for_stats(listing_id, listing):
     fields = {
         "title": str(listing.get("title") or "").strip() or None,
         "address": str(listing.get("address") or "").strip() or None,
-        "rooms": _parse_number(listing.get("rooms")),
-        "area_m2": _parse_number(listing.get("area")),
-        "price_eur": _parse_number(listing.get("price")),
         "detail_url": str(listing.get("url") or "").strip() or None,
     }
+    fields.update(_numbers(listing))
     session = DBSession()
     try:
         row = session.query(ImmoweltListing).get(listing_id)
@@ -346,7 +357,7 @@ def handle_immowelt_result(bot, payload, release=False):
         # сообщение доставляет, поэтому отмечаем его отправленным: повтор
         # прислал бы человеку вторую копию той же квартиры.
         _mark_delivered(user_id, listing_id)
-        housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium)
+        housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium, snapshot=_snapshot(listing))
         logger.warning(
             "Immowelt listing %s to %s: response lost, assuming delivered (%s)",
             listing_id, user_id, exc,
@@ -354,7 +365,7 @@ def handle_immowelt_result(bot, payload, release=False):
         return {"ok": True, "assumed_delivered": True}
 
     _mark_delivered(user_id, listing_id)
-    housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium)
+    housing_tier.log_sent(user_id, "immowelt", listing_id, delayed=not premium, snapshot=_snapshot(listing))
     return {"ok": True}
 
 

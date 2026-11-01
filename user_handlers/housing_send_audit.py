@@ -13,6 +13,7 @@
 """
 
 import html
+import json
 import logging
 import re
 from collections import OrderedDict
@@ -22,7 +23,7 @@ from typing import Dict, List, Optional
 import pytz
 from telegram.ext import CallbackContext
 
-from database import DBSession, HousingSendLog, ImmoweltListing
+from database import DBSession, HousingFilterEvent, HousingSendLog, ImmoweltListing
 from user_handlers import housing_monitor as hm
 from user_jobs import rent_bounds
 
@@ -122,8 +123,25 @@ def _fits_some_immowelt_filter(listing: Dict, filters: List[Dict]) -> bool:
     return False
 
 
+def _as_sent(listing: Dict, snapshot: Optional[str]) -> Dict:
+    """Оголошення з числами, які були в момент відправки (якщо їх записано)."""
+    if not snapshot:
+        return listing
+    try:
+        values = json.loads(snapshot)
+    except (TypeError, ValueError):
+        return listing
+    return {**listing, **values} if isinstance(values, dict) else listing
+
+
 def collect_findings(since: datetime, until: datetime) -> "OrderedDict[tuple, Dict]":
-    """{(джерело, ключ): {listing, problems, users}} для підозрілих відправок."""
+    """{(джерело, ключ): {listing, problems, users}} для підозрілих відправок.
+
+    Ціну й площу беремо такими, якими вони були при відправці (snapshot):
+    орендодавець може підняти ціну згодом. А «не підходить під фільтр»
+    не кажемо, якщо людина змінила фільтри вже після відправки — інакше
+    порівнюємо вчорашню квартиру з сьогоднішнім фільтром (обидва випадки —
+    хибні тривоги 31.10–01.11.2026)."""
     session = DBSession()
     try:
         sends = (
@@ -132,17 +150,24 @@ def collect_findings(since: datetime, until: datetime) -> "OrderedDict[tuple, Di
             .order_by(HousingSendLog.id)
             .all()
         )
-        sends = [(s.user_id, s.source, s.listing_key, s.filter_id) for s in sends]
+        sends = [(s.user_id, s.source, s.listing_key, s.filter_id, s.sent_at, s.snapshot) for s in sends]
         listings = {}
-        for _user, source, key, _fid in sends:
+        for _user, source, key, _fid, _at, _snap in sends:
             if (source, key) not in listings:
                 listings[(source, key)] = _load_listing(session, source, key)
+        last_edit: Dict[int, datetime] = {}
+        for user_id, created_at in (
+            session.query(HousingFilterEvent.user_id, HousingFilterEvent.created_at)
+            .filter(HousingFilterEvent.edited.is_(True), HousingFilterEvent.created_at >= since)
+        ):
+            if created_at and (user_id not in last_edit or created_at > last_edit[user_id]):
+                last_edit[int(user_id)] = created_at
     finally:
         session.close()
 
     filters: Dict = {}
     immowelt_by_user: Optional[Dict[int, List[Dict]]] = None
-    if any(source == "immowelt" for _u, source, _k, _f in sends):
+    if any(source == "immowelt" for _u, source, _k, _f, _a, _s in sends):
         try:
             immowelt_by_user = {}
             for filt in hm._all_immowelt_filters():
@@ -152,15 +177,20 @@ def collect_findings(since: datetime, until: datetime) -> "OrderedDict[tuple, Di
             logger.exception("Audit could not read Immowelt filters")
             immowelt_by_user = None
     findings: "OrderedDict[tuple, Dict]" = OrderedDict()
-    for user_id, source, key, filter_id in sends:
-        listing = listings.get((source, key))
-        if listing is None:
+    for user_id, source, key, filter_id, sent_at, snapshot in sends:
+        stored = listings.get((source, key))
+        if stored is None:
             continue
+        listing = _as_sent(stored, snapshot)
         problems = listing_problems(listing)
+        edited_later = last_edit.get(int(user_id)) is not None and last_edit[int(user_id)] > sent_at
         own = (immowelt_by_user or {}).get(int(user_id))
-        if source == "immowelt" and own and not _fits_some_immowelt_filter(listing, own):
+        if source == "immowelt" and own and not edited_later and not _fits_some_immowelt_filter(listing, own):
             problems.append("не підходить під жоден Immowelt-фільтр людини")
-        filt = _filter_by_id(source, filter_id, filters)
+        # Обмін чи WG тепер відсікає сам матчер — тоді «не підходить під
+        # фільтр» лише повторювало б «не квартира».
+        not_a_flat = bool(NOT_A_FLAT_RE.search(str(listing.get("title") or "")))
+        filt = None if edited_later or not_a_flat else _filter_by_id(source, filter_id, filters)
         if filt is not None:
             matching = hm._LOCAL_SOURCE_MODULES[source][1]
             try:
@@ -175,7 +205,7 @@ def collect_findings(since: datetime, until: datetime) -> "OrderedDict[tuple, Di
                 logger.exception("Audit could not re-match %s %s", source, key)
         if not problems:
             continue
-        entry = findings.setdefault((source, key), {"listing": listing, "problems": [], "users": set()})
+        entry = findings.setdefault((source, key), {"listing": stored, "problems": [], "users": set()})
         for problem in problems:
             if problem not in entry["problems"]:
                 entry["problems"].append(problem)

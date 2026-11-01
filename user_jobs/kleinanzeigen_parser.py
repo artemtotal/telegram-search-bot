@@ -165,7 +165,19 @@ def parse_detail_prices(html: str) -> dict[str, float | None]:
     warm = parse_decimal(values.get("Warmmiete"))
     if warm is None and cold is not None and extra is not None:
         warm = round(cold + extra, 2)
+    warm = consistent_warm(cold, warm, extra)
     return {"price_eur": cold, "price_warm_eur": warm, "nebenkosten_eur": extra}
+
+
+def consistent_warm(cold: float | None, warm: float | None, extra: float | None) -> float | None:
+    """Повна, яка не менша за холодну.
+
+    Орендодавець буває суперечить сам собі (3552910948, 26.10.2026: 1176 €
+    холодна і «Warmmiete 1100 €»). Тоді повна = холодна + Nebenkosten, а
+    без них — невідома; так само робить ImmoScout24 (immoscout_parser)."""
+    if warm is None or cold is None or warm >= cold:
+        return warm
+    return round(cold + extra, 2) if extra is not None else None
 
 
 _GALLERY_IMAGE_RE = re.compile(r'data-imgsrc="([^"]+)"')

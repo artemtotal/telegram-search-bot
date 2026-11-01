@@ -50,15 +50,10 @@ BACKFILL_KEY = "backfill_existing_searches"
 SOURCE = "immoscout"
 # Фільтри одного кооперативу — до них портали не додаємо.
 KARLMARX_ONLY = {"karlmarx"}
-# Обмін квартир («Tauschwohnung: 2-Zimmer-Wohnung …»): зняти її може лише
-# той, хто віддає свою. Kleinanzeigen їх відкидає давно, тут вони за 20.10
-# пішли 53 людям (вечірня самоперевірка 20.10.2026).
-SWAP_KEYWORDS = ("tausch", "swap")
-
-
-def _is_swap(listing: Dict) -> bool:
-    title = str(listing.get("title") or "").casefold()
-    return any(keyword in title for keyword in SWAP_KEYWORDS)
+# Обмін квартир: Kleinanzeigen їх відкидає давно, тут вони за 20.10 пішли
+# 53 людям (вечірня самоперевірка 20.10.2026). Сама перевірка — у
+# immoscout_matching.is_swap, щоб діяла на всіх шляхах відправки.
+_is_swap = immoscout_matching.is_swap
 
 
 def _headers() -> Dict[str, str]:

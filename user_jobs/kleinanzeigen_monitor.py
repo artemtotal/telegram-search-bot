@@ -266,8 +266,15 @@ def _add_full_rent(listings: List[Dict]) -> int:
         except Exception as exc:
             logger.warning("Could not read Kleinanzeigen prices for %s: %s", detail_url, exc)
             continue
-        if prices.get("price_warm_eur") is not None:
-            listing["price_warm_eur"] = prices["price_warm_eur"]
+        # Холодна в нас — зі сторінки видачі, а вона може не збігатися з
+        # «ExactPreis» картки, тож звіряємо повну ще й з нею.
+        warm = kleinanzeigen_parser.consistent_warm(
+            listing.get("price_eur") if isinstance(listing.get("price_eur"), (int, float)) else None,
+            prices.get("price_warm_eur"),
+            prices.get("nebenkosten_eur"),
+        )
+        if warm is not None:
+            listing["price_warm_eur"] = warm
             filled += 1
     return filled
 

@@ -171,6 +171,14 @@ class KleinanzeigenDetailPriceTests(unittest.TestCase):
 
         self.assertEqual(prices["price_warm_eur"], 1000.0)
 
+    def test_a_full_rent_below_the_cold_one_is_not_believed(self):
+        """3552910948: 1176 € холодна і «Warmmiete 1100»."""
+        with_extra = kleinanzeigen_parser.parse_detail_prices('{"Nebenkosten":"150","Warmmiete":"1100","ExactPreis":"1176"}')
+        without = kleinanzeigen_parser.parse_detail_prices('{"Warmmiete":"1100","ExactPreis":"1176"}')
+
+        self.assertEqual(with_extra["price_warm_eur"], 1326.0)
+        self.assertIsNone(without["price_warm_eur"])
+
     def test_a_page_without_prices_reports_nothing(self):
         prices = kleinanzeigen_parser.parse_detail_prices('{"Wohnflaeche":"80"}')
 

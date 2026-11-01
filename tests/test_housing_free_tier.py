@@ -1,6 +1,7 @@
 """Free tier with a delay, the send log, filter reports to the admin,
 the no-filter nudge and the two-week survey (27.09.2026)."""
 
+import json
 import unittest
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -90,6 +91,23 @@ class DeliveryGateTests(_InMemoryDb):
         [row] = session.query(HousingSendLog).all()
         self.assertEqual((row.user_id, row.source, row.listing_key, row.filter_id, row.delayed),
                          (777, 'kleinanzeigen', 'k-1', 5, True))
+        session.close()
+
+    def test_the_send_log_keeps_the_numbers_as_sent(self):
+        """Ціну потім можуть підняти — самоперевірка судить за цими числами."""
+        session = self._session()
+        session.add(KleinanzeigenListing(
+            listing_key='k-2', title='W', rooms=2, area_m2=60.25, price_eur=903.75,
+            first_seen_at=datetime.utcnow(), last_seen_at=datetime.utcnow(), is_active=True,
+        ))
+        session.commit()
+        session.close()
+
+        housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing).sent(777, 'k-2', 5)
+
+        session = self._session()
+        [row] = session.query(HousingSendLog).all()
+        self.assertEqual(json.loads(row.snapshot), {'rooms': 2.0, 'area_m2': 60.25, 'price_eur': 903.75})
         session.close()
 
 

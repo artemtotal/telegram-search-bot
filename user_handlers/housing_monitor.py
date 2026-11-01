@@ -1292,6 +1292,10 @@ def _send_recent_matches(update: Update, context: CallbackContext, hours: int) -
         # would be a way round it.
         gate = housing_tier.DeliveryGate(source, _LISTING_MODELS.get(source), quiet_hours=False)
         for listing in store.list_active_listings_since(cutoff):
+            # ImmoScout24 без прочитаної картки: ще невідомі повна оренда й
+            # точний район — монітор такі теж не розсилає.
+            if listing.get("detail_fetched") is False:
+                continue
             if not matching.matches_filter(listing, filt):
                 continue
             if not gate.due(owner_id, listing):
