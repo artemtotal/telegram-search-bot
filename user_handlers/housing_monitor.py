@@ -1085,11 +1085,6 @@ def _filter_hits(saved: list, days: int = FILTER_REPORT_DAYS) -> Dict[str, int]:
     return hits
 
 
-def _hits_breakdown(hits: Dict[str, int]) -> str:
-    ordered = sorted(hits.items(), key=lambda item: (-item[1], SOURCE_LABEL.get(item[0], item[0])))
-    return " · ".join(f"{SOURCE_LABEL.get(source, source)} {count}" for source, count in ordered)
-
-
 def _after_filter_saved(context: CallbackContext, user_id, saved: list, edited: bool = False,
                         search_id: Optional[int] = None) -> None:
     """Called by every wizard once a filter is stored (or edited).
@@ -1131,7 +1126,8 @@ def _filter_report_job(context: CallbackContext) -> None:
     thin = bool(hits) and total <= THIN_FILTER_MAX_HITS
     bot = context.bot
     search_id = data.get("search_id")
-    if hits and (not edited or search_id):
+    # Завузький фільтр - підказка розширити йде самій людині, і після правки теж.
+    if hits and (not edited or search_id or thin):
         lang = i18n.get_lang(user_id)
         relax_report = None
         if search_id:
@@ -1156,12 +1152,10 @@ def _filter_report_job(context: CallbackContext) -> None:
         except Exception:
             logger.exception("Could not send the filter report to %s", user_id)
     if ADMIN_ID and user_id != ADMIN_ID:
+        # Адміну одразу нічого: 01.11.2026 прибрали й окремі повідомлення про
+        # завузькі фільтри - людині бот підказує сам (вище), а адмін бачить
+        # усе у вечірньому зведенні (daily_filter_summary_job).
         _record_filter_event(user_id, saved, hits, edited, thin)
-        # Кожен новий чи змінений фільтр окремим повідомленням засипав адміна;
-        # одразу лишились тільки завузькі - там варто встигнути написати людині,
-        # решта приходить у вечірньому зведенні (daily_filter_summary_job).
-        if thin:
-            _notify_admin_filter_saved(bot, user_id, saved, hits, edited, thin)
 
 
 def _record_filter_event(user_id: int, saved: list, hits: Dict[str, int], edited: bool, thin: bool) -> None:
@@ -1223,7 +1217,7 @@ def filter_summary_text(bot, since: datetime, until: datetime) -> Optional[str]:
     ]
     thin_people = [user_id for user_id, person in people.items() if person["thin"]]
     if thin_people:
-        lines.append(f"⚠️ Завузьких зараз: <b>{len(thin_people)}</b> (про них ви вже отримали окремі повідомлення)")
+        lines.append(f"⚠️ Завузьких зараз: <b>{len(thin_people)}</b> (бот сам підказав людям розширити)")
     lines.append("")
     for user_id, person in list(people.items())[:FILTER_SUMMARY_PEOPLE_SHOWN]:
         try:
@@ -1256,43 +1250,6 @@ def daily_filter_summary_job(context: CallbackContext) -> None:
         context.bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode="HTML", disable_web_page_preview=True)
     except Exception:
         logger.exception("Could not send the daily filter summary")
-
-
-def _notify_admin_filter_saved(bot, user_id: int, saved: list, hits: Dict[str, int], edited: bool, thin: bool) -> None:
-    """Lets the admin catch a hopeless filter (nothing like it turns up for
-    weeks) with a word to the person instead of them quietly giving up."""
-    try:
-        chat = bot.get_chat(user_id)
-        name = _display_name(chat)
-    except Exception:
-        name = str(user_id)
-    criteria = next((c for _s, _f, c in saved if c), None) or {}
-    tier = "💎 платний" if housing_tier.is_premium(user_id) else "🆓 безкоштовний"
-    household = housing_journey_store.get_household(user_id)
-    lines = [
-        "✏️ <b>Фільтр змінено</b>" if edited else "🆕 <b>Новий фільтр</b>",
-        f"👤 {html.escape(name)} · <code>{user_id}</code> · {tier}",
-    ]
-    if household:
-        lines.append(f"🏛 Jobcenter, осіб: {household}")
-    lines.append("🔎 " + _describe_criteria(criteria, "uk"))
-    lines.append("🌐 " + ", ".join(SOURCE_LABEL.get(source, source) for source, _f, _c in saved))
-    if hits:
-        lines.append(
-            f"📊 За {FILTER_REPORT_DAYS} днів підійшло б: <b>{sum(hits.values())}</b> ({_hits_breakdown(hits)})"
-        )
-    if thin:
-        lines.append("⚠️ Замало — варто підказати людині розширити фільтр.")
-    try:
-        bot.send_message(
-            chat_id=ADMIN_ID, text="\n".join(lines), parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("💌 Написати", url=f"tg://user?id={int(user_id)}"),
-                _admin_filters_button(user_id),
-            ]]),
-        )
-    except Exception:
-        logger.exception("Could not notify admin about a filter saved by %s", user_id)
 
 
 def _clear_recent_offer_keyboard(query) -> None:

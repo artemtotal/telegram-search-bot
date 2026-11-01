@@ -231,6 +231,8 @@ job.run_daily(
 )
 # Admin: one evening summary of new/edited filters instead of a message per filter.
 job.run_daily(housing_monitor.daily_filter_summary_job, time=housing_monitor.FILTER_SUMMARY_TIME)
+# Admin: slow chat searches counted once in the evening instead of one message each.
+job.run_daily(msg_ai.daily_slow_search_summary_job, time=msg_ai.SLOW_SUMMARY_TIME)
 # A week without a single flat: tell the person why and offer one-tap relaxations.
 job.run_daily(housing_relax.quiet_filters_job, time=housing_relax.QUIET_CHECK_TIME)
 # Admin: every evening re-check the day's sends (implausible numbers, flats that

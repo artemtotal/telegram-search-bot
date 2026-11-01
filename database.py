@@ -1209,6 +1209,22 @@ class HousingPayment(Base):
     provisional_until = Column(DATETIME)
 
 
+class SlowSearch(Base):
+    """Пошук у чаті, що йшов довше за SLOW_SEARCH_FALLBACK_SECONDS.
+
+    З 01.11.2026 адмін не отримує повідомлення на кожен такий пошук - вони
+    збираються тут і приходять одним зведенням увечері (msg_ai).
+    """
+
+    __tablename__ = 'slow_search'
+
+    id = Column(INTEGER, primary_key=True)
+    query = Column(TEXT, nullable=False)
+    # Скільки всього тривав пошук; None - ще йде або впав разом з ботом.
+    seconds = Column(INTEGER)
+    created_at = Column(DATETIME, nullable=False, index=True)
+
+
 Base.metadata.create_all(engine)
 
 

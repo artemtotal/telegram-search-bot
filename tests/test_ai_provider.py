@@ -15,8 +15,22 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise unittest.SkipTest(f"optional embedding dependency is missing: {exc}")
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from database import Base, SlowSearch
+
 
 class AiProviderTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        self.Session = sessionmaker(bind=self.engine)
+
+    def tearDown(self):
+        self.engine.dispose()
+
     def test_slow_search_fallback_includes_direct_chat_links(self):
         messages = [
             {"date": "2026-08-23 14:18", "link": "https://t.me/UkrainischesBrandenburg/269894"},
@@ -45,40 +59,65 @@ class AiProviderTests(unittest.TestCase):
                 self.cancelled = True
 
         message = Mock()
-        with patch.object(msg_ai.threading, "Timer", FakeTimer):
-            notifier = msg_ai._SlowSearchFallbackNotifier(message, "детский хирург", admin_id=123)
+        with patch.object(msg_ai.threading, "Timer", FakeTimer), \
+                patch.object(msg_ai, "DBSession", self.Session):
+            notifier = msg_ai._SlowSearchFallbackNotifier(message, "детский хирург")
             notifier.start()
             notifier.cancel()
 
         self.assertTrue(notifier._timer.started)
         self.assertTrue(notifier._timer.cancelled)
         message.reply_text.assert_not_called()
+        self.assertEqual(self.Session().query(SlowSearch).count(), 0)
 
-    def test_slow_search_notifier_alerts_admin_once_and_keeps_chat_clean(self):
-        # 31.10.2026: the interim post no longer goes to the chat by default.
+    def test_slow_search_is_recorded_once_and_keeps_chat_and_admin_quiet(self):
+        # 31.10.2026: no interim post in the chat; 01.11.2026: no message to the
+        # admin either - the search is counted for the evening summary.
         message = Mock()
         message.chat_id = -1001
-        bot = Mock()
-        notifier = msg_ai._SlowSearchFallbackNotifier(
-            message, "лор врач", admin_id=123, bot=bot,
-        )
-        notifier.update_sources([
-            {"date": "2026-08-23 14:18", "link": "https://t.me/UkrainischesBrandenburg/269894"},
-        ])
-
-        notifier._send_fallback()
-        notifier._send_fallback()
+        with patch.object(msg_ai, "DBSession", self.Session):
+            notifier = msg_ai._SlowSearchFallbackNotifier(message, "лор врач")
+            notifier.start = lambda: None
+            notifier._send_fallback()
+            notifier._send_fallback()
+            notifier._started -= 70
+            notifier.cancel()
 
         message.reply_text.assert_not_called()
-        bot.send_message.assert_called_once()
-        self.assertIn("Потсдамбот: повільний пошук", bot.send_message.call_args.kwargs["text"])
+        [row] = self.Session().query(SlowSearch).all()
+        self.assertEqual(row.query, "лор врач")
+        self.assertGreaterEqual(row.seconds, 70)
 
     def test_slow_search_notifier_can_still_post_to_chat(self):
         message = Mock()
-        notifier = msg_ai._SlowSearchFallbackNotifier(message, "лор врач")
-        with patch.object(msg_ai, "SLOW_FALLBACK_TO_CHAT", True):
+        with patch.object(msg_ai, "DBSession", self.Session), \
+                patch.object(msg_ai, "SLOW_FALLBACK_TO_CHAT", True):
+            notifier = msg_ai._SlowSearchFallbackNotifier(message, "лор врач")
             notifier._send_fallback()
         message.reply_text.assert_called_once()
+
+    def test_evening_summary_counts_slow_searches_and_stays_quiet_without_them(self):
+        bot = Mock()
+        context = Mock(bot=bot)
+        with patch.object(msg_ai, "DBSession", self.Session), patch.object(msg_ai, "ADMIN_ID", 123):
+            msg_ai.daily_slow_search_summary_job(context)
+            bot.send_message.assert_not_called()
+
+            for query, seconds in (("лор врач", 50), ("детский хирург", 150), ("сантехник", None)):
+                record_id = msg_ai._record_slow_search(query)
+                if seconds is not None:
+                    msg_ai._finish_slow_search(record_id, seconds)
+            msg_ai.daily_slow_search_summary_job(context)
+
+        bot.send_message.assert_called_once()
+        self.assertEqual(bot.send_message.call_args.kwargs["chat_id"], 123)
+        text = bot.send_message.call_args.kwargs["text"]
+        self.assertIn("повільних пошуків за добу", text)
+        self.assertIn(": 3", text)
+        self.assertIn("Найдовший: 2 хв 30 с, довше 2 хв: 1", text)
+        self.assertIn("Без відповіді (обірвались): 1", text)
+        self.assertIn("• 50 с — лор врач", text)
+        self.assertIn("• не закінчився — сантехник", text)
 
     def test_keyword_search_stops_when_time_budget_is_exhausted(self):
         class FakeQuery:

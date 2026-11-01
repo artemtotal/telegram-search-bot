@@ -11,15 +11,16 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, time as dtime, timedelta
 from typing import List, Dict, Optional
 
+import pytz
 import requests
 from sqlalchemy import func, or_
 from telegram import Update
 from telegram.ext import CallbackContext, MessageHandler, Filters
 
-from database import Chat, DBSession, Message, User
+from database import Chat, DBSession, Message, SlowSearch, User
 from user_jobs.local_embeddings import LOCAL_COLLECTION
 from user_handlers import kb_search
 
@@ -1735,21 +1736,22 @@ def _build_slow_search_fallback_text(query: str, sources: Optional[List[Dict]] =
 
 
 class _SlowSearchFallbackNotifier:
-    """Send one fallback message if a search handler runs for too long."""
+    """Remembers a search handler that runs for too long (for the evening
+    summary) and, if SLOW_FALLBACK_TO_CHAT, posts one interim message."""
 
-    def __init__(self, message, query: str, admin_id: int = 0, bot=None,
-                 delay_seconds: int = SLOW_SEARCH_FALLBACK_SECONDS):
+    def __init__(self, message, query: str, delay_seconds: int = SLOW_SEARCH_FALLBACK_SECONDS):
         self.message = message
         self.query = query
-        self.admin_id = admin_id
-        self.bot = bot
         self.delay_seconds = delay_seconds
         self._sources: List[Dict] = []
         self._sent = False
         self._lock = threading.Lock()
         self._timer = None
+        self._started = time.monotonic()
+        self._record_id: Optional[int] = None
 
     def start(self) -> None:
+        self._started = time.monotonic()
         if self.delay_seconds <= 0:
             return
         self._timer = threading.Timer(self.delay_seconds, self._send_fallback)
@@ -1763,6 +1765,10 @@ class _SlowSearchFallbackNotifier:
     def cancel(self) -> None:
         if self._timer is not None:
             self._timer.cancel()
+        with self._lock:
+            record_id = self._record_id
+        if record_id is not None:
+            _finish_slow_search(record_id, int(time.monotonic() - self._started))
 
     def _send_fallback(self) -> None:
         with self._lock:
@@ -1770,28 +1776,103 @@ class _SlowSearchFallbackNotifier:
                 return
             self._sent = True
             sources = list(self._sources)
-        text = _build_slow_search_fallback_text(self.query, sources)
+        # 01.11.2026: no message to the admin per slow search any more - it is
+        # recorded and counted in the evening summary (daily_slow_search_summary_job).
+        record_id = _record_slow_search(self.query)
+        with self._lock:
+            self._record_id = record_id
         # 31.10.2026: the interim "still searching" post only cluttered the chat
         # (usually with no links yet); the wait indicator already tells the user.
         if SLOW_FALLBACK_TO_CHAT:
+            text = _build_slow_search_fallback_text(self.query, sources)
             try:
                 self.message.reply_text(text, parse_mode=None, disable_web_page_preview=True)
             except Exception:
                 logger.exception("Failed to send slow search fallback to user")
-        if self.admin_id and self.bot is not None:
-            try:
-                self.bot.send_message(
-                    chat_id=self.admin_id,
-                    text=(
-                        "⚠️ Потсдамбот: повільний пошук\n"
-                        f"Запит: {self.query}\n"
-                        f"Шукає вже {self.delay_seconds} сек."
-                    ),
-                    parse_mode=None,
-                    disable_web_page_preview=True,
-                )
-            except Exception:
-                logger.exception("Failed to notify admin about slow search")
+
+
+def _record_slow_search(query: str) -> Optional[int]:
+    session = DBSession()
+    try:
+        row = SlowSearch(query=query[:500], created_at=datetime.utcnow())
+        session.add(row)
+        session.commit()
+        return row.id
+    except Exception:
+        session.rollback()
+        logger.exception("Could not record a slow search")
+        return None
+    finally:
+        session.close()
+
+
+def _finish_slow_search(record_id: int, seconds: int) -> None:
+    session = DBSession()
+    try:
+        session.query(SlowSearch).filter(SlowSearch.id == record_id).update({"seconds": seconds})
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Could not store how long slow search %s took", record_id)
+    finally:
+        session.close()
+
+
+# Admin: one evening summary of slow searches instead of a message per search.
+# pytz, not ZoneInfo: APScheduler 3 under PTB 13 only takes pytz zones.
+SLOW_SUMMARY_TIME = dtime(21, 5, tzinfo=pytz.timezone("Europe/Berlin"))
+SLOW_SUMMARY_SHOWN = 10
+
+
+def _format_seconds(seconds: Optional[int]) -> str:
+    if seconds is None:
+        return "не закінчився"
+    minutes, rest = divmod(int(seconds), 60)
+    return f"{minutes} хв {rest} с" if minutes else f"{rest} с"
+
+
+def slow_search_summary_text(since: datetime, until: datetime) -> Optional[str]:
+    session = DBSession()
+    try:
+        rows = [
+            (row.query, row.seconds)
+            for row in session.query(SlowSearch)
+            .filter(SlowSearch.created_at >= since, SlowSearch.created_at < until)
+            .order_by(SlowSearch.created_at)
+            .all()
+        ]
+    finally:
+        session.close()
+    if not rows:
+        return None
+    done = [seconds for _q, seconds in rows if seconds is not None]
+    over_two_minutes = sum(1 for seconds in done if seconds >= 120)
+    lines = [f"🐢 Потсдамбот: повільних пошуків за добу (довше {SLOW_SEARCH_FALLBACK_SECONDS} с): {len(rows)}"]
+    if done:
+        lines.append(f"Найдовший: {_format_seconds(max(done))}, довше 2 хв: {over_two_minutes}")
+    unfinished = len(rows) - len(done)
+    if unfinished:
+        lines.append(f"Без відповіді (обірвались): {unfinished}")
+    lines.append("")
+    for query, seconds in rows[-SLOW_SUMMARY_SHOWN:]:
+        short = query if len(query) <= 80 else query[:79] + "…"
+        lines.append(f"• {_format_seconds(seconds)} — {short}")
+    if len(rows) > SLOW_SUMMARY_SHOWN:
+        lines.append(f"…і ще {len(rows) - SLOW_SUMMARY_SHOWN} раніше")
+    return "\n".join(lines)
+
+
+def daily_slow_search_summary_job(context: CallbackContext) -> None:
+    if not ADMIN_ID:
+        return
+    until = datetime.utcnow()
+    text = slow_search_summary_text(until - timedelta(days=1), until)
+    if not text:
+        return
+    try:
+        context.bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode=None, disable_web_page_preview=True)
+    except Exception:
+        logger.exception("Could not send the slow search summary")
 
 
 def _send_answer(message, text: str) -> None:
@@ -1847,9 +1928,7 @@ def handle_ai_query(update: Update, context: CallbackContext) -> None:
         return
 
     wait_indicator = _create_wait_indicator(update)
-    slow_fallback = _SlowSearchFallbackNotifier(
-        update.message, query, admin_id=ADMIN_ID, bot=context.bot,
-    )
+    slow_fallback = _SlowSearchFallbackNotifier(update.message, query)
     slow_fallback.start()
 
     try:

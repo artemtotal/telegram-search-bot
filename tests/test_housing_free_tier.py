@@ -421,11 +421,20 @@ class FilterReportTests(_InMemoryDb):
         # Only 'a' fits and is within 30 days - even though it's gone already.
         self.assertIn('<b>1</b>', calls[777]['text'])
         self.assertIn('⚠️', calls[777]['text'])
-        admin_text = calls[312029534]['text']
-        self.assertIn('Новий фільтр', admin_text)
-        self.assertIn('Іван (@ivan)', admin_text)
-        self.assertIn('Kleinanzeigen 1', admin_text)
-        self.assertIn('Замало', admin_text)
+        # 01.11.2026: the person is told to widen it; the admin only sees it in the evening.
+        self.assertNotIn(312029534, calls)
+
+    def test_a_thin_edited_filter_still_tells_the_person(self):
+        bot = mock.Mock()
+        job = SimpleNamespace(context={'user_id': 777, 'saved': [('kleinanzeigen', 1, {})], 'edited': True})
+
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
+                mock.patch.object(housing_monitor, '_filter_hits', return_value={'kleinanzeigen': 1}):
+            housing_monitor._filter_report_job(SimpleNamespace(bot=bot, job=job))
+
+        [call] = bot.send_message.call_args_list
+        self.assertEqual(call.kwargs['chat_id'], 777)
+        self.assertIn('⚠️', call.kwargs['text'])
 
     def test_an_ordinary_edit_waits_for_the_evening_summary(self):
         bot = mock.Mock()
