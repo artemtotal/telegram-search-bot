@@ -8,7 +8,7 @@ Warmmiete, so both bounds actually apply here.
 
 from typing import Any, Dict, Optional
 
-from user_jobs import housing_area
+from user_jobs import housing_area, housing_wbs
 from user_jobs import vonovia_parser, rent_bounds
 
 
@@ -32,6 +32,9 @@ def _within_max(value: Optional[float], bound: Optional[float]) -> bool:
 def matches_filter(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
     # Місце фільтра (етап 2, 02.11.2026); без нього — лише Потсдам, як і раніше.
     if not housing_area.listing_in_area(listing, filt.get("area")):
+        return False
+    # WBS (02.11.2026): людині без WBS — без квартир, де він обов'язковий.
+    if not housing_wbs.allowed(listing, filt.get("wbs")):
         return False
     rooms = _num(listing.get("rooms"))
     area = _num(listing.get("area_m2"))

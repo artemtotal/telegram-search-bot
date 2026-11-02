@@ -17,6 +17,7 @@ from database import (
     ImmoscoutListing,
     ImmoscoutStatus,
 )
+from user_jobs import housing_area
 from user_jobs import immoscout_matching, immoscout_parser
 
 STATUS_KEY = "global"
@@ -47,6 +48,7 @@ def filter_to_dict(row: ImmoscoutFilter) -> Dict:
         "min_price_warm_eur": row.min_price_warm_eur,
         "max_price_warm_eur": row.max_price_warm_eur,
         "area": _load_area(row.area),
+        "wbs": row.wbs,
         "active": row.active,
     }
 
@@ -98,6 +100,7 @@ def create_filter(
     min_price_warm_eur: Optional[float] = None,
     max_price_warm_eur: Optional[float] = None,
     area: Optional[Dict] = None,
+    wbs: Optional[str] = None,
 ) -> int:
     session = DBSession()
     try:
@@ -114,6 +117,7 @@ def create_filter(
             min_price_warm_eur=min_price_warm_eur,
             max_price_warm_eur=max_price_warm_eur,
             area=_dump_area(area),
+            wbs=wbs or None,
             active=True,
             created_at=utc_now(),
         )
@@ -152,6 +156,7 @@ def update_filter(
     min_price_warm_eur: Optional[float] = None,
     max_price_warm_eur: Optional[float] = None,
     area=KEEP,
+    wbs=housing_area.KEEP,
 ) -> bool:
     session = DBSession()
     try:
@@ -173,6 +178,8 @@ def update_filter(
         row.max_price_warm_eur = max_price_warm_eur
         if area is not KEEP:
             row.area = _dump_area(area)
+        if wbs is not housing_area.KEEP:
+            row.wbs = wbs or None
         session.flush()
         filter_data = filter_to_dict(row)
         now = utc_now()

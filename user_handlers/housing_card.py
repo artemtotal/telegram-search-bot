@@ -22,6 +22,9 @@ jobcenter_tables); в округах Бранденбургу таблиць п�
 запиту до check-Wohnung і шукає там само. Що людина сама вимкнула,
 пошук пам'ятає в `criteria["sources_off"]` і повертає, щойно місце знову Потсдам. Поки — лише для адміна, усім —
 HOUSING_PLACE_FOR_ALL=1.
+
+WBS (02.11.2026): рядок «🪪 WBS» і питання в новому фільтрі (після Jobcenter) —
+`criteria["wbs"]`, див. housing_wbs. Видно разом із місцем (place_enabled).
 """
 
 import html
@@ -34,7 +37,9 @@ from telegram.ext import CallbackContext, CallbackQueryHandler
 
 import i18n
 from user_handlers import housing_monitor as hm
-from user_jobs import housing_area, housing_journey_store, housing_search_store, jobcenter_tables, propotsdam_store
+from user_jobs import (
+    housing_area, housing_journey_store, housing_search_store, housing_wbs, jobcenter_tables, propotsdam_store,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +150,7 @@ def _member_kwargs(source: str, criteria: Dict, sources) -> Dict:
     kalt = {"min_price_eur": c.get("min_price_eur"), "max_price_eur": c.get("max_price_eur")}
     warm = {"min_price_warm_eur": c.get("min_price_warm_eur"), "max_price_warm_eur": c.get("max_price_warm_eur")}
     districts = [str(item) for item in (c.get("districts") or [])]
-    return dict(_source_kwargs(source, c, rooms_area, kalt, warm, districts), area=c.get("area"))
+    return dict(_source_kwargs(source, c, rooms_area, kalt, warm, districts), area=c.get("area"), wbs=c.get("wbs"))
 
 
 def _source_kwargs(source: str, c: Dict, rooms_area: Dict, kalt: Dict, warm: Dict, districts: List[str]) -> Dict:
@@ -177,8 +182,9 @@ def _immowelt_payload(criteria: Dict) -> Dict:
     payload["districts"] = districts
     # Завжди явно: PATCH без поля лишив би старий звужений вибір.
     payload["property_types"] = list(hm.normalize_property_types(criteria.get("property_types")))
-    # Місце — завжди явно, як і типи: PATCH без нього лишив би старе.
+    # Місце й WBS — завжди явно, як і типи: PATCH без них лишив би старе.
     payload["area"] = criteria.get("area")
+    payload["wbs"] = criteria.get("wbs")
     return payload
 
 
@@ -314,6 +320,8 @@ def card_text(number: int, search: Dict, lang: str, pointer: Optional[str] = Non
     ]
     if not housing_area.is_default(place):
         lines = [line for line in lines if line[0] != "districts"]
+    if show_place or criteria.get("wbs"):
+        lines.append(("wbs", _t("line.wbs", lang, value=wbs_label(criteria.get("wbs"), lang))))
     types = hm.normalize_property_types(criteria.get("property_types"))
     if "immowelt" in sources and types and len(types) < len(hm.PROPERTY_TYPE_KEYS):
         lines.append(("ptypes", _t("line.ptypes", lang, value=", ".join(
@@ -364,6 +372,10 @@ def card_keyboard(search: Dict, lang: str, viewer_id: int = 0) -> InlineKeyboard
          if housing_area.is_default(place) else [])
         + [InlineKeyboardButton(_t("btn.sources", lang), callback_data=f"{PREFIX}src")],
     ]
+    if place_enabled(viewer_id) or criteria.get("wbs"):
+        rows.append([InlineKeyboardButton(
+            _t("btn.wbs", lang, value=wbs_label(criteria.get("wbs"), lang)), callback_data=f"{PREFIX}wb",
+        )])
     owner = int(search["user_id"])
     admin_view = int(viewer_id) == hm.ADMIN_ID and owner != hm.ADMIN_ID
     delete = (
@@ -435,14 +447,49 @@ def _jobcenter_screen(update: Update, context: CallbackContext, edit: bool = Fal
     hm._edit_or_reply(update, _t("new_question", lang), InlineKeyboardMarkup(rows), edit and bool(query))
 
 
+def wbs_label(value, lang: str) -> str:
+    choice = housing_wbs.normalize(value)
+    if choice is None:
+        return _t("wbs.any", lang)
+    if choice == "none":
+        return _t("wbs.none", lang)
+    return f"WBS {choice}"
+
+
+def _wbs_keyboard(action: str, lang: str, back: str) -> InlineKeyboardMarkup:
+    """Вибір WBS: `action` — «wv» (картка) чи «nw» (новий фільтр)."""
+    def button(value: str, label: str) -> InlineKeyboardButton:
+        return InlineKeyboardButton(label, callback_data=f"{PREFIX}{action}:{value}")
+
+    rows = [
+        [button("any", _t("wbs.any", lang)), button("none", _t("wbs.none", lang))],
+        [button(level, f"WBS {level}") for level in ("100", "140", "160")],
+        [button(level, f"WBS {level}") for level in ("180", "220")],
+        [InlineKeyboardButton(_t("btn.back", lang) if back != "housing:menu" else hm.BTN_CANCEL, callback_data=back)],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def _wbs_question(update: Update, context: CallbackContext) -> None:
+    """Новий фільтр: останнє питання перед створенням."""
+    query = getattr(update, "callback_query", None)
+    if query:
+        query.answer()
+    lang = i18n.get_lang(update.effective_user.id)
+    hm._edit_or_reply(update, _t("new_wbs_question", lang), _wbs_keyboard("nw", lang, "housing:menu"), bool(query))
+
+
 def _create_new(update: Update, context: CallbackContext, raw: str) -> None:
     query = update.callback_query
     user = update.effective_user
     lang = i18n.get_lang(user.id)
-    place = (context.user_data.get("hcard") or {}).get("new_area")
+    st = context.user_data.get("hcard") or {}
+    place = st.get("new_area")
     criteria: Dict = {"districts": [], "property_types": []}
     if place is not None:
         criteria["area"] = place
+    if st.get("new_wbs"):
+        criteria["wbs"] = st["new_wbs"]
     persons = int(raw) if raw.isdigit() else None
     limits = jobcenter_for(place, persons) if persons else None
     if limits:
@@ -869,7 +916,8 @@ def _place_callback(update: Update, context: CallbackContext, action: str, arg: 
         if jobcenter_for(place, 1) is not None:
             _jobcenter_screen(update, context, edit=True)  # сам відповідає на натискання
         else:
-            _create_new(update, context, "no")
+            st["new_persons"] = "no"
+            _wbs_question(update, context)
         return
     _number, search = _load(int(update.effective_user.id), int(st.get("sid") or 0))
     if search is None:
@@ -933,7 +981,18 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _place_callback(update, context, action, parts[2] if len(parts) > 2 else "")
         return
     if action == "new":
-        _create_new(update, context, parts[2] if len(parts) > 2 else "no")
+        raw = parts[2] if len(parts) > 2 else "no"
+        if st.get("new_flow"):
+            # Після Jobcenter — ще питання про WBS, тоді створюємо.
+            st["new_persons"] = raw
+            _wbs_question(update, context)
+            return
+        _create_new(update, context, raw)
+        return
+    if action == "nw":
+        value = parts[2] if len(parts) > 2 else "any"
+        st["new_wbs"] = housing_wbs.normalize(value)
+        _create_new(update, context, str(st.get("new_persons") or "no"))
         return
     if action == "open":
         query.answer()
@@ -1009,6 +1068,19 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _load_drafts(context, search)
         query.answer()
         _sources_screen(update, context)
+    elif action == "wb":
+        query.answer()
+        current = wbs_label(search["criteria"].get("wbs"), lang)
+        hm._edit_or_reply(update, _t("wbs_text", lang, value=current), _wbs_keyboard("wv", lang, f"{PREFIX}open"), True)
+    elif action == "wv":
+        value = housing_wbs.normalize(parts[2] if len(parts) > 2 else "any")
+        failed = apply_criteria(search, dict(search["criteria"], wbs=value))
+        st["dirty"] = True
+        if failed:
+            query.answer(_t("save_failed", lang, sources=", ".join(failed)), show_alert=True)
+        else:
+            query.answer(_t("saved", lang))
+        _show(update, context)
     elif action in ("st", "ct", "pt"):
         key = parts[2] if len(parts) > 2 else ""
         field = {"st": "draft_sources", "ct": "draft_coops", "pt": "draft_ptypes"}[action]

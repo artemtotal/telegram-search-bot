@@ -300,6 +300,38 @@ class HousingCardPlaceTest(HousingCardTest):
     def _start(self):
         self.context.user_data['hcard'] = {'new_flow': True, 'input': 'place'}
 
+    def _new(self, raw='3', wbs='any'):
+        """У новому порядку після Jobcenter ще питання про WBS."""
+        query = self._tap(f'hcard:new:{raw}')
+        if (self.context.user_data.get('hcard') or {}).get('new_flow'):
+            query = self._tap(f'hcard:nw:{wbs}')
+        return query
+
+    def test_a_new_search_asks_about_wbs_and_every_portal_gets_it(self):
+        self._start()
+        self._tap('hcard:pc:berlin')
+        self._tap('hcard:pr:0')
+        query = self._tap('hcard:new:2')
+        self.assertIn('hcard:nw:none', self._callbacks(query))
+        self._tap('hcard:nw:none')
+        search = self._search()
+        self.assertEqual(search['criteria']['wbs'], 'none')
+        self.assertEqual(self._scout(search)['wbs'], 'none')
+        [immowelt_filter] = self.immowelt.filters.values()
+        self.assertEqual(immowelt_filter['wbs'], 'none')
+
+    def test_wbs_can_be_changed_on_the_card(self):
+        self._new('no')
+        self.assertIn('hcard:wb', self._callbacks(self._tap('hcard:open')))
+        query = self._tap('hcard:wb')
+        self.assertIn('hcard:wv:160', self._callbacks(query))
+        self._tap('hcard:wv:160')
+        search = self._search()
+        self.assertEqual(search['criteria']['wbs'], '160')
+        self.assertEqual(self._scout(search)['wbs'], '160')
+        self._tap('hcard:wv:any')
+        self.assertIsNone(self._search()['criteria']['wbs'])
+
     def _scout(self, search):
         from user_jobs import immoscout_store
         [filter_id] = [fid for source, fid in search['members'] if source == 'immoscout']

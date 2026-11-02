@@ -408,6 +408,8 @@ class ProPotsdamFilter(Base):
     max_price_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # WBS людини (housing_wbs): порожньо — не важливо.
+    wbs = Column(TEXT)
     # Місце (JSON, housing_area); порожньо — лише Потсдам.
     area = Column(TEXT)
 
@@ -474,6 +476,8 @@ class SemmelhaackFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # WBS людини (housing_wbs): порожньо — не важливо.
+    wbs = Column(TEXT)
     # Місце (JSON, housing_area); порожньо — лише Потсдам.
     area = Column(TEXT)
 
@@ -539,6 +543,8 @@ class SchobaFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # WBS людини (housing_wbs): порожньо — не важливо.
+    wbs = Column(TEXT)
     # Місце (JSON, housing_area); порожньо — лише Потсдам.
     area = Column(TEXT)
 
@@ -607,6 +613,8 @@ class RegiomaklerFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # WBS людини (housing_wbs): порожньо — не важливо.
+    wbs = Column(TEXT)
     # Місце (JSON, housing_area); порожньо — лише Потсдам.
     area = Column(TEXT)
 
@@ -682,6 +690,8 @@ class KleinanzeigenFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # WBS людини (housing_wbs): порожньо — не важливо.
+    wbs = Column(TEXT)
     # Місце (JSON, housing_area); порожньо — лише Потсдам.
     area = Column(TEXT)
 
@@ -748,6 +758,8 @@ class LocalsFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # WBS людини (housing_wbs): порожньо — не важливо.
+    wbs = Column(TEXT)
     # Місце (JSON, housing_area); порожньо — лише Потсдам.
     area = Column(TEXT)
 
@@ -820,6 +832,8 @@ class VonoviaFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # WBS людини (housing_wbs): порожньо — не важливо.
+    wbs = Column(TEXT)
     # Місце (JSON, housing_area); порожньо — лише Потсдам.
     area = Column(TEXT)
 
@@ -891,6 +905,8 @@ class InberlinFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # WBS людини (housing_wbs): порожньо — не важливо.
+    wbs = Column(TEXT)
     # Місце (JSON, housing_area); без місця (лише Потсдам) квартир звідси не буде.
     area = Column(TEXT)
 
@@ -971,6 +987,8 @@ class ImmoscoutFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # WBS людини (housing_wbs): порожньо — не важливо.
+    wbs = Column(TEXT)
     # Місце (JSON, див. housing_area); порожньо — лише Потсдам, як до 02.11.2026.
     area = Column(TEXT)
 
@@ -1098,6 +1116,8 @@ class KarlmarxFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # WBS людини (housing_wbs): порожньо — не важливо.
+    wbs = Column(TEXT)
     # Місце (JSON, housing_area); порожньо — лише Потсдам.
     area = Column(TEXT)
 
@@ -1415,6 +1435,17 @@ _ensure_column('vonovia_filter', 'area', 'TEXT')
 _ensure_column('propotsdam_filter', 'area', 'TEXT')
 _ensure_column('kleinanzeigen_listing', 'region', 'TEXT')
 _ensure_column('vonovia_listing', 'region', 'TEXT')
+# WBS у фільтрі (02.11.2026).
+_ensure_column('kleinanzeigen_filter', 'wbs', 'TEXT')
+_ensure_column('semmelhaack_filter', 'wbs', 'TEXT')
+_ensure_column('schoba_filter', 'wbs', 'TEXT')
+_ensure_column('regiomakler_filter', 'wbs', 'TEXT')
+_ensure_column('locals_filter', 'wbs', 'TEXT')
+_ensure_column('karlmarx_filter', 'wbs', 'TEXT')
+_ensure_column('vonovia_filter', 'wbs', 'TEXT')
+_ensure_column('propotsdam_filter', 'wbs', 'TEXT')
+_ensure_column('immoscout_filter', 'wbs', 'TEXT')
+_ensure_column('inberlin_filter', 'wbs', 'TEXT')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword
 # `text_lower LIKE '%word%'` queries per user message, each filtered by

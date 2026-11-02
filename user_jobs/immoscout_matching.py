@@ -10,7 +10,7 @@ district that contains it as whole words — but "Waldstadt I" must not match
 import re
 from typing import Any, Dict, Iterable, List, Optional
 
-from user_jobs import housing_area, immoscout_parser, rent_bounds
+from user_jobs import housing_area, housing_wbs, immoscout_parser, rent_bounds
 
 # ProPotsdam пише Waldstadt цифрою, Immowelt та ImmoScout24 — римською.
 _DISTRICT_ALIASES = {"waldstadt 1": "waldstadt i", "waldstadt 2": "waldstadt ii"}
@@ -75,6 +75,9 @@ def matches_filter(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
         return False
     # Місце фільтра (з 02.11.2026); без нього — лише Потсдам, як і раніше.
     if not housing_area.listing_in_area(listing, filt.get("area")):
+        return False
+    # WBS (02.11.2026): людині без WBS — без квартир, де він обов'язковий.
+    if not housing_wbs.allowed(listing, filt.get("wbs")):
         return False
     rooms = _num(listing.get("rooms"))
     area = _num(listing.get("area_m2"))
