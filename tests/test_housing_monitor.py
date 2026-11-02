@@ -4109,10 +4109,10 @@ class HousingCoopSubscriptionTests(unittest.TestCase):
 
         self.assertIn('housing:coops', callbacks)
 
-    def test_all_fourteen_sources_are_listed(self):
-        """Одинадцять порталів із фільтрами (з 02.11.2026 — і inberlinwohnen) плюс три кооперативи."""
-        self.assertEqual(len(housing_monitor.ALL_HOUSING_SOURCES), 14)
-        for key in ('vonovia', 'immoscout', 'inberlin', 'gewoba', 'wbg1903', 'wbg_daheim'):
+    def test_all_fifteen_sources_are_listed(self):
+        """Дванадцять порталів із фільтрами (з 02.11.2026 — і inberlinwohnen, ohne-makler.net) плюс три кооперативи."""
+        self.assertEqual(len(housing_monitor.ALL_HOUSING_SOURCES), 15)
+        for key in ('vonovia', 'immoscout', 'inberlin', 'ohnemakler', 'gewoba', 'wbg1903', 'wbg_daheim'):
             self.assertIn(key, housing_monitor.ALL_HOUSING_SOURCES)
 
     def test_toggling_on_subscribes_and_toggling_off_pauses(self):
@@ -4641,7 +4641,7 @@ class HousingSearchTests(unittest.TestCase):
         # Один фільтр - одразу його картка (housing_card), без списку.
         text, kwargs = update.effective_message.replies[-1]
         self.assertIn('Пошук #1', text)
-        for expected in ('від 2', 'від 50 м²', 'до 900 €', '3 з 10', 'кооперативи: 1'):
+        for expected in ('від 2', 'від 50 м²', 'до 900 €', '3 з 11', 'кооперативи: 1'):
             self.assertIn(expected, text)
         callbacks = self._callbacks(kwargs['reply_markup'])
         self.assertIn('hcard:f:max_price_eur', callbacks)

@@ -933,6 +933,75 @@ class InberlinDelivery(Base):
     sent_at = Column(DATETIME, nullable=False)
 
 
+class OhnemaklerListing(Base):
+    """ohne-makler.net (етап 6, 02.11.2026): приватні оголошення без комісії.
+
+    У картці лише Kaltmiete; у місце фільтра — за індексом."""
+
+    __tablename__ = 'ohnemakler_listing'
+
+    listing_key = Column(TEXT, primary_key=True)
+    title = Column(TEXT, nullable=False)
+    address = Column(TEXT)
+    plz = Column(TEXT)
+    # «berlin» або «brandenburg» — яким пошуком знайдено.
+    region = Column(TEXT)
+    rooms = Column(FLOAT)
+    area_m2 = Column(FLOAT)
+    price_eur = Column(FLOAT)
+    price_warm_eur = Column(FLOAT)
+    gallery_urls = Column(TEXT)
+    detail_url = Column(TEXT)
+    cover_image_url = Column(TEXT)
+    first_seen_at = Column(DATETIME, nullable=False)
+    last_seen_at = Column(DATETIME, nullable=False)
+    is_active = Column(BOOLEAN, nullable=False, default=True)
+
+
+class OhnemaklerFilter(Base):
+    __tablename__ = 'ohnemakler_filter'
+
+    filter_id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    title = Column(TEXT, nullable=False)
+    min_rooms = Column(FLOAT)
+    max_rooms = Column(FLOAT)
+    min_area_m2 = Column(FLOAT)
+    max_area_m2 = Column(FLOAT)
+    min_price_eur = Column(FLOAT)
+    max_price_eur = Column(FLOAT)
+    min_price_warm_eur = Column(FLOAT)
+    max_price_warm_eur = Column(FLOAT)
+    active = Column(BOOLEAN, nullable=False, default=True)
+    created_at = Column(DATETIME, nullable=False)
+    # WBS людини (housing_wbs): порожньо — не важливо.
+    wbs = Column(TEXT)
+    # Місце (JSON, housing_area); без місця (лише Потсдам) квартир звідси не буде.
+    area = Column(TEXT)
+
+
+class OhnemaklerStatus(Base):
+    __tablename__ = 'ohnemakler_status'
+
+    key = Column(TEXT, primary_key=True)
+    last_checked_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_error = Column(TEXT)
+    listings_count = Column(INTEGER)
+
+
+class OhnemaklerDelivery(Base):
+    __tablename__ = 'ohnemakler_delivery'
+    __table_args__ = (
+        UniqueConstraint('filter_id', 'listing_key', name='uq_ohnemakler_delivery_filter_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    filter_id = Column(INTEGER, nullable=False, index=True)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    sent_at = Column(DATETIME, nullable=False)
+
+
 class ImmoscoutListing(Base):
     """Квартири ImmoScout24 — з API мобільного застосунку.
 

@@ -43,6 +43,7 @@ from user_jobs import karlmarx_monitor
 from user_jobs import vonovia_monitor
 from user_jobs import immoscout_monitor
 from user_jobs import inberlin_monitor
+from user_jobs import ohnemakler_monitor
 from user_jobs import housing_missed
 from user_jobs import housing_letter_store
 
@@ -212,6 +213,13 @@ if inberlin_monitor.CHECK_ENABLED:
         inberlin_monitor.check_job,
         interval=inberlin_monitor.CHECK_INTERVAL_SECONDS,
         first=470,
+    )
+# Приватні оголошення без комісії (ohne-makler.net, етап 6, 02.11.2026).
+if ohnemakler_monitor.CHECK_ENABLED:
+    job.run_repeating(
+        ohnemakler_monitor.check_job,
+        interval=ohnemakler_monitor.CHECK_INTERVAL_SECONDS,
+        first=500,
     )
 
 # Housing access subscriptions: daily check for 3-day expiry warnings and

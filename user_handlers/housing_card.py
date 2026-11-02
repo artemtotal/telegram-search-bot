@@ -73,7 +73,7 @@ JOBCENTER_CHOICES = (1, 2, 3, 4, 5, 6)
 # Площадки, що шукають і поза Потсдамом. Решта поки збирає лише Потсдам.
 # Immowelt — з етапу 3 (02.11.2026): check-Wohnung читає Берлін і Бранденбург
 # без браузера й звіряє місце фільтра (копія housing_area там).
-REGION_SOURCES = {"immoscout", "kleinanzeigen", "vonovia", "immowelt"}
+REGION_SOURCES = {"immoscout", "kleinanzeigen", "vonovia", "immowelt", "ohnemakler"}
 # Площадки, що не знають місця. Поки таких немає.
 POTSDAM_ONLY_SOURCES: set = set()
 # Лише Берлін: міські компанії з inberlinwohnen.de (етап 8).
