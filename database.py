@@ -1002,6 +1002,25 @@ class OhnemaklerDelivery(Base):
     sent_at = Column(DATETIME, nullable=False)
 
 
+class CoopOfferLink(Base):
+    """Посилання на сторінках пропозицій кооперативів Берліна (етап 9, 02.11.2026).
+
+    Нове посилання стає `confirmed`, коли його видно другий обхід поспіль;
+    `notified` — людям про нього вже написали (у базі першого обходу — одразу)."""
+
+    __tablename__ = 'coop_offer_link'
+    __table_args__ = (UniqueConstraint('coop_key', 'url', name='uq_coop_offer_link'),)
+
+    id = Column(INTEGER, primary_key=True)
+    coop_key = Column(TEXT, nullable=False, index=True)
+    url = Column(TEXT, nullable=False)
+    title = Column(TEXT)
+    first_seen_at = Column(DATETIME, nullable=False)
+    last_seen_at = Column(DATETIME, nullable=False)
+    confirmed = Column(BOOLEAN, nullable=False, default=False)
+    notified = Column(BOOLEAN, nullable=False, default=False)
+
+
 class ImmoscoutListing(Base):
     """Квартири ImmoScout24 — з API мобільного застосунку.
 

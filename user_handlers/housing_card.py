@@ -38,7 +38,8 @@ from telegram.ext import CallbackContext, CallbackQueryHandler
 import i18n
 from user_handlers import housing_monitor as hm
 from user_jobs import (
-    housing_area, housing_journey_store, housing_search_store, housing_wbs, jobcenter_tables, propotsdam_store,
+    coop_offers, housing_area, housing_journey_store, housing_search_store, housing_wbs, jobcenter_tables,
+    propotsdam_store,
 )
 
 logger = logging.getLogger(__name__)
@@ -303,6 +304,8 @@ def card_text(number: int, search: Dict, lang: str, pointer: Optional[str] = Non
     )
     if search.get("coops"):
         portals += _t("coops", lang, n=len(search["coops"]))
+    if housing_area.touches_berlin(criteria.get("area")) and criteria.get("berlin_coops") is not False:
+        portals += _t("coops", lang, n=coop_offers.count())
     place = criteria.get("area")
     if not housing_area.covers_potsdam(place):
         # Поза Потсдамом — не «1 з 11», а які саме площадки шукають.
@@ -679,6 +682,12 @@ def _sources_screen(update: Update, context: CallbackContext) -> None:
         )
         for coop in hm.coop_watchdog.COOPERATIVES
     ])
+    # Кооперативи Берліна (етап 9) — одним перемикачем, коли в зоні є Берлін.
+    if housing_area.touches_berlin(place):
+        rows.append([InlineKeyboardButton(
+            ("✅ " if st.get("draft_berlin_coops", True) else "☐ ") + _t("btn.berlin_coops", lang, n=coop_offers.count()),
+            callback_data=f"{PREFIX}bc",
+        )])
     if "immowelt" in sources and "immowelt" in covering:
         types = set(st.get("draft_ptypes") or [])
         rows.append([
@@ -702,6 +711,7 @@ def _load_drafts(context: CallbackContext, search: Dict) -> None:
     st["draft_sources"] = _sources(search)
     st["draft_coops"] = list(search.get("coops") or [])
     st["draft_place"] = search["criteria"].get("area")
+    st["draft_berlin_coops"] = search["criteria"].get("berlin_coops") is not False
     # Порожній список у фільтрі - «усі райони». На екрані це всі галочки, а
     # не жодної: інакше людина бачила «нічого не вибрано» й думала, що
     # квартир не буде ніде (27.10.2026).
@@ -750,6 +760,7 @@ def _save_sources(update: Update, context: CallbackContext, search: Dict) -> Opt
         if not active:
             hm._set_one_filter_active(source, filter_id, False, owner)
         housing_search_store.add_member(search["search_id"], source, filter_id)
+    criteria["berlin_coops"] = bool(st.get("draft_berlin_coops", True))
     coops = [key for key in hm.COOP_KEYS if key in set(st.get("draft_coops") or [])]
     if not housing_area.covers_potsdam(criteria.get("area")):
         coops = []
@@ -1139,6 +1150,10 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         else:
             query.answer(_t("saved", lang))
         _show(update, context)
+    elif action == "bc":
+        st["draft_berlin_coops"] = not st.get("draft_berlin_coops", True)
+        query.answer()
+        _sources_screen(update, context)
     elif action in ("st", "ct", "pt"):
         key = parts[2] if len(parts) > 2 else ""
         field = {"st": "draft_sources", "ct": "draft_coops", "pt": "draft_ptypes"}[action]

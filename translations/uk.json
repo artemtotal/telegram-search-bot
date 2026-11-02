@@ -643,6 +643,8 @@
   "housing.card.btn.radius_city": "Лише місто",
   "housing.card.place_note_outside": "ℹ️ Поза Потсдамом поки шукають ImmoScout24, Immowelt, Kleinanzeigen, Vonovia й ohne-makler.net; потсдамські агентства — лише в тій частині зони, що в Потсдамі. Інші портали додаємо по черзі — бот сам почне шукати й там.",
   "housing.card.place_note_radius": "ℹ️ За межами Потсдама поки шукають ImmoScout24, Immowelt, Kleinanzeigen, Vonovia й ohne-makler.net, решта порталів — у самому Потсдамі. Інші портали додаємо по черзі.",
+  "housing.card.btn.berlin_coops": "🏘 Кооперативи Берліна ({n})",
+  "housing.coop_offer.new": "🏘 <b>{coop}</b>: на сторінці пропозицій з'явилось нове — «{title}».\n\n{url}\n\nКооперативи зазвичай здають житло лише членам і часто ведуть списки очікування — умови дивіться на сайті кооперативу.",
   "housing.card.line.wbs": "🪪 WBS: {value}",
   "housing.card.btn.wbs": "🪪 WBS: {value}",
   "housing.card.wbs.any": "не важливо",

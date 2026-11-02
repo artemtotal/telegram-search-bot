@@ -167,6 +167,7 @@ class KleinanzeigenMonitorCheckJobTests(unittest.TestCase):
             'Ca 25m Zimmer in einer Zweck!-WG in Potsdam-West ab 1.10. frei',
             'Vermiete-Untermieter Zimmer 17 qm + in gute Wohnung 80 qm Potsdam',
             'Zimmer in Potsdam zu vermieten',
+            '1 Zimmer in einer 4-Zimmer-Wohnung / Zweck-WG',  # 02.11.2026
         ]
         flats = [
             '2-Zimmer-Wohnung in Potsdam zur Untermiete',

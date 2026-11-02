@@ -44,6 +44,7 @@ from user_jobs import vonovia_monitor
 from user_jobs import immoscout_monitor
 from user_jobs import inberlin_monitor
 from user_jobs import ohnemakler_monitor
+from user_jobs import coop_offers
 from user_jobs import housing_missed
 from user_jobs import housing_letter_store
 
@@ -221,6 +222,9 @@ if ohnemakler_monitor.CHECK_ENABLED:
         interval=ohnemakler_monitor.CHECK_INTERVAL_SECONDS,
         first=500,
     )
+# Кооперативи Берліна: нові посилання на сторінках пропозицій (етап 9, 02.11.2026).
+if coop_offers.CHECK_ENABLED:
+    job.run_repeating(coop_offers.check_job, interval=coop_offers.CHECK_INTERVAL_SECONDS, first=530)
 
 # Housing access subscriptions: daily check for 3-day expiry warnings and
 # auto-closing access once the paid period actually runs out.

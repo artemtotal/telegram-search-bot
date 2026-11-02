@@ -169,7 +169,14 @@ _COUNT_BEFORE_ZIMMER_RE = re.compile(
 )
 
 
+# «1 Zimmer in einer 4-Zimmer-Wohnung / Zweck-WG» — теж кімната, хоч перед
+# «Zimmer» і стоїть число (02.11.2026 таку отримали 42 людини, що шукають квартиру).
+_ROOM_IN_FLAT_RE = re.compile(r"\bzimmer\s+in\s+(?:einer|der|unserer|meiner|einem)\b|\bzweck[\s!-]*wg\b", re.IGNORECASE)
+
+
 def _is_room_offer(title: str) -> bool:
+    if _ROOM_IN_FLAT_RE.search(title):
+        return True
     for match in _ZIMMER_RE.finditer(title):
         if _FLAT_AFTER_ZIMMER_RE.match(title, match.end()):
             continue

@@ -643,6 +643,8 @@
   "housing.card.btn.radius_city": "Nur die Stadt",
   "housing.card.place_note_outside": "ℹ️ Außerhalb von Potsdam suchen vorerst ImmoScout24, Immowelt, Kleinanzeigen, Vonovia und ohne-makler.net; die Potsdamer Anbieter nur im Potsdamer Teil des Umkreises. Weitere Portale kommen nach und nach dazu — der Bot sucht dann automatisch auch dort.",
   "housing.card.place_note_radius": "ℹ️ Außerhalb von Potsdam suchen vorerst ImmoScout24, Immowelt, Kleinanzeigen, Vonovia und ohne-makler.net, die übrigen Portale nur in Potsdam selbst. Weitere Portale kommen nach und nach dazu.",
+  "housing.card.btn.berlin_coops": "🏘 Berliner Genossenschaften ({n})",
+  "housing.coop_offer.new": "🏘 <b>{coop}</b>: Auf der Angebotsseite ist etwas Neues erschienen — „{title}“.\n\n{url}\n\nGenossenschaften vermieten meist nur an Mitglieder und führen oft Wartelisten — die Bedingungen stehen auf der Website der Genossenschaft.",
   "housing.card.line.wbs": "🪪 WBS: {value}",
   "housing.card.btn.wbs": "🪪 WBS: {value}",
   "housing.card.wbs.any": "egal",
