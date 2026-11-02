@@ -17,6 +17,10 @@ USER = 544675510
 ADMIN = 312029534
 
 
+def area_find(name):
+    return housing_card.housing_area.find(name)[0]
+
+
 class FakeMessage:
     def __init__(self, text='', user_id=USER):
         self.text = text
@@ -307,7 +311,8 @@ class HousingCardPlaceTest(HousingCardTest):
         self._start()
         query = self._tap('hcard:pc:berlin')
         self.assertIn('hcard:pr:10', self._callbacks(query))
-        query = self._tap('hcard:pr:10')
+        self._tap('hcard:pr:10')
+        query = self._new('no')  # питання Jobcenter (Берлін, етап 5)
         search = self._search()
         # У 10 км від Берліна вже Бабельсберг — агентства Потсдама теж шукають
         # (за індексом), а Immowelt місця не знає.
@@ -390,14 +395,34 @@ class HousingCardPlaceTest(HousingCardTest):
         self._tap('hcard:pr:0')
         self.assertEqual(sorted(hm._search_sources(self._search())), ['immoscout', 'kleinanzeigen', 'vonovia'])
 
-    def test_jobcenter_limits_only_for_potsdam(self):
+    def test_jobcenter_limits_for_potsdam_and_berlin_only(self):
         self._new('no')
         housing_journey_store.set_household(USER, 2)
-        self.assertTrue(any('Jobcenter' in b.text for row in housing_card._field_keyboard(
-            'max_price_eur', USER, 'uk', None).inline_keyboard for b in row))
-        berlin = housing_card.housing_area.make(housing_card.housing_area.find('Berlin')[0], 0)
-        self.assertFalse(any('Jobcenter' in b.text for row in housing_card._field_keyboard(
-            'max_price_eur', USER, 'uk', berlin).inline_keyboard for b in row))
+        area = housing_card.housing_area
+
+        def jobcenter_buttons(place):
+            return [b.text for row in housing_card._field_keyboard('max_price_eur', USER, 'uk', place).inline_keyboard
+                    for b in row if 'Jobcenter' in b.text]
+
+        self.assertTrue(jobcenter_buttons(None))
+        # Берлін — AV-Wohnen з 01.01.2026: 2 особи — 543,40 € Bruttokalt.
+        self.assertIn('543', jobcenter_buttons(area.make(area.find('Berlin')[0], 10))[0])
+        self.assertEqual(jobcenter_buttons(area.make(area.find('Werder (Havel)')[0], 0)), [])
+
+    def test_a_new_berlin_search_asks_jobcenter_with_berlin_limits(self):
+        self._start()
+        self._tap('hcard:pc:berlin')
+        query = self._tap('hcard:pr:0')
+        self.assertIn('hcard:new:2', self._callbacks(query))
+        self._new('2')
+        criteria = self._search()['criteria']
+        self.assertEqual(criteria['max_price_eur'], 543.40)
+        self.assertEqual(criteria['max_price_warm_eur'], 703.95)  # + опалення 160,55 € (газ, 251–500 м²)
+        # Для Werder таблиці немає — питання Jobcenter пропускаємо.
+        self._start()
+        self.context.user_data['hcard'].update(place_draft=area_find('Werder (Havel)'))
+        query = self._tap('hcard:pr:0')
+        self.assertNotIn('hcard:new:2', self._callbacks(query))
 
 
 # Успадковані тести картки вже йдуть у HousingCardTest — тут лише свої.

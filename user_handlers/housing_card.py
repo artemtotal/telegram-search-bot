@@ -15,8 +15,8 @@
 
 Місце (02.11.2026, етап 1 «Берлін і Бранденбург», docs/housing-region-plan.md):
 рядок «📍 Де» — місто чи індекс і радіус (`criteria["area"]`, housing_area).
-Новий фільтр спершу питає місце, Jobcenter — лише для Потсдама (ліміти
-потсдамські). Поза Потсдамом працюють площадки з REGION_SOURCES, а коли в
+Новий фільтр спершу питає місце, Jobcenter — для Потсдама й Берліна (етап 5,
+jobcenter_tables); в округах Бранденбургу таблиць поки немає. Поза Потсдамом працюють площадки з REGION_SOURCES, а коли в
 зону потрапляє частина Потсдама — ще й потсдамські агентства (їхні квартири
 звіряються за індексом, етап 2). Immowelt — лише в самому Потсдамі: його
 записи живуть у check-Wohnung і місця не знають. Що людина сама вимкнула,
@@ -34,7 +34,7 @@ from telegram.ext import CallbackContext, CallbackQueryHandler
 
 import i18n
 from user_handlers import housing_monitor as hm
-from user_jobs import housing_area, housing_journey_store, housing_search_store, propotsdam_store
+from user_jobs import housing_area, housing_journey_store, housing_search_store, jobcenter_tables, propotsdam_store
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,17 @@ def covering_sources(area: Optional[Dict]) -> List[str]:
     if housing_area.touches_potsdam(area):
         return [source for source in hm.AVAILABLE_SOURCE_KEYS if source not in POTSDAM_ONLY_SOURCES]
     return [source for source in hm.AVAILABLE_SOURCE_KEYS if source in REGION_SOURCES]
+
+
+def jobcenter_for(place: Optional[Dict], persons: int) -> Optional[Tuple[float, float]]:
+    """(холодна, тепла) межа Jobcenter для місця; None — таблиці для нього немає.
+
+    Потсдам — потсдамська таблиця (і з радіусом: людина живе в Потсдамі),
+    Берлін — AV-Wohnen (етап 5), округи Бранденбургу — поки ні."""
+    if housing_area.is_potsdam(place):
+        _area, price, warm = hm.jobcenter_limits(persons)
+        return price, warm
+    return jobcenter_tables.for_place(place, persons)
 
 
 def place_sources(criteria: Dict) -> List[str]:
@@ -419,8 +430,9 @@ def _create_new(update: Update, context: CallbackContext, raw: str) -> None:
     if place is not None:
         criteria["area"] = place
     persons = int(raw) if raw.isdigit() else None
-    if persons:
-        _area, price, warm = hm.jobcenter_limits(persons)
+    limits = jobcenter_for(place, persons) if persons else None
+    if limits:
+        price, warm = limits
         # Холодна межа = сам ліміт Bruttokaltmiete, як і в майстрі.
         criteria.update(max_price_eur=price, max_price_warm_eur=warm)
     try:
@@ -449,14 +461,14 @@ def _field_keyboard(field: str, owner: int, lang: str, place: Optional[Dict] = N
     ]
     rows = _pairs(buttons, 3)
     persons = None
-    # Ліміти Jobcenter у боті — потсдамські.
-    if field in PRICE_MIN_OF and housing_area.is_potsdam(place):
+    # Ліміти Jobcenter — лише там, де бот знає таблицю (Потсдам, Берлін).
+    if field in PRICE_MIN_OF and jobcenter_for(place, 1) is not None:
         try:
             persons = housing_journey_store.get_household(owner)
         except Exception:
             persons = None
     if persons:
-        _area, price, warm = hm.jobcenter_limits(persons)
+        price, warm = jobcenter_for(place, persons)
         limit = price if field == "max_price_eur" else warm
         rows.insert(0, [InlineKeyboardButton(
             _t("jobcenter_btn", lang, n=persons, value=_value(limit, "€")), callback_data=f"{PREFIX}v:{field}:{limit}",
@@ -840,7 +852,7 @@ def _place_callback(update: Update, context: CallbackContext, action: str, arg: 
     place = housing_area.make(draft, radius)
     if st.get("new_flow"):
         st["new_area"] = place
-        if housing_area.is_potsdam(place):
+        if jobcenter_for(place, 1) is not None:
             _jobcenter_screen(update, context, edit=True)  # сам відповідає на натискання
         else:
             _create_new(update, context, "no")
