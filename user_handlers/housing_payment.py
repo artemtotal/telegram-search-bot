@@ -396,19 +396,33 @@ def handle_receipt(update: Update, context: CallbackContext) -> None:
     provisional = None
     if payment.status == "awaiting_receipt":
         provisional = _grant_provisional(payment)
+    caption = _admin_caption(payment, user.id, message.caption or "")
     try:
         context.bot.copy_message(
             chat_id=ADMIN_ID,
             from_chat_id=message.chat_id,
             message_id=message.message_id,
-            caption=_admin_caption(payment, user.id, message.caption or ""),
+            caption=caption,
             parse_mode="HTML",
             reply_markup=_admin_keyboard(payment, user.id),
         )
-    except Exception:
+    except Exception as exc:
+        # 01.11.2026: квитанція Наталії не скопіювалась, вона побачила «Не вдалося
+        # надіслати запит», а адмін — нічого; оплата висіла без рішення. Тепер адмін
+        # отримує ту саму картку текстом із кнопками й просить фото в ЛС, якщо треба.
         logger.exception("Could not forward a payment receipt of user %s to the admin", user.id)
-        message.reply_text(i18n.t("housing.access.request_failed", lang))
-        return
+        try:
+            context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"{caption}\n\n⚠️ Квитанцію не вдалося переслати ({html.escape(str(exc)[:200])}) — "
+                     f"за потреби попросіть її в ЛС.",
+                parse_mode="HTML",
+                reply_markup=_admin_keyboard(payment, user.id),
+            )
+        except Exception:
+            logger.exception("Could not tell the admin about a payment receipt of user %s", user.id)
+            message.reply_text(i18n.t("housing.access.request_failed", lang))
+            return
     if payment.status == "awaiting_receipt":
         _set_status(payment.id, "sent", receipt_at=utc_now())
     if provisional:
@@ -435,6 +449,12 @@ def remind_receipt(update: Update, context: CallbackContext) -> bool:
 def _edit_admin_message(query, text: str) -> None:
     try:
         query.edit_message_caption(caption=text, parse_mode="HTML")
+        return
+    except Exception:
+        pass
+    try:
+        # Картка без фото (квитанція не переслалась) — це текст, не підпис.
+        query.edit_message_text(text=text, parse_mode="HTML")
     except Exception:
         # Квитанцію надіслали текстом-документом без підпису або повідомлення
         # вже змінене - кнопки все одно треба прибрати.

@@ -127,6 +127,20 @@ class HousingPaymentTest(unittest.TestCase):
         self.assertEqual(data, [f"housing:pay:ok:{payment_id}", f"housing:pay:no:{payment_id}"])
         self.assertEqual(self._payments()[-1][2], "sent")
 
+    def test_receipt_that_cannot_be_copied_still_reaches_the_admin(self):
+        # 01.11.2026: copy_message упав — людині «Не вдалося», адміну нічого.
+        self.context.bot.copy_message.side_effect = RuntimeError("Bad Request: message can't be copied")
+        photo = _photo(caption="оплатила")
+        housing_payment.handle_callback(_callback("housing:pay:m:1"), self.context)
+        housing_payment.handle_receipt(photo, self.context)
+        sent = self.context.bot.send_message.call_args.kwargs
+        self.assertEqual(sent["chat_id"], ADMIN)
+        self.assertIn("не вдалося переслати", sent["text"])
+        self.assertIn("housing:pay:ok:", sent["reply_markup"].inline_keyboard[0][0].callback_data)
+        self.assertEqual(self._payments()[-1][2], "sent")
+        replies = " ".join(str(c.args[0]) for c in photo.effective_message.reply_text.call_args_list)
+        self.assertNotIn("Не вдалося", replies)
+
     def test_photo_without_open_payment_is_ignored(self):
         housing_payment.handle_receipt(_photo(), self.context)
         self.context.bot.copy_message.assert_not_called()
