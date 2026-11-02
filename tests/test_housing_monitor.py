@@ -254,7 +254,7 @@ class HousingAdminFlowTests(unittest.TestCase):
         context = SimpleNamespace(user_data={})
         update = self._update('', user_id=544675510)
         with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534), \
-             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}):
+             mock.patch.object(housing_monitor, 'ALLOWED_USER_IDS', {544675510}),              mock.patch('user_handlers.housing_card.can_add_search', return_value=True):
             housing_monitor.start_self_add_flow(update, context)
 
         text, kwargs = update.effective_message.replies[-1]

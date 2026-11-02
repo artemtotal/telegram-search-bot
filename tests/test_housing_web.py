@@ -76,9 +76,33 @@ class HousingWebTest(card_tests.HousingCardTest):
         self.assertEqual(self._req("GET", "/")[0], 200)
         # Те саме посилання вдруге — ні.
         self.assertEqual(self._req("GET", link.replace("https://example.ts.net", ""), cookie="")[0], 403)
-        # Не підписник — ні.
+        # Хто не може користуватись моніторингом узагалі — ні.
         other = housing_web.create_login_link(777)
-        self.assertEqual(self._req("GET", other.replace("https://example.ts.net", ""), cookie="")[0], 403)
+        with mock.patch.object(hm, "is_allowed", return_value=False):
+            self.assertEqual(self._req("GET", other.replace("https://example.ts.net", ""), cookie="")[0], 403)
+
+    def test_a_free_user_sees_part_of_the_site(self):
+        free = 777
+        housing_letter_store.log_letter(free, "immoscout", "1", "2-Zimmer in Mitte", "https://x/1", "Sehr geehrte …")
+        with mock.patch.object(hm, "is_allowed", return_value=True):
+            self._login(free)
+            csrf = housing_web.csrf_token(free)
+            status, headers, _ = self._req("POST", "/search/new", {"csrf": csrf})
+            self.assertEqual(status, 303)
+            home = self._req("GET", "/")[2]
+            self.assertIn("promo", home)
+            self.assertEqual(len(hm.user_searches(free)), 1)
+            history = self._req("GET", "/history")[2]
+            self.assertNotIn("Sehr geehrte", history)
+            self.assertIn(housing_web._t("letters_paid", "uk"), history)
+            self.assertEqual(self._req("GET", "/stats")[0], 200)
+            # Другий пошук — лише з підпискою.
+            self.assertEqual(self._req("POST", "/search/new", {"csrf": csrf})[0], 303)
+            self.assertEqual(len(hm.user_searches(free)), 1)
+            self.assertNotIn('action="/search/new"', self._req("GET", "/")[2])
+        # Підписник банера не бачить.
+        self._login(USER)
+        self.assertNotIn('class="card promo"', self._req("GET", "/")[2])
 
     def test_a_forged_or_expired_cookie_is_refused(self):
         self.assertIsNone(housing_web.session_user("544675510.9999999999.deadbeef"))

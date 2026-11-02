@@ -596,6 +596,7 @@
   "housing.card.coops": " + Genossenschaften: {n}",
   "housing.card.new_question": "🏠 <b>Neue Suche</b>\n\n🏛 Zahlt das Jobcenter / Sozialamt die Wohnung? Wählen Sie, wie viele Personen dort leben — der Bot setzt die Preisgrenzen selbst. Den Rest ändern Sie danach auf der Karte.",
   "housing.card.new_hint": "✨ Suche angelegt und noch pausiert. Prüfen Sie die Bedingungen, ändern Sie, was nötig ist, und tippen Sie auf „▶️ Suche starten“.",
+  "housing.card.second_paid": "🔒 <b>Eine zweite Suche gibt es im Abo</b>\n\nKostenlos ist eine Suche möglich. Sie können sie beliebig ändern: Ort, Umkreis, Preise, Zimmer.\n\nMit dem Abo „⚡ Sofort erhalten“ (5 €/Monat): beliebig viele Suchen, Wohnungen ohne Verzögerung und Briefe an Vermieter.",
   "housing.card.btn.max_price_eur": "❄️ Kalt: —",
   "housing.card.btn.max_price_warm_eur": "🔥 Warm: —",
   "housing.card.btn.min_rooms": "🛏 ab: —",
@@ -708,7 +709,11 @@
   "web.login_bad": "Der Anmeldelink ist abgelaufen oder wurde schon benutzt. Neuen im Bot holen: „🏘 Wohnungen“ → „🌐 Website“.",
   "web.not_configured": "Die Website ist noch nicht eingerichtet.",
   "web.paid_only": "Die Website ist für Abonnenten „⚡ Sofort erhalten“.",
-  "web.link_text": "🌐 <b>Ihre Website zur Wohnungssuche</b>\n\nDer Anmeldelink gilt 10 Minuten und nur einmal. Dort: Ihre Suchen, Statistik und Verlauf.",
+  "web.second_paid": "🔒 Kostenlos ist eine Suche möglich. Weitere gibt es im Abo „⚡ Sofort erhalten“.",
+  "web.sent_days": "In {days} Tagen geschickte Wohnungen: {n}",
+  "web.letters_paid": "Briefe an Vermieter gibt es im Abo „⚡ Sofort erhalten“.",
+  "web.free_banner": "Kostenloser Zugang: Wohnungen kommen 2 Std. verzögert; hier Ihre Suchen, Statistik für 7 Tage und die letzten 10 Wohnungen.<br>⚡ <b>Abo 5 €/Monat:</b> Wohnungen sofort, Anschreiben an Vermieter, Statistik für 30 Tage und der ganze Verlauf. Im Bot: „🏘 Wohnungen“ → „⚡ Sofort erhalten“.",
+  "web.link_text": "🌐 <b>Ihre Website zur Wohnungssuche</b>\n\nDer Anmeldelink gilt 10 Minuten und nur einmal. Dort: Ihre Suchen, Statistik und Verlauf (ohne Abo teilweise).",
   "web.open": "🌐 Website öffnen",
   "housing.menu.btn.web": "🌐 Website"
 }

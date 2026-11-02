@@ -129,6 +129,16 @@ class HousingCardTest(unittest.TestCase):
         self.assertIn('Почати пошук', text)
         self.assertEqual(self._callbacks(query)[0], 'hcard:on')
 
+    def test_a_free_user_gets_one_search_and_the_second_is_paid(self):
+        self._new('3')
+        query = self._new('2')
+        self.assertEqual(len(hm.user_searches(USER)), 1)
+        self.assertIn('housing:access_request', self._callbacks(query))
+        self.assertIn('🔒', query.edit_message_text.call_args.args[0])
+        with mock.patch.object(housing_card.housing_tier, 'is_premium', return_value=True):
+            self._new('2')
+        self.assertEqual(len(hm.user_searches(USER)), 2)
+
     def test_card_fits_a_phone_screen(self):
         query = self._new('no')
         markup = query.edit_message_text.call_args.kwargs['reply_markup']

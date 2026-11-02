@@ -1724,9 +1724,8 @@ def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKey
             [btn("matches", "housing:current_matches"), btn("letters", "housing:letter:menu")],
             [btn("notify", "housing:notify_settings"), btn("stats", "housing:stats")],
         ]
-        # Сайт підписника (етап 10, 02.11.2026) — лише для тих, хто платить.
-        if is_admin or housing_tier.is_premium(user_id):
-            rows.append([btn("web", "housing:web")])
+        # Сайт (етап 10, 02.11.2026): підписникам — усе, безкоштовним — частина.
+        rows.append([btn("web", "housing:web")])
         if is_admin:
             rows.append([btn("coops", "housing:coops"), btn("status", "housing:status")])
     else:

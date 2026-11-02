@@ -5,7 +5,10 @@
 «скільки й звідки прийшло» і історія — останні надіслані квартири та листи
 орендодавцям, які склав бот.
 
-* Лише для підписників (housing_tier.is_premium) і адміна.
+* Підписники (housing_tier.is_premium) і адмін бачать усе. З 02.11.2026 зайти
+  може й безкоштовний користувач моніторингу (housing_monitor.is_allowed): пошуки
+  повністю (як і в боті), статистика за 7 днів, 10 останніх квартир; листів
+  орендодавцям немає (це функція підписки), вгорі — нагадування про підписку.
 * Вхід — одноразове посилання з бота («🏘 Житло» → «🌐 Сайт»): живе 10 хвилин,
   у базі лише SHA-256 токена (HousingWebToken). Далі — підписана кука на 30 днів
   (HMAC секретом із файла HOUSING_WEB_SECRET_FILE, створюється сам).
@@ -82,9 +85,20 @@ def utc_now() -> datetime:
 
 # --- доступ -----------------------------------------------------------------------------
 
-def allowed(user_id: int) -> bool:
+FREE_STATS_DAYS = 7
+FREE_HISTORY_LIMIT = 10
+
+
+def full_access(user_id: int) -> bool:
+    """Усе на сайті: адмін і підписник."""
     from user_handlers import housing_monitor as hm
     return int(user_id) == hm.ADMIN_ID or housing_tier.is_premium(int(user_id))
+
+
+def allowed(user_id: int) -> bool:
+    """Хто взагалі може зайти: підписник або безкоштовний користувач моніторингу."""
+    from user_handlers import housing_monitor as hm
+    return full_access(user_id) or hm.is_allowed(int(user_id))
 
 
 def create_login_link(user_id: int) -> str:
@@ -295,6 +309,8 @@ def delete_search(user_id: int, search_id: int) -> bool:
 def new_search(user_id: int) -> Optional[int]:
     """Як «➕ Додати фільтр» без питань: Потсдам, на паузі — далі форма."""
     from user_handlers import housing_card, housing_monitor as hm
+    if not housing_card.can_add_search(int(user_id)):
+        return None
     criteria: Dict = {"districts": [], "property_types": []}
     return housing_card.create_search(
         int(user_id), criteria, housing_card.place_sources(criteria), list(hm.COOP_KEYS), active=False,
@@ -310,6 +326,7 @@ CSS = """
 header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);background:var(--card)}
 header b{margin-right:auto}nav a{margin-right:14px;color:var(--accent);text-decoration:none}main{max-width:900px;margin:0 auto;padding:16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0}
+.promo{border-left:4px solid var(--accent)}
 .muted{color:var(--muted)}.warn{color:var(--warn)}.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 button,.btn{background:var(--accent);color:var(--bg);border:0;border-radius:8px;padding:7px 12px;font:inherit;cursor:pointer;text-decoration:none}
 button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
@@ -321,14 +338,16 @@ details pre{white-space:pre-wrap;font:13px/1.45 ui-monospace,monospace}form.inli
 
 
 def _page(lang: str, title: str, body: str, user_id: Optional[int] = None) -> str:
-    nav = ""
+    nav = banner = ""
+    if user_id and not full_access(user_id):
+        banner = f'<div class="card promo">{_t("free_banner", lang)}</div>'
     if user_id:
         nav = (f'<nav><a href="/">{_t("nav.searches", lang)}</a><a href="/stats">{_t("nav.stats", lang)}</a>'
                f'<a href="/history">{_t("nav.history", lang)}</a><a href="/logout">{_t("nav.logout", lang)}</a></nav>')
     return (f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title>'
             f'<style>{CSS}</style></head><body><header><b>🏠 {_t("brand", lang)}</b>{nav}</header>'
-            f'<main>{body}</main></body></html>')
+            f'<main>{banner}{body}</main></body></html>')
 
 
 def _value(value) -> str:
@@ -375,8 +394,12 @@ def page_searches(user_id: int, lang: str, note: str = "") -> str:
             f'data-q="{html.escape(_t("delete_confirm", lang))}"><input type="hidden" name="csrf" value="{csrf}">'
             f'<button class="ghost">{_t("delete", lang)}</button></form></div></div>'
         )
-    blocks.append(f'<form method="post" action="/search/new"><input type="hidden" name="csrf" value="{csrf}">'
-                  f'<button>{_t("new_search", lang)}</button></form>')
+    from user_handlers import housing_card
+    if housing_card.can_add_search(user_id):
+        blocks.append(f'<form method="post" action="/search/new"><input type="hidden" name="csrf" value="{csrf}">'
+                      f'<button>{_t("new_search", lang)}</button></form>')
+    else:
+        blocks.append(f'<p class="muted">{_t("second_paid", lang)}</p>')
     return _page(lang, _t("nav.searches", lang), "".join(blocks), user_id)
 
 
@@ -428,12 +451,13 @@ def page_edit(user_id: int, search_id: int, lang: str, note: str = "") -> Option
 
 def page_stats(user_id: int, lang: str) -> str:
     from user_handlers import housing_monitor as hm
-    sends = _sends(user_id, days=30)
+    days_back = 30 if full_access(user_id) else FREE_STATS_DAYS
+    sends = _sends(user_id, days=days_back)
     if not sends:
         return _page(lang, _t("nav.stats", lang), f'<div class="card">{_t("no_sends", lang)}</div>', user_id)
     by_source = Counter(row["source"] for row in sends)
     by_day = Counter(row["sent_at"].date() for row in sends)
-    days = [(utc_now() - timedelta(days=offset)).date() for offset in range(29, -1, -1)]
+    days = [(utc_now() - timedelta(days=offset)).date() for offset in range(days_back - 1, -1, -1)]
     peak = max(by_day.values()) or 1
     width, height, bar = 600, 140, 600 / len(days)
     bars = "".join(
@@ -448,7 +472,7 @@ def page_stats(user_id: int, lang: str) -> str:
         f'<tr><td>{html.escape(hm.SOURCE_LABEL.get(source, source))}</td><td>{count}</td></tr>'
         for source, count in by_source.most_common()
     )
-    body = (f'<div class="card"><b>{_t("sent_30", lang, n=len(sends))}</b>'
+    body = (f'<div class="card"><b>{_t("sent_days", lang, days=days_back, n=len(sends))}</b>'
             f'<svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="{_t("by_day", lang)}">{bars}{labels}</svg></div>'
             f'<div class="card"><b>{_t("by_source", lang)}</b><table>{rows}</table></div>')
     return _page(lang, _t("nav.stats", lang), body, user_id)
@@ -456,8 +480,9 @@ def page_stats(user_id: int, lang: str) -> str:
 
 def page_history(user_id: int, lang: str) -> str:
     from user_handlers import housing_monitor as hm
+    full = full_access(user_id)
     rows = []
-    for row in _sends(user_id, days=60, limit=100):
+    for row in _sends(user_id, days=60, limit=100 if full else FREE_HISTORY_LIMIT):
         info = _listing_info(row["source"], row["listing_key"])
         snapshot = {}
         try:
@@ -476,13 +501,14 @@ def page_history(user_id: int, lang: str) -> str:
         rows.append(f'<tr><td>{row["sent_at"].strftime("%d.%m %H:%M")}</td><td>{link}<br><span class="muted">'
                     f'{html.escape(hm.SOURCE_LABEL.get(row["source"], row["source"]))} · {html.escape(str(info.get("address") or ""))} {html.escape(facts)}</span></td></tr>')
     letters = []
-    for item in housing_letter_store.list_letters(user_id):
+    for item in housing_letter_store.list_letters(user_id) if full else []:
         url = str(item.get("url") or "")
         title = html.escape(str(item.get("title") or item["listing_key"]))
         link = f'<a href="{html.escape(url)}" target="_blank" rel="noopener">{title}</a>' if url.startswith("https://") else title
         letters.append(f'<div class="card"><div class="muted">{item["created_at"].strftime("%d.%m.%Y %H:%M")}</div>{link}'
                        f'<details><summary>{_t("show_letter", lang)}</summary><pre>{html.escape(item.get("letter") or "")}</pre></details></div>')
-    body = (f'<h2>{_t("letters", lang)}</h2>' + ("".join(letters) or f'<p class="muted">{_t("no_letters", lang)}</p>') +
+    no_letters = _t("no_letters" if full else "letters_paid", lang)
+    body = (f'<h2>{_t("letters", lang)}</h2>' + ("".join(letters) or f'<p class="muted">{no_letters}</p>') +
             f'<h2>{_t("sent", lang)}</h2>' +
             (f'<div class="card"><table>{"".join(rows)}</table></div>' if rows else f'<p class="muted">{_t("no_sends", lang)}</p>'))
     return _page(lang, _t("nav.history", lang), body, user_id)

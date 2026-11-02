@@ -38,8 +38,8 @@ from telegram.ext import CallbackContext, CallbackQueryHandler
 import i18n
 from user_handlers import housing_monitor as hm
 from user_jobs import (
-    coop_offers, housing_area, housing_journey_store, housing_search_store, housing_wbs, jobcenter_tables,
-    propotsdam_store,
+    coop_offers, housing_area, housing_journey_store, housing_search_store, housing_tier, housing_wbs,
+    jobcenter_tables, propotsdam_store,
 )
 
 logger = logging.getLogger(__name__)
@@ -421,8 +421,33 @@ def open_card(update: Update, context: CallbackContext, search_id: int, edit: bo
 
 # --- новий фільтр ----------------------------------------------------------------
 
+# Безкоштовно — один пошук; другий і далі — за підпискою (Артем, 02.11.2026).
+# Старі зайві пошуки безкоштовних не чіпаємо, лише не даємо додати новий.
+FREE_SEARCH_LIMIT = 1
+
+
+def can_add_search(user_id: int) -> bool:
+    if int(user_id) == hm.ADMIN_ID or housing_tier.is_premium(int(user_id)):
+        return True
+    return len(housing_search_store.list_for_user(int(user_id))) < FREE_SEARCH_LIMIT
+
+
+def _paywall(update: Update, context: CallbackContext, edit: bool) -> None:
+    lang = i18n.get_lang(update.effective_user.id)
+    query = getattr(update, "callback_query", None)
+    if query:
+        query.answer()
+    hm._edit_or_reply(update, _t("second_paid", lang), InlineKeyboardMarkup([
+        [InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request")],
+        [InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu")],
+    ]), edit and bool(query))
+
+
 def start_new(update: Update, context: CallbackContext, edit: bool = False) -> None:
     user = update.effective_user
+    if not can_add_search(int(user.id)):
+        _paywall(update, context, edit)
+        return
     if place_enabled(int(user.id)):
         # Спершу місце; Jobcenter — після нього і лише для Потсдама.
         context.user_data["hcard"] = {"new_flow": True}
@@ -505,6 +530,9 @@ def _create_new(update: Update, context: CallbackContext, raw: str) -> None:
         housing_journey_store.set_household(int(user.id), persons)
     except Exception:
         logger.exception("Could not save the Jobcenter household of %s", user.id)
+    if not can_add_search(int(user.id)):
+        _paywall(update, context, True)
+        return
     query.answer()
     coops = list(hm.COOP_KEYS) if housing_area.covers_potsdam(place) else []
     search_id = create_search(int(user.id), criteria, place_sources(criteria), coops, active=False)
