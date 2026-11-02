@@ -468,7 +468,7 @@ class HousingCardPlaceTest(HousingCardTest):
         self.assertTrue(jobcenter_buttons(None))
         # Берлін — AV-Wohnen з 01.01.2026: 2 особи — 543,40 € Bruttokalt.
         self.assertIn('543', jobcenter_buttons(area.make(area.find('Berlin')[0], 10))[0])
-        self.assertEqual(jobcenter_buttons(area.make(area.find('Werder (Havel)')[0], 0)), [])
+        self.assertEqual(jobcenter_buttons(area.make(area.find('Cottbus')[0], 0)), [])
 
     def test_a_new_berlin_search_asks_jobcenter_with_berlin_limits(self):
         self._start()
@@ -479,9 +479,9 @@ class HousingCardPlaceTest(HousingCardTest):
         criteria = self._search()['criteria']
         self.assertEqual(criteria['max_price_eur'], 543.40)
         self.assertEqual(criteria['max_price_warm_eur'], 703.95)  # + опалення 160,55 € (газ, 251–500 м²)
-        # Для Werder таблиці немає — питання Jobcenter пропускаємо.
+        # Для Cottbus таблиці немає — питання Jobcenter пропускаємо.
         self._start()
-        self.context.user_data['hcard'].update(place_draft=area_find('Werder (Havel)'))
+        self.context.user_data['hcard'].update(place_draft=area_find('Cottbus'))
         query = self._tap('hcard:pr:0')
         self.assertNotIn('hcard:new:2', self._callbacks(query))
 
