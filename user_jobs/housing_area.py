@@ -29,6 +29,9 @@ from pathlib import Path
 from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Tuple
 
 DATA_FILE = Path(__file__).with_name("geo_plz_be_bb.tsv")
+# Індекс Берліна → округ (етап 7, 02.11.2026): «Берлін» у місці може мати
+# `bezirke` — тоді підходять лише індекси цих округів.
+BEZIRKE_FILE = Path(__file__).with_name("geo_berlin_bezirke.tsv")
 POTSDAM = "Potsdam"
 POTSDAM_CODE = "12054"
 BERLIN = "Berlin"
@@ -180,10 +183,36 @@ def is_default(area: Optional[Dict]) -> bool:
     return area is None or (is_potsdam(area) and not area.get("radius_km"))
 
 
+@lru_cache(maxsize=1)
+def bezirk_of_plz() -> Dict[str, str]:
+    result: Dict[str, str] = {}
+    for line in BEZIRKE_FILE.read_text(encoding="utf-8").splitlines():
+        if line and not line.startswith("#"):
+            plz, name = line.split("	")
+            result[plz] = name
+    return result
+
+
+def berlin_bezirke() -> List[str]:
+    return sorted(set(bezirk_of_plz().values()))
+
+
+def is_berlin_city(area: Optional[Dict]) -> bool:
+    """«Берлін, лише місто» — там можна обрати округи."""
+    return (
+        area is not None and area.get("kind") == "city" and area.get("code") == BERLIN_CODE
+        and not int(area.get("radius_km") or 0)
+    )
+
+
 def label(area: Optional[Dict], lang: str = "uk") -> str:
     if area is None:
         return POTSDAM
     name = str(area.get("name") or "")
+    bezirke = list(area.get("bezirke") or [])
+    if bezirke and is_berlin_city(area):
+        shown = ", ".join(bezirke[:2]) + (f" +{len(bezirke) - 2}" if len(bezirke) > 2 else "")
+        return f"{name} ({shown})"
     if area.get("kind") == "plz":
         name = f"{area.get('plz')} {name}"
     radius = int(area.get("radius_km") or 0)
@@ -230,7 +259,18 @@ def _allowed(key: Tuple) -> FrozenSet[str]:
 
 
 def allowed_plz(area: Optional[Dict]) -> FrozenSet[str]:
-    return _allowed(_area_key(area))
+    allowed = _allowed(_area_key(area))
+    bezirke = tuple(sorted(area.get("bezirke") or ())) if area else ()
+    if bezirke and is_berlin_city(area):
+        return _in_bezirke(allowed, bezirke)
+    return allowed
+
+
+@lru_cache(maxsize=256)
+def _in_bezirke(allowed: FrozenSet[str], bezirke: Tuple[str, ...]) -> FrozenSet[str]:
+    wanted = set(bezirke)
+    mapping = bezirk_of_plz()
+    return frozenset(plz for plz in allowed if mapping.get(plz) in wanted)
 
 
 def listing_plz(listing: Dict) -> str:

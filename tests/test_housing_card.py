@@ -320,6 +320,29 @@ class HousingCardPlaceTest(HousingCardTest):
         [immowelt_filter] = self.immowelt.filters.values()
         self.assertEqual(immowelt_filter['wbs'], 'none')
 
+    def test_berlin_districts_on_the_card(self):
+        self._start()
+        self._tap('hcard:pc:berlin')
+        self._tap('hcard:pr:0')
+        self._new('no')
+        query = self._tap('hcard:open')
+        self.assertIn('hcard:bz', self._callbacks(query))
+        self._tap('hcard:bz')
+        self._tap('hcard:bnone')
+        names = housing_card.housing_area.berlin_bezirke()
+        self._tap(f'hcard:bt:{names.index("Pankow")}')
+        self._tap(f'hcard:bt:{names.index("Mitte")}')
+        self._tap('hcard:bok')
+        search = self._search()
+        self.assertEqual(search['criteria']['area']['bezirke'], ['Mitte', 'Pankow'])
+        self.assertEqual(self._scout(search)['area']['bezirke'], ['Mitte', 'Pankow'])
+        self.assertIn('Berlin (Mitte, Pankow)', self._tap('hcard:open').edit_message_text.call_args.args[0])
+        # Усі округи — знову «увесь Берлін».
+        self._tap('hcard:bz')
+        self._tap('hcard:ball')
+        self._tap('hcard:bok')
+        self.assertNotIn('bezirke', self._search()['criteria']['area'])
+
     def test_wbs_can_be_changed_on_the_card(self):
         self._new('no')
         self.assertIn('hcard:wb', self._callbacks(self._tap('hcard:open')))

@@ -81,5 +81,18 @@ class AreaTests(unittest.TestCase):
         self.assertFalse(area.covers_potsdam(area.make(self.berlin, 0)))
 
 
+class BerlinBezirkeTests(unittest.TestCase):
+    def test_twelve_districts_and_a_choice_narrows_the_postcodes(self):
+        self.assertEqual(len(area.berlin_bezirke()), 12)
+        self.assertEqual(area.bezirk_of_plz()["10247"], "Friedrichshain-Kreuzberg")
+        berlin = area.make(area.find("Berlin")[0], 0)
+        some = dict(berlin, bezirke=["Mitte", "Pankow"])
+        self.assertTrue(area.listing_in_area({"plz": "10115", "region": "berlin"}, some))
+        self.assertFalse(area.listing_in_area({"plz": "12679", "region": "berlin"}, some))
+        self.assertTrue(area.listing_in_area({"plz": "12679", "region": "berlin"}, berlin))
+        self.assertEqual(area.label(some), "Berlin (Mitte, Pankow)")
+        # Округи — лише для «Берлін, лише місто».
+        self.assertFalse(area.is_berlin_city(area.make(area.find("Berlin")[0], 10)))
+
 if __name__ == "__main__":
     unittest.main()

@@ -367,9 +367,11 @@ def card_keyboard(search: Dict, lang: str, viewer_id: int = 0) -> InlineKeyboard
         [_field_button("max_price_eur", criteria, lang), _field_button("max_price_warm_eur", criteria, lang)],
         [_field_button("min_rooms", criteria, lang), _field_button("max_rooms", criteria, lang)],
         [_field_button("min_area_m2", criteria, lang), _field_button("max_area_m2", criteria, lang)],
-        # Райони — лише в самому Потсдамі.
+        # Райони — у самому Потсдамі, а округи — у самому Берліні (етап 7).
         ([InlineKeyboardButton(_t("btn.districts", lang), callback_data=f"{PREFIX}dist")]
-         if housing_area.is_default(place) else [])
+         if housing_area.is_default(place) else
+         [InlineKeyboardButton(_t("btn.districts", lang), callback_data=f"{PREFIX}bz")]
+         if housing_area.is_berlin_city(place) else [])
         + [InlineKeyboardButton(_t("btn.sources", lang), callback_data=f"{PREFIX}src")],
     ]
     if place_enabled(viewer_id) or criteria.get("wbs"):
@@ -633,6 +635,27 @@ def _districts_screen(update: Update, context: CallbackContext) -> None:
     ])
     rows.append([
         InlineKeyboardButton(_t("btn.save", lang), callback_data=f"{PREFIX}dok"),
+        InlineKeyboardButton(_t("btn.back", lang), callback_data=f"{PREFIX}open"),
+    ])
+    hm._edit_or_reply(update, _t("districts_text", lang), InlineKeyboardMarkup(rows), True)
+
+
+def _bezirke_screen(update: Update, context: CallbackContext) -> None:
+    """Округи Берліна (етап 7): ті самі кнопки, що й райони Потсдама."""
+    st = _state(context)
+    lang = i18n.get_lang(update.effective_user.id)
+    names = housing_area.berlin_bezirke()
+    chosen = set(st.get("draft_bezirke") or [])
+    rows = _pairs([
+        InlineKeyboardButton(("✅ " if name in chosen else "☐ ") + name, callback_data=f"{PREFIX}bt:{index}")
+        for index, name in enumerate(names)
+    ])
+    rows.append([
+        InlineKeyboardButton(_t("btn.all_districts", lang), callback_data=f"{PREFIX}ball"),
+        InlineKeyboardButton(_t("btn.no_districts", lang), callback_data=f"{PREFIX}bnone"),
+    ])
+    rows.append([
+        InlineKeyboardButton(_t("btn.save", lang), callback_data=f"{PREFIX}bok"),
         InlineKeyboardButton(_t("btn.back", lang), callback_data=f"{PREFIX}open"),
     ])
     hm._edit_or_reply(update, _t("districts_text", lang), InlineKeyboardMarkup(rows), True)
@@ -1068,6 +1091,41 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         _load_drafts(context, search)
         query.answer()
         _sources_screen(update, context)
+    elif action == "bz":
+        place = search["criteria"].get("area") or {}
+        st["draft_bezirke"] = list(place.get("bezirke") or housing_area.berlin_bezirke())
+        query.answer()
+        _bezirke_screen(update, context)
+    elif action == "bt":
+        names = housing_area.berlin_bezirke()
+        try:
+            name = names[int(parts[2])]
+        except (IndexError, ValueError):
+            query.answer()
+            return
+        st["draft_bezirke"] = _toggle(list(st.get("draft_bezirke") or []), name)
+        query.answer()
+        _bezirke_screen(update, context)
+    elif action in ("ball", "bnone"):
+        st["draft_bezirke"] = housing_area.berlin_bezirke() if action == "ball" else []
+        query.answer()
+        _bezirke_screen(update, context)
+    elif action == "bok":
+        chosen = sorted(set(st.get("draft_bezirke") or []))
+        place = dict(search["criteria"].get("area") or {})
+        if not chosen or not housing_area.is_berlin_city(place):
+            query.answer(_t("pick_a_district", lang), show_alert=True)
+            return
+        # Усі позначені — «увесь Берлін», без списку.
+        if set(chosen) >= set(housing_area.berlin_bezirke()):
+            place.pop("bezirke", None)
+        else:
+            place["bezirke"] = chosen
+        failed = apply_criteria(search, dict(search["criteria"], area=place))
+        st["dirty"] = True
+        query.answer(_t("save_failed", lang, sources=", ".join(failed)) if failed else _t("saved", lang),
+                     show_alert=bool(failed))
+        _show(update, context)
     elif action == "wb":
         query.answer()
         current = wbs_label(search["criteria"].get("wbs"), lang)
