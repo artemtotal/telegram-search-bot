@@ -61,6 +61,18 @@ class KleinanzeigenRegionTests(_Db):
         self.assertEqual([item["listing_key"] for item in found], ["n1", "old"])
         self.assertTrue(all(item["region"] == "berlin" for item in found))
 
+    def test_the_first_scan_of_a_region_is_a_baseline(self):
+        filter_id = kleinanzeigen_store.create_filter(user_id=1, title="t")  # Потсдам
+        pages = [[_flat("old-p", "14480 Potsdam")], [_flat("old-p", "14480 Potsdam"), _flat("new-p", "14469 Potsdam")]]
+        with mock.patch.object(kleinanzeigen_monitor, "REGIONS", ("brandenburg",)), \
+             mock.patch.object(kleinanzeigen_monitor, "REGION_PAUSE_SECONDS", 0), \
+             mock.patch.object(kleinanzeigen_monitor, "_fetch_region_page", side_effect=lambda url: pages.pop(0)):
+            kleinanzeigen_monitor._scan_regions(SimpleNamespace(bot=None))
+            self.assertIn((filter_id, "old-p"), kleinanzeigen_store.delivered_pairs())
+            kleinanzeigen_monitor._scan_regions(SimpleNamespace(bot=None))
+        # Друга сторінка — уже не перша: нова квартира чекає на відправку.
+        self.assertNotIn((filter_id, "new-p"), kleinanzeigen_store.delivered_pairs())
+
     def test_a_region_page_takes_down_nothing_and_stale_flats_go_after_three_days(self):
         kleinanzeigen_store.upsert_listings([_flat("p", "14469 Potsdam")])
         kleinanzeigen_store.upsert_listings([_flat("b1", "10247 Berlin")], region="berlin", deactivate_missing=False)

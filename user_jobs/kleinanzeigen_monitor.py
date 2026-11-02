@@ -223,13 +223,31 @@ def _scan_regions(bot, skip=frozenset()) -> List[Dict]:
             alerted = _notify_admin_fetch_failed(bot, exc, {})
             logger.warning("Kleinanzeigen %s scan failed; admin_alerted=%s: %s", region, alerted, exc)
             continue
+        first_scan = not kleinanzeigen_store.has_region(region)
         kleinanzeigen_store.upsert_listings(listings, region=region, deactivate_missing=False)
-        gone = kleinanzeigen_store.deactivate_stale(region, kleinanzeigen_store.utc_now() - REGION_STALE_AFTER)
+        if first_scan:
+            _baseline(listings)
+        gone =kleinanzeigen_store.deactivate_stale(region, kleinanzeigen_store.utc_now() - REGION_STALE_AFTER)
         logger.info("Kleinanzeigen %s scan listings=%s new=%s gone=%s", region, len(listings),
                     sum(1 for item in listings if item["listing_key"] not in known), gone)
         fetched.extend(listings)
         time.sleep(REGION_PAUSE_SECONDS)
     return fetched
+
+
+def _baseline(listings: List[Dict]) -> int:
+    """Перший обхід регіону: усе, що вже висить, — не нове.
+
+    02.11.2026 перша сторінка Бранденбургу принесла 4 потсдамські квартири,
+    яких не було на потсдамській, і одну двотижневої давності двоє людей
+    отримали як щойно знайдену."""
+    marked = 0
+    for filt in kleinanzeigen_store.list_filters():
+        for listing in listings:
+            if kleinanzeigen_matching.matches_filter(listing, filt):
+                kleinanzeigen_store.mark_delivered(int(filt["filter_id"]), str(listing["listing_key"]))
+                marked += 1
+    return marked
 
 
 def _wanted_regional(listings: List[Dict], filters: List[Dict]) -> List[Dict]:

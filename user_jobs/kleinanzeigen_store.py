@@ -307,6 +307,14 @@ def deactivate_stale(region: str, seen_before: datetime) -> int:
         session.close()
 
 
+def has_region(region: str) -> bool:
+    session = DBSession()
+    try:
+        return session.query(KleinanzeigenListing.listing_key).filter(KleinanzeigenListing.region == region).first() is not None
+    finally:
+        session.close()
+
+
 def known_keys() -> Set[str]:
     session = DBSession()
     try:
