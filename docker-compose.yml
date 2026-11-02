@@ -85,6 +85,9 @@ services:
       # Comma-separated Telegram IDs that may open housing monitoring before filters exist.
       # ADMIN_ID and users with existing housing filters are always allowed.
       - HOUSING_ALLOWED_USER_IDS=${HOUSING_ALLOWED_USER_IDS:-}
+      # «📍 Де», округи Берліна й WBS у картці фільтра — для всіх (02.11.2026);
+      # HOUSING_PLACE_FOR_ALL=0 знову сховає їх для всіх, крім адміна.
+      - HOUSING_PLACE_FOR_ALL=${HOUSING_PLACE_FOR_ALL:-1}
       # «⚡ Підписка»: карта для оплати в гривнях (housing_payment). Порожньо -
       # кнопка підписки знову просто шле запит адміну.
       - HOUSING_PAY_CARD=${HOUSING_PAY_CARD:-}
