@@ -309,6 +309,9 @@ def run_telethon_thread():
 if __name__ == "__main__":
     equeue_receiver.start_receiver(updater.bot)
     housing_receiver.start_receiver(updater.bot)
+    # Сайт підписника (етап 10): працює, лише коли задано HOUSING_WEB_URL.
+    from user_handlers import housing_web
+    housing_web.start()
 
     if is_userbot_mode():
         telethon_thread = Thread(target=run_telethon_thread, name="Thread-userbot")

@@ -21,6 +21,8 @@ services:
       - "5006:5006"
       - "127.0.0.1:5011:5011"
       - "127.0.0.1:5012:5012"
+      # Сайт підписника (етап 10): назовні — лише через Tailscale Funnel.
+      - "127.0.0.1:5013:5013"
       - "9968:9968"
     volumes:
       - tgbot_tgbot_data:/app/config
@@ -88,6 +90,8 @@ services:
       # «📍 Де», округи Берліна й WBS у картці фільтра — для всіх (02.11.2026);
       # HOUSING_PLACE_FOR_ALL=0 знову сховає їх для всіх, крім адміна.
       - HOUSING_PLACE_FOR_ALL=${HOUSING_PLACE_FOR_ALL:-1}
+      # Публічна адреса сайту підписника (Tailscale Funnel); порожньо — сайт вимкнено.
+      - HOUSING_WEB_URL=${HOUSING_WEB_URL:-https://nas.tailb08d27.ts.net}
       # «⚡ Підписка»: карта для оплати в гривнях (housing_payment). Порожньо -
       # кнопка підписки знову просто шле запит адміну.
       - HOUSING_PAY_CARD=${HOUSING_PAY_CARD:-}

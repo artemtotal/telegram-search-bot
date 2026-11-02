@@ -1021,6 +1021,35 @@ class CoopOfferLink(Base):
     notified = Column(BOOLEAN, nullable=False, default=False)
 
 
+class HousingWebToken(Base):
+    """Одноразове посилання входу на сайт підписника (етап 10, 02.11.2026).
+
+    У базі — лише SHA-256 токена: витік бази не дає входу."""
+
+    __tablename__ = 'housing_web_token'
+
+    token_hash = Column(TEXT, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    created_at = Column(DATETIME, nullable=False)
+    expires_at = Column(DATETIME, nullable=False)
+    used_at = Column(DATETIME)
+
+
+class HousingLetterLog(Base):
+    """Листи орендодавцям, які бот склав людині («✍️ Лист»), — для історії на сайті."""
+
+    __tablename__ = 'housing_letter_log'
+
+    id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    source = Column(TEXT, nullable=False)
+    listing_key = Column(TEXT, nullable=False)
+    title = Column(TEXT)
+    url = Column(TEXT)
+    letter = Column(TEXT)
+    created_at = Column(DATETIME, nullable=False)
+
+
 class ImmoscoutListing(Base):
     """Квартири ImmoScout24 — з API мобільного застосунку.
 

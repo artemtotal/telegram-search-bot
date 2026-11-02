@@ -1724,6 +1724,9 @@ def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKey
             [btn("matches", "housing:current_matches"), btn("letters", "housing:letter:menu")],
             [btn("notify", "housing:notify_settings"), btn("stats", "housing:stats")],
         ]
+        # Сайт підписника (етап 10, 02.11.2026) — лише для тих, хто платить.
+        if is_admin or housing_tier.is_premium(user_id):
+            rows.append([btn("web", "housing:web")])
         if is_admin:
             rows.append([btn("coops", "housing:coops"), btn("status", "housing:status")])
     else:
@@ -6414,6 +6417,9 @@ def _handle_callback(update: Update, context: CallbackContext) -> None:
     if query.data == "housing:menu":
         query.answer()
         show_menu(update, context, edit=True)
+    elif query.data == "housing:web":
+        from user_handlers import housing_web
+        housing_web.send_login_link(update, context)
     elif query.data == "housing:status":
         query.answer()
         show_monitoring_status(update, context, edit=True)

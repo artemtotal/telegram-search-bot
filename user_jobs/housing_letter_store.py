@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Dict, Optional
 
 import i18n
-from database import DBSession, HousingLetterProfile, HousingLetterRef
+from database import DBSession, HousingLetterProfile, HousingLetterRef, HousingLetterLog
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,30 @@ OPTIONAL_FIELDS = ("contact", "about")
 START_PREFIX = "lt"
 
 _bot_username: Optional[str] = os.getenv("BOT_USERNAME") or None
+
+
+def log_letter(user_id: int, source: str, listing_key: str, title: str, url: str, letter: str) -> None:
+    """Історія «куди я писав» для сайту підписника (02.11.2026)."""
+    session = DBSession()
+    try:
+        session.add(HousingLetterLog(
+            user_id=int(user_id), source=str(source), listing_key=str(listing_key), title=str(title or "")[:300],
+            url=str(url or "")[:500], letter=str(letter or "")[:6000], created_at=utc_now(),
+        ))
+        session.commit()
+    finally:
+        session.close()
+
+
+def list_letters(user_id: int, limit: int = 50) -> list:
+    session = DBSession()
+    try:
+        rows = (session.query(HousingLetterLog).filter(HousingLetterLog.user_id == int(user_id))
+                .order_by(HousingLetterLog.created_at.desc()).limit(int(limit)).all())
+        return [{"source": row.source, "listing_key": row.listing_key, "title": row.title, "url": row.url,
+                 "letter": row.letter, "created_at": row.created_at} for row in rows]
+    finally:
+        session.close()
 
 
 def utc_now() -> datetime:

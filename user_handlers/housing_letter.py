@@ -208,6 +208,10 @@ def _generate_and_send(bot, user_id: int, ref_id: int, variant: bool) -> None:
                 reply_markup=InlineKeyboardMarkup(rows),
             )
             logger.info("Letter for %s %s sent to %s", ref["source"], ref["listing_key"], user_id)
+            try:
+                store.log_letter(user_id, ref["source"], ref["listing_key"], _listing_label(listing), url, letter)
+            except Exception:
+                logger.exception("Could not log the letter for %s", user_id)
         except Exception:
             logger.exception("Could not deliver a letter to %s", user_id)
 

@@ -734,12 +734,26 @@ def _save_sources(update: Update, context: CallbackContext, search: Dict) -> Opt
     wanted = [source for source in covering if source in set(st.get("draft_sources") or [])]
     if not wanted:
         return i18n.t("housing.toast.pick_a_source", lang)
+    failed = change_sources(
+        search, wanted, coops=st.get("draft_coops") or [], ptypes=st.get("draft_ptypes") or [],
+        berlin_coops=bool(st.get("draft_berlin_coops", True)),
+    )
+    st["dirty"] = True
+    if failed:
+        return _t("save_failed", lang, sources=", ".join(hm.SOURCE_LABEL.get(s, s) for s in sorted(set(failed))))
+    return None
+
+
+def change_sources(search: Dict, wanted: List[str], coops, ptypes, berlin_coops: bool) -> List[str]:
+    """Площадки, кооперативи й типи житла пошуку. Спільне для бота й сайту."""
+    covering = covering_sources(search["criteria"].get("area"))
+    wanted = [source for source in covering if source in set(wanted)]
     owner = int(search["user_id"])
     criteria = dict(search["criteria"])
     # Що людина вимкнула сама — пам'ятаємо й для інших місць (див. place_sources).
     off = set(criteria.get("sources_off") or []) - set(covering)
     criteria["sources_off"] = sorted(off | {source for source in covering if source not in wanted})
-    types = [key for key in hm.PROPERTY_TYPE_KEYS if key in set(st.get("draft_ptypes") or [])]
+    types = [key for key in hm.PROPERTY_TYPE_KEYS if key in set(ptypes or [])]
     criteria["property_types"] = [] if len(types) == len(hm.PROPERTY_TYPE_KEYS) else types
     active = not _paused(search)
     current = {source: filter_id for source, filter_id in search["members"]}
@@ -760,18 +774,15 @@ def _save_sources(update: Update, context: CallbackContext, search: Dict) -> Opt
         if not active:
             hm._set_one_filter_active(source, filter_id, False, owner)
         housing_search_store.add_member(search["search_id"], source, filter_id)
-    criteria["berlin_coops"] = bool(st.get("draft_berlin_coops", True))
-    coops = [key for key in hm.COOP_KEYS if key in set(st.get("draft_coops") or [])]
+    criteria["berlin_coops"] = bool(berlin_coops)
+    coops = [key for key in hm.COOP_KEYS if key in set(coops or [])]
     if not housing_area.covers_potsdam(criteria.get("area")):
         coops = []
     housing_search_store.update(search["search_id"], coops=coops)
     hm._sync_coop_subscriptions(owner)
     refreshed = housing_search_store.get_any(search["search_id"]) or search
     failed += apply_criteria(refreshed, criteria)
-    st["dirty"] = True
-    if failed:
-        return _t("save_failed", lang, sources=", ".join(hm.SOURCE_LABEL.get(s, s) for s in sorted(set(failed))))
-    return None
+    return failed
 
 
 # --- місце ---------------------------------------------------------------------------
@@ -886,6 +897,16 @@ def _sync_members(search: Dict, criteria: Dict) -> List[str]:
 
 def _save_place(update: Update, context: CallbackContext, search: Dict, place: Optional[Dict]) -> Optional[str]:
     lang = i18n.get_lang(update.effective_user.id)
+    failed = change_place(search, place)
+    _state(context)["dirty"] = True
+    if failed:
+        return _t("save_failed", lang, sources=", ".join(hm.SOURCE_LABEL.get(s, s) for s in sorted(set(failed))))
+    return None
+
+
+def change_place(search: Dict, place: Optional[Dict]) -> List[str]:
+    """Нове місце пошуку: записи площадок під нього, кооперативи, умови.
+    Спільне для картки в боті й сайту (housing_web). Повертає невдалі площадки."""
     criteria = dict(search["criteria"])
     old = criteria.get("area")
     if "sources_off" not in criteria and housing_area.covers_potsdam(old):
@@ -906,10 +927,7 @@ def _save_place(update: Update, context: CallbackContext, search: Dict, place: O
     failed = _sync_members(dict(refreshed, items=search.get("items", [])), criteria)
     refreshed = housing_search_store.get_any(search["search_id"]) or refreshed
     failed += apply_criteria(refreshed, criteria)
-    _state(context)["dirty"] = True
-    if failed:
-        return _t("save_failed", lang, sources=", ".join(hm.SOURCE_LABEL.get(s, s) for s in sorted(set(failed))))
-    return None
+    return failed
 
 
 def _place_callback(update: Update, context: CallbackContext, action: str, arg: str) -> None:
