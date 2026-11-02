@@ -798,6 +798,8 @@ class VonoviaListing(Base):
     first_seen_at = Column(DATETIME, nullable=False)
     last_seen_at = Column(DATETIME, nullable=False)
     is_active = Column(BOOLEAN, nullable=False, default=True)
+    # Місто пошуку (етап 4, 02.11.2026); порожньо — «potsdam», усі старі записи.
+    region = Column(TEXT)
 
 
 class VonoviaFilter(Base):
@@ -1341,6 +1343,7 @@ _ensure_column('karlmarx_filter', 'area', 'TEXT')
 _ensure_column('vonovia_filter', 'area', 'TEXT')
 _ensure_column('propotsdam_filter', 'area', 'TEXT')
 _ensure_column('kleinanzeigen_listing', 'region', 'TEXT')
+_ensure_column('vonovia_listing', 'region', 'TEXT')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword
 # `text_lower LIKE '%word%'` queries per user message, each filtered by

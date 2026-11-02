@@ -46,6 +46,10 @@ MAX_PAGES = 10
 GALLERY_ALBUM_MAX = 10
 # Підпис до фото Telegram обрізає жорсткіше за звичайний текст (1024 проти 4096).
 CAPTION_LIMIT = 1024
+REGION_CITIES = tuple(
+    city.strip() for city in os.getenv("VONOVIA_REGION_CITIES", "|".join(vonovia_parser.REGION_CITIES)).split("|")
+    if city.strip()
+)
 
 
 def _session() -> requests.Session:
@@ -81,6 +85,10 @@ def _search_token(session: requests.Session) -> str:
 def _fetch_listings() -> List[Dict]:
     session = _session()
     token = _search_token(session)
+    return _fetch_city(session, token, vonovia_parser.CITY)
+
+
+def _fetch_city(session: requests.Session, token: str, city: str) -> List[Dict]:
     listings: List[Dict] = []
     seen = set()
     offset = 0
@@ -89,7 +97,7 @@ def _fetch_listings() -> List[Dict]:
             vonovia_parser.LIST_URL,
             params=dict(
                 vonovia_parser.LIST_PARAMS,
-                city=vonovia_parser.CITY,
+                city=city,
                 limit=vonovia_parser.PAGE_SIZE,
                 offset=offset,
             ),
@@ -148,6 +156,31 @@ def _add_full_rent(listings: List[Dict]) -> int:
             listing["price_warm_eur"] = prices["price_warm_eur"]
             filled += 1
     return filled
+
+
+def _scan_regions() -> int:
+    """Берлін і міста Бранденбургу (етап 4, 02.11.2026): уся видача кожного
+    міста, як і в Потсдамі, — у них лічені квартири. Помилка тут не зупиняє
+    Потсдам. Повертає, скільки квартир збережено."""
+    if not REGION_CITIES:
+        return 0
+    try:
+        session = _session()
+        token = _search_token(session)
+    except Exception as exc:
+        logger.warning("Vonovia regional scan could not start: %s", exc)
+        return 0
+    stored = 0
+    for city in REGION_CITIES:
+        try:
+            listings = [dict(item, region=city) for item in _fetch_city(session, token, city)]
+        except Exception as exc:
+            logger.warning("Vonovia %s scan failed: %s", city, exc)
+            continue
+        _add_full_rent(listings)
+        stored += vonovia_store.upsert_listings(listings, region=city)
+    logger.info("Vonovia regional scan cities=%s stored=%s", len(REGION_CITIES), stored)
+    return stored
 
 
 def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
@@ -224,6 +257,7 @@ def check_job(context) -> Dict[str, int]:
     enriched = _add_full_rent(all_listings)
     stored = vonovia_store.upsert_listings(all_listings)
     vonovia_store.record_status("ok", listings_count=stored)
+    _scan_regions()
     active_listings = vonovia_store.list_active_listings()
     filters = vonovia_store.list_filters(active_only=True)
     matches = vonovia_store.select_unsent_matches(active_listings, filters, vonovia_store.delivered_pairs())

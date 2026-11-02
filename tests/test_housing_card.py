@@ -361,7 +361,7 @@ class HousingCardPlaceTest(HousingCardTest):
         self._tap('hcard:pc:berlin')
         self._tap('hcard:pr:0')
         search = self._search()
-        self.assertEqual(sorted(hm._search_sources(search)), ['immoscout', 'kleinanzeigen'])
+        self.assertEqual(sorted(hm._search_sources(search)), ['immoscout', 'kleinanzeigen', 'vonovia'])
         self.assertEqual(search['coops'], [])
         self.assertEqual(search['criteria']['districts'], [])
         self.assertEqual(self._scout(search)['area']['name'], 'Berlin')
@@ -388,7 +388,7 @@ class HousingCardPlaceTest(HousingCardTest):
         self.assertEqual(self._search()['coops'], [])
         self.context.user_data['hcard'].update(place_draft=werder)
         self._tap('hcard:pr:0')
-        self.assertEqual(sorted(hm._search_sources(self._search())), ['immoscout', 'kleinanzeigen'])
+        self.assertEqual(sorted(hm._search_sources(self._search())), ['immoscout', 'kleinanzeigen', 'vonovia'])
 
     def test_jobcenter_limits_only_for_potsdam(self):
         self._new('no')

@@ -60,6 +60,7 @@ def listing_to_dict(row: VonoviaListing) -> Dict:
         "gallery_urls": [url for url in str(row.gallery_urls or "").splitlines() if url.strip()],
         "detail_url": row.detail_url,
         "cover_image_url": row.cover_image_url,
+        "region": row.region or "potsdam",
     }
 
 
@@ -233,7 +234,7 @@ def keys_with_full_rent() -> Set[str]:
         session.close()
 
 
-def upsert_listings(listings: Iterable[Dict]) -> int:
+def upsert_listings(listings: Iterable[Dict], region: str = "potsdam") -> int:
     session = DBSession()
     try:
         now = utc_now()
@@ -246,8 +247,10 @@ def upsert_listings(listings: Iterable[Dict]) -> int:
             seen.add(key)
             row = session.query(VonoviaListing).filter(VonoviaListing.listing_key == key).first()
             if row is None:
-                row = VonoviaListing(listing_key=key, first_seen_at=now)
+                row = VonoviaListing(listing_key=key, first_seen_at=now, region=region)
                 session.add(row)
+            elif not row.region:
+                row.region = "potsdam"
             row.title = listing.get("title") or "Vonovia Wohnung"
             row.address = listing.get("address")
             row.rooms = listing.get("rooms")
@@ -263,14 +266,14 @@ def upsert_listings(listings: Iterable[Dict]) -> int:
             row.last_seen_at = now
             row.is_active = True
             count += 1
+        # Зняті — лише в тому ж місті: видача Берліна не «знімає» Потсдам.
+        same_region = VonoviaListing.region == region
+        if region == "potsdam":
+            same_region = same_region | VonoviaListing.region.is_(None)
+        query = session.query(VonoviaListing).filter(same_region, VonoviaListing.is_active.is_(True))
         if seen:
-            session.query(VonoviaListing).filter(~VonoviaListing.listing_key.in_(seen)).update(
-                {"is_active": False}, synchronize_session=False
-            )
-        else:
-            session.query(VonoviaListing).filter(VonoviaListing.is_active.is_(True)).update(
-                {"is_active": False}, synchronize_session=False
-            )
+            query = query.filter(~VonoviaListing.listing_key.in_(seen))
+        query.update({"is_active": False}, synchronize_session=False)
         session.commit()
         return count
     finally:

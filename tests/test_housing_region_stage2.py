@@ -117,6 +117,34 @@ class KleinanzeigenRegionTests(_Db):
         self.assertEqual(kleinanzeigen_store.list_filters()[0]["area"]["name"], "Berlin")
 
 
+class VonoviaRegionTests(_Db):
+    def setUp(self):
+        super().setUp()
+        from user_jobs import vonovia_store
+        patch = mock.patch.object(vonovia_store, "DBSession", sessionmaker(bind=self.engine))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_each_city_is_scanned_whole_and_takes_down_only_its_own_flats(self):
+        from user_jobs import vonovia_monitor, vonovia_store
+        vonovia_store.upsert_listings([_flat("p", "Schwedische Allee 7, 14476 Potsdam OT Krampnitz")])
+        cities = {"Berlin": [_flat("b1", "Weg 10, 12355 Berlin OT Rudow")], "Oranienburg": []}
+        with mock.patch.object(vonovia_monitor, "REGION_CITIES", ("Berlin", "Oranienburg")), \
+             mock.patch.object(vonovia_monitor, "_session"), \
+             mock.patch.object(vonovia_monitor, "_search_token", return_value="t"), \
+             mock.patch.object(vonovia_monitor, "_add_full_rent"), \
+             mock.patch.object(vonovia_monitor, "_fetch_city", side_effect=lambda s, t, city: cities[city]):
+            vonovia_monitor._scan_regions()
+            cities["Berlin"] = [_flat("b2", "Str. 1, 10115 Berlin OT Mitte")]
+            vonovia_monitor._scan_regions()
+        active = {item["listing_key"]: item["region"] for item in vonovia_store.list_active_listings()}
+        self.assertEqual(active, {"p": "potsdam", "b2": "Berlin"})
+        berlin = vonovia_store.create_filter(user_id=5, title="t", area=BERLIN)
+        filt = next(item for item in vonovia_store.list_filters() if item["filter_id"] == berlin)
+        from user_jobs import vonovia_matching
+        self.assertTrue(vonovia_matching.matches_filter(dict(_flat("b2", "Str. 1, 10115 Berlin OT Mitte"), region="Berlin"), filt))
+
+
 class PotsdamAgencyAreaTests(_Db):
     def test_werder_with_radius_gets_the_near_part_of_potsdam_only(self):
         filter_id = semmelhaack_store.create_filter(user_id=3, title="t", area=WERDER_10)

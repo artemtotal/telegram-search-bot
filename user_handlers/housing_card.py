@@ -66,7 +66,7 @@ PRICE_MIN_OF = {"max_price_eur": "min_price_eur", "max_price_warm_eur": "min_pri
 MAX_VALUE = {"min_rooms": 20, "max_rooms": 20, "min_area_m2": 1000, "max_area_m2": 1000}
 JOBCENTER_CHOICES = (1, 2, 3, 4, 5, 6)
 # Площадки, що шукають і поза Потсдамом. Решта поки збирає лише Потсдам.
-REGION_SOURCES = {"immoscout", "kleinanzeigen"}
+REGION_SOURCES = {"immoscout", "kleinanzeigen", "vonovia"}
 # Площадки, що не знають місця (фільтри Immowelt живуть у check-Wohnung).
 POTSDAM_ONLY_SOURCES = {"immowelt"}
 PLACE_FOR_ALL = os.getenv("HOUSING_PLACE_FOR_ALL", "0") == "1"

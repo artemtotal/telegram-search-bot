@@ -37,6 +37,14 @@ SEARCH_TOKEN_HEADER = "X-VON-Search-Token"
 SEARCH_PAGE_URL = "https://www.vonovia.de/zuhause-finden/immobilien"
 DETAIL_BASE_URL = "https://www.vonovia.de/zuhause-finden/immobilien"
 CITY = "Potsdam"
+# Етап 4 «Берлін і Бранденбург» (02.11.2026): міста, де в Vonovia є квартири
+# (перевірено 40 міст: Берлін 15, Бранденбург-на-Гафелі 4, Ораніенбург,
+# Еберсвальде, Зенфтенберг — по 1), плюс найбільші, де вони можуть з'явитися.
+# API шукає лише за точною назвою міста — ні округу, ні радіуса воно не знає.
+REGION_CITIES = (
+    "Berlin", "Brandenburg an der Havel", "Oranienburg", "Eberswalde", "Senftenberg",
+    "Cottbus", "Frankfurt (Oder)", "Falkensee", "Bernau bei Berlin", "Königs Wusterhausen",
+)
 # `immoType=wohnung` відсіює гаражі й комерцію ще на боці порталу; решта
 # параметрів — те, що ставить сама форма пошуку.
 LIST_PARAMS = {"rentType": "miete", "immoType": "wohnung"}

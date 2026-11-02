@@ -114,6 +114,12 @@ class VonoviaFetchTests(unittest.TestCase):
 
 
 class VonoviaCheckJobTests(unittest.TestCase):
+    def setUp(self):
+        # Берлін і міста Бранденбургу — окремі тести (test_housing_region_stage2).
+        patch = mock.patch.object(vonovia_monitor, 'REGION_CITIES', ())
+        patch.start()
+        self.addCleanup(patch.stop)
+
     def test_disabled_flag_skips_the_scan_entirely(self):
         context = SimpleNamespace(bot=FakeBot())
         with mock.patch.object(vonovia_monitor, 'CHECK_ENABLED', False), \
