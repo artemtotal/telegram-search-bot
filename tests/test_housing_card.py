@@ -21,6 +21,10 @@ def area_find(name):
     return housing_card.housing_area.find(name)[0]
 
 
+# «Усі площадки» для Потсдаму: міські компанії Берліна (inberlinwohnen) шукають лише в Берліні.
+POTSDAM_SOURCES = [source for source in hm.AVAILABLE_SOURCE_KEYS if source != 'inberlin']
+
+
 class FakeMessage:
     def __init__(self, text='', user_id=USER):
         self.text = text
@@ -114,7 +118,7 @@ class HousingCardTest(unittest.TestCase):
     def test_new_search_covers_every_portal_and_starts_paused(self):
         query = self._new('3')
         search = self._search()
-        self.assertEqual(sorted(hm._search_sources(search)), sorted(hm.AVAILABLE_SOURCE_KEYS))
+        self.assertEqual(sorted(hm._search_sources(search)), sorted(POTSDAM_SOURCES))
         self.assertEqual(search['coops'], hm.COOP_KEYS)
         self.assertTrue(hm._search_paused(search))
         _area, price, warm = hm.jobcenter_limits(3)
@@ -138,7 +142,7 @@ class HousingCardTest(unittest.TestCase):
         search = self._search()
         self.assertFalse(hm._search_paused(search))
         self.assertTrue(all(item['active'] for item in search['items']))
-        self.assertEqual(len(search['items']), len(hm.AVAILABLE_SOURCE_KEYS))  # ImmoScout24 теж
+        self.assertEqual(len(search['items']), len(POTSDAM_SOURCES))  # ImmoScout24 теж
         hm._after_filter_saved.assert_called_once()
         self.assertNotIn('edited', hm._after_filter_saved.call_args.kwargs)
         self.assertIn('працює', query.edit_message_text.call_args.args[0])
@@ -248,11 +252,11 @@ class HousingCardTest(unittest.TestCase):
     def test_at_least_one_portal_stays(self):
         self._new('no')
         self._tap('hcard:src')
-        for key in hm.AVAILABLE_SOURCE_KEYS:
+        for key in POTSDAM_SOURCES:
             self._tap(f'hcard:st:{key}')
         query = self._tap('hcard:sok')
         query.answer.assert_called_with(hm.i18n.t('housing.toast.pick_a_source', 'uk'), show_alert=True)
-        self.assertEqual(len(self._search()['items']), len(hm.AVAILABLE_SOURCE_KEYS))
+        self.assertEqual(len(self._search()['items']), len(POTSDAM_SOURCES))
 
     # --- готово й чужі фільтри -------------------------------------------------------------
 
@@ -337,7 +341,7 @@ class HousingCardPlaceTest(HousingCardTest):
         self.assertIn('hcard:new:3', self._callbacks(query))  # питання Jobcenter
         self._new('3')
         search = self._search()
-        self.assertEqual(sorted(hm._search_sources(search)), sorted(hm.AVAILABLE_SOURCE_KEYS))
+        self.assertEqual(sorted(hm._search_sources(search)), sorted(POTSDAM_SOURCES))
         self.assertIsNone(search['criteria'].get('area'))
         self.assertEqual(search['coops'], hm.COOP_KEYS)
 
@@ -368,7 +372,7 @@ class HousingCardPlaceTest(HousingCardTest):
         self._tap('hcard:pc:berlin')
         self._tap('hcard:pr:0')
         search = self._search()
-        self.assertEqual(sorted(hm._search_sources(search)), ['immoscout', 'immowelt', 'kleinanzeigen', 'vonovia'])
+        self.assertEqual(sorted(hm._search_sources(search)), ['immoscout', 'immowelt', 'inberlin', 'kleinanzeigen', 'vonovia'])
         self.assertEqual(search['coops'], [])
         self.assertEqual(search['criteria']['districts'], [])
         self.assertEqual(self._scout(search)['area']['name'], 'Berlin')
@@ -378,7 +382,7 @@ class HousingCardPlaceTest(HousingCardTest):
         self._tap('hcard:pr:0')
         search = self._search()
         self.assertEqual(sorted(hm._search_sources(search)),
-                         sorted(s for s in hm.AVAILABLE_SOURCE_KEYS if s != 'schoba'))
+                         sorted(s for s in POTSDAM_SOURCES if s != 'schoba'))
         self.assertEqual(search['coops'], hm.COOP_KEYS)
         self.assertIsNone(search['criteria']['area'])
         self.assertIsNone(self._scout(search)['area'])

@@ -18,7 +18,7 @@ PASS_GAP = timedelta(minutes=3)
 
 SOURCE_ORDER = (
     "immowelt", "immoscout", "propotsdam", "semmelhaack", "schoba", "regiomakler",
-    "kleinanzeigen", "locals", "karlmarx", "vonovia",
+    "kleinanzeigen", "locals", "karlmarx", "vonovia", "inberlin",
 )
 
 Key = Tuple[str, int]

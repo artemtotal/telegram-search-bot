@@ -36,6 +36,7 @@ from database import (
     SchobaListing,
     SemmelhaackListing,
     VonoviaListing,
+    InberlinListing,
 )
 from user_jobs import housing_tier
 
@@ -50,12 +51,14 @@ LISTING_MODELS = {
     "locals": LocalsListing,
     "vonovia": VonoviaListing,
     "immoscout": ImmoscoutListing,
+    "inberlin": InberlinListing,
     "karlmarx": KarlmarxListing,
 }
 SOURCE_LABEL = {
     "immowelt": "Immowelt", "propotsdam": "ProPotsdam", "semmelhaack": "SEMMELHAACK",
     "schoba": "SCHOBA", "regiomakler": "ImmoTeam/alpha", "kleinanzeigen": "Kleinanzeigen",
     "locals": "locals®", "karlmarx": "Karl Marx", "vonovia": "Vonovia", "immoscout": "ImmoScout24",
+    "inberlin": "inberlinwohnen",
 }
 # Kleinanzeigen reads one page of ~25 newest: after 20 newer listings ours may
 # simply be on page two.

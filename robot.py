@@ -42,6 +42,7 @@ from user_jobs import coop_watchdog
 from user_jobs import karlmarx_monitor
 from user_jobs import vonovia_monitor
 from user_jobs import immoscout_monitor
+from user_jobs import inberlin_monitor
 from user_jobs import housing_missed
 from user_jobs import housing_letter_store
 
@@ -204,6 +205,13 @@ if immoscout_monitor.CHECK_ENABLED:
         immoscout_monitor.check_job,
         interval=immoscout_monitor.CHECK_INTERVAL_SECONDS,
         first=440,
+    )
+# Міські компанії Берліна (inberlinwohnen.de, етап 8, 02.11.2026).
+if inberlin_monitor.CHECK_ENABLED:
+    job.run_repeating(
+        inberlin_monitor.check_job,
+        interval=inberlin_monitor.CHECK_INTERVAL_SECONDS,
+        first=470,
     )
 
 # Housing access subscriptions: daily check for 3-day expiry warnings and

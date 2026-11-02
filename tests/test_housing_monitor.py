@@ -4109,10 +4109,10 @@ class HousingCoopSubscriptionTests(unittest.TestCase):
 
         self.assertIn('housing:coops', callbacks)
 
-    def test_all_thirteen_sources_are_listed(self):
-        """Десять порталів із фільтрами плюс три кооперативи під сторожем."""
-        self.assertEqual(len(housing_monitor.ALL_HOUSING_SOURCES), 13)
-        for key in ('vonovia', 'immoscout', 'gewoba', 'wbg1903', 'wbg_daheim'):
+    def test_all_fourteen_sources_are_listed(self):
+        """Одинадцять порталів із фільтрами (з 02.11.2026 — і inberlinwohnen) плюс три кооперативи."""
+        self.assertEqual(len(housing_monitor.ALL_HOUSING_SOURCES), 14)
+        for key in ('vonovia', 'immoscout', 'inberlin', 'gewoba', 'wbg1903', 'wbg_daheim'):
             self.assertIn(key, housing_monitor.ALL_HOUSING_SOURCES)
 
     def test_toggling_on_subscribes_and_toggling_off_pauses(self):

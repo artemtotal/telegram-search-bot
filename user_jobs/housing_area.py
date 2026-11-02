@@ -270,6 +270,14 @@ def touches_potsdam(area: Optional[Dict]) -> bool:
     return is_potsdam(area) or bool(allowed_plz(area) & allowed_plz(None))
 
 
+def touches_berlin(area: Optional[Dict]) -> bool:
+    """Хоч частина Берліна в зоні: тоді шукають і міські компанії Берліна (етап 8)."""
+    if area is None:
+        return False
+    berlin = {"kind": "city", "name": BERLIN, "code": BERLIN_CODE, "radius_km": 0}
+    return bool(allowed_plz(area) & allowed_plz(berlin))
+
+
 # --- збереження в записах площадок ---------------------------------------------------
 
 # update_filter без area лишає місце як є: старі шляхи (майстер адміна) його не знають.

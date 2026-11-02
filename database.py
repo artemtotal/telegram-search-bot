@@ -846,6 +846,77 @@ class VonoviaDelivery(Base):
     sent_at = Column(DATETIME, nullable=False)
 
 
+class InberlinListing(Base):
+    """Квартири міських компаній Берліна з inberlinwohnen.de (етап 8, 02.11.2026).
+
+    Обидві ціни відомі одразу: Kaltmiete і Gesamtmiete (з опаленням) — з
+    картки «Wohnungsfinder». `wbs` — як на порталі («nicht erforderlich»,
+    «WBS ab 160 erforderlich»); більшість цих квартир — соціальні.
+    """
+
+    __tablename__ = 'inberlin_listing'
+
+    listing_key = Column(TEXT, primary_key=True)
+    title = Column(TEXT, nullable=False)
+    address = Column(TEXT)
+    plz = Column(TEXT)
+    company = Column(TEXT)
+    wbs = Column(TEXT)
+    available_from = Column(TEXT)
+    rooms = Column(FLOAT)
+    area_m2 = Column(FLOAT)
+    price_eur = Column(FLOAT)
+    price_warm_eur = Column(FLOAT)
+    gallery_urls = Column(TEXT)
+    detail_url = Column(TEXT)
+    cover_image_url = Column(TEXT)
+    first_seen_at = Column(DATETIME, nullable=False)
+    last_seen_at = Column(DATETIME, nullable=False)
+    is_active = Column(BOOLEAN, nullable=False, default=True)
+
+
+class InberlinFilter(Base):
+    __tablename__ = 'inberlin_filter'
+
+    filter_id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    title = Column(TEXT, nullable=False)
+    min_rooms = Column(FLOAT)
+    max_rooms = Column(FLOAT)
+    min_area_m2 = Column(FLOAT)
+    max_area_m2 = Column(FLOAT)
+    min_price_eur = Column(FLOAT)
+    max_price_eur = Column(FLOAT)
+    min_price_warm_eur = Column(FLOAT)
+    max_price_warm_eur = Column(FLOAT)
+    active = Column(BOOLEAN, nullable=False, default=True)
+    created_at = Column(DATETIME, nullable=False)
+    # Місце (JSON, housing_area); без місця (лише Потсдам) квартир звідси не буде.
+    area = Column(TEXT)
+
+
+class InberlinStatus(Base):
+    __tablename__ = 'inberlin_status'
+
+    key = Column(TEXT, primary_key=True)
+    last_checked_at = Column(DATETIME)
+    last_status = Column(TEXT)
+    last_error = Column(TEXT)
+    listings_count = Column(INTEGER)
+
+
+class InberlinDelivery(Base):
+    __tablename__ = 'inberlin_delivery'
+    __table_args__ = (
+        UniqueConstraint('filter_id', 'listing_key', name='uq_inberlin_delivery_filter_listing'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    filter_id = Column(INTEGER, nullable=False, index=True)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    sent_at = Column(DATETIME, nullable=False)
+
+
 class ImmoscoutListing(Base):
     """Квартири ImmoScout24 — з API мобільного застосунку.
 

@@ -22,6 +22,7 @@ LOCAL_FILTER_TABLES = {
     "karlmarx": "karlmarx_filter",
     "vonovia": "vonovia_filter",
     "immoscout": "immoscout_filter",
+    "inberlin": "inberlin_filter",
 }
 
 

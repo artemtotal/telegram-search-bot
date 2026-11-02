@@ -29,6 +29,7 @@ from database import (
     SchobaListing,
     SemmelhaackListing,
     VonoviaListing,
+    InberlinListing,
 )
 from user_jobs import housing_letter_store as store
 from user_jobs import housing_tier
@@ -46,11 +47,13 @@ LISTING_MODELS = {
     "karlmarx": KarlmarxListing,
     "vonovia": VonoviaListing,
     "immoscout": ImmoscoutListing,
+    "inberlin": InberlinListing,
 }
 SOURCE_LABEL = {
     "immowelt": "Immowelt", "propotsdam": "ProPotsdam", "semmelhaack": "SEMMELHAACK",
     "schoba": "SCHOBA", "regiomakler": "ImmoTeam/alpha", "kleinanzeigen": "Kleinanzeigen",
     "locals": "locals®", "karlmarx": "Karl Marx", "vonovia": "Vonovia", "immoscout": "ImmoScout24",
+    "inberlin": "inberlinwohnen",
 }
 # Захист від зациклення кнопки «Інший варіант» - листів на людину за день.
 DAILY_LIMIT = 20

@@ -71,6 +71,8 @@ JOBCENTER_CHOICES = (1, 2, 3, 4, 5, 6)
 REGION_SOURCES = {"immoscout", "kleinanzeigen", "vonovia", "immowelt"}
 # Площадки, що не знають місця. Поки таких немає.
 POTSDAM_ONLY_SOURCES: set = set()
+# Лише Берлін: міські компанії з inberlinwohnen.de (етап 8).
+BERLIN_ONLY_SOURCES = {"inberlin"}
 PLACE_FOR_ALL = os.getenv("HOUSING_PLACE_FOR_ALL", "0") == "1"
 
 
@@ -80,11 +82,19 @@ def place_enabled(user_id: int) -> bool:
 
 def covering_sources(area: Optional[Dict]) -> List[str]:
     """Площадки, які шукають у цьому місці."""
-    if housing_area.covers_potsdam(area):
-        return list(hm.AVAILABLE_SOURCE_KEYS)
-    if housing_area.touches_potsdam(area):
-        return [source for source in hm.AVAILABLE_SOURCE_KEYS if source not in POTSDAM_ONLY_SOURCES]
-    return [source for source in hm.AVAILABLE_SOURCE_KEYS if source in REGION_SOURCES]
+    result = []
+    for source in hm.AVAILABLE_SOURCE_KEYS:
+        if source in BERLIN_ONLY_SOURCES:
+            works = housing_area.touches_berlin(area)
+        elif source in REGION_SOURCES:
+            works = True
+        elif source in POTSDAM_ONLY_SOURCES:
+            works = housing_area.covers_potsdam(area)
+        else:  # потсдамські агентства: звіряють індекс, тож досить частини Потсдама
+            works = housing_area.touches_potsdam(area)
+        if works:
+            result.append(source)
+    return result
 
 
 def jobcenter_for(place: Optional[Dict], persons: int) -> Optional[Tuple[float, float]]:
@@ -148,7 +158,7 @@ def _source_kwargs(source: str, c: Dict, rooms_area: Dict, kalt: Dict, warm: Dic
         }
     if source == "immoscout":
         return {"districts": ",".join(districts), **rooms_area, **kalt, **warm}
-    if source in ("semmelhaack", "regiomakler", "vonovia"):
+    if source in ("semmelhaack", "regiomakler", "vonovia", "inberlin"):
         return {**rooms_area, **kalt, **warm}
     if source == "karlmarx":
         return {**rooms_area, "max_price_eur": kalt["max_price_eur"], **warm}
@@ -280,7 +290,7 @@ def card_text(number: int, search: Dict, lang: str, pointer: Optional[str] = Non
         shown = ", ".join(districts[:3]) + (f" +{len(districts) - 3}" if len(districts) > 3 else "")
     else:
         shown = _t("all_districts", lang)
-    total = len(hm.AVAILABLE_SOURCE_KEYS)
+    total = len(covering_sources(criteria.get("area")))
     portals = (
         _t("all_sources", lang, n=total) if len(sources) == total
         else _t("some_sources", lang, n=len(sources), total=total)
