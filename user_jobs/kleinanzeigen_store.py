@@ -15,6 +15,7 @@ from database import (
     KleinanzeigenListing,
     KleinanzeigenStatus,
 )
+from user_jobs import housing_area
 from user_jobs import kleinanzeigen_matching, kleinanzeigen_parser
 
 STATUS_KEY = "global"
@@ -41,6 +42,7 @@ def filter_to_dict(row: KleinanzeigenFilter) -> Dict:
         "max_price_eur": row.max_price_eur,
         "min_price_warm_eur": row.min_price_warm_eur,
         "max_price_warm_eur": row.max_price_warm_eur,
+        "area": housing_area.load_area(row.area),
         "active": row.active,
     }
 
@@ -57,6 +59,7 @@ def listing_to_dict(row: KleinanzeigenListing) -> Dict:
         "gallery_urls": [url for url in str(row.gallery_urls or "").splitlines() if url.strip()],
         "detail_url": row.detail_url,
         "cover_image_url": row.cover_image_url,
+        "region": row.region or "potsdam",
     }
 
 
@@ -71,6 +74,7 @@ def create_filter(
     max_price_eur: Optional[float] = None,
     min_price_warm_eur: Optional[float] = None,
     max_price_warm_eur: Optional[float] = None,
+    area: Optional[Dict] = None,
 ) -> int:
     session = DBSession()
     try:
@@ -85,6 +89,7 @@ def create_filter(
             max_price_eur=max_price_eur,
             min_price_warm_eur=min_price_warm_eur,
             max_price_warm_eur=max_price_warm_eur,
+            area=housing_area.dump_area(area),
             active=True,
             created_at=utc_now(),
         )
@@ -121,6 +126,7 @@ def update_filter(
     max_price_eur: Optional[float] = None,
     min_price_warm_eur: Optional[float] = None,
     max_price_warm_eur: Optional[float] = None,
+    area=housing_area.KEEP,
 ) -> bool:
     session = DBSession()
     try:
@@ -139,6 +145,8 @@ def update_filter(
         row.max_price_eur = max_price_eur
         row.min_price_warm_eur = min_price_warm_eur
         row.max_price_warm_eur = max_price_warm_eur
+        if area is not housing_area.KEEP:
+            row.area = housing_area.dump_area(area)
         session.flush()
         filter_data = filter_to_dict(row)
         now = utc_now()
@@ -230,7 +238,10 @@ def keys_already_enriched() -> Set[str]:
         session.close()
 
 
-def upsert_listings(listings: Iterable[Dict]) -> int:
+def upsert_listings(listings: Iterable[Dict], region: str = "potsdam", deactivate_missing: bool = True) -> int:
+    """Зберігає сторінку одного регіону. Зняті (`is_active=False`) — лише
+    квартири цього ж регіону, яких на сторінці вже немає: берлінська сторінка
+    не «знімає» потсдамських, і навпаки."""
     session = DBSession()
     try:
         now = utc_now()
@@ -243,8 +254,10 @@ def upsert_listings(listings: Iterable[Dict]) -> int:
             seen.add(key)
             row = session.query(KleinanzeigenListing).filter(KleinanzeigenListing.listing_key == key).first()
             if row is None:
-                row = KleinanzeigenListing(listing_key=key, first_seen_at=now)
+                row = KleinanzeigenListing(listing_key=key, first_seen_at=now, region=region)
                 session.add(row)
+            elif not row.region:
+                row.region = "potsdam"
             row.title = listing.get("title") or "Wohnung"
             row.address = listing.get("address")
             row.rooms = listing.get("rooms")
@@ -262,16 +275,42 @@ def upsert_listings(listings: Iterable[Dict]) -> int:
             row.last_seen_at = now
             row.is_active = True
             count += 1
-        if seen:
-            session.query(KleinanzeigenListing).filter(~KleinanzeigenListing.listing_key.in_(seen)).update(
-                {"is_active": False}, synchronize_session=False
-            )
-        else:
-            session.query(KleinanzeigenListing).filter(KleinanzeigenListing.is_active.is_(True)).update(
-                {"is_active": False}, synchronize_session=False
-            )
+        if deactivate_missing:
+            same_region = KleinanzeigenListing.region == region
+            if region == "potsdam":
+                same_region = same_region | KleinanzeigenListing.region.is_(None)
+            query = session.query(KleinanzeigenListing).filter(same_region, KleinanzeigenListing.is_active.is_(True))
+            if seen:
+                query = query.filter(~KleinanzeigenListing.listing_key.in_(seen))
+            query.update({"is_active": False}, synchronize_session=False)
         session.commit()
         return count
+    finally:
+        session.close()
+
+
+def deactivate_stale(region: str, seen_before: datetime) -> int:
+    """Регіон: знятою вважаємо квартиру, якої давно не бачили на перших сторінках.
+
+    У Берліні перша сторінка оновлюється за години, тож «зникла зі сторінки» —
+    ще не «знята»: інакше безкоштовним (затримка 2 год) не доходило б нічого."""
+    session = DBSession()
+    try:
+        count = session.query(KleinanzeigenListing).filter(
+            KleinanzeigenListing.region == region,
+            KleinanzeigenListing.is_active.is_(True),
+            KleinanzeigenListing.last_seen_at < seen_before,
+        ).update({"is_active": False}, synchronize_session=False)
+        session.commit()
+        return int(count or 0)
+    finally:
+        session.close()
+
+
+def known_keys() -> Set[str]:
+    session = DBSession()
+    try:
+        return {str(row.listing_key) for row in session.query(KleinanzeigenListing.listing_key).all()}
     finally:
         session.close()
 

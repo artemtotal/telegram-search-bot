@@ -16,9 +16,11 @@
 Місце (02.11.2026, етап 1 «Берлін і Бранденбург», docs/housing-region-plan.md):
 рядок «📍 Де» — місто чи індекс і радіус (`criteria["area"]`, housing_area).
 Новий фільтр спершу питає місце, Jobcenter — лише для Потсдама (ліміти
-потсдамські). Поза Потсдамом працюють лише площадки з REGION_SOURCES; решту
-пошук пам'ятає в `criteria["sources_off"]` (що людина сама вимкнула) і
-повертає, щойно місце знову Потсдам. Поки — лише для адміна, усім —
+потсдамські). Поза Потсдамом працюють площадки з REGION_SOURCES, а коли в
+зону потрапляє частина Потсдама — ще й потсдамські агентства (їхні квартири
+звіряються за індексом, етап 2). Immowelt — лише в самому Потсдамі: його
+записи живуть у check-Wohnung і місця не знають. Що людина сама вимкнула,
+пошук пам'ятає в `criteria["sources_off"]` і повертає, щойно місце знову Потсдам. Поки — лише для адміна, усім —
 HOUSING_PLACE_FOR_ALL=1.
 """
 
@@ -64,7 +66,9 @@ PRICE_MIN_OF = {"max_price_eur": "min_price_eur", "max_price_warm_eur": "min_pri
 MAX_VALUE = {"min_rooms": 20, "max_rooms": 20, "min_area_m2": 1000, "max_area_m2": 1000}
 JOBCENTER_CHOICES = (1, 2, 3, 4, 5, 6)
 # Площадки, що шукають і поза Потсдамом. Решта поки збирає лише Потсдам.
-REGION_SOURCES = {"immoscout"}
+REGION_SOURCES = {"immoscout", "kleinanzeigen"}
+# Площадки, що не знають місця (фільтри Immowelt живуть у check-Wohnung).
+POTSDAM_ONLY_SOURCES = {"immowelt"}
 PLACE_FOR_ALL = os.getenv("HOUSING_PLACE_FOR_ALL", "0") == "1"
 
 
@@ -76,6 +80,8 @@ def covering_sources(area: Optional[Dict]) -> List[str]:
     """Площадки, які шукають у цьому місці."""
     if housing_area.covers_potsdam(area):
         return list(hm.AVAILABLE_SOURCE_KEYS)
+    if housing_area.touches_potsdam(area):
+        return [source for source in hm.AVAILABLE_SOURCE_KEYS if source not in POTSDAM_ONLY_SOURCES]
     return [source for source in hm.AVAILABLE_SOURCE_KEYS if source in REGION_SOURCES]
 
 
@@ -116,6 +122,10 @@ def _member_kwargs(source: str, criteria: Dict, sources) -> Dict:
     kalt = {"min_price_eur": c.get("min_price_eur"), "max_price_eur": c.get("max_price_eur")}
     warm = {"min_price_warm_eur": c.get("min_price_warm_eur"), "max_price_warm_eur": c.get("max_price_warm_eur")}
     districts = [str(item) for item in (c.get("districts") or [])]
+    return dict(_source_kwargs(source, c, rooms_area, kalt, warm, districts), area=c.get("area"))
+
+
+def _source_kwargs(source: str, c: Dict, rooms_area: Dict, kalt: Dict, warm: Dict, districts: List[str]) -> Dict:
     if source == "propotsdam":
         propot = hm._translate_districts(districts, hm.IMMOWELT_TO_PROPOT_DISTRICT, set(hm.PROPOT_DISTRICTS))
         return {
@@ -124,7 +134,7 @@ def _member_kwargs(source: str, criteria: Dict, sources) -> Dict:
             "min_total_rent_eur": warm["min_price_warm_eur"], "max_total_rent_eur": warm["max_price_warm_eur"],
         }
     if source == "immoscout":
-        return {"districts": ",".join(districts), **rooms_area, **kalt, **warm, "area": c.get("area")}
+        return {"districts": ",".join(districts), **rooms_area, **kalt, **warm}
     if source in ("semmelhaack", "regiomakler", "vonovia"):
         return {**rooms_area, **kalt, **warm}
     if source == "karlmarx":

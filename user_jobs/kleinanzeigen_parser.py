@@ -21,6 +21,17 @@ import i18n
 
 LISTINGS_URL = "https://www.kleinanzeigen.de/s-wohnung-mieten/potsdam/k0c203"
 BASE_URL = "https://www.kleinanzeigen.de"
+# Етап 2 (02.11.2026): сторінки Берліна й Бранденбургу. Коди місць — з
+# /s-ort-empfehlungen.json самого сайту («l2» — це Бремен, не Бранденбург).
+REGION_PATHS = {
+    "berlin": ("/s-wohnung-mieten/berlin/", "c203l3331"),
+    "brandenburg": ("/s-wohnung-mieten/brandenburg/", "c203l7711"),
+}
+
+
+def region_url(region: str, page: int = 1) -> str:
+    prefix, code = REGION_PATHS[region]
+    return BASE_URL + prefix + (f"seite:{page}/" if page > 1 else "") + code
 
 # Прив'язуємось до того, що переживає перевёрстку: data-атрибути картки й самі
 # текстові вузли. 2026-09-01 сайт перейшов на службові класи в стилі Tailwind

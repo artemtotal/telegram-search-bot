@@ -303,13 +303,17 @@ class HousingCardPlaceTest(HousingCardTest):
             self.assertNotIn('hcard:pl', self._callbacks(self._tap('hcard:open')))
             self.assertIn('hcard:pl', self._callbacks(self._tap('hcard:open', user_id=ADMIN)))
 
-    def test_a_new_berlin_search_has_only_immoscout_and_no_coops(self):
+    def test_a_new_berlin_search_leaves_out_immowelt_and_coops(self):
         self._start()
         query = self._tap('hcard:pc:berlin')
         self.assertIn('hcard:pr:10', self._callbacks(query))
         query = self._tap('hcard:pr:10')
         search = self._search()
-        self.assertEqual(hm._search_sources(search), ['immoscout'])
+        # У 10 км від Берліна вже Бабельсберг — агентства Потсдама теж шукають
+        # (за індексом), а Immowelt місця не знає.
+        sources = set(hm._search_sources(search))
+        self.assertTrue({'immoscout', 'kleinanzeigen', 'semmelhaack'} <= sources)
+        self.assertNotIn('immowelt', sources)
         self.assertEqual(search['coops'], [])
         self.assertTrue(hm._search_paused(search))
         self.assertEqual(search['criteria']['area']['name'], 'Berlin')
@@ -357,7 +361,7 @@ class HousingCardPlaceTest(HousingCardTest):
         self._tap('hcard:pc:berlin')
         self._tap('hcard:pr:0')
         search = self._search()
-        self.assertEqual(hm._search_sources(search), ['immoscout'])
+        self.assertEqual(sorted(hm._search_sources(search)), ['immoscout', 'kleinanzeigen'])
         self.assertEqual(search['coops'], [])
         self.assertEqual(search['criteria']['districts'], [])
         self.assertEqual(self._scout(search)['area']['name'], 'Berlin')
@@ -371,6 +375,20 @@ class HousingCardPlaceTest(HousingCardTest):
         self.assertEqual(search['coops'], hm.COOP_KEYS)
         self.assertIsNone(search['criteria']['area'])
         self.assertIsNone(self._scout(search)['area'])
+
+    def test_werder_with_radius_gets_potsdam_agencies_but_not_immowelt(self):
+        self._new('no')
+        werder = housing_card.housing_area.find('Werder (Havel)')[0]
+        self.context.user_data['hcard'].update(place_draft=werder)
+        self._tap('hcard:pr:10')
+        sources = set(hm._search_sources(self._search()))
+        self.assertIn('semmelhaack', sources)
+        self.assertIn('propotsdam', sources)
+        self.assertNotIn('immowelt', sources)
+        self.assertEqual(self._search()['coops'], [])
+        self.context.user_data['hcard'].update(place_draft=werder)
+        self._tap('hcard:pr:0')
+        self.assertEqual(sorted(hm._search_sources(self._search())), ['immoscout', 'kleinanzeigen'])
 
     def test_jobcenter_limits_only_for_potsdam(self):
         self._new('no')

@@ -142,6 +142,7 @@ class KleinanzeigenMonitorCheckJobTests(unittest.TestCase):
         swap_en = _listing('4', title='Wohnungsswap - 3 Zimmer, schöne Terrasse')
 
         with mock.patch.object(kleinanzeigen_monitor, 'CHECK_ENABLED', True), \
+             mock.patch.object(kleinanzeigen_monitor, 'REGIONS', ()), \
              mock.patch('requests.get', return_value=FakeResponse('irrelevant')), \
              mock.patch(
                  'user_jobs.kleinanzeigen_monitor.kleinanzeigen_parser.parse_listings',

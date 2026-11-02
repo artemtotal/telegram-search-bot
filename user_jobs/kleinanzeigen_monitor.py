@@ -13,6 +13,12 @@ track channel". _notify_admin_fetch_failed() below exists specifically to
 surface that experiment's result — if Kleinanzeigen starts blocking, this is
 what should be the first thing to notice it and to widen the interval back.
 
+Since 02.11.2026 (stage 2 of docs/housing-region-plan.md) the scan also
+reads the first page of Berlin and of Brandenburg (a second one only when the
+first is almost all new) for filters with a place. Those flats are matched by
+postcode, not by "the city is Potsdam"; a listing page (full rent, photos) is
+read only for regional flats that fit somebody — a few a day, not hundreds.
+
 Also filters out two kinds of noise the raw search page includes:
 - Results outside Potsdam itself — the search radius pulls in nearby towns
   (Rathenow, Berlin-Schöneberg, ...), which the caller doesn't want.
@@ -59,6 +65,19 @@ CAPTION_LIMIT = 1024
 # і повторний запит одразу повертає нормальну сторінку.
 _FETCH_ATTEMPTS = 3
 _RETRY_BACKOFF_SECONDS = (2, 5)
+# Етап 2 «Берлін і Бранденбург» (02.11.2026).
+REGIONS = tuple(
+    region.strip() for region in os.getenv("KLEINANZEIGEN_REGIONS", "berlin,brandenburg").split(",")
+    if region.strip() in kleinanzeigen_parser.REGION_PATHS
+)
+REGION_MAX_PAGES = 2
+# Друга сторінка — лише коли на першій стільки нових: інакше нового там нема.
+REGION_MORE_PAGES_AT = 15
+REGION_PAUSE_SECONDS = 2
+# Зі сторінки квартира зникає за години, а знята вона — коли її давно не видно.
+REGION_STALE_AFTER = timedelta(days=3)
+# Сторінки оголошень регіону за обхід: лише тим, що комусь підходять.
+REGION_DETAILS_PER_SCAN = 10
 
 
 def _fetch_listings() -> List[Dict]:
@@ -160,14 +179,69 @@ def _is_room_offer(title: str) -> bool:
     return False
 
 
+def _is_flat_offer(listing: Dict) -> bool:
+    title = str(listing.get("title") or "").casefold()
+    return not any(keyword in title for keyword in _SWAP_KEYWORDS) and not _is_room_offer(title)
+
+
 def _is_relevant(listing: Dict) -> bool:
     city = str(listing.get("city") or "").strip().casefold()
-    title = str(listing.get("title") or "").casefold()
-    return (
-        city == "potsdam"
-        and not any(keyword in title for keyword in _SWAP_KEYWORDS)
-        and not _is_room_offer(title)
-    )
+    return city == "potsdam" and _is_flat_offer(listing)
+
+
+def _fetch_region_page(url: str) -> List[Dict]:
+    response = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT})
+    response.raise_for_status()
+    response.encoding = response.apparent_encoding or "utf-8"
+    return kleinanzeigen_parser.parse_listings(response.text)
+
+
+def _scan_regions(bot, skip=frozenset()) -> List[Dict]:
+    """Берлін і Бранденбург: перша сторінка (друга — коли на першій майже все
+    нове). Помилка тут не зупиняє Потсдам. Повертає квартири цього обходу."""
+    known = kleinanzeigen_store.known_keys()
+    fetched: List[Dict] = []
+    for region in REGIONS:
+        listings: List[Dict] = []
+        seen = set(skip)
+        try:
+            for page in range(1, REGION_MAX_PAGES + 1):
+                if page > 1:
+                    time.sleep(REGION_PAUSE_SECONDS)
+                items = _fetch_region_page(kleinanzeigen_parser.region_url(region, page))
+                fresh = 0
+                for item in items:
+                    key = str(item.get("listing_key") or "")
+                    if not key or key in seen or not _is_flat_offer(item):
+                        continue
+                    seen.add(key)
+                    fresh += key not in known
+                    listings.append(dict(item, region=region))
+                if fresh < REGION_MORE_PAGES_AT:
+                    break
+        except requests.RequestException as exc:
+            alerted = _notify_admin_fetch_failed(bot, exc, {})
+            logger.warning("Kleinanzeigen %s scan failed; admin_alerted=%s: %s", region, alerted, exc)
+            continue
+        kleinanzeigen_store.upsert_listings(listings, region=region, deactivate_missing=False)
+        gone = kleinanzeigen_store.deactivate_stale(region, kleinanzeigen_store.utc_now() - REGION_STALE_AFTER)
+        logger.info("Kleinanzeigen %s scan listings=%s new=%s gone=%s", region, len(listings),
+                    sum(1 for item in listings if item["listing_key"] not in known), gone)
+        fetched.extend(listings)
+        time.sleep(REGION_PAUSE_SECONDS)
+    return fetched
+
+
+def _wanted_regional(listings: List[Dict], filters: List[Dict]) -> List[Dict]:
+    """Квартири регіону, що комусь підходять за тим, що видно на сторінці, і ще
+    без повної ціни — лише їм читаємо сторінку оголошення."""
+    enriched = kleinanzeigen_store.keys_already_enriched()
+    wanted = [
+        item for item in listings
+        if item["listing_key"] not in enriched
+        and any(kleinanzeigen_matching.matches_filter(item, filt) for filt in filters)
+    ]
+    return wanted[:REGION_DETAILS_PER_SCAN]
 
 
 def _should_alert_parse_broke(previous_status: Dict) -> bool:
@@ -295,11 +369,17 @@ def check_job(context) -> Dict[str, int]:
     if not all_listings:
         _notify_admin_parse_broke(bot, kleinanzeigen_store.latest_status())
     relevant = [item for item in all_listings if _is_relevant(item)]
-    enriched = _add_full_rent(relevant)
+    regional = _scan_regions(bot, skip={str(item.get("listing_key")) for item in relevant})
+    filters = kleinanzeigen_store.list_filters(active_only=True)
+    wanted = _wanted_regional(regional, filters)
+    enriched = _add_full_rent(relevant + wanted)
     stored = kleinanzeigen_store.upsert_listings(relevant)
+    for region in REGIONS:
+        read = [item for item in wanted if item.get("region") == region]
+        if read:
+            kleinanzeigen_store.upsert_listings(read, region=region, deactivate_missing=False)
     kleinanzeigen_store.record_status("ok", listings_count=stored)
     active_listings = kleinanzeigen_store.list_active_listings()
-    filters = kleinanzeigen_store.list_filters(active_only=True)
     matches = kleinanzeigen_store.select_unsent_matches(
         active_listings, filters, kleinanzeigen_store.delivered_pairs()
     )
@@ -336,8 +416,8 @@ def check_job(context) -> Dict[str, int]:
         sent += 1
     near_misses = _send_near_misses(bot, filters, gate)
     logger.info(
-        "Kleinanzeigen scan total=%s relevant=%s stored=%s full_rent=%s filters=%s sent=%s near_miss=%s",
-        len(all_listings), len(relevant), stored, enriched, len(filters), sent, near_misses,
+        "Kleinanzeigen scan total=%s relevant=%s regional=%s stored=%s full_rent=%s filters=%s sent=%s near_miss=%s",
+        len(all_listings), len(relevant), len(regional), stored, enriched, len(filters), sent, near_misses,
     )
     return {"ok": 1, "enabled": 1, "stored": stored, "filters": len(filters), "sent": sent, "near_miss": near_misses}
 

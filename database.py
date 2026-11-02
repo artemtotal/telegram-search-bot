@@ -408,6 +408,8 @@ class ProPotsdamFilter(Base):
     max_price_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # Місце (JSON, housing_area); порожньо — лише Потсдам.
+    area = Column(TEXT)
 
 
 class ProPotsdamStatus(Base):
@@ -472,6 +474,8 @@ class SemmelhaackFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # Місце (JSON, housing_area); порожньо — лише Потсдам.
+    area = Column(TEXT)
 
 
 class SemmelhaackStatus(Base):
@@ -535,6 +539,8 @@ class SchobaFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # Місце (JSON, housing_area); порожньо — лише Потсдам.
+    area = Column(TEXT)
 
 
 class SchobaStatus(Base):
@@ -601,6 +607,8 @@ class RegiomaklerFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # Місце (JSON, housing_area); порожньо — лише Потсдам.
+    area = Column(TEXT)
 
 
 class RegiomaklerStatus(Base):
@@ -626,7 +634,11 @@ class RegiomaklerDelivery(Base):
 
 
 class KleinanzeigenListing(Base):
-    """Kleinanzeigen-оголошення в Потсдамі: без районів, без Kalt/Warm-мітки на ціні."""
+    """Kleinanzeigen-оголошення: без районів, без Kalt/Warm-мітки на ціні.
+
+    З 02.11.2026 (етап 2) — ще Берлін і Бранденбург: `region` — якою сторінкою
+    знайдено (порожньо = «potsdam», усі старі записи); у місце фільтра
+    квартира потрапляє за індексом з адреси (`housing_area`)."""
 
     __tablename__ = 'kleinanzeigen_listing'
 
@@ -648,6 +660,7 @@ class KleinanzeigenListing(Base):
     first_seen_at = Column(DATETIME, nullable=False)
     last_seen_at = Column(DATETIME, nullable=False)
     is_active = Column(BOOLEAN, nullable=False, default=True)
+    region = Column(TEXT)
 
 
 class KleinanzeigenFilter(Base):
@@ -669,6 +682,8 @@ class KleinanzeigenFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # Місце (JSON, housing_area); порожньо — лише Потсдам.
+    area = Column(TEXT)
 
 
 class KleinanzeigenStatus(Base):
@@ -733,6 +748,8 @@ class LocalsFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # Місце (JSON, housing_area); порожньо — лише Потсдам.
+    area = Column(TEXT)
 
 
 class LocalsStatus(Base):
@@ -801,6 +818,8 @@ class VonoviaFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # Місце (JSON, housing_area); порожньо — лише Потсдам.
+    area = Column(TEXT)
 
 
 class VonoviaStatus(Base):
@@ -1006,6 +1025,8 @@ class KarlmarxFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # Місце (JSON, housing_area); порожньо — лише Потсдам.
+    area = Column(TEXT)
 
 
 class KarlmarxStatus(Base):
@@ -1310,6 +1331,16 @@ _ensure_column('immoscout_listing', 'plz', 'TEXT')
 _ensure_column('immoscout_listing', 'city', 'TEXT')
 _ensure_column('immoscout_listing', 'region', 'TEXT')
 _ensure_column('immoscout_filter', 'area', 'TEXT')
+# Етап 2: місце в записах усіх площадок, регіон оголошень Kleinanzeigen.
+_ensure_column('kleinanzeigen_filter', 'area', 'TEXT')
+_ensure_column('semmelhaack_filter', 'area', 'TEXT')
+_ensure_column('schoba_filter', 'area', 'TEXT')
+_ensure_column('regiomakler_filter', 'area', 'TEXT')
+_ensure_column('locals_filter', 'area', 'TEXT')
+_ensure_column('karlmarx_filter', 'area', 'TEXT')
+_ensure_column('vonovia_filter', 'area', 'TEXT')
+_ensure_column('propotsdam_filter', 'area', 'TEXT')
+_ensure_column('kleinanzeigen_listing', 'region', 'TEXT')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword
 # `text_lower LIKE '%word%'` queries per user message, each filtered by

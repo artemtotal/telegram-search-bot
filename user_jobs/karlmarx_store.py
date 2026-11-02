@@ -14,6 +14,7 @@ from database import (
     KarlmarxListing,
     KarlmarxStatus,
 )
+from user_jobs import housing_area
 from user_jobs import karlmarx_matching, karlmarx_parser
 
 STATUS_KEY = "global"
@@ -40,6 +41,7 @@ def filter_to_dict(row: KarlmarxFilter) -> Dict:
         "max_price_eur": row.max_price_eur,
         "min_price_warm_eur": row.min_price_warm_eur,
         "max_price_warm_eur": row.max_price_warm_eur,
+        "area": housing_area.load_area(row.area),
         "active": row.active,
     }
 
@@ -69,6 +71,7 @@ def create_filter(
     max_price_eur: Optional[float] = None,
     min_price_warm_eur: Optional[float] = None,
     max_price_warm_eur: Optional[float] = None,
+    area: Optional[Dict] = None,
 ) -> int:
     session = DBSession()
     try:
@@ -83,6 +86,7 @@ def create_filter(
             max_price_eur=max_price_eur,
             min_price_warm_eur=min_price_warm_eur,
             max_price_warm_eur=max_price_warm_eur,
+            area=housing_area.dump_area(area),
             active=True,
             created_at=utc_now(),
         )
@@ -119,6 +123,7 @@ def update_filter(
     max_price_eur: Optional[float] = None,
     min_price_warm_eur: Optional[float] = None,
     max_price_warm_eur: Optional[float] = None,
+    area=housing_area.KEEP,
 ) -> bool:
     session = DBSession()
     try:
@@ -137,6 +142,8 @@ def update_filter(
         row.max_price_eur = max_price_eur
         row.min_price_warm_eur = min_price_warm_eur
         row.max_price_warm_eur = max_price_warm_eur
+        if area is not housing_area.KEEP:
+            row.area = housing_area.dump_area(area)
         session.flush()
         filter_data = filter_to_dict(row)
         now = utc_now()

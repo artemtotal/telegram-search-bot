@@ -357,6 +357,10 @@ class KleinanzeigenMonitorFreeTierTests(_InMemoryDb):
         }
         bot = mock.Mock()
         context = SimpleNamespace(bot=bot)
+        # Берлін і Бранденбург тут ні до чого — без них обхід не йде в мережу.
+        regions = mock.patch.object(kleinanzeigen_monitor, 'REGIONS', ())
+        regions.start()
+        self.addCleanup(regions.stop)
         with mock.patch.object(kleinanzeigen_monitor, '_fetch_listings', return_value=[listing]), \
              mock.patch.object(kleinanzeigen_monitor, '_add_full_rent', return_value=0):
             result = kleinanzeigen_monitor.check_job(context)

@@ -6,6 +6,7 @@ filter here is just rooms/area/Kaltmiete bounds.
 
 from typing import Any, Dict, Optional
 
+from user_jobs import housing_area
 from user_jobs import regiomakler_parser, rent_bounds
 
 
@@ -27,6 +28,9 @@ def _within_max(value: Optional[float], bound: Optional[float]) -> bool:
 
 
 def matches_filter(listing: Dict[str, Any], filt: Dict[str, Any]) -> bool:
+    # Місце фільтра (етап 2, 02.11.2026); без нього — лише Потсдам, як і раніше.
+    if not housing_area.listing_in_area(listing, filt.get("area")):
+        return False
     rooms = _num(listing.get("rooms"))
     area = _num(listing.get("area_m2"))
     price = _num(listing.get("price_eur"))

@@ -20,6 +20,7 @@ docs/housing-region-plan.md). Умова пошуку `criteria["area"]`:
 from __future__ import annotations
 
 import difflib
+import json
 import math
 import re
 import unicodedata
@@ -257,10 +258,31 @@ def listing_in_area(listing: Dict, area: Optional[Dict]) -> bool:
 
 
 def covers_potsdam(area: Optional[Dict]) -> bool:
-    """Чи працюють для цього місця потсдамські площадки (агентства, ProPotsdam,
-    Immowelt і Kleinanzeigen, поки вони збирають лише Потсдам).
-
-    Лише коли шукають у самому Потсдамі (з радіусом чи без): їхні записи ще не
-    вміють перевіряти індекс, тож «Werder + 10 км» отримав би від них увесь
-    Потсдам, аж до Fahrland. Зону по індексу для всіх площадок дає етап 2."""
+    """Шукають у самому Потсдамі (з радіусом чи без): тоді Immowelt (його
+    фільтри живуть у check-Wohnung і місця не знають), кооперативи й ліміти
+    Jobcenter — як раніше."""
     return is_potsdam(area)
+
+
+def touches_potsdam(area: Optional[Dict]) -> bool:
+    """Хоч частина Потсдама в зоні («Werder + 10 км»): тоді працюють і
+    потсдамські агентства — їхні квартири перевіряються за індексом (етап 2)."""
+    return is_potsdam(area) or bool(allowed_plz(area) & allowed_plz(None))
+
+
+# --- збереження в записах площадок ---------------------------------------------------
+
+# update_filter без area лишає місце як є: старі шляхи (майстер адміна) його не знають.
+KEEP = object()
+
+
+def load_area(raw: Any) -> Optional[Dict]:
+    try:
+        area = json.loads(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+    return area if isinstance(area, dict) else None
+
+
+def dump_area(area: Optional[Dict]) -> Optional[str]:
+    return json.dumps(area, ensure_ascii=False, sort_keys=True) if area else None
