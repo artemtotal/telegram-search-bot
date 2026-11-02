@@ -18,8 +18,8 @@
 Новий фільтр спершу питає місце, Jobcenter — для Потсдама й Берліна (етап 5,
 jobcenter_tables); в округах Бранденбургу таблиць поки немає. Поза Потсдамом працюють площадки з REGION_SOURCES, а коли в
 зону потрапляє частина Потсдама — ще й потсдамські агентства (їхні квартири
-звіряються за індексом, етап 2). Immowelt — лише в самому Потсдамі: його
-записи живуть у check-Wohnung і місця не знають. Що людина сама вимкнула,
+звіряються за індексом, етап 2). Immowelt (етап 3) отримує місце в тілі
+запиту до check-Wohnung і шукає там само. Що людина сама вимкнула,
 пошук пам'ятає в `criteria["sources_off"]` і повертає, щойно місце знову Потсдам. Поки — лише для адміна, усім —
 HOUSING_PLACE_FOR_ALL=1.
 """
@@ -66,9 +66,11 @@ PRICE_MIN_OF = {"max_price_eur": "min_price_eur", "max_price_warm_eur": "min_pri
 MAX_VALUE = {"min_rooms": 20, "max_rooms": 20, "min_area_m2": 1000, "max_area_m2": 1000}
 JOBCENTER_CHOICES = (1, 2, 3, 4, 5, 6)
 # Площадки, що шукають і поза Потсдамом. Решта поки збирає лише Потсдам.
-REGION_SOURCES = {"immoscout", "kleinanzeigen", "vonovia"}
-# Площадки, що не знають місця (фільтри Immowelt живуть у check-Wohnung).
-POTSDAM_ONLY_SOURCES = {"immowelt"}
+# Immowelt — з етапу 3 (02.11.2026): check-Wohnung читає Берлін і Бранденбург
+# без браузера й звіряє місце фільтра (копія housing_area там).
+REGION_SOURCES = {"immoscout", "kleinanzeigen", "vonovia", "immowelt"}
+# Площадки, що не знають місця. Поки таких немає.
+POTSDAM_ONLY_SOURCES: set = set()
 PLACE_FOR_ALL = os.getenv("HOUSING_PLACE_FOR_ALL", "0") == "1"
 
 
@@ -165,6 +167,8 @@ def _immowelt_payload(criteria: Dict) -> Dict:
     payload["districts"] = districts
     # Завжди явно: PATCH без поля лишив би старий звужений вибір.
     payload["property_types"] = list(hm.normalize_property_types(criteria.get("property_types")))
+    # Місце — завжди явно, як і типи: PATCH без нього лишив би старе.
+    payload["area"] = criteria.get("area")
     return payload
 
 

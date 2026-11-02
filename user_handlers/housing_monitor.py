@@ -218,6 +218,9 @@ def _immowelt_match_criteria(filt: Dict[str, object]) -> Dict[str, object]:
     criteria = {"districts": list(filt.get("districts") or [])}
     for key in IMMOWELT_CRITERIA_KEYS:
         criteria[key] = filt.get(key)
+    # Місце (етап 3): інакше «підійшло б N» рахувало б Потсдам для берлінського фільтра.
+    if filt.get("area"):
+        criteria["area"] = filt["area"]
     for key in IMMOWELT_EXTRA_MATCH_KEYS:
         if filt.get(key):
             criteria[key] = list(filt[key]) if key == "property_types" else filt[key]
