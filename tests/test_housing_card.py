@@ -139,6 +139,23 @@ class HousingCardTest(unittest.TestCase):
             self._new('2')
         self.assertEqual(len(hm.user_searches(USER)), 2)
 
+    def test_a_free_user_runs_one_search_the_rest_go_on_pause(self):
+        with mock.patch.object(housing_card.housing_tier, 'is_premium', return_value=True):
+            self._new('3')
+            self._tap('hcard:on')
+            self._new('2')
+            self._tap('hcard:on')
+        searches = hm.user_searches(USER)
+        self.assertEqual([hm._search_paused(s) for s in searches], [False, False])
+        self.assertEqual(housing_card.pause_extra_searches(USER), [searches[1]['search_id']])
+        self.assertEqual([hm._search_paused(s) for s in hm.user_searches(USER)], [False, True])
+        # Увімкнути другий не можна, поки перший працює.
+        query = self._tap('hcard:on')
+        self.assertTrue(query.answer.call_args.kwargs.get('show_alert'))
+        self.assertTrue(hm._search_paused(hm.user_searches(USER)[1]))
+        self.assertFalse(housing_card.can_activate(USER, searches[1]['search_id']))
+        self.assertTrue(housing_card.can_activate(USER, searches[0]['search_id']))
+
     def test_card_fits_a_phone_screen(self):
         query = self._new('no')
         markup = query.edit_message_text.call_args.kwargs['reply_markup']

@@ -426,10 +426,38 @@ def open_card(update: Update, context: CallbackContext, search_id: int, edit: bo
 FREE_SEARCH_LIMIT = 1
 
 
+def _unlimited(user_id: int) -> bool:
+    return int(user_id) == hm.ADMIN_ID or housing_tier.is_premium(int(user_id))
+
+
 def can_add_search(user_id: int) -> bool:
-    if int(user_id) == hm.ADMIN_ID or housing_tier.is_premium(int(user_id)):
+    if _unlimited(user_id):
         return True
     return len(housing_search_store.list_for_user(int(user_id))) < FREE_SEARCH_LIMIT
+
+
+def can_activate(user_id: int, search_id: int) -> bool:
+    """Безкоштовно працює лише один пошук: увімкнути інший можна, коли решта на паузі."""
+    if _unlimited(user_id):
+        return True
+    active = [s for s in hm.user_searches(int(user_id))
+              if s["search_id"] != int(search_id) and not hm._search_paused(s)]
+    return len(active) < FREE_SEARCH_LIMIT
+
+
+def pause_extra_searches(user_id: int) -> List[int]:
+    """Безкоштовному лишає увімкненим один пошук (найстаріший із робочих), решту
+    ставить на паузу. Повертає id поставлених на паузу."""
+    if _unlimited(user_id):
+        return []
+    active = [s for s in hm.user_searches(int(user_id)) if not hm._search_paused(s)]
+    paused = []
+    for search in active[FREE_SEARCH_LIMIT:]:
+        for item in search["items"]:
+            source, filter_id = hm.housing_search_grouping.item_key(item)
+            hm._set_one_filter_active(source, filter_id, False, int(user_id))
+        paused.append(search["search_id"])
+    return paused
 
 
 def _paywall(update: Update, context: CallbackContext, edit: bool) -> None:
@@ -1103,6 +1131,9 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     if search is None:
         query.answer()
         _show(update, context)
+        return
+    if action == "on" and int(user.id) != hm.ADMIN_ID and not can_activate(int(search["user_id"]), search["search_id"]):
+        query.answer(_t("only_one_active", lang), show_alert=True)
         return
     if action in ("on", "off"):
         _set_active(update, context, search, action == "on")

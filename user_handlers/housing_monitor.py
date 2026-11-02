@@ -3801,6 +3801,10 @@ def _search_action(update: Update, context: CallbackContext) -> None:
         ), show_alert=bool(failed))
         refresh()
     elif action == "resume":
+        from user_handlers import housing_card
+        if int(user.id) != ADMIN_ID and not housing_card.can_activate(owner_id, search_id):
+            query.answer(i18n.t("housing.card.only_one_active", lang), show_alert=True)
+            return
         for item in search["items"]:
             source, filter_id = housing_search_grouping.item_key(item)
             _set_one_filter_active(source, filter_id, True, owner_id)
@@ -4056,6 +4060,13 @@ def _toggle_owned_filter(update: Update, context: CallbackContext) -> None:
     if not own:
         query.answer(i18n.t("housing.toast.not_your_filter", i18n.get_lang(user.id)), show_alert=True)
         return
+    if active:
+        from user_handlers import housing_card
+        owner_search = next((s for s in user_searches(int(user.id))
+                             if (source, filter_id) in [tuple(m) for m in s["members"]]), None)
+        if owner_search and not housing_card.can_activate(int(user.id), owner_search["search_id"]):
+            query.answer(i18n.t("housing.card.only_one_active", i18n.get_lang(user.id)), show_alert=True)
+            return
     ok = _set_one_filter_active(source, filter_id, active, int(user.id))
     if not ok:
         query.answer(i18n.t("housing.toast.filter_update_failed", i18n.get_lang(user.id)), show_alert=True)

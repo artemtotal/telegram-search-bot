@@ -285,8 +285,11 @@ def save_search(user_id: int, search_id: int, form: Dict[str, List[str]], lang: 
 
 def set_paused(user_id: int, search_id: int, paused: bool) -> bool:
     from user_handlers import housing_monitor as hm
+    from user_handlers import housing_card
     _n, search = _search(user_id, search_id)
     if search is None:
+        return False
+    if not paused and not housing_card.can_activate(int(user_id), int(search_id)):
         return False
     for item in search["items"]:
         source, filter_id = hm.housing_search_grouping.item_key(item)
@@ -628,7 +631,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             action = parts[2] if len(parts) > 2 else "save"
             if action in ("pause", "resume"):
-                set_paused(user_id, search_id, action == "pause")
+                if not set_paused(user_id, search_id, action == "pause") and action == "resume":
+                    self._send(403, page_searches(user_id, lang, note=_t("only_one_active", lang)))
+                    return
                 self._redirect("/")
             elif action == "delete":
                 delete_search(user_id, search_id)
