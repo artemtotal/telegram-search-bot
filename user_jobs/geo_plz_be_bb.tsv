@@ -1,0 +1,1627 @@
+# Поштові індекси Берліна й Бранденбурга: plz, місто, населений пункт, округ, код округу, lat, lon.
+# Місто для кругових міст (Berlin, Potsdam, Cottbus, Brandenburg an der Havel, Frankfurt (Oder)) — саме місто, а не його частина (Golm, Fahrland…).
+# Без індексів установ (GmbH, AG, Sparkasse…). Джерело: GeoNames postal codes DE (https://download.geonames.org/export/zip/), CC BY 4.0, завантажено 02.11.2026.
+01945	Grünewald	Grünewald	Oberspreewald-Lausitz	12066	51.4	14
+01945	Guteborn	Guteborn	Oberspreewald-Lausitz	12066	51.4167	13.9333
+01945	Hermsdorf	Hermsdorf	Oberspreewald-Lausitz	12066	51.4055	13.8937
+01945	Hohenbocka	Hohenbocka	Oberspreewald-Lausitz	12066	51.431	14.0098
+01945	Kroppen	Kroppen	Oberspreewald-Lausitz	12066	51.3833	13.8
+01945	Lindenau	Lindenau	Oberspreewald-Lausitz	12066	51.4	13.7333
+01945	Ruhland	Ruhland	Oberspreewald-Lausitz	12066	51.4576	13.8664
+01945	Schwarzbach	Schwarzbach	Oberspreewald-Lausitz	12066	51.45	13.9333
+01945	Tettau	Tettau	Oberspreewald-Lausitz	12066	51.4333	13.7333
+01968	Schipkau	Schipkau	Oberspreewald-Lausitz	12066	51.5456	13.9121
+01968	Schipkau Hörlitz	Schipkau Hörlitz	Oberspreewald-Lausitz	12066	51.5299	13.9508
+01968	Senftenberg	Senftenberg	Oberspreewald-Lausitz	12066	51.5252	14.0016
+01979	Lauchhammer	Lauchhammer	Oberspreewald-Lausitz	12066	51.4881	13.7662
+01983	Großräschen	Großräschen	Oberspreewald-Lausitz	12066	51.5876	14.0109
+01983	Neu-Seeland	Neu-Seeland	Oberspreewald-Lausitz	12066	51.6214	14.1309
+01987	Schwarzheide	Schwarzheide	Oberspreewald-Lausitz	12066	51.4767	13.8556
+01990	Frauendorf	Frauendorf	Oberspreewald-Lausitz	12066	51.4148	13.7696
+01990	Großkmehlen	Großkmehlen	Oberspreewald-Lausitz	12066	51.379	13.725
+01990	Ortrand	Ortrand	Oberspreewald-Lausitz	12066	51.375	13.7598
+01993	Schipkau	Schipkau	Oberspreewald-Lausitz	12066	51.5456	13.9121
+01993	Schipkau Schipkau	Schipkau Schipkau	Oberspreewald-Lausitz	12066	51.5101	13.8981
+01994	Schipkau	Schipkau	Oberspreewald-Lausitz	12066	51.5456	13.9121
+01994	Schipkau Annahütte	Schipkau Annahütte	Oberspreewald-Lausitz	12066	51.5614	13.882
+01994	Schipkau Annahütte, Annahütte	Schipkau Annahütte, Annahütte	Oberspreewald-Lausitz	12066	51.5632	13.8955
+01994	Schipkau Annahütte, Annahütte-Siedlung	Schipkau Annahütte, Annahütte-Siedlung	Oberspreewald-Lausitz	12066	51.5623	13.8742
+01994	Schipkau Annahütte, Herrnnmühle	Schipkau Annahütte, Herrnnmühle	Oberspreewald-Lausitz	12066	51.5558	13.8891
+01994	Schipkau Annahütte, Karl-Marx-Siedlung	Schipkau Annahütte, Karl-Marx-Siedlung	Oberspreewald-Lausitz	12066	51.5641	13.8692
+01994	Schipkau Drochow	Schipkau Drochow	Oberspreewald-Lausitz	12066	51.5693	13.9237
+01994	Schipkau Meuro	Schipkau Meuro	Oberspreewald-Lausitz	12066	51.5504	13.9244
+01996	Hosena	Hosena	Oberspreewald-Lausitz	12066	51.4547	14.0251
+01998	Schipkau	Schipkau	Oberspreewald-Lausitz	12066	51.5456	13.9121
+01998	Schipkau Klettwitz	Schipkau Klettwitz	Oberspreewald-Lausitz	12066	51.5422	13.8994
+01998	Schipkau Meuro	Schipkau Meuro	Oberspreewald-Lausitz	12066	51.5504	13.9244
+03042	Cottbus	Cottbus	Cottbus	12052	51.7612	14.3544
+03044	Cottbus	Cottbus	Cottbus	12052	51.7754	14.3374
+03046	Cottbus	Cottbus	Cottbus	12052	51.756	14.3197
+03048	Cottbus	Cottbus	Cottbus	12052	51.7403	14.3198
+03050	Cottbus	Cottbus	Cottbus	12052	51.7324	14.3347
+03051	Cottbus	Cottbus	Cottbus	12052	51.7667	14.3333
+03052	Cottbus	Cottbus	Cottbus	12052	51.7667	14.3333
+03053	Cottbus	Cottbus	Cottbus	12052	51.7667	14.3333
+03054	Cottbus	Cottbus	Cottbus	12052	51.7667	14.3333
+03055	Cottbus	Cottbus	Cottbus	12052	51.7667	14.3333
+03058	Cottbus	Gallinchen	Cottbus	12052	51.711	14.3539
+03058	Cottbus	Groß Gaglow	Cottbus	12052	51.7139	14.3248
+03058	Cottbus	Kiekebusch	Cottbus	12052	51.7235	14.3631
+03058	Frauendorf	Frauendorf	Spree-Neiße	12071	51.7007	14.3878
+03058	Gablenz	Gablenz	Spree-Neiße	12071	51.6865	14.5094
+03058	Groß Döbbern	Groß Döbbern	Spree-Neiße	12071	51.6515	14.3298
+03058	Groß Oßnig	Groß Oßnig	Spree-Neiße	12071	51.6783	14.3592
+03058	Haasow	Haasow	Spree-Neiße	12071	51.7426	14.4209
+03058	Kathlow	Kathlow	Spree-Neiße	12071	51.7252	14.4839
+03058	Klein Döbbern	Klein Döbbern	Spree-Neiße	12071	51.6682	14.345
+03058	Komptendorf	Komptendorf	Spree-Neiße	12071	51.6846	14.4727
+03058	Koppatz	Koppatz	Spree-Neiße	12071	51.6962	14.4266
+03058	Laubsdorf	Laubsdorf	Spree-Neiße	12071	51.6744	14.442
+03058	Neuhausen	Neuhausen	Spree-Neiße	12071	51.6788	14.4163
+03058	Roggosen	Roggosen	Spree-Neiße	12071	51.7043	14.4614
+03058	Sergen	Sergen	Spree-Neiße	12071	51.7023	14.5025
+03096	Briesen	Briesen	Spree-Neiße	12071	51.8155	14.2442
+03096	Burg (Spreewald)	Burg (Spreewald)	Spree-Neiße	12071	51.8333	14.15
+03096	Dissen-Striesow	Dissen-Striesow	Spree-Neiße	12071	51.825	14.2833
+03096	Guhrow	Guhrow	Spree-Neiße	12071	51.812	14.2294
+03096	Schmogrow-Fehrow	Schmogrow-Fehrow	Spree-Neiße	12071	51.85	14.2333
+03096	Werben	Werben	Spree-Neiße	12071	51.8167	14.1833
+03099	Kolkwitz	Kolkwitz	Spree-Neiße	12071	51.75	14.25
+03103	Neu-Seeland	Neu-Seeland	Oberspreewald-Lausitz	12066	51.6214	14.1309
+03103	Neupetershain	Neupetershain	Oberspreewald-Lausitz	12066	51.608	14.1651
+03116	Drebkau	Drebkau	Spree-Neiße	12071	51.6541	14.2232
+03119	Welzow	Welzow	Spree-Neiße	12071	51.5838	14.1708
+03130	Bagenz	Bagenz	Spree-Neiße	12071	51.6448	14.4332
+03130	Drieschnitz-Kahsel	Drieschnitz-Kahsel	Spree-Neiße	12071	51.6667	14.475
+03130	Felixsee	Felixsee	Spree-Neiße	12071	51.6083	14.5208
+03130	Graustein	Graustein	Spree-Neiße	12071	51.5729	14.4732
+03130	Groß Luja	Groß Luja	Spree-Neiße	12071	51.5978	14.4467
+03130	Haidemühl	Haidemühl	Spree-Neiße	12071	51.5518	14.2219
+03130	Hornow-Wadelsdorf	Hornow-Wadelsdorf	Spree-Neiße	12071	51.625	14.4917
+03130	Jämlitz-Klein Düben	Jämlitz-Klein Düben	Spree-Neiße	12071	51.5667	14.6417
+03130	Lieskau	Lieskau	Spree-Neiße	12071	51.5683	14.5271
+03130	Proschim	Proschim	Spree-Neiße	12071	51.5514	14.1884
+03130	Reuthen	Reuthen	Spree-Neiße	12071	51.5906	14.5266
+03130	Spremberg	Spremberg	Spree-Neiße	12071	51.5696	14.3739
+03130	Tschernitz	Tschernitz	Spree-Neiße	12071	51.5833	14.6167
+03130	Türkendorf	Türkendorf	Spree-Neiße	12071	51.591	14.4581
+03130	Wolfshain	Wolfshain	Spree-Neiße	12071	51.5799	14.589
+03139	Terpe	Terpe	Spree-Neiße	12071	51.5667	14.3667
+03149	Forst (Lausitz)	Forst (Lausitz)	Spree-Neiße	12071	51.7302	14.598
+03149	Groß Schacksdorf-Simmersdorf	Groß Schacksdorf-Simmersdorf	Spree-Neiße	12071	51.7	14.625
+03149	Wiesengrund	Wiesengrund	Spree-Neiße	12071	51.6967	14.5533
+03159	Döbern	Döbern	Spree-Neiße	12071	51.6159	14.5981
+03159	Neiße-Malxetal	Neiße-Malxetal	Spree-Neiße	12071	51.6433	14.63
+03159	Wiesengrund	Wiesengrund	Spree-Neiße	12071	51.6967	14.5533
+03172	Atterwasch	Atterwasch	Spree-Neiße	12071	51.9342	14.6255
+03172	Bärenklau	Bärenklau	Spree-Neiße	12071	51.9383	14.5667
+03172	Gastrose-Kerkwitz	Gastrose-Kerkwitz	Spree-Neiße	12071	51.9	14.65
+03172	Grabko	Grabko	Spree-Neiße	12071	51.9099	14.5756
+03172	Grießen	Grießen	Spree-Neiße	12071	51.8492	14.5924
+03172	Guben	Guben	Spree-Neiße	12071	51.9499	14.7145
+03172	Lutzketal	Lutzketal	Spree-Neiße	12071	51.9833	14.6238
+03172	Pinnow-Heideland	Pinnow-Heideland	Spree-Neiße	12071	51.9833	14.5333
+03185	Drachhausen	Drachhausen	Spree-Neiße	12071	51.8903	14.3164
+03185	Drehnow	Drehnow	Spree-Neiße	12071	51.8667	14.3667
+03185	Grötsch	Grötsch	Spree-Neiße	12071	51.7932	14.5096
+03185	Heinersbrück	Heinersbrück	Spree-Neiße	12071	51.8199	14.5074
+03185	Peitz	Peitz	Spree-Neiße	12071	51.8584	14.4114
+03185	Tauer	Tauer	Spree-Neiße	12071	51.9	14.45
+03185	Teichland	Teichland	Spree-Neiße	12071	51.8056	14.4444
+03185	Turnow-Preilack	Turnow-Preilack	Spree-Neiße	12071	51.875	14.4083
+03197	Drewitz	Drewitz	Spree-Neiße	12071	51.8966	14.5103
+03197	Jänschwalde	Jänschwalde	Spree-Neiße	12071	51.8607	14.4981
+03202	Luckow-Petershagen	Luckow-Petershagen	Uckermark	12073	53.2435	14.2573
+03205	Bischdorf	Bischdorf	Oberspreewald-Lausitz	12066	51.7989	13.9698
+03205	Bolschwitz	Bolschwitz	Oberspreewald-Lausitz	12066	51.7485	14.0293
+03205	Bronkow	Bronkow	Oberspreewald-Lausitz	12066	51.6667	13.9167
+03205	Calau	Calau	Oberspreewald-Lausitz	12066	51.744	13.9533
+03205	Groß-Mehßow	Groß-Mehßow	Oberspreewald-Lausitz	12066	51.7333	13.8167
+03205	Kemmen	Kemmen	Oberspreewald-Lausitz	12066	51.7335	13.9118
+03205	Laasow	Laasow	Oberspreewald-Lausitz	12066	51.7134	14.0875
+03205	Lipten	Lipten	Oberspreewald-Lausitz	12066	51.6463	13.9271
+03205	Luckaitztal	Luckaitztal	Oberspreewald-Lausitz	12066	51.6833	14
+03205	Lug	Lug	Oberspreewald-Lausitz	12066	51.6303	13.9296
+03205	Missen	Missen	Oberspreewald-Lausitz	12066	51.7274	14.0498
+03205	Mlode	Mlode	Oberspreewald-Lausitz	12066	51.7746	13.9558
+03205	Ogrosen	Ogrosen	Oberspreewald-Lausitz	12066	51.7127	14.0422
+03205	Saßleben	Saßleben	Oberspreewald-Lausitz	12066	51.7591	13.9865
+03205	Werchow	Werchow	Oberspreewald-Lausitz	12066	51.7255	13.9555
+03222	Boblitz	Boblitz	Oberspreewald-Lausitz	12066	51.8406	13.9827
+03222	Groß Beuchow	Groß Beuchow	Oberspreewald-Lausitz	12066	51.85	13.9031
+03222	Groß-Klessow	Groß-Klessow	Oberspreewald-Lausitz	12066	51.8333	13.95
+03222	Hindenberg	Hindenberg	Oberspreewald-Lausitz	12066	51.8532	13.8464
+03222	Kittlitz	Kittlitz	Oberspreewald-Lausitz	12066	51.8308	13.9161
+03222	Klein Radden	Klein Radden	Oberspreewald-Lausitz	12066	51.8695	13.8796
+03222	Lübbenau/Spreewald	Lübbenau/Spreewald	Oberspreewald-Lausitz	12066	51.8626	13.9613
+03222	Ragow	Ragow	Oberspreewald-Lausitz	12066	51.8875	13.902
+03226	Koßwig	Koßwig	Oberspreewald-Lausitz	12066	51.7769	14.0287
+03226	Leipe	Leipe	Oberspreewald-Lausitz	12066	51.8554	14.0441
+03226	Raddusch	Raddusch	Oberspreewald-Lausitz	12066	51.8181	14.0403
+03226	Suschow	Suschow	Oberspreewald-Lausitz	12066	51.7994	14.0923
+03226	Vetschau	Vetschau	Oberspreewald-Lausitz	12066	51.7864	14.0794
+03229	Altdöbern	Altdöbern	Oberspreewald-Lausitz	12066	51.65	14.0333
+03229	Luckaitztal	Luckaitztal	Oberspreewald-Lausitz	12066	51.6833	14
+03238	Betten	Betten	Elbe-Elster	12062	51.6273	13.7674
+03238	Dollenchen	Dollenchen	Elbe-Elster	12062	51.6082	13.8595
+03238	Eichholz-Drößig	Eichholz-Drößig	Elbe-Elster	12062	51.6083	13.6583
+03238	Finsterwalde	Finsterwalde	Elbe-Elster	12062	51.6339	13.7066
+03238	Fischwasser	Fischwasser	Elbe-Elster	12062	51.596	13.6121
+03238	Gorden	Gorden	Elbe-Elster	12062	51.5332	13.6269
+03238	Gruhno	Gruhno	Elbe-Elster	12062	51.5678	13.5185
+03238	Gröbitz	Gröbitz	Elbe-Elster	12062	51.6582	13.7138
+03238	Göllnitz	Göllnitz	Elbe-Elster	12062	51.64	13.8575
+03238	Lichterfeld	Lichterfeld	Elbe-Elster	12062	51.5976	13.7781
+03238	Lieskau	Lieskau	Elbe-Elster	12062	51.6173	13.8086
+03238	Lindena	Lindena	Elbe-Elster	12062	51.5928	13.5434
+03238	Lindthal	Lindthal	Elbe-Elster	12062	51.6581	13.7804
+03238	Lugau	Lugau	Elbe-Elster	12062	51.6109	13.5979
+03238	Massen	Massen	Elbe-Elster	12062	51.6428	13.733
+03238	Münchhausen	Münchhausen	Elbe-Elster	12062	51.6673	13.6447
+03238	Oppelhain	Oppelhain	Elbe-Elster	12062	51.5549	13.5944
+03238	Ponnsdorf	Ponnsdorf	Elbe-Elster	12062	51.6667	13.6833
+03238	Rückersdorf	Rückersdorf	Elbe-Elster	12062	51.5695	13.5723
+03238	Sallgast	Sallgast	Elbe-Elster	12062	51.5887	13.8486
+03238	Schacksdorf	Schacksdorf	Elbe-Elster	12062	51.6151	13.7618
+03238	Schadewitz	Schadewitz	Elbe-Elster	12062	51.5607	13.4821
+03238	Staupitz	Staupitz	Elbe-Elster	12062	51.5337	13.6703
+03246	Babben	Babben	Elbe-Elster	12062	51.7126	13.7856
+03246	Crinitz	Crinitz	Elbe-Elster	12062	51.7333	13.7667
+03246	Gahro	Gahro	Elbe-Elster	12062	51.738	13.7246
+03249	Bahren	Bahren	Elbe-Elster	12062	51.7	13.7167
+03249	Breitenau	Breitenau	Elbe-Elster	12062	51.6864	13.7241
+03249	Goßmar	Goßmar	Elbe-Elster	12062	51.6905	13.6829
+03249	Großkrausnik	Großkrausnik	Elbe-Elster	12062	51.7322	13.6271
+03249	Kleinkrausnik	Kleinkrausnik	Elbe-Elster	12062	51.7354	13.5932
+03249	Pahlsdorf	Pahlsdorf	Elbe-Elster	12062	51.7193	13.6486
+03249	Sonnewalde	Sonnewalde	Elbe-Elster	12062	51.6922	13.6473
+03249	Zeckerin	Zeckerin	Elbe-Elster	12062	51.7112	13.6321
+03253	Arenzhain	Arenzhain	Elbe-Elster	12062	51.6735	13.5092
+03253	Brenitz	Brenitz	Elbe-Elster	12062	51.7023	13.6007
+03253	Buchhain	Buchhain	Elbe-Elster	12062	51.6453	13.3898
+03253	Doberlug-Kirchhain	Doberlug-Kirchhain	Elbe-Elster	12062	51.6258	13.5623
+03253	Dübrichen	Dübrichen	Elbe-Elster	12062	51.6686	13.4724
+03253	Frankena	Frankena	Elbe-Elster	12062	51.658	13.5932
+03253	Friedersdorf	Friedersdorf	Elbe-Elster	12062	51.6985	13.5726
+03253	Hennersdorf	Hennersdorf	Elbe-Elster	12062	51.6369	13.6069
+03253	Nexdorf	Nexdorf	Elbe-Elster	12062	51.6368	13.3715
+03253	Prießen	Prießen	Elbe-Elster	12062	51.6613	13.4301
+03253	Schilda	Schilda	Elbe-Elster	12062	51.6	13.3833
+03253	Schönborn	Schönborn	Elbe-Elster	12062	51.6002	13.4897
+03253	Schönewalde	Schönewalde	Elbe-Elster	12062	51.679	13.6025
+03253	Trebbus	Trebbus	Elbe-Elster	12062	51.6924	13.5211
+03253	Tröbitz	Tröbitz	Elbe-Elster	12062	51.6	13.4333
+03253	Werenzhain	Werenzhain	Elbe-Elster	12062	51.6546	13.5322
+04895	Falkenberg/Elster	Falkenberg/Elster	Elbe-Elster	12062	51.5875	13.2364
+04910	Elsterwerda	Elsterwerda	Elbe-Elster	12062	51.4604	13.52
+04910	Haida	Haida	Elbe-Elster	12062	51.4793	13.4679
+04916	Heideeck	Heideeck	Elbe-Elster	12062	51.8333	13.2
+04916	Herzberg (Elster)	Herzberg (Elster)	Elbe-Elster	12062	51.6833	13.2333
+04916	Stolzenhain	Stolzenhain	Elbe-Elster	12062	51.8441	13.1607
+04916	Themesgrund	Themesgrund	Elbe-Elster	12062	51.7667	13.25
+04916	Werchau	Werchau	Elbe-Elster	12062	51.7782	13.3194
+04916	Wildberg	Wildberg	Elbe-Elster	12062	51.7833	13.3167
+04924	Bad Liebenwerda	Bad Liebenwerda	Elbe-Elster	12062	51.5183	13.3946
+04924	Uebigau-Wahrenbrück	Uebigau-Wahrenbrück	Elbe-Elster	12062	51.5167	13.3333
+04928	Döllingen	Döllingen	Elbe-Elster	12062	51.4837	13.5883
+04928	Kahla	Kahla	Elbe-Elster	12062	51.4678	13.5663
+04928	Plessa	Plessa	Elbe-Elster	12062	51.4667	13.6167
+04928	Schraden	Schraden	Elbe-Elster	12062	51.4253	13.6949
+04931	Mühlberg (Elbe)	Mühlberg (Elbe)	Elbe-Elster	12062	51.4333	13.2167
+04932	Großthiemig	Großthiemig	Elbe-Elster	12062	51.3833	13.6667
+04932	Gröden	Gröden	Elbe-Elster	12062	51.4	13.5667
+04932	Hirschfeld	Hirschfeld	Elbe-Elster	12062	51.3833	13.6167
+04932	Merzdorf	Merzdorf	Elbe-Elster	12062	51.4	13.5333
+04932	Prösen	Prösen	Elbe-Elster	12062	51.4153	13.5501
+04932	Reichenhain	Reichenhain	Elbe-Elster	12062	51.4598	13.4287
+04932	Saathain	Saathain	Elbe-Elster	12062	51.4632	13.4638
+04932	Wainsdorf	Wainsdorf	Elbe-Elster	12062	51.4094	13.5073
+04934	Dreska	Dreska	Elbe-Elster	12062	51.4853	13.538
+04934	Hohenleipisch	Hohenleipisch	Elbe-Elster	12062	51.5	13.55
+04936	Frankenhain	Frankenhain	Elbe-Elster	12062	51.7027	13.4154
+04936	Freileben	Freileben	Elbe-Elster	12062	51.7833	13.4
+04936	Hillmersdorf	Hillmersdorf	Elbe-Elster	12062	51.7091	13.4873
+04936	Hohenbucko	Hohenbucko	Elbe-Elster	12062	51.7667	13.4667
+04936	Jagsal	Jagsal	Elbe-Elster	12062	51.6866	13.354
+04936	Kolochau	Kolochau	Elbe-Elster	12062	51.7268	13.3177
+04936	Körba	Körba	Elbe-Elster	12062	51.8047	13.3877
+04936	Lebusa	Lebusa	Elbe-Elster	12062	51.7957	13.4207
+04936	Malitschkendorf	Malitschkendorf	Elbe-Elster	12062	51.6945	13.3296
+04936	Naundorf	Naundorf	Elbe-Elster	12062	51.7374	13.4401
+04936	Proßmarke	Proßmarke	Elbe-Elster	12062	51.7408	13.4913
+04936	Schlieben	Schlieben	Elbe-Elster	12062	51.7238	13.383
+04936	Schöna-Kolpien	Schöna-Kolpien	Elbe-Elster	12062	51.825	13.45
+04936	Stechau	Stechau	Elbe-Elster	12062	51.6974	13.4701
+04936	Wehrhain	Wehrhain	Elbe-Elster	12062	51.7213	13.4186
+04936	Ölsig	Ölsig	Elbe-Elster	12062	51.6833	13.375
+04938	Uebigau-Wahrenbrück	Uebigau-Wahrenbrück	Elbe-Elster	12062	51.5167	13.3333
+10102	Berlin	Staatsbibliothek zu Berlin Preußischer Kulturbesitz	Berlin	11000	52.5175	13.3916
+10104	Berlin	Germany Trade & Invest Gesellschaft für Außenwirtschaft	Berlin	11000	52.5106	13.3901
+10105	Berlin	Metropol-Theater Betriebsgesellschaft mbH	Berlin	11000	52.5208	13.3884
+10106	Berlin	Konzerthaus Berlin - Schauspielhaus am Gendarmenmarkt - Berliner Sinfonie-	Berlin	11000	52.5127	13.3921
+10106	Berlin	St. Hedwigskrankenhaus	Berlin	11000	52.5259	13.3984
+10107	Berlin	Verlag Construktiv	Berlin	11000	52.5257	13.3793
+10107	Berlin	West östl. Diven	Berlin	11000	52.5135	13.3853
+10108	Berlin	Deutsche Apotheker- und Ärztebank eG	Berlin	11000	52.5277	13.378
+10108	Berlin	Deutsches Institut für Wirtschaftsforschung	Berlin	11000	52.5122	13.3886
+10115	Berlin	Berlin	Berlin	11000	52.5323	13.3846
+10117	Berlin	Berlin	Berlin	11000	52.517	13.3872
+10119	Berlin	Berlin	Berlin	11000	52.5305	13.4053
+10150	Berlin	Berliner Feuerwehr	Berlin	11000	52.5169	13.4147
+10178	Berlin	Berlin	Berlin	11000	52.5213	13.4096
+10179	Berlin	Berlin	Berlin	11000	52.5122	13.4164
+10243	Berlin	Berlin Friedrichshain	Berlin	11000	52.5123	13.4394
+10245	Berlin	Berlin Friedrichshain	Berlin	11000	52.5007	13.4647
+10247	Berlin	Berlin Friedrichshain	Berlin	11000	52.5161	13.4656
+10249	Berlin	Berlin Friedrichshain	Berlin	11000	52.5238	13.4428
+10313	Berlin	Fachhochschule für Technik und Wirtschaft Berlin	Berlin	11000	52.4932	13.5259
+10315	Berlin	Berlin	Berlin	11000	52.5132	13.5148
+10317	Berlin	Berlin	Berlin	11000	52.4979	13.4908
+10318	Berlin	Berlin	Berlin	11000	52.4835	13.5287
+10319	Berlin	Berlin	Berlin	11000	52.4992	13.5188
+10356	Berlin	Jobcenter Geschäftsstelle Lichtenberg	Berlin	11000	52.5183	13.4882
+10360	Berlin	Bezirksamt Lichtenberg von Berlin	Berlin	11000	52.5094	13.5255
+10365	Berlin	Berlin	Berlin	11000	52.5206	13.4969
+10367	Berlin	Berlin	Berlin	11000	52.5246	13.4821
+10369	Berlin	Berlin	Berlin	11000	52.5295	13.4695
+10400	Berlin	Bezirksamt Prenzlauer Berg von Berlin	Berlin	11000	52.5405	13.4273
+10405	Berlin	Berlin	Berlin	11000	52.5352	13.4257
+10407	Berlin	Berlin	Berlin	11000	52.5336	13.4492
+10409	Berlin	Berlin	Berlin	11000	52.5443	13.4414
+10435	Berlin	Berlin	Berlin	11000	52.5378	13.4112
+10437	Berlin	Berlin	Berlin	11000	52.5449	13.4126
+10439	Berlin	Berlin	Berlin	11000	52.5522	13.4121
+10547	Berlin	AVM	Berlin	11000	52.5234	13.3446
+10551	Berlin	Berlin	Berlin	11000	52.5307	13.3372
+10553	Berlin	Berlin	Berlin	11000	52.5305	13.3215
+10555	Berlin	Berlin	Berlin	11000	52.5215	13.3355
+10557	Berlin	Berlin	Berlin	11000	52.5233	13.3594
+10559	Berlin	Berlin	Berlin	11000	52.5301	13.3499
+10585	Berlin	Berlin	Berlin	11000	52.5152	13.3057
+10587	Berlin	Berlin	Berlin	11000	52.5184	13.3195
+10589	Berlin	Berlin	Berlin	11000	52.5276	13.3057
+10617	Berlin	Bezirksamt Charlottenburg-Wilmersdorf	Berlin	11000	52.5172	13.3082
+10623	Berlin	Berlin	Berlin	11000	52.5088	13.3274
+10625	Berlin	Berlin	Berlin	11000	52.5095	13.3147
+10627	Berlin	Berlin	Berlin	11000	52.508	13.303
+10629	Berlin	Berlin	Berlin	11000	52.5028	13.3086
+10702	Berlin	BG Bau Berufsgenossenschaft der Bauwirtschaft	Berlin	11000	52.4921	13.3341
+10702	Berlin	Becker u. Kries	Berlin	11000	52.4998	13.3293
+10702	Berlin	Caritas-Krankenhilfe Berlin e. V.	Berlin	11000	52.4801	13.3296
+10702	Berlin	IBB Investitionsbank Berlin	Berlin	11000	52.4962	13.3315
+10702	Berlin	Wiemer u. Trachte	Berlin	11000	52.4914	13.3166
+10704	Berlin	Deutsche Rentenversicherung Bund	Berlin	11000	52.4904	13.3112
+10707	Berlin	Berlin	Berlin	11000	52.4967	13.3138
+10709	Berlin	Berlin	Berlin	11000	52.4939	13.3031
+10711	Berlin	Berlin	Berlin	11000	52.4981	13.2905
+10713	Berlin	Berlin	Berlin	11000	52.4851	13.3133
+10715	Berlin	Berlin	Berlin	11000	52.4824	13.3289
+10717	Berlin	Berlin	Berlin	11000	52.4908	13.3275
+10719	Berlin	Berlin	Berlin	11000	52.4988	13.3257
+10768	Berlin	Volksfürsorge Schadenzentrum	Berlin	11000	52.4998	13.3253
+10772	Berlin	DeGeWo	Berlin	11000	52.5051	13.3671
+10772	Berlin	Staatsbibliothek zu Berlin Preußischer Kulturbesitz	Berlin	11000	52.5083	13.3714
+10773	Berlin	IKK Brandenburg und Berlin	Berlin	11000	52.5044	13.346
+10774	Berlin	Linklaters LLP Rechtsanwälte Notare Steuerberater	Berlin	11000	52.5102	13.3762
+10777	Berlin	Berlin	Berlin	11000	52.4975	13.3427
+10779	Berlin	Berlin	Berlin	11000	52.4921	13.3395
+10781	Berlin	Berlin	Berlin	11000	52.4936	13.3529
+10783	Berlin	Berlin	Berlin	11000	52.4964	13.3624
+10785	Berlin	Berlin	Berlin	11000	52.5073	13.3643
+10787	Berlin	Berlin	Berlin	11000	52.5078	13.3439
+10789	Berlin	Berlin	Berlin	11000	52.5017	13.3377
+10819	Berlin	Deutschlandradio Kultur	Berlin	11000	52.4812	13.338
+10820	Berlin	Bezirksamt Tempelhof-Schöneberg	Berlin	11000	52.4849	13.3446
+10823	Berlin	Berlin	Berlin	11000	52.4873	13.3509
+10825	Berlin	Berlin	Berlin	11000	52.4838	13.3413
+10827	Berlin	Berlin	Berlin	11000	52.4838	13.3543
+10829	Berlin	Berlin	Berlin	11000	52.4761	13.3607
+10842	Berlin	Allianz Baufinanzierung	Berlin	11000	52.4341	13.536
+10860	Berlin	Amtsgericht Tempelhof-Kreuzberg -Familiengericht-	Berlin	11000	52.4994	13.3816
+10861	Berlin	Amtsgericht Schöneberg	Berlin	11000	52.4892	13.3482
+10862	Berlin	Amtsgericht Charlottenburg	Berlin	11000	52.5061	13.2951
+10863	Berlin	Amtsgericht Köpenick	Berlin	11000	52.4553	13.5796
+10863	Berlin	Amtsgericht Lichtenberg	Berlin	11000	52.5144	13.4895
+10863	Berlin	Amtsgericht Lichtenberg Zweigstelle Hohenschönhausen	Berlin	11000	52.5658	13.5096
+10863	Berlin	Amtsgericht Mitte	Berlin	11000	52.5178	13.4141
+10863	Berlin	Amtsgericht Pankow-Weißensee	Berlin	11000	52.5573	13.4601
+10863	Berlin	Amtsgericht Pankow-Weißensee -Familiengericht-	Berlin	11000	52.5663	13.4157
+10863	Berlin	Amtsgericht Schöneberg	Berlin	11000	52.4374	13.3077
+10863	Berlin	Amtsgericht Tempelhof-Kreuzberg	Berlin	11000	52.4983	13.3804
+10863	Berlin	Amtsgericht Tiergarten	Berlin	11000	52.5264	13.3538
+10863	Berlin	Anwaltsgerichtshof Berlin	Berlin	11000	52.4911	13.3567
+10863	Berlin	Generalstaatsanwaltschaft Berlin	Berlin	11000	52.4911	13.3567
+10863	Berlin	Justizbehörde Moabit	Berlin	11000	52.5247	13.3513
+10863	Berlin	Landgericht -Strafsachen-	Berlin	11000	52.5264	13.3538
+10863	Berlin	Landgericht Berlin 1	Berlin	11000	52.5178	13.4141
+10863	Berlin	Landgericht Berlin 2	Berlin	11000	52.5262	13.2978
+10863	Berlin	Staatsanwaltschaft Berlin	Berlin	11000	52.5264	13.3538
+10864	Berlin	Berliner Wasserbetriebe Anstalt des Öffentlichen Rechts	Berlin	11000	52.5155	13.4107
+10865	Berlin	EDW-Entschädigungseinrichtung der Wertpapierhandelsunternehmen	Berlin	11000	52.5157	13.3915
+10865	Berlin	FuB	Berlin	11000	52.5187	13.3907
+10865	Berlin	Kreditanstalt für Wiederaufbau	Berlin	11000	52.5187	13.3907
+10867	Berlin	Axel Springer SE	Berlin	11000	52.5078	13.3975
+10868	Berlin	Zentrale Zulagenstelle für Altersvermögen der BfA	Berlin	11000	52.4915	13.3104
+10873	Berlin	Centralvereinigung Deutscher Wirtschafts verbände für Handelsvermittlung (CDH)	Berlin	11000	52.5218	13.389
+10873	Berlin	Handelsverband Deutschland (HDE)	Berlin	11000	52.5218	13.389
+10873	Berlin	Herbert Toenes Büroservice	Berlin	11000	52.5218	13.389
+10873	Berlin	Michael Rihm SpreeBoPrint	Berlin	11000	52.5218	13.389
+10874	Berlin	Zentrales Testamentsregister	Berlin	11000	52.5123	13.3945
+10875	Berlin	Anota Fahrzeug Service- und Vertriebsgesellschaft mbH	Berlin	11000	52.5068	13.4381
+10875	Berlin	DaimlerChrysler Corporate Audit	Berlin	11000	52.5064	13.3731
+10875	Berlin	debis Gesellschaft für Potsdamer Platz und Immobilienmanagement mbH	Berlin	11000	52.5064	13.3731
+10876	Berlin	GMZ Gesellschaft für Medien-, Druck- u. Zeitungsverlagsbeteiligungen mbH & Co	Berlin	11000	52.5045	13.3809
+10876	Berlin	Pressestiftung Tagesspiegel	Berlin	11000	52.5045	13.3809
+10876	Berlin	TMS Tagesspiegel Marketing Service	Berlin	11000	52.5045	13.3809
+10876	Berlin	Zitty Verlag	Berlin	11000	52.5045	13.3809
+10876	Berlin	Zweite Hand Verlagsgesellschaft mbH	Berlin	11000	52.5045	13.3809
+10882	Berlin	TÜV Rheinland Group	Berlin	11000	52.4644	13.3696
+10883	Berlin	Frankfurter Hypothekenbank	Berlin	11000	52.5133	13.3193
+10883	Berlin	Immobilien-Service-Center Berlin	Berlin	11000	52.5133	13.3193
+10885	Berlin	TeleColumbus Gruppe Logistikzentrum	Berlin	11000	52.5255	13.3216
+10887	Berlin	ZDF Hauptstadtstudio Berlin	Berlin	11000	52.5172	13.3871
+10888	Berlin	Axel Springer SE	Berlin	11000	52.5078	13.3975
+10892	Berlin	Berliner Volksbank eG	Berlin	11000	52.5784	13.2943
+10893	Berlin	Weberbank Actiengesellschaft	Berlin	11000	52.4834	13.293
+10898	Berlin	BAHN-BKK-Regionalgeschäftsstelle Nord-Ost	Berlin	11000	52.5206	13.4928
+10898	Berlin	Deutsche Rentenversicherung Bund	Berlin	11000	52.4904	13.3112
+10898	Berlin	Kahrs & Partner	Berlin	11000	52.5001	13.3615
+10901	Berlin	Daimler AG, NL Berlin	Berlin	11000	52.5149	13.3292
+10902	Berlin	Walter De Gruyter Verlag & Co.	Berlin	11000	52.5045	13.3602
+10914	Berlin	HUK-Coburg	Berlin	11000	52.5018	13.336
+10958	Berlin	Bezirksamt Kreuzberg von Berlin	Berlin	11000	52.4928	13.3702
+10959	Berlin	Amtsgericht Tempelhof-Kreuzberg -Familiengericht-	Berlin	11000	52.4994	13.3816
+10961	Berlin	Berlin Kreuzberg	Berlin	11000	52.4926	13.3975
+10963	Berlin	Berlin Kreuzberg	Berlin	11000	52.5003	13.3813
+10965	Berlin	Berlin Kreuzberg	Berlin	11000	52.4855	13.3946
+10967	Berlin	Berlin Kreuzberg	Berlin	11000	52.4905	13.4164
+10969	Berlin	Berlin Kreuzberg	Berlin	11000	52.5025	13.4012
+10997	Berlin	Berlin Kreuzberg	Berlin	11000	52.5009	13.4356
+10999	Berlin	Berlin Kreuzberg	Berlin	11000	52.4969	13.4266
+11011	Berlin	Berlin	Berlin	11000	52.5179	13.3759
+11013	Berlin	Auswärtiges Amt	Berlin	11000	52.5154	13.3985
+11052	Berlin	Deutscher Industrie und Handelskammertag DIHK	Berlin	11000	52.5147	13.4054
+11053	Berlin	AKS - Arbeitskreis Kultursponsoring	Berlin	11000	52.5147	13.4054
+11053	Berlin	Arbeitsring Ausland für kulturelle Aufgaben	Berlin	11000	52.5147	13.4054
+11053	Berlin	Deutsches NIAG/EDIG Büro	Berlin	11000	52.5147	13.4054
+11053	Berlin	Förderkreis der Deutschen Wirtschaft e.V	Berlin	11000	52.5147	13.4054
+11053	Berlin	Industrie-Förderung Gesellschaft mbH	Berlin	11000	52.5147	13.4054
+11053	Berlin	Kulturstiftung der Deutschen Wirtschaft	Berlin	11000	52.5147	13.4054
+11056	Berlin	Der Bevollmächtigte des Saarlandes beim Bund Außenstelle Berlin	Berlin	11000	52.5125	13.3792
+11056	Berlin	Freistaat Sachsen Vertretung beim Bund	Berlin	11000	52.5144	13.4025
+11506	Berlin	GEMA - Bezirksdirektion	Berlin	11000	52.5044	13.346
+12028	Berlin	Jobcenter Neukölln	Berlin	11000	52.479	13.4279
+12038	Berlin	Amtsgericht Neukölln	Berlin	11000	52.482	13.4339
+12040	Berlin	Bezirksamt Neukölln	Berlin	11000	52.4813	13.435
+12043	Berlin	Berlin	Berlin	11000	52.4799	13.4371
+12045	Berlin	Berlin	Berlin	11000	52.4855	13.4392
+12047	Berlin	Berlin	Berlin	11000	52.4905	13.4285
+12049	Berlin	Berlin	Berlin	11000	52.4764	13.422
+12051	Berlin	Berlin	Berlin	11000	52.4669	13.4298
+12053	Berlin	Berlin	Berlin	11000	52.4768	13.4325
+12055	Berlin	Berlin	Berlin	11000	52.4712	13.4486
+12057	Berlin	Berlin	Berlin	11000	52.4684	13.4633
+12059	Berlin	Berlin	Berlin	11000	52.4809	13.4513
+12099	Berlin	Berlin	Berlin	11000	52.4644	13.4023
+12101	Berlin	Berlin	Berlin	11000	52.4785	13.3791
+12103	Berlin	Berlin	Berlin	11000	52.4641	13.3747
+12105	Berlin	Berlin	Berlin	11000	52.4492	13.3714
+12107	Berlin	Berlin	Berlin	11000	52.4312	13.3917
+12109	Berlin	Berlin	Berlin	11000	52.4465	13.3993
+12154	Berlin	Bezirksamt Steglitz	Berlin	11000	52.4572	13.3207
+12154	Berlin	Wertheim	Berlin	11000	52.462	13.3252
+12157	Berlin	Berlin	Berlin	11000	52.4653	13.3462
+12159	Berlin	Berlin	Berlin	11000	52.4737	13.3369
+12161	Berlin	Berlin	Berlin	11000	52.4704	13.327
+12163	Berlin	Berlin	Berlin	11000	52.4626	13.3185
+12165	Berlin	Berlin	Berlin	11000	52.4557	13.3148
+12167	Berlin	Berlin	Berlin	11000	52.4486	13.3338
+12169	Berlin	Berlin	Berlin	11000	52.4548	13.3435
+12200	Berlin	Deutsches Rotes Kreuz Präsidium und Sekretariat	Berlin	11000	52.43	13.2895
+12200	Berlin	Jobcenter Steglitz-Zehlendorf	Berlin	11000	52.4515	13.3207
+12203	Berlin	Berlin	Berlin	11000	52.4444	13.3096
+12205	Berlin	Berlin	Berlin	11000	52.434	13.2945
+12207	Berlin	Berlin	Berlin	11000	52.4199	13.3133
+12209	Berlin	Berlin	Berlin	11000	52.4179	13.3291
+12247	Berlin	Berlin	Berlin	11000	52.4395	13.3462
+12249	Berlin	Berlin	Berlin	11000	52.4264	13.3518
+12277	Berlin	Berlin	Berlin	11000	52.4134	13.375
+12279	Berlin	Berlin	Berlin	11000	52.4106	13.3531
+12305	Berlin	Berlin	Berlin	11000	52.4033	13.4021
+12307	Berlin	Berlin	Berlin	11000	52.3886	13.3907
+12309	Berlin	Berlin	Berlin	11000	52.3905	13.4171
+12345	Berlin	Krankenhaus Neukölln	Berlin	11000	52.4377	13.4583
+12345	Berlin	Steuerberater Gerhard Baade	Berlin	11000	52.4258	13.443
+12347	Berlin	Berlin	Berlin	11000	52.4509	13.4281
+12349	Berlin	Berlin	Berlin	11000	52.4253	13.4221
+12351	Berlin	Berlin	Berlin	11000	52.4328	13.4555
+12353	Berlin	Berlin	Berlin	11000	52.4227	13.4589
+12355	Berlin	Berlin	Berlin	11000	52.411	13.4978
+12357	Berlin	Berlin	Berlin	11000	52.4293	13.4905
+12359	Berlin	Berlin	Berlin	11000	52.4473	13.4531
+12435	Berlin	Berlin	Berlin	11000	52.4866	13.4672
+12437	Berlin	Berlin	Berlin	11000	52.4624	13.4817
+12439	Berlin	Berlin	Berlin	11000	52.4494	13.5269
+12459	Berlin	Berlin	Berlin	11000	52.4656	13.528
+12487	Berlin	Berlin	Berlin	11000	52.4437	13.5052
+12489	Berlin	Berlin	Berlin	11000	52.4356	13.5432
+12524	Berlin	Berlin	Berlin	11000	52.4128	13.5417
+12526	Berlin	Berlin	Berlin	11000	52.3976	13.5642
+12527	Berlin	Berlin	Berlin	11000	52.3856	13.6339
+12529	Schönefeld	Schönefeld	Dahme-Spreewald	12061	52.389	13.5037
+12555	Berlin	Berlin	Berlin	11000	52.4627	13.5791
+12557	Berlin	Berlin	Berlin	11000	52.4303	13.592
+12559	Berlin	Berlin	Berlin	11000	52.4149	13.6634
+12587	Berlin	Berlin	Berlin	11000	52.4586	13.6362
+12589	Berlin	Berlin	Berlin	11000	52.4438	13.7034
+12616	Berlin	Deutsche Reichsbahn Reichsbahndirektion Berlin Hauptabteilung D	Berlin	11000	52.5144	13.6169
+12616	Berlin	Krankenhaus Kaulsdorf	Berlin	11000	52.5074	13.5921
+12619	Berlin	Berlin	Berlin	11000	52.5235	13.5883
+12621	Berlin	Berlin	Berlin	11000	52.5027	13.5878
+12623	Berlin	Berlin	Berlin	11000	52.5026	13.6165
+12627	Berlin	Berlin	Berlin	11000	52.5372	13.6135
+12629	Berlin	Berlin	Berlin	11000	52.5413	13.5901
+12671	Berlin	Bezirksamt Marzahn von Berlin	Berlin	11000	52.5275	13.54
+12677	Berlin	Gewerbekomplex	Berlin	11000	52.5551	13.5439
+12677	Berlin	Gewerbepark	Berlin	11000	52.5048	13.5632
+12679	Berlin	Berlin	Berlin	11000	52.5501	13.566
+12681	Berlin	Berlin	Berlin	11000	52.5369	13.5367
+12683	Berlin	Berlin	Berlin	11000	52.5075	13.5591
+12685	Berlin	Berlin	Berlin	11000	52.5391	13.565
+12687	Berlin	Berlin	Berlin	11000	52.5564	13.5645
+12689	Berlin	Berlin	Berlin	11000	52.5665	13.5675
+13047	Berlin	Berliner Pilsner Brauerei	Berlin	11000	52.5424	13.4697
+13047	Berlin	Bezirksamt Hohenschönhausen von Berlin	Berlin	11000	52.5451	13.5
+13047	Berlin	Reinickendorf	Berlin	11000	52.5667	13.3333
+13048	Berlin	KSA Kommunaler Schadenausgleich	Berlin	11000	52.5403	13.4856
+13051	Berlin	Berlin	Berlin	11000	52.5815	13.4908
+13053	Berlin	Berlin	Berlin	11000	52.55	13.5046
+13055	Berlin	Berlin	Berlin	11000	52.5401	13.496
+13057	Berlin	Berlin	Berlin	11000	52.5711	13.5415
+13059	Berlin	Berlin	Berlin	11000	52.5809	13.5217
+13086	Berlin	Berlin	Berlin	11000	52.5565	13.4482
+13088	Berlin	Berlin	Berlin	11000	52.5603	13.4708
+13089	Berlin	Berlin	Berlin	11000	52.5707	13.441
+13122	Berlin	MDC Max-Delbrück-Centrum für molekulare Medizin	Berlin	11000	52.6273	13.5014
+13125	Berlin	Berlin	Berlin	11000	52.6329	13.4829
+13127	Berlin	Berlin	Berlin	11000	52.62	13.438
+13129	Berlin	Berlin	Berlin	11000	52.5921	13.4579
+13156	Berlin	Berlin	Berlin	11000	52.5824	13.3997
+13158	Berlin	Berlin	Berlin	11000	52.5932	13.3835
+13159	Berlin	Berlin	Berlin	11000	52.623	13.3978
+13187	Berlin	Berlin	Berlin	11000	52.5695	13.4084
+13189	Berlin	Berlin	Berlin	11000	52.5643	13.4219
+13341	Berlin	Bezirksamt Mitte von Berlin	Berlin	11000	52.527	13.3385
+13343	Berlin	Zentrales Mahngericht	Berlin	11000	52.5497	13.3752
+13344	Berlin	Beuth Hochschule für Technik Berlin	Berlin	11000	52.5445	13.3533
+13347	Berlin	Berlin	Berlin	11000	52.5491	13.3655
+13349	Berlin	Berlin	Berlin	11000	52.558	13.3473
+13351	Berlin	Berlin	Berlin	11000	52.5507	13.3328
+13353	Berlin	Berlin	Berlin	11000	52.5416	13.3495
+13355	Berlin	Berlin	Berlin	11000	52.5416	13.3904
+13357	Berlin	Berlin	Berlin	11000	52.5502	13.3828
+13359	Berlin	Berlin	Berlin	11000	52.5599	13.3851
+13403	Berlin	Berlin	Berlin	11000	52.5739	13.3224
+13405	Berlin	Berlin	Berlin	11000	52.5596	13.2967
+13407	Berlin	Berlin	Berlin	11000	52.5727	13.3512
+13409	Berlin	Berlin	Berlin	11000	52.5679	13.3714
+13435	Berlin	Berlin	Berlin	11000	52.602	13.3456
+13437	Berlin	Berlin	Berlin	11000	52.5905	13.3284
+13439	Berlin	Berlin	Berlin	11000	52.5976	13.3584
+13465	Berlin	Berlin	Berlin	11000	52.6399	13.2896
+13467	Berlin	Berlin	Berlin	11000	52.6171	13.3075
+13469	Berlin	Berlin	Berlin	11000	52.6119	13.3422
+13500	Berlin	DeTeCSM Niederlassung Ost IT-Center Berlin	Berlin	11000	52.5747	13.2996
+13500	Berlin	Humboldt-Krankenhaus	Berlin	11000	52.5898	13.3091
+13503	Berlin	Berlin	Berlin	11000	52.6122	13.2488
+13505	Berlin	Berlin	Berlin	11000	52.5839	13.2404
+13507	Berlin	Berlin	Berlin	11000	52.5765	13.2717
+13509	Berlin	Berlin	Berlin	11000	52.5892	13.3006
+13578	Berlin	Bezirksamt Spandau von Berlin	Berlin	11000	52.536	13.2014
+13578	Berlin	Dr. Mann Pharma	Berlin	11000	52.5338	13.1771
+13578	Berlin	IMS Internationaler Medienservice	Berlin	11000	52.5338	13.1771
+13581	Berlin	Berlin	Berlin	11000	52.531	13.1794
+13583	Berlin	Berlin	Berlin	11000	52.5437	13.1824
+13585	Berlin	Berlin	Berlin	11000	52.5477	13.2049
+13587	Berlin	Berlin	Berlin	11000	52.5767	13.1854
+13589	Berlin	Berlin	Berlin	11000	52.557	13.1676
+13591	Berlin	Berlin	Berlin	11000	52.5345	13.1405
+13593	Berlin	Berlin	Berlin	11000	52.5148	13.1672
+13595	Berlin	Berlin	Berlin	11000	52.5116	13.1962
+13597	Berlin	Berlin	Berlin	11000	52.5272	13.2195
+13599	Berlin	Berlin	Berlin	11000	52.5463	13.235
+13624	Berlin	Siemens Business Services Document Services	Berlin	11000	52.5375	13.2622
+13627	Berlin	Berlin	Berlin	11000	52.5398	13.2991
+13629	Berlin	Berlin	Berlin	11000	52.5422	13.2661
+14046	Berlin	RBB, ARD Textredaktion	Berlin	11000	52.5072	13.278
+14047	Berlin	Deutsche Rentenversicherung Berlin	Berlin	11000	52.5132	13.2822
+14050	Berlin	Berlin	Berlin	11000	52.5208	13.2683
+14052	Berlin	Berlin	Berlin	11000	52.5156	13.2569
+14053	Berlin	Berlin	Berlin	11000	52.5159	13.2387
+14055	Berlin	Berlin	Berlin	11000	52.5089	13.2441
+14057	Berlin	Berlin	Berlin	11000	52.5073	13.2879
+14059	Berlin	Berlin	Berlin	11000	52.5205	13.2878
+14089	Berlin	Berlin	Berlin	11000	52.4708	13.1516
+14109	Berlin	Berlin	Berlin	11000	52.4197	13.144
+14129	Berlin	Berlin	Berlin	11000	52.4463	13.2026
+14131	Berlin	Berlin	Berlin	11000	52.517	13.4
+14160	Berlin	Bezirksamt Steglitz-Zehlendorf von Berlin	Berlin	11000	52.4336	13.2586
+14163	Berlin	Berlin	Berlin	11000	52.4368	13.2385
+14165	Berlin	Berlin	Berlin	11000	52.4175	13.2536
+14167	Berlin	Berlin	Berlin	11000	52.4212	13.2765
+14169	Berlin	Berlin	Berlin	11000	52.4496	13.2573
+14191	Berlin	Amerikanische Botschaft	Berlin	11000	52.4524	13.2722
+14191	Berlin	Botanischer Garten und Botanisches Museum Berlin-Dahlem	Berlin	11000	52.4593	13.3054
+14191	Berlin	Deutsches Archäologisches Institut	Berlin	11000	52.4615	13.3009
+14191	Berlin	Deutsches Institut für Wirtschaftsforschung	Berlin	11000	52.4593	13.3054
+14191	Berlin	Martin-Luther-Krankenhaus Akademisches Lehrkrankenhaus	Berlin	11000	52.4916	13.2926
+14191	Berlin	Rat für Sozial- und Wirtschaftsdaten	Berlin	11000	52.4591	13.3043
+14191	Berlin	Umweltbundesamt	Berlin	11000	52.5456	13.3182
+14193	Berlin	Berlin	Berlin	11000	52.4831	13.2365
+14195	Berlin	Berlin	Berlin	11000	52.4589	13.2829
+14197	Berlin	Berlin	Berlin	11000	52.4734	13.3118
+14199	Berlin	Berlin	Berlin	11000	52.4777	13.2951
+14424	Potsdam	Max-Planck-Institut	Potsdam	12054	52.4154	12.9687
+14461	Potsdam	Potsdam	Potsdam	12054	52.4	13.0667
+14467	Potsdam	Potsdam	Potsdam	12054	52.403	13.0626
+14469	Potsdam	Potsdam	Potsdam	12054	52.4091	12.9899
+14471	Potsdam	Potsdam	Potsdam	12054	52.3744	13.0102
+14473	Potsdam	Potsdam	Potsdam	12054	52.3908	13.0645
+14476	Potsdam	Fahrland	Potsdam	12054	52.4689	13.0117
+14476	Potsdam	Golm	Potsdam	12054	52.4062	12.967
+14476	Potsdam	Groß Glienicke	Potsdam	12054	52.4675	13.1079
+14476	Potsdam	Marquardt	Potsdam	12054	52.459	12.9663
+14476	Potsdam	Neu Fahrland	Potsdam	12054	52.4489	13.0492
+14476	Potsdam	Satzkorn	Potsdam	12054	52.4744	12.9899
+14476	Potsdam	Uetz-Paaren	Potsdam	12054	52.4726	12.9376
+14476	Seeburg	Seeburg	Havelland	12063	52.5097	13.1198
+14476	Töplitz	Töplitz	Potsdam-Mittelmark	12069	52.4167	12.7944
+14478	Potsdam	Potsdam	Potsdam	12054	52.3725	13.0914
+14480	Potsdam	Potsdam	Potsdam	12054	52.3689	13.1273
+14482	Potsdam	Potsdam	Potsdam	12054	52.3871	13.0993
+14510	AOK für das Land Brandenburg	AOK für das Land Brandenburg	Potsdam-Mittelmark	12069	52.4013	13.2436
+14513	Teltow	Teltow	Potsdam-Mittelmark	12069	52.4031	13.2601
+14532	Fahlhorst	Fahlhorst	Potsdam-Mittelmark	12069	52.3061	13.1626
+14532	Kleinmachnow	Kleinmachnow	Potsdam-Mittelmark	12069	52.4079	13.2251
+14532	Nudow	Nudow	Potsdam-Mittelmark	12069	52.3283	13.1647
+14532	Philippsthal	Philippsthal	Potsdam-Mittelmark	12069	52.3336	13.1413
+14532	Stahnsdorf	Stahnsdorf	Potsdam-Mittelmark	12069	52.3833	13.2167
+14542	Kloster Lehnin	Kloster Lehnin	Potsdam-Mittelmark	12069	52.3271	12.6625
+14542	Schwielowsee	Schwielowsee	Potsdam-Mittelmark	12069	52.3389	12.9722
+14542	Werder (Havel)	Werder (Havel)	Potsdam-Mittelmark	12069	52.3687	12.9188
+14547	Beelitz	Beelitz	Potsdam-Mittelmark	12069	52.2381	12.9714
+14547	Stücken	Stücken	Potsdam-Mittelmark	12069	52.245	13.0792
+14548	Schwielowsee	Schwielowsee	Potsdam-Mittelmark	12069	52.3389	12.9722
+14550	Bochow	Bochow	Potsdam-Mittelmark	12069	52.381	12.7934
+14550	Deetz	Deetz	Potsdam-Mittelmark	12069	52.4466	12.7718
+14550	Derwitz	Derwitz	Potsdam-Mittelmark	12069	52.4029	12.8245
+14550	Groß Kreutz	Groß Kreutz	Potsdam-Mittelmark	12069	52.4028	12.7794
+14550	Krielow	Krielow	Potsdam-Mittelmark	12069	52.4166	12.8034
+14550	Schmergow	Schmergow	Potsdam-Mittelmark	12069	52.454	12.8116
+14552	Fresdorf	Fresdorf	Potsdam-Mittelmark	12069	52.2703	13.0754
+14552	Michendorf	Michendorf	Potsdam-Mittelmark	12069	52.3135	13.03
+14552	Saarmund	Saarmund	Potsdam-Mittelmark	12069	52.3162	13.1251
+14552	Tremsdorf	Tremsdorf	Potsdam-Mittelmark	12069	52.27	13.1198
+14552	Wildenbruch	Wildenbruch	Potsdam-Mittelmark	12069	52.283	13.0617
+14554	Seddiner See	Seddiner See	Potsdam-Mittelmark	12069	52.2722	13.0167
+14557	Langerwisch	Langerwisch	Potsdam-Mittelmark	12069	52.3167	13.0667
+14557	Wilhelmshorst	Wilhelmshorst	Potsdam-Mittelmark	12069	52.3318	13.0622
+14558	Bergholz-Rehbrücke	Bergholz-Rehbrücke	Potsdam-Mittelmark	12069	52.3472	13.1053
+14612	Falkensee	Falkensee	Havelland	12063	52.5601	13.0927
+14621	Schönwalde	Schönwalde	Havelland	12063	52.6192	13.1265
+14624	Dallgow-Döberitz	Dallgow-Döberitz	Havelland	12063	52.5427	13.0584
+14627	Elstal	Elstal	Havelland	12063	52.5425	12.9879
+14641	Berge	Berge	Havelland	12063	52.6201	12.7951
+14641	Bergerdamm	Bergerdamm	Havelland	12063	52.6561	12.8039
+14641	Bredow	Bredow	Havelland	12063	52.5887	12.9266
+14641	Brädikow	Brädikow	Havelland	12063	52.6898	12.65
+14641	Börnicke	Börnicke	Havelland	12063	52.686	12.9355
+14641	Etzin	Etzin	Havelland	12063	52.5177	12.8542
+14641	Falkenrehde	Falkenrehde	Havelland	12063	52.4963	12.9234
+14641	Groß Behnitz	Groß Behnitz	Havelland	12063	52.5796	12.7329
+14641	Grünefeld	Grünefeld	Havelland	12063	52.6763	12.9646
+14641	Kienberg	Kienberg	Havelland	12063	52.663	12.9058
+14641	Klein Behnitz	Klein Behnitz	Havelland	12063	52.567	12.7083
+14641	Lietzow	Lietzow	Havelland	12063	52.6153	12.8305
+14641	Markee	Markee	Havelland	12063	52.5791	12.872
+14641	Mühlenberge	Mühlenberge	Havelland	12063	52.6667	12.6111
+14641	Nauen	Nauen	Havelland	12063	52.607	12.8737
+14641	Paaren im Glien	Paaren im Glien	Havelland	12063	52.6538	12.9876
+14641	Paulinenaue	Paulinenaue	Havelland	12063	52.677	12.7107
+14641	Pausin	Pausin	Havelland	12063	52.6389	13.0423
+14641	Perwenitz	Perwenitz	Havelland	12063	52.6585	13.0124
+14641	Pessin	Pessin	Havelland	12063	52.6424	12.6668
+14641	Retzow	Retzow	Havelland	12063	52.6248	12.6855
+14641	Ribbeck	Ribbeck	Havelland	12063	52.6246	12.7514
+14641	Selbelang	Selbelang	Havelland	12063	52.6328	12.7138
+14641	Tietzow	Tietzow	Havelland	12063	52.7125	12.9337
+14641	Tremmen	Tremmen	Havelland	12063	52.5305	12.8181
+14641	Wachow	Wachow	Havelland	12063	52.5337	12.7574
+14641	Wansdorf	Wansdorf	Havelland	12063	52.6399	13.0869
+14641	Wustermark	Wustermark	Havelland	12063	52.55	12.95
+14641	Zeestow	Zeestow	Havelland	12063	52.573	12.9592
+14656	Brieselang	Brieselang	Havelland	12063	52.5833	13
+14662	Friesack	Friesack	Havelland	12063	52.7376	12.5797
+14662	Mühlenberge	Mühlenberge	Havelland	12063	52.6667	12.6111
+14662	Vietznitz	Vietznitz	Havelland	12063	52.7284	12.6256
+14662	Warsow	Warsow	Havelland	12063	52.7113	12.6433
+14669	Ketzin	Ketzin	Havelland	12063	52.4781	12.8453
+14669	Zachow	Zachow	Havelland	12063	52.4837	12.7845
+14710	Landkreis Havelland Haupt und Personalamt	Landkreis Havelland Haupt und Personalamt	Havelland	12063	52.6048	12.3491
+14712	Rathenow	Rathenow	Havelland	12063	52.6066	12.337
+14715	Bamme	Bamme	Havelland	12063	52.583	12.4336
+14715	Bützer	Bützer	Havelland	12063	52.5364	12.2995
+14715	Großwudicke	Großwudicke	Havelland	12063	52.5929	12.2327
+14715	Gräningen	Gräningen	Havelland	12063	52.5789	12.4722
+14715	Havelaue	Havelaue	Havelland	12063	52.7167	12.2567
+14715	Jerchel	Jerchel	Havelland	12063	52.4876	12.3433
+14715	Kotzen	Kotzen	Havelland	12063	52.6333	12.5167
+14715	Kriele	Kriele	Havelland	12063	52.6551	12.5557
+14715	Landin	Landin	Havelland	12063	52.6642	12.5353
+14715	Liepe	Liepe	Havelland	12063	52.6135	12.6014
+14715	Milow	Milow	Havelland	12063	52.5195	12.3115
+14715	Märkisch Luch	Märkisch Luch	Havelland	12063	52.5875	12.6167
+14715	Märkisch Luch Barnewitz	Märkisch Luch Barnewitz	Havelland	12063	52.5667	12.6167
+14715	Märkisch Luch Buschow	Märkisch Luch Buschow	Havelland	12063	52.5833	12.6333
+14715	Märkisch Luch Garlitz	Märkisch Luch Garlitz	Havelland	12063	52.5667	12.5667
+14715	Märkisch Luch Möthlow	Märkisch Luch Möthlow	Havelland	12063	52.6	12.65
+14715	Möthlitz	Möthlitz	Havelland	12063	52.4755	12.3899
+14715	Mützlitz	Mützlitz	Havelland	12063	52.5585	12.5108
+14715	Nennhausen	Nennhausen	Havelland	12063	52.6	12.5
+14715	Nitzahn	Nitzahn	Havelland	12063	52.4672	12.3608
+14715	Seeblick	Seeblick	Havelland	12063	52.6722	12.3778
+14715	Stechow-Ferchesar	Stechow-Ferchesar	Havelland	12063	52.6478	12.45
+14715	Vieritz	Vieritz	Havelland	12063	52.5249	12.2564
+14715	Zollchow	Zollchow	Havelland	12063	52.5282	12.21
+14727	Döberitz	Döberitz	Havelland	12063	52.5222	12.3682
+14727	Premnitz	Premnitz	Havelland	12063	52.5318	12.3485
+14728	Gollenberg	Gollenberg	Havelland	12063	52.745	12.4
+14728	Havelaue	Havelaue	Havelland	12063	52.7167	12.2567
+14728	Kleßen-Görne	Kleßen-Görne	Havelland	12063	52.7167	12.5
+14728	Rhinow	Rhinow	Havelland	12063	52.7509	12.3419
+14767	Brandenburg an der Havel	Amtsgericht	Brandenburg an der Havel	12051	52.4121	12.5345
+14767	Brandenburg an der Havel	Brandenburgisches Oberlandesgericht	Brandenburg an der Havel	12051	52.4114	12.5443
+14770	Brandenburg an der Havel	Brandenburg an der Havel	Brandenburg an der Havel	12051	52.4189	12.5228
+14772	Brandenburg an der Havel	Brandenburg an der Havel	Brandenburg an der Havel	12051	52.4358	12.5297
+14774	Brandenburg an der Havel	Brandenburg an der Havel	Brandenburg an der Havel	12051	52.3864	12.4144
+14776	Brandenburg an der Havel	Brandenburg an der Havel	Brandenburg an der Havel	12051	52.4043	12.568
+14778	Beetzsee	Beetzsee	Potsdam-Mittelmark	12069	52.4833	12.5611
+14778	Beetzseeheide	Beetzseeheide	Potsdam-Mittelmark	12069	52.4917	12.6125
+14778	Brandenburg an der Havel	Gollwitz	Brandenburg an der Havel	12051	52.4195	12.6451
+14778	Brandenburg an der Havel	Wust	Brandenburg an der Havel	12051	52.4147	12.6106
+14778	Golzow	Golzow	Potsdam-Mittelmark	12069	52.2762	12.6005
+14778	Götz	Götz	Potsdam-Mittelmark	12069	52.4197	12.7193
+14778	Havelsee	Havelsee	Potsdam-Mittelmark	12069	52.4929	12.4667
+14778	Jeserig	Jeserig	Potsdam-Mittelmark	12069	52.0859	12.4511
+14778	Kloster Lehnin	Kloster Lehnin	Potsdam-Mittelmark	12069	52.3271	12.6625
+14778	Planebruch	Planebruch	Potsdam-Mittelmark	12069	52.2542	12.6875
+14778	Planetal	Planetal	Potsdam-Mittelmark	12069	52.1167	12.6767
+14778	Päwesin	Päwesin	Potsdam-Mittelmark	12069	52.5167	12.7167
+14778	Roskow	Roskow	Potsdam-Mittelmark	12069	52.4724	12.7189
+14778	Schenkenberg	Schenkenberg	Potsdam-Mittelmark	12069	52.3904	12.7112
+14778	Trechwitz	Trechwitz	Potsdam-Mittelmark	12069	52.3662	12.7192
+14778	Wenzlow	Wenzlow	Potsdam-Mittelmark	12069	52.3	12.45
+14778	Wollin	Wollin	Potsdam-Mittelmark	12069	52.2833	12.4667
+14789	Bensdorf	Bensdorf	Potsdam-Mittelmark	12069	52.4167	12.3333
+14789	Rosenau	Rosenau	Potsdam-Mittelmark	12069	52.3292	12.3583
+14789	Wusterwitz	Wusterwitz	Potsdam-Mittelmark	12069	52.3667	12.3849
+14793	Buckautal	Buckautal	Potsdam-Mittelmark	12069	52.2333	12.3222
+14793	Gräben	Gräben	Potsdam-Mittelmark	12069	52.2333	12.4333
+14793	Rottstock	Rottstock	Potsdam-Mittelmark	12069	52.1989	12.3523
+14793	Ziesar	Ziesar	Potsdam-Mittelmark	12069	52.2405	12.3471
+14797	Kloster Lehnin	Kloster Lehnin	Potsdam-Mittelmark	12069	52.3271	12.6625
+14798	Havelsee	Havelsee	Potsdam-Mittelmark	12069	52.4929	12.4667
+14806	Belzig	Belzig	Potsdam-Mittelmark	12069	52.1333	12.6
+14806	Hagelberg	Hagelberg	Potsdam-Mittelmark	12069	52.1386	12.5196
+14806	Planetal	Planetal	Potsdam-Mittelmark	12069	52.1167	12.6767
+14806	Schwanebeck	Schwanebeck	Potsdam-Mittelmark	12069	52.1765	12.6272
+14822	Borkheide	Borkheide	Potsdam-Mittelmark	12069	52.2167	12.85
+14822	Borkwalde	Borkwalde	Potsdam-Mittelmark	12069	52.25	12.8333
+14822	Brück	Brück	Potsdam-Mittelmark	12069	52.1977	12.7687
+14822	Linthe	Linthe	Potsdam-Mittelmark	12069	52.1975	12.7851
+14822	Mühlenfließ	Mühlenfließ	Potsdam-Mittelmark	12069	52.1194	12.7917
+14822	Planebruch	Planebruch	Potsdam-Mittelmark	12069	52.2542	12.6875
+14823	Mühlenfließ	Mühlenfließ	Potsdam-Mittelmark	12069	52.1194	12.7917
+14823	Niemegk	Niemegk	Potsdam-Mittelmark	12069	52.0531	12.6185
+14823	Rabenstein/Fläming	Rabenstein/Fläming	Potsdam-Mittelmark	12069	52.0333	12.6313
+14827	Wiesenburg	Wiesenburg	Potsdam-Mittelmark	12069	52.1146	12.4553
+14828	Görzke	Görzke	Potsdam-Mittelmark	12069	52.1718	12.3751
+14913	Herbersdorf	Herbersdorf	Teltow-Fläming	12072	51.8618	13.295
+14913	Hohenseefeld	Hohenseefeld	Teltow-Fläming	12072	51.8895	13.305
+14913	Ihlow	Ihlow	Teltow-Fläming	12072	51.8672	13.3377
+14913	Jüterbog	Jüterbog	Teltow-Fläming	12072	51.9961	13.0798
+14913	Niebendorf-Heinsdorf	Niebendorf-Heinsdorf	Teltow-Fläming	12072	51.9333	13.3333
+14913	Niederer Fläming	Niederer Fläming	Teltow-Fläming	12072	51.9025	13.2092
+14913	Niedergörsdorf	Niedergörsdorf	Teltow-Fläming	12072	51.9794	12.9854
+14913	Nuthe-Urstromtal	Nuthe-Urstromtal	Teltow-Fläming	12072	52.1116	13.2152
+14913	Wahlsdorf	Wahlsdorf	Teltow-Fläming	12072	51.9562	13.3278
+14929	Treuenbrietzen	Treuenbrietzen	Potsdam-Mittelmark	12069	52.0975	12.8726
+14943	Luckenwalde	Luckenwalde	Teltow-Fläming	12072	52.0903	13.1677
+14943	Lüdersdorf	Lüdersdorf	Teltow-Fläming	12072	52.1858	13.2899
+14943	Lühsdorf	Lühsdorf	Potsdam-Mittelmark	12069	52.1564	12.9703
+14947	Nuthe-Urstromtal	Nuthe-Urstromtal	Teltow-Fläming	12072	52.1116	13.2152
+14959	Schönhagen	Schönhagen	Teltow-Fläming	12072	52.213	13.1464
+14959	Trebbin	Trebbin	Teltow-Fläming	12072	52.2168	13.225
+14974	Ludwigsfelde	Ludwigsfelde	Teltow-Fläming	12072	52.3032	13.254
+14974	Thyrow	Thyrow	Teltow-Fläming	12072	52.2526	13.2396
+14979	Großbeeren	Großbeeren	Teltow-Fläming	12072	52.3586	13.3099
+15228	Frankfurt (Oder)	Deutsche Rentenversicherung Berlin-Brandenburg	Frankfurt (Oder)	12053	52.3112	14.4859
+15229	Frankfurt (Oder)	IKK Brandenburg Regionaldirektion Frankfurt (Oder)	Frankfurt (Oder)	12053	52.3382	14.5473
+15229	Frankfurt (Oder)	Stadt Frankfurt (Oder) Der Oberbürgermeister	Frankfurt (Oder)	12053	52.3441	14.5543
+15230	Frankfurt (Oder)	Frankfurt (Oder)	Frankfurt (Oder)	12053	52.3475	14.5539
+15232	Frankfurt (Oder)	Frankfurt (Oder)	Frankfurt (Oder)	12053	52.3241	14.5325
+15234	Frankfurt (Oder)	Frankfurt (Oder)	Frankfurt (Oder)	12053	52.3646	14.5244
+15236	Frankfurt (Oder)	Frankfurt (Oder)	Frankfurt (Oder)	12053	52.35	14.55
+15236	Jacobsdorf	Jacobsdorf	Oder-Spree	12067	52.3333	14.35
+15236	Jacobsdorf Jacobsdorf	Jacobsdorf Jacobsdorf	Oder-Spree	12067	52.3345	14.4179
+15236	Jacobsdorf Petersdorf bei Briesen	Jacobsdorf Petersdorf bei Briesen	Oder-Spree	12067	52.3667	14.35
+15236	Jacobsdorf Pillgram	Jacobsdorf Pillgram	Oder-Spree	12067	52.3333	14.4
+15236	Jacobsdorf Sieversdorf	Jacobsdorf Sieversdorf	Oder-Spree	12067	52.3833	14.3667
+15236	Treplin	Treplin	Märkisch-Oderland	12064	52.4	14.4
+15295	Brieskow-Finkenheerd	Brieskow-Finkenheerd	Oder-Spree	12067	52.2539	14.5728
+15295	Groß Lindow	Groß Lindow	Oder-Spree	12067	52.2333	14.5333
+15295	Groß Lindow Schlaubehammer	Groß Lindow Schlaubehammer	Oder-Spree	12067	52.25	14.4833
+15295	Groß Lindow Weißenspring	Groß Lindow Weißenspring	Oder-Spree	12067	52.2333	14.5167
+15295	Wiesenau	Wiesenau	Oder-Spree	12067	52.2307	14.5911
+15295	Ziltendorf	Ziltendorf	Oder-Spree	12067	52.2061	14.6241
+15295	Ziltendorf Aurith	Ziltendorf Aurith	Oder-Spree	12067	52.25	14.6833
+15295	Ziltendorf Ernst-Thälmann-Siedlung	Ziltendorf Ernst-Thälmann-Siedlung	Oder-Spree	12067	52.2333	14.6333
+15299	Dammendorf	Dammendorf	Oder-Spree	12067	52.1408	14.416
+15299	Grunow-Dammendorf	Grunow-Dammendorf	Oder-Spree	12067	52.15	14.4083
+15299	Grunow-Dammendorf Grunow	Grunow-Dammendorf Grunow	Oder-Spree	12067	52.15	14.4
+15299	Mixdorf	Mixdorf	Oder-Spree	12067	52.2	14.4
+15299	Müllrose	Müllrose	Oder-Spree	12067	52.2474	14.4179
+15306	Falkenhagen	Falkenhagen	Märkisch-Oderland	12064	52.4333	14.3167
+15306	Fichtenhöhe	Fichtenhöhe	Märkisch-Oderland	12064	52.4556	14.4469
+15306	Fichtenhöhe Alt Mahlisch	Fichtenhöhe Alt Mahlisch	Märkisch-Oderland	12064	52.4641	14.4209
+15306	Fichtenhöhe Niederjesar	Fichtenhöhe Niederjesar	Märkisch-Oderland	12064	52.4449	14.4324
+15306	Gusow-Platkow	Gusow-Platkow	Märkisch-Oderland	12064	52.5777	14.34
+15306	Gusow-Platkow Gusow	Gusow-Platkow Gusow	Märkisch-Oderland	12064	52.5719	14.3556
+15306	Gusow-Platkow Platkow	Gusow-Platkow Platkow	Märkisch-Oderland	12064	52.5835	14.3244
+15306	Lietzen	Lietzen	Märkisch-Oderland	12064	52.4699	14.3401
+15306	Lindendorf	Lindendorf	Märkisch-Oderland	12064	52.4899	14.4285
+15306	Lindendorf Dolgelin	Lindendorf Dolgelin	Märkisch-Oderland	12064	52.4955	14.4071
+15306	Lindendorf Libbenichen	Lindendorf Libbenichen	Märkisch-Oderland	12064	52.4775	14.4367
+15306	Lindendorf Neu Mahlisch	Lindendorf Neu Mahlisch	Märkisch-Oderland	12064	52.4802	14.3898
+15306	Lindendorf Sachsendorf	Lindendorf Sachsendorf	Märkisch-Oderland	12064	52.5063	14.4804
+15306	Seelow	Seelow	Märkisch-Oderland	12064	52.5339	14.3813
+15306	Vierlinden	Vierlinden	Märkisch-Oderland	12064	52.515	14.3141
+15306	Vierlinden Alt Rosenthal	Vierlinden Alt Rosenthal	Märkisch-Oderland	12064	52.5471	14.277
+15306	Vierlinden Diedersdorf	Vierlinden Diedersdorf	Märkisch-Oderland	12064	52.5121	14.3311
+15306	Vierlinden Friedersdorf	Vierlinden Friedersdorf	Märkisch-Oderland	12064	52.5102	14.3987
+15306	Vierlinden Görlsdorf	Vierlinden Görlsdorf	Märkisch-Oderland	12064	52.5299	14.3107
+15306	Vierlinden Marxdorf	Vierlinden Marxdorf	Märkisch-Oderland	12064	52.483	14.28
+15306	Vierlinden Neuentempel	Vierlinden Neuentempel	Märkisch-Oderland	12064	52.502	14.3265
+15306	Vierlinden Worin	Vierlinden Worin	Märkisch-Oderland	12064	52.5206	14.2749
+15306	Werbig	Werbig	Märkisch-Oderland	12064	52.5617	14.3848
+15320	Neuhardenberg	Neuhardenberg	Märkisch-Oderland	12064	52.596	14.2377
+15320	Neuhardenberg Altfriedland	Neuhardenberg Altfriedland	Märkisch-Oderland	12064	52.6274	14.2135
+15320	Neuhardenberg Neuhardenberg	Neuhardenberg Neuhardenberg	Märkisch-Oderland	12064	52.5955	14.2402
+15320	Neuhardenberg Quappendorf	Neuhardenberg Quappendorf	Märkisch-Oderland	12064	52.6186	14.2669
+15320	Neuhardenberg Wulkow bei Trebnitz	Neuhardenberg Wulkow bei Trebnitz	Märkisch-Oderland	12064	52.5697	14.2351
+15320	Neutrebbin	Neutrebbin	Märkisch-Oderland	12064	52.6648	14.228
+15320	Neutrebbin Altbarnim	Neutrebbin Altbarnim	Märkisch-Oderland	12064	52.6857	14.2808
+15320	Neutrebbin Alttrebbin	Neutrebbin Alttrebbin	Märkisch-Oderland	12064	52.6908	14.2481
+15320	Neutrebbin Neutrebbin	Neutrebbin Neutrebbin	Märkisch-Oderland	12064	52.6667	14.2333
+15320	Sietzing	Sietzing	Märkisch-Oderland	12064	52.6594	14.286
+15324	Gieshof-Zelliner Loose	Gieshof-Zelliner Loose	Märkisch-Oderland	12064	52.7237	14.3174
+15324	Groß Neuendorf	Groß Neuendorf	Märkisch-Oderland	12064	52.7005	14.4081
+15324	Kiehnwerder	Kiehnwerder	Märkisch-Oderland	12064	52.6316	14.303
+15324	Kienitz	Kienitz	Märkisch-Oderland	12064	52.6731	14.4389
+15324	Letschin	Letschin	Märkisch-Oderland	12064	52.6438	14.3601
+15324	Neubarnim	Neubarnim	Märkisch-Oderland	12064	52.7025	14.3056
+15324	Ortwig	Ortwig	Märkisch-Oderland	12064	52.7039	14.3562
+15326	Fichtenhöhe	Fichtenhöhe	Märkisch-Oderland	12064	52.4556	14.4469
+15326	Fichtenhöhe Carzig	Fichtenhöhe Carzig	Märkisch-Oderland	12064	52.4579	14.4875
+15326	Lebus	Lebus	Märkisch-Oderland	12064	52.4272	14.5323
+15326	Lebus Lebus	Lebus Lebus	Märkisch-Oderland	12064	52.4236	14.533
+15326	Lebus Mallnow	Lebus Mallnow	Märkisch-Oderland	12064	52.456	14.4926
+15326	Lebus Schönfließ	Lebus Schönfließ	Märkisch-Oderland	12064	52.4212	14.4735
+15326	Lebus Wulkow	Lebus Wulkow	Märkisch-Oderland	12064	52.4021	14.4715
+15326	Podelzig	Podelzig	Märkisch-Oderland	12064	52.4717	14.5347
+15326	Zeschdorf	Zeschdorf	Märkisch-Oderland	12064	52.4213	14.3875
+15326	Zeschdorf Alt Zeschdorf	Zeschdorf Alt Zeschdorf	Märkisch-Oderland	12064	52.4248	14.4465
+15326	Zeschdorf Döbberin	Zeschdorf Döbberin	Märkisch-Oderland	12064	52.4414	14.3736
+15326	Zeschdorf Petershagen	Zeschdorf Petershagen	Märkisch-Oderland	12064	52.3978	14.3425
+15328	Alt Tucheband	Alt Tucheband	Märkisch-Oderland	12064	52.5373	14.5123
+15328	Alt Tucheband Alt Tucheband	Alt Tucheband Alt Tucheband	Märkisch-Oderland	12064	52.5386	14.5134
+15328	Alt Tucheband Hathenow	Alt Tucheband Hathenow	Märkisch-Oderland	12064	52.5041	14.5357
+15328	Alt Tucheband Ratstock	Alt Tucheband Ratstock	Märkisch-Oderland	12064	52.5215	14.5412
+15328	Bleyen-Genschmar	Bleyen-Genschmar	Märkisch-Oderland	12064	52.6017	14.5646
+15328	Bleyen-Genschmar Bleyen	Bleyen-Genschmar Bleyen	Märkisch-Oderland	12064	52.588	14.6105
+15328	Bleyen-Genschmar Genschmar	Bleyen-Genschmar Genschmar	Märkisch-Oderland	12064	52.6155	14.5187
+15328	Golzow	Golzow	Märkisch-Oderland	12064	52.574	14.493
+15328	Küstriner Vorland	Küstriner Vorland	Märkisch-Oderland	12064	52.5624	14.5728
+15328	Küstriner Vorland Gorgast	Küstriner Vorland Gorgast	Märkisch-Oderland	12064	52.5682	14.5515
+15328	Küstriner Vorland Küstrin-Kietz	Küstriner Vorland Küstrin-Kietz	Märkisch-Oderland	12064	52.5668	14.6105
+15328	Küstriner Vorland Manschnow	Küstriner Vorland Manschnow	Märkisch-Oderland	12064	52.5521	14.5564
+15328	Reitwein	Reitwein	Märkisch-Oderland	12064	52.5009	14.5817
+15328	Zechin	Zechin	Märkisch-Oderland	12064	52.6084	14.4525
+15328	Zechin Buschdorf	Zechin Buschdorf	Märkisch-Oderland	12064	52.6023	14.4403
+15328	Zechin Friedrichsaue	Zechin Friedrichsaue	Märkisch-Oderland	12064	52.5982	14.4726
+15328	Zechin Zechin	Zechin Zechin	Märkisch-Oderland	12064	52.6124	14.4579
+15344	Strausberg	Strausberg	Märkisch-Oderland	12064	52.5786	13.8874
+15345	Altlandsberg	Altlandsberg	Märkisch-Oderland	12064	52.565	13.7281
+15345	Garzau-Garzin	Garzau-Garzin	Märkisch-Oderland	12064	52.5382	13.9667
+15345	Garzau-Garzin Garzau	Garzau-Garzin Garzau	Märkisch-Oderland	12064	52.5307	13.9511
+15345	Garzau-Garzin Garzin	Garzau-Garzin Garzin	Märkisch-Oderland	12064	52.5457	13.9822
+15345	Lichtenow	Lichtenow	Märkisch-Oderland	12064	52.4797	13.9114
+15345	Oberbarnim	Oberbarnim	Märkisch-Oderland	12064	52.5938	14.0355
+15345	Oberbarnim Klosterdorf	Oberbarnim Klosterdorf	Märkisch-Oderland	12064	52.5914	13.9569
+15345	Petershagen-Eggersdorf	Petershagen-Eggersdorf	Märkisch-Oderland	12064	52.525	13.8
+15345	Prötzel	Prötzel	Märkisch-Oderland	12064	52.6372	13.9878
+15345	Prötzel Harnekop	Prötzel Harnekop	Märkisch-Oderland	12064	52.6844	14.0137
+15345	Prötzel Prädikow	Prötzel Prädikow	Märkisch-Oderland	12064	52.6159	14.0177
+15345	Prötzel Prötzel	Prötzel Prötzel	Märkisch-Oderland	12064	52.6391	13.9895
+15345	Prötzel Sternebeck	Prötzel Sternebeck	Märkisch-Oderland	12064	52.6748	13.9937
+15345	Rehfelde	Rehfelde	Märkisch-Oderland	12064	52.5342	13.9088
+15345	Rehfelde Rehfelde	Rehfelde Rehfelde	Märkisch-Oderland	12064	52.5368	13.9156
+15345	Rehfelde Werder	Rehfelde Werder	Märkisch-Oderland	12064	52.5205	13.9462
+15345	Rehfelde Zinndorf	Rehfelde Zinndorf	Märkisch-Oderland	12064	52.5027	13.9256
+15345	Reichenow-Möglin	Reichenow-Möglin	Märkisch-Oderland	12064	52.6562	14.0937
+15345	Reichenow-Möglin Möglin	Reichenow-Möglin Möglin	Märkisch-Oderland	12064	52.6653	14.11
+15345	Reichenow-Möglin Reichenow	Reichenow-Möglin Reichenow	Märkisch-Oderland	12064	52.647	14.0775
+15345	Werder	Werder	Märkisch-Oderland	12064	52.52	13.9442
+15345	Zinndorf	Zinndorf	Märkisch-Oderland	12064	52.5015	13.9225
+15366	Dahlwitz-Hoppegarten	Dahlwitz-Hoppegarten	Märkisch-Oderland	12064	52.5167	13.6667
+15366	Hönow	Hönow	Märkisch-Oderland	12064	52.5467	13.6376
+15366	Münchehofe	Münchehofe	Märkisch-Oderland	12064	52.5562	14.1376
+15366	Neuenhagen bei Berlin	Neuenhagen bei Berlin	Märkisch-Oderland	12064	52.5333	13.6833
+15370	Fredersdorf-Vogelsdorf	Fredersdorf-Vogelsdorf	Märkisch-Oderland	12064	52.5	13.7333
+15370	Petershagen-Eggersdorf	Petershagen-Eggersdorf	Märkisch-Oderland	12064	52.525	13.8
+15372	Müncheberg	Müncheberg	Märkisch-Oderland	12064	52.5	14.1333
+15374	Müncheberg	Müncheberg	Märkisch-Oderland	12064	52.5114	14.1359
+15377	Buckow	Buckow	Märkisch-Oderland	12064	52.5661	14.0743
+15377	Ihlow	Ihlow	Märkisch-Oderland	12064	52.619	14.0708
+15377	Märkische Höhe	Märkische Höhe	Märkisch-Oderland	12064	52.6199	14.1292
+15377	Märkische Höhe Batzlow	Märkische Höhe Batzlow	Märkisch-Oderland	12064	52.6316	14.125
+15377	Märkische Höhe Reichenberg	Märkische Höhe Reichenberg	Märkisch-Oderland	12064	52.6109	14.1165
+15377	Märkische Höhe Ringenwalde	Märkische Höhe Ringenwalde	Märkisch-Oderland	12064	52.6173	14.1459
+15377	Oberbarnim	Oberbarnim	Märkisch-Oderland	12064	52.5938	14.0355
+15377	Oberbarnim Bollersdorf	Oberbarnim Bollersdorf	Märkisch-Oderland	12064	52.5859	14.0783
+15377	Oberbarnim Bollersdorf, Bollersdorf	Oberbarnim Bollersdorf, Bollersdorf	Märkisch-Oderland	12064	52.5818	14.0528
+15377	Oberbarnim Bollersdorf, Pritzhagen	Oberbarnim Bollersdorf, Pritzhagen	Märkisch-Oderland	12064	52.59	14.1038
+15377	Oberbarnim Grunow	Oberbarnim Grunow	Märkisch-Oderland	12064	52.6028	14.032
+15377	Oberbarnim Grunow, Ernsthof	Oberbarnim Grunow, Ernsthof	Märkisch-Oderland	12064	52.5996	14.0261
+15377	Oberbarnim Grunow, Grunow	Oberbarnim Grunow, Grunow	Märkisch-Oderland	12064	52.606	14.0379
+15377	Waldsieversdorf	Waldsieversdorf	Märkisch-Oderland	12064	52.5422	14.0702
+15378	Hennickendorf	Hennickendorf	Märkisch-Oderland	12064	52.5077	13.8521
+15378	Herzfelde	Herzfelde	Märkisch-Oderland	12064	52.4816	13.8521
+15515	Amtsgericht Fürstenwalde, Spree	Amtsgericht Fürstenwalde, Spree	Oder-Spree	12067	52.3591	14.0618
+15515	Landkreis Oder-Spree	Landkreis Oder-Spree	Oder-Spree	12067	52.3748	14.0542
+15517	Fürstenwalde/Spree	Fürstenwalde/Spree	Oder-Spree	12067	52.3833	14.0583
+15517	Fürstenwalde/Spree Fürstenwalde	Fürstenwalde/Spree Fürstenwalde	Oder-Spree	12067	52.3638	14.0467
+15517	Fürstenwalde/Spree Trebus	Fürstenwalde/Spree Trebus	Oder-Spree	12067	52.4	14.05
+15518	Berkenbrück	Berkenbrück	Oder-Spree	12067	52.35	14.15
+15518	Briesen (Mark)	Briesen (Mark)	Oder-Spree	12067	52.325	14.3
+15518	Briesen (Mark) Biegen	Briesen (Mark) Biegen	Oder-Spree	12067	52.3167	14.3667
+15518	Briesen (Mark) Briesen (Mark)	Briesen (Mark) Briesen (Mark)	Oder-Spree	12067	52.3333	14.2833
+15518	Falkenberg	Falkenberg	Oder-Spree	12067	52.3809	14.2353
+15518	Grünheide (Mark)	Grünheide (Mark)	Oder-Spree	12067	52.4111	13.8889
+15518	Grünheide (Mark) Hangelsberg	Grünheide (Mark) Hangelsberg	Oder-Spree	12067	52.3833	13.9333
+15518	Langewahl	Langewahl	Oder-Spree	12067	52.3333	14.1
+15518	Madlitz-Wilmersdorf	Madlitz-Wilmersdorf	Oder-Spree	12067	52.3881	14.263
+15518	Madlitz-Wilmersdorf Alt Madlitz	Madlitz-Wilmersdorf Alt Madlitz	Oder-Spree	12067	52.3833	14.2833
+15518	Madlitz-Wilmersdorf Falkenberg	Madlitz-Wilmersdorf Falkenberg	Oder-Spree	12067	52.3811	14.2389
+15518	Madlitz-Wilmersdorf Wilmersdorf	Madlitz-Wilmersdorf Wilmersdorf	Oder-Spree	12067	52.4	14.2667
+15518	Rauen	Rauen	Oder-Spree	12067	52.3323	14.028
+15518	Steinhöfel	Steinhöfel	Oder-Spree	12067	52.4	14.1667
+15518	Steinhöfel Arensdorf	Steinhöfel Arensdorf	Oder-Spree	12067	52.4333	14.25
+15518	Steinhöfel Beerfelde	Steinhöfel Beerfelde	Oder-Spree	12067	52.4333	14.05
+15518	Steinhöfel Buchholz	Steinhöfel Buchholz	Oder-Spree	12067	52.4167	14.1167
+15518	Steinhöfel Demnitz	Steinhöfel Demnitz	Oder-Spree	12067	52.3833	14.2
+15518	Steinhöfel Gölsdorf	Steinhöfel Gölsdorf	Oder-Spree	12067	52.45	14.1
+15518	Steinhöfel Hasenfelde	Steinhöfel Hasenfelde	Oder-Spree	12067	52.4167	14.2167
+15518	Steinhöfel Heinersdorf	Steinhöfel Heinersdorf	Oder-Spree	12067	52.45	14.2167
+15518	Steinhöfel Jänickendorf	Steinhöfel Jänickendorf	Oder-Spree	12067	52.4333	14.0167
+15518	Steinhöfel Neuendorf im Sande	Steinhöfel Neuendorf im Sande	Oder-Spree	12067	52.3833	14.1
+15518	Steinhöfel Schönfelde	Steinhöfel Schönfelde	Oder-Spree	12067	52.4667	14.05
+15518	Steinhöfel Steinhöfel	Steinhöfel Steinhöfel	Oder-Spree	12067	52.4	14.1667
+15518	Steinhöfel Tempelberg	Steinhöfel Tempelberg	Oder-Spree	12067	52.45	14.1667
+15526	Bad Saarow	Bad Saarow	Oder-Spree	12067	52.2833	14.0667
+15526	Bad Saarow Bad Saarow	Bad Saarow Bad Saarow	Oder-Spree	12067	52.2833	14.0667
+15526	Bad Saarow Neu Golm	Bad Saarow Neu Golm	Oder-Spree	12067	52.3	14.1
+15526	Bad Saarow Petersdorf	Bad Saarow Petersdorf	Oder-Spree	12067	52.3167	14.0833
+15526	Reichenwalde	Reichenwalde	Oder-Spree	12067	52.2667	14
+15526	Reichenwalde Dahmsdorf	Reichenwalde Dahmsdorf	Oder-Spree	12067	52.2333	13.9833
+15526	Reichenwalde Kolpin	Reichenwalde Kolpin	Oder-Spree	12067	52.2833	13.9833
+15526	Reichenwalde Reichenwalde	Reichenwalde Reichenwalde	Oder-Spree	12067	52.2667	14
+15526	Rietz-Neuendorf	Rietz-Neuendorf	Oder-Spree	12067	52.2321	14.1619
+15526	Rietz-Neuendorf Alt Golm	Rietz-Neuendorf Alt Golm	Oder-Spree	12067	52.3	14.1167
+15528	Grünheide (Mark)	Grünheide (Mark)	Oder-Spree	12067	52.4111	13.8889
+15528	Grünheide (Mark) Mönchwinkel	Grünheide (Mark) Mönchwinkel	Oder-Spree	12067	52.3833	13.8833
+15528	Grünheide (Mark) Spreeau	Grünheide (Mark) Spreeau	Oder-Spree	12067	52.3667	13.8333
+15528	Spreenhagen	Spreenhagen	Oder-Spree	12067	52.3432	13.8766
+15528	Spreenhagen Braunsdorf	Spreenhagen Braunsdorf	Oder-Spree	12067	52.3667	13.9667
+15528	Spreenhagen Hartmannsdorf	Spreenhagen Hartmannsdorf	Oder-Spree	12067	52.3667	13.85
+15528	Spreenhagen Markgrafpieske	Spreenhagen Markgrafpieske	Oder-Spree	12067	52.3333	13.95
+15528	Spreenhagen Spreenhagen	Spreenhagen Spreenhagen	Oder-Spree	12067	52.324	13.8991
+15537	Erkner	Erkner	Oder-Spree	12067	52.42	13.7544
+15537	Gosen	Gosen	Oder-Spree	12067	52.4	13.7167
+15537	Gosen Neu Zittau	Gosen Neu Zittau	Oder-Spree	12067	52.3667	13.75
+15537	Grünheide (Mark)	Grünheide (Mark)	Oder-Spree	12067	52.4111	13.8889
+15537	Grünheide (Mark) Grünheide	Grünheide (Mark) Grünheide	Oder-Spree	12067	52.4167	13.8167
+15537	Grünheide (Mark) Kagel	Grünheide (Mark) Kagel	Oder-Spree	12067	52.4667	13.9167
+15537	Grünheide (Mark) Kienbaum	Grünheide (Mark) Kienbaum	Oder-Spree	12067	52.45	13.95
+15562	Rüdersdorf bei Berlin	Rüdersdorf bei Berlin	Märkisch-Oderland	12064	52.4707	13.7736
+15566	Schöneiche bei Berlin	Schöneiche bei Berlin	Oder-Spree	12067	52.4598	13.7054
+15569	Woltersdorf	Woltersdorf	Oder-Spree	12067	52.446	13.756
+15711	Königs Wusterhausen	Königs Wusterhausen	Dahme-Spreewald	12061	52.3014	13.633
+15711	Schenkendorf	Schenkendorf	Dahme-Spreewald	12061	52.2779	13.5948
+15711	Zeesen	Zeesen	Dahme-Spreewald	12061	52.2788	13.6376
+15712	Kablow	Kablow	Dahme-Spreewald	12061	52.2973	13.7179
+15712	Senzig	Senzig	Dahme-Spreewald	12061	52.2891	13.6997
+15712	Zernsdorf	Zernsdorf	Dahme-Spreewald	12061	52.3036	13.6969
+15713	Niederlehme	Niederlehme	Dahme-Spreewald	12061	52.3171	13.6504
+15713	Wernsdorf	Wernsdorf	Dahme-Spreewald	12061	52.3691	13.703
+15732	Eichwalde	Eichwalde	Dahme-Spreewald	12061	52.3667	13.6167
+15732	Schulzendorf	Schulzendorf	Dahme-Spreewald	12061	52.3582	13.5984
+15732	Waltersdorf	Waltersdorf	Dahme-Spreewald	12061	52.3623	13.5565
+15738	Zeuthen	Zeuthen	Dahme-Spreewald	12061	52.348	13.6217
+15741	Bestensee	Bestensee	Dahme-Spreewald	12061	52.2398	13.6373
+15741	Gräbendorf	Gräbendorf	Dahme-Spreewald	12061	52.2405	13.7088
+15741	Motzen	Motzen	Dahme-Spreewald	12061	52.2039	13.5834
+15741	Pätz	Pätz	Dahme-Spreewald	12061	52.2251	13.6589
+15745	Wildau	Wildau	Dahme-Spreewald	12061	52.3167	13.6333
+15746	Groß Köris	Groß Köris	Dahme-Spreewald	12061	52.1659	13.6594
+15748	Märkisch Buchholz	Märkisch Buchholz	Dahme-Spreewald	12061	52.1096	13.7654
+15748	Münchehofe	Münchehofe	Dahme-Spreewald	12061	52.1473	13.8343
+15749	Brusendorf	Brusendorf	Dahme-Spreewald	12061	52.3099	13.5114
+15749	Gallun	Gallun	Dahme-Spreewald	12061	52.2448	13.5606
+15749	Kiekebusch	Kiekebusch	Dahme-Spreewald	12061	52.3461	13.5515
+15749	Mittenwalde	Mittenwalde	Dahme-Spreewald	12061	52.3024	13.5355
+15749	Ragow	Ragow	Dahme-Spreewald	12061	52.2866	13.5445
+15752	Kolberg	Kolberg	Dahme-Spreewald	12061	52.2439	13.8052
+15752	Prieros	Prieros	Dahme-Spreewald	12061	52.224	13.7708
+15752	Streganz	Streganz	Dahme-Spreewald	12061	52.2022	13.8371
+15754	Bindow	Bindow	Dahme-Spreewald	12061	52.2841	13.7431
+15754	Blossin	Blossin	Dahme-Spreewald	12061	52.2573	13.7992
+15754	Dannenreich	Dannenreich	Dahme-Spreewald	12061	52.3137	13.7484
+15754	Dolgenbrodt	Dolgenbrodt	Dahme-Spreewald	12061	52.243	13.7693
+15754	Friedersdorf	Friedersdorf	Dahme-Spreewald	12061	52.2948	13.7889
+15754	Gussow	Gussow	Dahme-Spreewald	12061	52.256	13.7321
+15754	Wolzig	Wolzig	Dahme-Spreewald	12061	52.2673	13.8376
+15755	Schwerin	Schwerin	Dahme-Spreewald	12061	52.15	13.6333
+15755	Teupitz	Teupitz	Dahme-Spreewald	12061	52.1297	13.6196
+15755	Töpchin	Töpchin	Dahme-Spreewald	12061	52.1715	13.5771
+15757	Briesen	Briesen	Dahme-Spreewald	12061	52.0532	13.7132
+15757	Freidorf	Freidorf	Dahme-Spreewald	12061	52.0683	13.6962
+15757	Halbe	Halbe	Dahme-Spreewald	12061	52.1167	13.7
+15757	Löpten	Löpten	Dahme-Spreewald	12061	52.1471	13.6851
+15757	Oderin	Oderin	Dahme-Spreewald	12061	52.0746	13.7251
+15806	Gadsdorf	Gadsdorf	Teltow-Fläming	12072	52.1904	13.3246
+15806	Glienick	Glienick	Teltow-Fläming	12072	52.2516	13.3806
+15806	Groß Machnow	Groß Machnow	Teltow-Fläming	12072	52.2667	13.4667
+15806	Groß Schulzendorf	Groß Schulzendorf	Teltow-Fläming	12072	52.2729	13.3511
+15806	Kallinchen	Kallinchen	Teltow-Fläming	12072	52.2118	13.5597
+15806	Kummersdorf-Alexanderdorf	Kummersdorf-Alexanderdorf	Teltow-Fläming	12072	52.1667	13.4167
+15806	Mellensee	Mellensee	Teltow-Fläming	12072	52.1833	13.43
+15806	Nunsdorf	Nunsdorf	Teltow-Fläming	12072	52.2294	13.3151
+15806	Nächst Neuendorf	Nächst Neuendorf	Teltow-Fläming	12072	52.2333	13.4167
+15806	Rehagen	Rehagen	Teltow-Fläming	12072	52.1663	13.369
+15806	Saalow	Saalow	Teltow-Fläming	12072	52.1944	13.3758
+15806	Schöneiche	Schöneiche	Teltow-Fläming	12072	52.2224	13.5141
+15806	Telz	Telz	Dahme-Spreewald	12061	52.245	13.4944
+15806	Zossen	Zossen	Teltow-Fläming	12072	52.216	13.4491
+15827	Blankenfelde	Blankenfelde	Teltow-Fläming	12072	52.3372	13.4121
+15827	Dahlewitz	Dahlewitz	Teltow-Fläming	12072	52.3209	13.4401
+15831	Diepensee	Diepensee	Teltow-Fläming	12072	52.3667	13.5167
+15831	Groß Kienitz	Groß Kienitz	Teltow-Fläming	12072	52.3253	13.4634
+15831	Großziethen	Großziethen	Dahme-Spreewald	12061	52.3964	13.4466
+15831	Jühnsdorf	Jühnsdorf	Teltow-Fläming	12072	52.3008	13.3849
+15831	Mahlow	Mahlow	Teltow-Fläming	12072	52.3602	13.4095
+15831	Selchow	Selchow	Dahme-Spreewald	12061	52.3571	13.4722
+15831	Waßmannsdorf	Waßmannsdorf	Teltow-Fläming	12072	52.3667	13.4667
+15834	Rangsdorf	Rangsdorf	Teltow-Fläming	12072	52.2913	13.4195
+15837	Baruth/Mark	Baruth/Mark	Teltow-Fläming	12072	52.05	13.5
+15838	Klausdorf	Klausdorf	Teltow-Fläming	12072	52.1546	13.4064
+15838	Kummersdorf-Gut	Kummersdorf-Gut	Teltow-Fläming	12072	52.1029	13.3756
+15838	Sperenberg	Sperenberg	Teltow-Fläming	12072	52.1411	13.365
+15838	Wünsdorf	Wünsdorf	Teltow-Fläming	12072	52.1643	13.4722
+15848	Beeskow	Beeskow	Oder-Spree	12067	52.1729	14.246
+15848	Beeskow Bornow	Beeskow Bornow	Oder-Spree	12067	52.1667	14.2
+15848	Beeskow Kohlsdorf	Beeskow Kohlsdorf	Oder-Spree	12067	52.1667	14.2
+15848	Beeskow Krügersdorf	Beeskow Krügersdorf	Oder-Spree	12067	52.15	14.3333
+15848	Beeskow Neuendorf	Beeskow Neuendorf	Oder-Spree	12067	52.1833	14.2333
+15848	Beeskow Oegeln	Beeskow Oegeln	Oder-Spree	12067	52.1833	14.2833
+15848	Beeskow Radinkendorf	Beeskow Radinkendorf	Oder-Spree	12067	52.2167	14.2667
+15848	Beeskow Schneeberg	Beeskow Schneeberg	Oder-Spree	12067	52.1667	14.3333
+15848	Friedland	Friedland	Oder-Spree	12067	52.0943	14.3104
+15848	Friedland Chossewitz	Friedland Chossewitz	Oder-Spree	12067	52.1	14.4333
+15848	Friedland Friedland	Friedland Friedland	Oder-Spree	12067	52.1	14.2667
+15848	Friedland Groß Briesen	Friedland Groß Briesen	Oder-Spree	12067	52.1167	14.3833
+15848	Friedland Günthersdorf	Friedland Günthersdorf	Oder-Spree	12067	52.0833	14.3
+15848	Friedland Karras	Friedland Karras	Oder-Spree	12067	52.0833	14.2833
+15848	Friedland Klein Muckrow	Friedland Klein Muckrow	Oder-Spree	12067	52.05	14.4333
+15848	Friedland Kummerow	Friedland Kummerow	Oder-Spree	12067	52.15	14.2333
+15848	Friedland Leißnitz	Friedland Leißnitz	Oder-Spree	12067	52.1167	14.2167
+15848	Friedland Lindow	Friedland Lindow	Oder-Spree	12067	52.1	14.3
+15848	Friedland Niewisch	Friedland Niewisch	Oder-Spree	12067	52.0833	14.2333
+15848	Friedland Pieskow	Friedland Pieskow	Oder-Spree	12067	52.05	14.2333
+15848	Friedland Reudnitz	Friedland Reudnitz	Oder-Spree	12067	52.1333	14.3333
+15848	Friedland Schadow	Friedland Schadow	Oder-Spree	12067	52.05	14.2667
+15848	Friedland Weichensdorf	Friedland Weichensdorf	Oder-Spree	12067	52.0833	14.35
+15848	Friedland Zeust	Friedland Zeust	Oder-Spree	12067	52.1333	14.2667
+15848	Plattkow	Plattkow	Dahme-Spreewald	12061	52.1063	14.018
+15848	Ragow-Merz	Ragow-Merz	Oder-Spree	12067	52.2	14.325
+15848	Ragow-Merz Merz	Ragow-Merz Merz	Oder-Spree	12067	52.2	14.3
+15848	Ragow-Merz Ragow	Ragow-Merz Ragow	Oder-Spree	12067	52.2	14.35
+15848	Rietz-Neuendorf	Rietz-Neuendorf	Oder-Spree	12067	52.2321	14.1619
+15848	Rietz-Neuendorf Ahrensdorf	Rietz-Neuendorf Ahrensdorf	Oder-Spree	12067	52.1667	14.0833
+15848	Rietz-Neuendorf Behrensdorf	Rietz-Neuendorf Behrensdorf	Oder-Spree	12067	52.1833	14.05
+15848	Rietz-Neuendorf Birkholz	Rietz-Neuendorf Birkholz	Oder-Spree	12067	52.2	14.2
+15848	Rietz-Neuendorf Buckow	Rietz-Neuendorf Buckow	Oder-Spree	12067	52.1833	14.1667
+15848	Rietz-Neuendorf Drahendorf	Rietz-Neuendorf Drahendorf	Oder-Spree	12067	52.2833	14.2333
+15848	Rietz-Neuendorf Groß Rietz	Rietz-Neuendorf Groß Rietz	Oder-Spree	12067	52.2167	14.2167
+15848	Rietz-Neuendorf Görzig	Rietz-Neuendorf Görzig	Oder-Spree	12067	52.2333	14.2
+15848	Rietz-Neuendorf Herzberg	Rietz-Neuendorf Herzberg	Oder-Spree	12067	52.2167	14.1167
+15848	Rietz-Neuendorf Neubrück (Spree)	Rietz-Neuendorf Neubrück (Spree)	Oder-Spree	12067	52.2667	14.2833
+15848	Rietz-Neuendorf Pfaffendorf	Rietz-Neuendorf Pfaffendorf	Oder-Spree	12067	52.2667	14.1667
+15848	Rietz-Neuendorf Sauen	Rietz-Neuendorf Sauen	Oder-Spree	12067	52.2667	14.2167
+15848	Rietz-Neuendorf Wilmersdorf	Rietz-Neuendorf Wilmersdorf	Oder-Spree	12067	52.2667	14.1333
+15848	Speichrow	Speichrow	Dahme-Spreewald	12061	52.036	14.2208
+15848	Tauche	Tauche	Oder-Spree	12067	52.1292	14.1306
+15848	Tauche Briescht	Tauche Briescht	Oder-Spree	12067	52.1167	14.1167
+15848	Tauche Falkenberg	Tauche Falkenberg	Oder-Spree	12067	52.1667	14.1333
+15848	Tauche Giesensdorf	Tauche Giesensdorf	Oder-Spree	12067	52.1333	14.1333
+15848	Tauche Görsdorf bei Beeskow	Tauche Görsdorf bei Beeskow	Oder-Spree	12067	52.15	14.1
+15848	Tauche Kossenblatt	Tauche Kossenblatt	Oder-Spree	12067	52.1167	14.0667
+15848	Tauche Lindenberg	Tauche Lindenberg	Oder-Spree	12067	52.2	14.1333
+15848	Tauche Mittweide	Tauche Mittweide	Oder-Spree	12067	52.0667	14.15
+15848	Tauche Ranzig	Tauche Ranzig	Oder-Spree	12067	52.1167	14.2
+15848	Tauche Stremmen	Tauche Stremmen	Oder-Spree	12067	52.1333	14.1667
+15848	Tauche Tauche	Tauche Tauche	Oder-Spree	12067	52.15	14.1667
+15848	Tauche Trebatsch	Tauche Trebatsch	Oder-Spree	12067	52.0833	14.1667
+15848	Tauche Werder	Tauche Werder	Oder-Spree	12067	52.1167	14.0333
+15859	Kehrigk	Kehrigk	Oder-Spree	12067	52.1615	13.9192
+15859	Kummersdorf	Kummersdorf	Oder-Spree	12067	52.271	13.8659
+15859	Philadelphia	Philadelphia	Oder-Spree	12067	52.2513	13.8954
+15859	Rieplos	Rieplos	Oder-Spree	12067	52.2835	13.9066
+15859	Storkow (Mark)	Storkow (Mark)	Oder-Spree	12067	52.2238	13.8964
+15859	Storkow (Mark) Alt Stahnsdorf	Storkow (Mark) Alt Stahnsdorf	Oder-Spree	12067	52.2833	13.8833
+15859	Storkow (Mark) Bugk	Storkow (Mark) Bugk	Oder-Spree	12067	52.2	13.9167
+15859	Storkow (Mark) Groß Eichholz	Storkow (Mark) Groß Eichholz	Oder-Spree	12067	52.1667	13.8667
+15859	Storkow (Mark) Groß Schauen	Storkow (Mark) Groß Schauen	Oder-Spree	12067	52.2333	13.9167
+15859	Storkow (Mark) Görsdorf bei Storkow	Storkow (Mark) Görsdorf bei Storkow	Oder-Spree	12067	52.2333	13.8333
+15859	Storkow (Mark) Kummersdorf	Storkow (Mark) Kummersdorf	Oder-Spree	12067	52.2667	13.8667
+15859	Storkow (Mark) Limsdorf	Storkow (Mark) Limsdorf	Oder-Spree	12067	52.1667	14.0167
+15859	Storkow (Mark) Schwerin	Storkow (Mark) Schwerin	Oder-Spree	12067	52.2	13.8333
+15859	Storkow (Mark) Selchow	Storkow (Mark) Selchow	Oder-Spree	12067	52.2167	13.8667
+15859	Storkow (Mark) Storkow	Storkow (Mark) Storkow	Oder-Spree	12067	52.25	13.9333
+15859	Storkow (Mark) Wochowsee	Storkow (Mark) Wochowsee	Oder-Spree	12067	52.2333	13.9
+15864	Diensdorf-Radlow	Diensdorf-Radlow	Oder-Spree	12067	52.2333	14.05
+15864	Rietz-Neuendorf	Rietz-Neuendorf	Oder-Spree	12067	52.2321	14.1619
+15864	Rietz-Neuendorf Glienicke	Rietz-Neuendorf Glienicke	Oder-Spree	12067	52.2	14.0833
+15864	Wendisch Rietz	Wendisch Rietz	Oder-Spree	12067	52.2161	14.0084
+15868	Doberburg	Doberburg	Dahme-Spreewald	12061	52.005	14.2439
+15868	Friedland	Friedland	Dahme-Spreewald	12061	52.0943	14.3104
+15868	Friedland Groß Muckrow	Friedland Groß Muckrow	Dahme-Spreewald	12061	52.075	14.4333
+15868	Jamlitz	Jamlitz	Dahme-Spreewald	12061	51.9913	14.361
+15868	Leeskow	Leeskow	Dahme-Spreewald	12061	52.0179	14.4105
+15868	Lieberose	Lieberose	Dahme-Spreewald	12061	51.9849	14.2999
+15868	Ullersdorf	Ullersdorf	Dahme-Spreewald	12061	52.0385	14.368
+15890	Eisenhüttenstadt	Eisenhüttenstadt	Oder-Spree	12067	52.1601	14.555
+15890	Eisenhüttenstadt Diehlo	Eisenhüttenstadt Diehlo	Oder-Spree	12067	52.1333	14.6
+15890	Eisenhüttenstadt Fürstenberg	Eisenhüttenstadt Fürstenberg	Oder-Spree	12067	52.15	14.6667
+15890	Eisenhüttenstadt Schönfließ	Eisenhüttenstadt Schönfließ	Oder-Spree	12067	52.15	14.6167
+15890	Schlaubetal	Schlaubetal	Oder-Spree	12067	52.1289	14.5111
+15890	Schlaubetal Bremsdorf	Schlaubetal Bremsdorf	Oder-Spree	12067	52.15	14.5
+15890	Schlaubetal Fünfeichen	Schlaubetal Fünfeichen	Oder-Spree	12067	52.15	14.5333
+15890	Schlaubetal Kieselwitz	Schlaubetal Kieselwitz	Oder-Spree	12067	52.1167	14.5
+15890	Siehdichum	Siehdichum	Oder-Spree	12067	52.1944	14.5333
+15890	Siehdichum Pohlitz	Siehdichum Pohlitz	Oder-Spree	12067	52.1833	14.5833
+15890	Siehdichum Rießen	Siehdichum Rießen	Oder-Spree	12067	52.2	14.5333
+15890	Siehdichum Schernsdorf	Siehdichum Schernsdorf	Oder-Spree	12067	52.2	14.4833
+15890	Vogelsang	Vogelsang	Oder-Spree	12067	52.1824	14.6637
+15898	Lawitz	Lawitz	Oder-Spree	12067	52.107	14.6415
+15898	Neißemünde	Neißemünde	Oder-Spree	12067	52.05	14.7333
+15898	Neißemünde Breslack	Neißemünde Breslack	Oder-Spree	12067	52.05	14.7333
+15898	Neißemünde Coschen	Neißemünde Coschen	Oder-Spree	12067	52.0167	14.7333
+15898	Neißemünde Ratzdorf	Neißemünde Ratzdorf	Oder-Spree	12067	52.0667	14.75
+15898	Neißemünde Wellmitz	Neißemünde Wellmitz	Oder-Spree	12067	52.0667	14.7167
+15898	Neuzelle	Neuzelle	Oder-Spree	12067	52.0639	14.6028
+15898	Neuzelle Bahro	Neuzelle Bahro	Oder-Spree	12067	52.05	14.5667
+15898	Neuzelle Bomsdorf	Neuzelle Bomsdorf	Oder-Spree	12067	52.0333	14.65
+15898	Neuzelle Göhlen	Neuzelle Göhlen	Oder-Spree	12067	52.05	14.5833
+15898	Neuzelle Henzendorf	Neuzelle Henzendorf	Oder-Spree	12067	52.05	14.5167
+15898	Neuzelle Kobbeln	Neuzelle Kobbeln	Oder-Spree	12067	52.1	14.65
+15898	Neuzelle Möbiskruge	Neuzelle Möbiskruge	Oder-Spree	12067	52.1	14.6
+15898	Neuzelle Neuzelle	Neuzelle Neuzelle	Oder-Spree	12067	52.0833	14.6333
+15898	Neuzelle Ossendorf	Neuzelle Ossendorf	Oder-Spree	12067	52.0667	14.5667
+15898	Neuzelle Schwerzko	Neuzelle Schwerzko	Oder-Spree	12067	52.0667	14.6167
+15898	Neuzelle Steinsdorf	Neuzelle Steinsdorf	Oder-Spree	12067	52.0333	14.6667
+15898	Neuzelle Streichwitz	Neuzelle Streichwitz	Oder-Spree	12067	52.0667	14.65
+15898	Neuzelle Treppeln	Neuzelle Treppeln	Oder-Spree	12067	52.0667	14.5333
+15907	Lübben (Spreewald)	Lübben (Spreewald)	Dahme-Spreewald	12061	51.9455	13.8852
+15910	Alt-Schadow	Alt-Schadow	Dahme-Spreewald	12061	52.1333	13.95
+15910	Dürrenhofe	Dürrenhofe	Dahme-Spreewald	12061	52.0258	13.9488
+15910	Gröditsch	Gröditsch	Dahme-Spreewald	12061	52.0524	13.9996
+15910	Hohenbrück-Neu Schadow	Hohenbrück-Neu Schadow	Dahme-Spreewald	12061	52.0932	13.916
+15910	Krausnick-Groß Wasserburg	Krausnick-Groß Wasserburg	Dahme-Spreewald	12061	52.0462	13.8489
+15910	Kuschkow	Kuschkow	Dahme-Spreewald	12061	52.0595	13.958
+15910	Pretschen	Pretschen	Dahme-Spreewald	12061	52.0899	13.9927
+15910	Rietzneuendorf-Staakow	Rietzneuendorf-Staakow	Dahme-Spreewald	12061	52.0191	13.6833
+15910	Schlepzig	Schlepzig	Dahme-Spreewald	12061	52.0333	13.9
+15910	Schuhlen-Wiese	Schuhlen-Wiese	Dahme-Spreewald	12061	52.0609	14.107
+15910	Schönwald	Schönwald	Dahme-Spreewald	12061	51.9853	13.723
+15910	Unterspreewald	Unterspreewald	Dahme-Spreewald	12061	52.091	13.8902
+15910	Wittmannsdorf-Bückchen	Wittmannsdorf-Bückchen	Dahme-Spreewald	12061	52.0667	14.05
+15913	Alt Zauche	Alt Zauche	Dahme-Spreewald	12061	51.9168	14.0149
+15913	Biebersdorf	Biebersdorf	Dahme-Spreewald	12061	51.9847	13.9741
+15913	Briesensee	Briesensee	Dahme-Spreewald	12061	51.956	14.0047
+15913	Butzen	Butzen	Dahme-Spreewald	12061	51.9343	14.168
+15913	Byhleguhre	Byhleguhre	Dahme-Spreewald	12061	51.8793	14.1745
+15913	Byhlen	Byhlen	Dahme-Spreewald	12061	51.9093	14.1862
+15913	Caminchen	Caminchen	Dahme-Spreewald	12061	51.9529	14.07
+15913	Dollgen	Dollgen	Dahme-Spreewald	12061	52.018	14.0385
+15913	Glietz	Glietz	Dahme-Spreewald	12061	52.0089	14.0818
+15913	Goyatz	Goyatz	Dahme-Spreewald	12061	52.0187	14.1758
+15913	Groß Leine	Groß Leine	Dahme-Spreewald	12061	51.997	14.0636
+15913	Groß Leuthen	Groß Leuthen	Dahme-Spreewald	12061	52.038	14.0374
+15913	Jessern	Jessern	Dahme-Spreewald	12061	52.0242	14.1944
+15913	Klein Leine	Klein Leine	Dahme-Spreewald	12061	51.9738	14.0571
+15913	Krugau	Krugau	Dahme-Spreewald	12061	52.0272	13.9827
+15913	Laasow	Laasow	Dahme-Spreewald	12061	51.9448	14.1304
+15913	Lamsfeld-Groß Liebitz	Lamsfeld-Groß Liebitz	Dahme-Spreewald	12061	51.975	14.2327
+15913	Leibchel	Leibchel	Dahme-Spreewald	12061	52.029	14.0777
+15913	Mochow	Mochow	Dahme-Spreewald	12061	51.978	14.1893
+15913	Neu Zauche	Neu Zauche	Dahme-Spreewald	12061	51.9276	14.0881
+15913	Ressen-Zaue	Ressen-Zaue	Dahme-Spreewald	12061	52.0359	14.162
+15913	Sacrow-Waldow	Sacrow-Waldow	Dahme-Spreewald	12061	51.9558	14.1285
+15913	Straupitz	Straupitz	Dahme-Spreewald	12061	51.9136	14.1228
+15913	Wußwerk	Wußwerk	Dahme-Spreewald	12061	51.927	14.0504
+15926	Bersteland	Bersteland	Dahme-Spreewald	12061	51.9425	13.776
+15926	Bersteland Freiwalde	Bersteland Freiwalde	Dahme-Spreewald	12061	51.9575	13.7461
+15926	Bersteland Niewitz	Bersteland Niewitz	Dahme-Spreewald	12061	51.937	13.7865
+15926	Bersteland Reichwalde	Bersteland Reichwalde	Dahme-Spreewald	12061	51.9273	13.7256
+15926	Cahnsdorf	Cahnsdorf	Dahme-Spreewald	12061	51.8504	13.747
+15926	Duben	Duben	Dahme-Spreewald	12061	51.8976	13.8074
+15926	Görlsdorf	Görlsdorf	Dahme-Spreewald	12061	51.8181	13.7554
+15926	Heideblick	Heideblick	Dahme-Spreewald	12061	51.8127	13.6551
+15926	Heideblick Beesdau	Heideblick Beesdau	Dahme-Spreewald	12061	51.7915	13.7399
+15926	Heideblick Bornsdorf	Heideblick Bornsdorf	Dahme-Spreewald	12061	51.7732	13.6939
+15926	Heideblick Falkenberg	Heideblick Falkenberg	Dahme-Spreewald	12061	51.852	13.5684
+15926	Heideblick Gehren	Heideblick Gehren	Dahme-Spreewald	12061	51.8033	13.6469
+15926	Heideblick Goßmar	Heideblick Goßmar	Dahme-Spreewald	12061	51.82	13.6996
+15926	Heideblick Langengrassau	Heideblick Langengrassau	Dahme-Spreewald	12061	51.8333	13.6424
+15926	Heideblick Pitschen-Pickel	Heideblick Pitschen-Pickel	Dahme-Spreewald	12061	51.8715	13.5905
+15926	Heideblick Riedebeck	Heideblick Riedebeck	Dahme-Spreewald	12061	51.8055	13.6799
+15926	Heideblick Waltersdorf	Heideblick Waltersdorf	Dahme-Spreewald	12061	51.8215	13.6504
+15926	Heideblick Weißack	Heideblick Weißack	Dahme-Spreewald	12061	51.7497	13.6937
+15926	Heideblick Wüstermarke	Heideblick Wüstermarke	Dahme-Spreewald	12061	51.8182	13.6
+15926	Luckau	Luckau	Dahme-Spreewald	12061	51.8297	13.6741
+15926	Schlabendorf	Schlabendorf	Dahme-Spreewald	12061	51.8084	13.8206
+15926	Walddrehna	Walddrehna	Dahme-Spreewald	12061	51.7778	13.6269
+15936	Dahme/Mark	Dahme/Mark	Teltow-Fläming	12072	51.8941	13.4342
+15936	Dahmetal	Dahmetal	Teltow-Fläming	12072	51.9067	13.5
+15936	Steinreich	Steinreich	Teltow-Fläming	12072	51.9495	13.4934
+15936	Steinreich Glienig	Steinreich Glienig	Teltow-Fläming	12072	51.9411	13.4448
+15938	Drahnsdorf	Drahnsdorf	Dahme-Spreewald	12061	51.9167	13.5833
+15938	Golßen	Golßen	Dahme-Spreewald	12061	51.972	13.6011
+15938	Kasel-Golzig	Kasel-Golzig	Dahme-Spreewald	12061	51.9333	13.7
+15938	Steinreich	Steinreich	Dahme-Spreewald	12061	51.9495	13.4934
+15938	Steinreich Sellendorf	Steinreich Sellendorf	Dahme-Spreewald	12061	51.9588	13.5419
+16225	Eberswalde	Eberswalde	Barnim	12060	52.8342	13.8218
+16227	Eberswalde	Eberswalde	Barnim	12060	52.8333	13.8333
+16230	Breydin	Breydin	Barnim	12060	52.7694	13.8153
+16230	Britz	Britz	Barnim	12060	52.8873	13.8112
+16230	Chorin	Chorin	Barnim	12060	52.902	13.8715
+16230	Melchow	Melchow	Barnim	12060	52.7761	13.7065
+16230	Sydower Fließ	Sydower Fließ	Barnim	12060	52.7274	13.723
+16244	Altenhof	Altenhof	Barnim	12060	52.9148	13.7132
+16244	Finowfurt	Finowfurt	Barnim	12060	52.8583	13.7578
+16247	Althüttendorf	Althüttendorf	Barnim	12060	52.9623	13.8072
+16247	Friedrichswalde	Friedrichswalde	Barnim	12060	53.0292	13.7068
+16247	Joachimsthal	Joachimsthal	Barnim	12060	52.9794	13.7449
+16247	Neugrimnitz	Neugrimnitz	Barnim	12060	52.9752	13.8297
+16247	Ziethen	Ziethen	Barnim	12060	52.9667	13.9167
+16248	Bölkendorf	Bölkendorf	Uckermark	12073	52.9506	14.0009
+16248	Hohenfinow	Hohenfinow	Barnim	12060	52.8134	13.9249
+16248	Hohensaaten	Hohensaaten	Märkisch-Oderland	12064	52.8743	14.142
+16248	Liepe	Liepe	Barnim	12060	52.8621	13.9695
+16248	Lunow-Stolzenhagen	Lunow-Stolzenhagen	Barnim	12060	52.9333	14.1083
+16248	Niederfinow	Niederfinow	Barnim	12060	52.8337	13.9284
+16248	Oderberg	Oderberg	Barnim	12060	52.8657	14.0451
+16248	Parsteinsee	Parsteinsee	Barnim	12060	52.9333	14.05
+16259	Altglietzen	Altglietzen	Märkisch-Oderland	12064	52.8342	14.0896
+16259	Bad Freienwalde	Bad Freienwalde	Märkisch-Oderland	12064	52.7873	14.0304
+16259	Beiersdorf-Freudenberg	Beiersdorf-Freudenberg	Märkisch-Oderland	12064	52.6967	13.8014
+16259	Beiersdorf-Freudenberg Beiersdorf	Beiersdorf-Freudenberg Beiersdorf	Märkisch-Oderland	12064	52.6926	13.783
+16259	Beiersdorf-Freudenberg Freudenberg	Beiersdorf-Freudenberg Freudenberg	Märkisch-Oderland	12064	52.7007	13.8199
+16259	Bralitz	Bralitz	Märkisch-Oderland	12064	52.8351	14.0059
+16259	Falkenberg	Falkenberg	Märkisch-Oderland	12064	52.8051	13.958
+16259	Falkenberg Dannenberg/Mark	Falkenberg Dannenberg/Mark	Märkisch-Oderland	12064	52.7736	13.957
+16259	Falkenberg Falkenberg/Mark	Falkenberg Falkenberg/Mark	Märkisch-Oderland	12064	52.8058	13.957
+16259	Falkenberg Kruge/Gersdorf	Falkenberg Kruge/Gersdorf	Märkisch-Oderland	12064	52.7684	13.8913
+16259	Falkenberg Kruge/Gersdorf, Gersdorf	Falkenberg Kruge/Gersdorf, Gersdorf	Märkisch-Oderland	12064	52.7707	13.8918
+16259	Falkenberg Kruge/Gersdorf, Kruge	Falkenberg Kruge/Gersdorf, Kruge	Märkisch-Oderland	12064	52.7553	13.8783
+16259	Falkenberg Kruge/Gersdorf, Neugersdorf	Falkenberg Kruge/Gersdorf, Neugersdorf	Märkisch-Oderland	12064	52.7793	13.9039
+16259	Heckelberg-Brunow	Heckelberg-Brunow	Märkisch-Oderland	12064	52.735	13.8577
+16259	Heckelberg-Brunow Brunow	Heckelberg-Brunow Brunow	Märkisch-Oderland	12064	52.7297	13.874
+16259	Heckelberg-Brunow Heckelberg	Heckelberg-Brunow Heckelberg	Märkisch-Oderland	12064	52.7403	13.8414
+16259	Hohenwutzen	Hohenwutzen	Märkisch-Oderland	12064	52.8441	14.1184
+16259	Höhenland	Höhenland	Märkisch-Oderland	12064	52.7534	13.8823
+16259	Höhenland Leuenberg	Höhenland Leuenberg	Märkisch-Oderland	12064	52.7227	13.8701
+16259	Höhenland Steinbeck	Höhenland Steinbeck	Märkisch-Oderland	12064	52.7586	13.8753
+16259	Höhenland Wölsickendorf-Wollenberg	Höhenland Wölsickendorf-Wollenberg	Märkisch-Oderland	12064	52.7789	13.9013
+16259	Höhenland Wölsickendorf-Wollenberg, Wollenberg	Höhenland Wölsickendorf-Wollenberg, Wollenberg	Märkisch-Oderland	12064	52.7941	13.8977
+16259	Höhenland Wölsickendorf-Wollenberg, Wölsickendorf	Höhenland Wölsickendorf-Wollenberg, Wölsickendorf	Märkisch-Oderland	12064	52.7638	13.9049
+16259	Neuenhagen	Neuenhagen	Märkisch-Oderland	12064	52.8366	14.053
+16259	Neulewin	Neulewin	Märkisch-Oderland	12064	52.7243	14.2792
+16259	Neulewin Güstebieser Loose	Neulewin Güstebieser Loose	Märkisch-Oderland	12064	52.75	14.3
+16259	Neulewin Neulewin	Neulewin Neulewin	Märkisch-Oderland	12064	52.7167	14.2833
+16259	Neulewin Neulietzegöricke	Neulewin Neulietzegöricke	Märkisch-Oderland	12064	52.7667	14.25
+16259	Oderaue	Oderaue	Märkisch-Oderland	12064	52.7773	14.2042
+16259	Oderaue Altreetz	Oderaue Altreetz	Märkisch-Oderland	12064	52.7667	14.1667
+16259	Oderaue Mädewitz	Oderaue Mädewitz	Märkisch-Oderland	12064	52.7455	14.3355
+16259	Oderaue Mädewitz, Altmädewitz	Oderaue Mädewitz, Altmädewitz	Märkisch-Oderland	12064	52.7509	14.3313
+16259	Oderaue Mädewitz, Neumädewitz	Oderaue Mädewitz, Neumädewitz	Märkisch-Oderland	12064	52.74	14.3396
+16259	Oderaue Neuküstrinchen	Oderaue Neuküstrinchen	Märkisch-Oderland	12064	52.8	14.1667
+16259	Oderaue Neureetz	Oderaue Neureetz	Märkisch-Oderland	12064	52.7833	14.15
+16259	Oderaue Neurüdnitz	Oderaue Neurüdnitz	Märkisch-Oderland	12064	52.8	14.1833
+16259	Oderaue Wustrow	Oderaue Wustrow	Märkisch-Oderland	12064	52.7621	14.2107
+16259	Oderaue Wustrow, Neu-Wustrow	Oderaue Wustrow, Neu-Wustrow	Märkisch-Oderland	12064	52.7638	14.2026
+16259	Oderaue Wustrow, Wustrow	Oderaue Wustrow, Wustrow	Märkisch-Oderland	12064	52.7603	14.2188
+16259	Oderaue Zäckericker Loose	Oderaue Zäckericker Loose	Märkisch-Oderland	12064	52.7833	14.2167
+16259	Schiffmühle	Schiffmühle	Märkisch-Oderland	12064	52.8068	14.0446
+16259	Tiefensee	Tiefensee	Barnim	12060	52.68	13.8356
+16269	Bliesdorf	Bliesdorf	Märkisch-Oderland	12064	52.693	14.1595
+16269	Bliesdorf Bliesdorf	Bliesdorf Bliesdorf	Märkisch-Oderland	12064	52.7	14.15
+16269	Bliesdorf Kunersdorf	Bliesdorf Kunersdorf	Märkisch-Oderland	12064	52.6747	14.1584
+16269	Bliesdorf Metzdorf	Bliesdorf Metzdorf	Märkisch-Oderland	12064	52.6586	14.1761
+16269	Wriezen	Wriezen	Märkisch-Oderland	12064	52.7209	14.1343
+16269	Wriezener Höhe	Wriezener Höhe	Märkisch-Oderland	12064	52.7	14.0583
+16278	Angermünde	Angermünde	Uckermark	12073	53.015	13.9992
+16278	Biesenbrow	Biesenbrow	Uckermark	12073	53.1198	14.0129
+16278	Bruchhagen	Bruchhagen	Uckermark	12073	53.0813	13.9747
+16278	Crussow	Crussow	Uckermark	12073	52.9998	14.0801
+16278	Frauenhagen	Frauenhagen	Uckermark	12073	53.0771	14.0422
+16278	Gellmersdorf	Gellmersdorf	Uckermark	12073	52.9684	14.0707
+16278	Greiffenberg	Greiffenberg	Uckermark	12073	53.0873	13.9552
+16278	Görlsdorf	Görlsdorf	Uckermark	12073	53.0532	13.9423
+16278	Günterberg	Günterberg	Uckermark	12073	53.0971	13.964
+16278	Herzsprung	Herzsprung	Uckermark	12073	52.9755	13.9876
+16278	Kerkow	Kerkow	Uckermark	12073	53.0373	13.9883
+16278	Mark Landin	Mark Landin	Uckermark	12073	53.1111	14.0917
+16278	Mürow	Mürow	Uckermark	12073	53.0532	14.0333
+16278	Neukünkendorf	Neukünkendorf	Uckermark	12073	52.973	14.0394
+16278	Pinnow	Pinnow	Uckermark	12073	53.062	14.0856
+16278	Schmargendorf	Schmargendorf	Uckermark	12073	52.9815	13.9585
+16278	Schmiedeberg	Schmiedeberg	Uckermark	12073	53.143	13.9521
+16278	Schöneberg	Schöneberg	Uckermark	12073	53.0085	14.1426
+16278	Steinhöfel	Steinhöfel	Uckermark	12073	53.0946	13.8787
+16278	Stolpe/Oder	Stolpe/Oder	Uckermark	12073	52.9833	14.1167
+16278	Welsow	Welsow	Uckermark	12073	53.0692	14.0022
+16278	Wilmersdorf	Wilmersdorf	Uckermark	12073	53.1109	13.9061
+16278	Wolletz	Wolletz	Uckermark	12073	53.0249	13.9014
+16303	Schwedt/Oder	Schwedt/Oder	Uckermark	12073	53.066	14.2711
+16306	Berkholz-Meyenburg	Berkholz-Meyenburg	Uckermark	12073	53.05	14.2167
+16306	Biesendahlshof	Biesendahlshof	Uckermark	12073	53.1964	14.2092
+16306	Blumberg	Blumberg	Uckermark	12073	53.2061	14.1525
+16306	Casekow	Casekow	Uckermark	12073	53.2112	14.2082
+16306	Friedrichsthal	Friedrichsthal	Uckermark	12073	53.1581	14.3464
+16306	Groß Pinnow	Groß Pinnow	Uckermark	12073	53.1842	14.2762
+16306	Hohenselchow	Hohenselchow	Uckermark	12073	53.205	14.2807
+16306	Luckow-Petershagen	Luckow-Petershagen	Uckermark	12073	53.2435	14.2573
+16306	Passow	Passow	Uckermark	12073	53.1429	14.1142
+16306	Schönow	Schönow	Uckermark	12073	53.1789	14.153
+16306	Stendell	Stendell	Uckermark	12073	53.1435	14.1661
+16306	Vierraden	Vierraden	Uckermark	12073	53.0967	14.2934
+16306	Wartin	Wartin	Uckermark	12073	53.2508	14.157
+16306	Woltersdorf	Woltersdorf	Uckermark	12073	53.1795	14.2167
+16306	Zichow	Zichow	Uckermark	12073	53.1893	14.0385
+16307	Gartz (Oder)	Gartz (Oder)	Uckermark	12073	53.2	14.3833
+16307	Geesow	Geesow	Uckermark	12073	53.2537	14.3791
+16307	Hohenreinkendorf	Hohenreinkendorf	Uckermark	12073	53.2304	14.3303
+16307	Mescherin	Mescherin	Uckermark	12073	53.2472	14.43
+16307	Neurochlitz	Neurochlitz	Uckermark	12073	53.2803	14.4067
+16307	Radekow	Radekow	Uckermark	12073	53.3002	14.3531
+16307	Rosow	Rosow	Uckermark	12073	53.3057	14.3863
+16307	Schönfeld	Schönfeld	Uckermark	12073	53.2726	14.2916
+16307	Tantow	Tantow	Uckermark	12073	53.2716	14.351
+16321	Bernau	Bernau	Barnim	12060	52.6821	13.5965
+16321	Börnicke	Börnicke	Barnim	12060	52.663	13.638
+16321	Danewitz	Danewitz	Barnim	12060	52.7347	13.6658
+16321	Lindenberg	Lindenberg	Barnim	12060	52.6026	13.5244
+16321	Lobetal	Lobetal	Barnim	12060	52.7279	13.5921
+16321	Rüdnitz	Rüdnitz	Barnim	12060	52.7214	13.625
+16321	Schönow	Schönow	Barnim	12060	52.6771	13.5364
+16341	Schwanebeck	Schwanebeck	Barnim	12060	52.6251	13.5441
+16341	Zepernick	Zepernick	Barnim	12060	52.6509	13.5409
+16348	Groß Schönebeck (Schorfheide)	Groß Schönebeck (Schorfheide)	Barnim	12060	52.9	13.5167
+16348	Klosterfelde	Klosterfelde	Barnim	12060	52.7971	13.4789
+16348	Marienwerder	Marienwerder	Barnim	12060	52.8421	13.5993
+16348	Prenden	Prenden	Barnim	12060	52.7921	13.549
+16348	Ruhlsdorf	Ruhlsdorf	Barnim	12060	52.8235	13.5568
+16348	Stolzenhagen	Stolzenhagen	Barnim	12060	52.7781	13.4384
+16348	Wandlitz	Wandlitz	Barnim	12060	52.742	13.458
+16348	Zerpenschleuse	Zerpenschleuse	Barnim	12060	52.8521	13.5279
+16352	Basdorf	Basdorf	Barnim	12060	52.7126	13.4387
+16352	Schönerlinde	Schönerlinde	Barnim	12060	52.6539	13.445
+16352	Schönwalde	Schönwalde	Barnim	12060	52.6779	13.44
+16356	Ahrensfelde	Ahrensfelde	Barnim	12060	52.5766	13.5797
+16356	Blumberg	Blumberg	Barnim	12060	52.6356	13.6849
+16356	Eiche	Eiche	Barnim	12060	52.5635	13.5891
+16356	Hirschfelde	Hirschfelde	Barnim	12060	52.6367	13.7993
+16356	Krummensee	Krummensee	Barnim	12060	52.5962	13.6926
+16356	Mehrow	Mehrow	Barnim	12060	52.5709	13.6155
+16356	Schönfeld	Schönfeld	Barnim	12060	52.8333	13.5667
+16356	Seefeld	Seefeld	Barnim	12060	52.6224	13.6801
+16356	Werneuchen	Werneuchen	Barnim	12060	52.6328	13.7344
+16356	Wilmersdorf	Wilmersdorf	Barnim	12060	52.6639	13.6873
+16359	Biesenthal	Biesenthal	Barnim	12060	52.7662	13.6442
+16359	Lanke	Lanke	Barnim	12060	52.7609	13.5653
+16515	Freienhagen	Freienhagen	Oberhavel	12065	52.8261	13.2746
+16515	Friedrichsthal	Friedrichsthal	Oberhavel	12065	52.7947	13.2799
+16515	Malz	Malz	Oberhavel	12065	52.803	13.2922
+16515	Nassenheide	Nassenheide	Oberhavel	12065	52.8148	13.2146
+16515	Neuholland	Neuholland	Oberhavel	12065	52.8596	13.3257
+16515	Oranienburg	Oranienburg	Oberhavel	12065	52.7558	13.242
+16515	Schmachtenhagen	Schmachtenhagen	Oberhavel	12065	52.7682	13.3259
+16515	Wensickendorf	Wensickendorf	Oberhavel	12065	52.7553	13.3766
+16515	Zehlendorf	Zehlendorf	Oberhavel	12065	52.7838	13.3878
+16515	Zühlsdorf	Zühlsdorf	Oberhavel	12065	52.73	13.3876
+16540	Hohen Neuendorf	Hohen Neuendorf	Oberhavel	12065	52.6763	13.2778
+16540	Stolpe	Stolpe	Oberhavel	12065	52.661	13.2593
+16547	Birkenwerder	Birkenwerder	Oberhavel	12065	52.6833	13.2833
+16548	Glienicke/Nordbahn	Glienicke/Nordbahn	Oberhavel	12065	52.6351	13.3075
+16552	Schildow	Schildow	Oberhavel	12065	52.6363	13.376
+16556	Borgsdorf	Borgsdorf	Oberhavel	12065	52.7129	13.2767
+16559	Hammer	Hammer	Oberhavel	12065	52.8797	13.4395
+16559	Kreuzbruch	Kreuzbruch	Oberhavel	12065	52.8404	13.4225
+16559	Liebenthal	Liebenthal	Oberhavel	12065	52.9128	13.4612
+16559	Liebenwalde	Liebenwalde	Oberhavel	12065	52.8713	13.3947
+16562	Bergfelde	Bergfelde	Oberhavel	12065	52.6729	13.3186
+16565	Lehnitz	Lehnitz	Oberhavel	12065	52.7405	13.2627
+16567	Mühlenbeck	Mühlenbeck	Oberhavel	12065	52.6647	13.3769
+16567	Schönfließ	Schönfließ	Oberhavel	12065	52.6555	13.3382
+16727	Oberkrämer	Oberkrämer	Oberhavel	12065	52.5833	13.3167
+16727	Velten	Velten	Oberhavel	12065	52.6915	13.1753
+16761	Hennigsdorf	Hennigsdorf	Oberhavel	12065	52.636	13.2042
+16766	Kremmen	Kremmen	Oberhavel	12065	52.7622	13.0252
+16766	Oberkrämer	Oberkrämer	Oberhavel	12065	52.5833	13.3167
+16767	Germendorf	Germendorf	Oberhavel	12065	52.7499	13.1701
+16767	Leegebruch	Leegebruch	Oberhavel	12065	52.7234	13.193
+16775	Badingen	Badingen	Oberhavel	12065	52.9987	13.2523
+16775	Barsdorf	Barsdorf	Oberhavel	12065	53.1021	13.2882
+16775	Blumenow	Blumenow	Oberhavel	12065	53.0998	13.2508
+16775	Bredereiche	Bredereiche	Oberhavel	12065	53.1366	13.2426
+16775	Burgwall	Burgwall	Oberhavel	12065	53.049	13.3016
+16775	Gransee	Gransee	Oberhavel	12065	53.007	13.1575
+16775	Großwoltersdorf	Großwoltersdorf	Oberhavel	12065	53.0667	13.1
+16775	Kappe	Kappe	Oberhavel	12065	52.9665	13.4391
+16775	Klein-Mutz	Klein-Mutz	Oberhavel	12065	52.9667	13.2833
+16775	Krewelin	Krewelin	Oberhavel	12065	52.9443	13.386
+16775	Löwenberger Land	Löwenberger Land	Oberhavel	12065	52.8958	13.1729
+16775	Marienthal	Marienthal	Oberhavel	12065	53.0547	13.2785
+16775	Mildenberg	Mildenberg	Oberhavel	12065	53.0109	13.2879
+16775	Rönnebeck	Rönnebeck	Oberhavel	12065	53.0042	13.0407
+16775	Schulzendorf	Schulzendorf	Oberhavel	12065	53.0358	13.049
+16775	Schönermark	Schönermark	Oberhavel	12065	53.007	13.1202
+16775	Sonnenberg	Sonnenberg	Oberhavel	12065	53.0192	13.0884
+16775	Stechlin	Stechlin	Oberhavel	12065	53.1056	13.0417
+16775	Tornow	Tornow	Oberhavel	12065	53.0632	13.2875
+16775	Zabelsdorf	Zabelsdorf	Oberhavel	12065	53.0476	13.2533
+16792	Kurtschlag	Kurtschlag	Oberhavel	12065	52.9988	13.478
+16792	Wesendorf	Wesendorf	Oberhavel	12065	52.983	13.38
+16792	Zehdenick	Zehdenick	Oberhavel	12065	52.9785	13.3317
+16798	Altthymen	Altthymen	Oberhavel	12065	53.2397	13.1627
+16798	Fürstenberg/Havel	Fürstenberg/Havel	Oberhavel	12065	53.1864	13.1708
+16798	Himmelpfort	Himmelpfort	Oberhavel	12065	53.1775	13.2278
+16798	Steinförde	Steinförde	Oberhavel	12065	53.1873	13.0896
+16798	Zootzen	Zootzen	Oberhavel	12065	53.1529	13.2114
+16816	Neuruppin	Neuruppin	Ostprignitz-Ruppin	12068	52.9282	12.8031
+16818	Basdorf	Basdorf	Ostprignitz-Ruppin	12068	53.0909	12.7313
+16818	Dabergotz	Dabergotz	Ostprignitz-Ruppin	12068	52.9031	12.7247
+16818	Fehrbellin Deutschhof	Fehrbellin Deutschhof	Ostprignitz-Ruppin	12068	52.7	12.8167
+16818	Fehrbellin Langen	Fehrbellin Langen	Ostprignitz-Ruppin	12068	52.85	12.8
+16818	Fehrbellin Wall	Fehrbellin Wall	Ostprignitz-Ruppin	12068	52.8167	12.9667
+16818	Fehrbellin Wustrau-Altfriesack	Fehrbellin Wustrau-Altfriesack	Ostprignitz-Ruppin	12068	52.85	12.8733
+16818	Märkisch Linden	Märkisch Linden	Ostprignitz-Ruppin	12068	52.9292	12.7083
+16818	Rheinsberg Braunsberg	Rheinsberg Braunsberg	Ostprignitz-Ruppin	12068	53.05	12.8333
+16818	Storbeck-Frankendorf	Storbeck-Frankendorf	Ostprignitz-Ruppin	12068	53.0067	12.7333
+16818	Temnitzquell	Temnitzquell	Ostprignitz-Ruppin	12068	53.0056	12.6444
+16818	Walsleben	Walsleben	Ostprignitz-Ruppin	12068	52.9383	12.6645
+16827	Alt Ruppin	Alt Ruppin	Ostprignitz-Ruppin	12068	52.9483	12.848
+16831	Rheinsberg	Rheinsberg	Ostprignitz-Ruppin	12068	53.0997	12.8989
+16831	Rheinsberg Großzerlang	Rheinsberg Großzerlang	Ostprignitz-Ruppin	12068	53.1833	12.95
+16831	Rheinsberg Heinrichsdorf	Rheinsberg Heinrichsdorf	Ostprignitz-Ruppin	12068	53.05	12.95
+16831	Rheinsberg Kleinzerlang	Rheinsberg Kleinzerlang	Ostprignitz-Ruppin	12068	53.1833	12.9167
+16831	Rheinsberg Linow	Rheinsberg Linow	Ostprignitz-Ruppin	12068	53.1	12.8333
+16831	Rheinsberg Schwanow	Rheinsberg Schwanow	Ostprignitz-Ruppin	12068	53.05	12.8667
+16831	Rheinsberg Zechlinerhütte	Rheinsberg Zechlinerhütte	Ostprignitz-Ruppin	12068	53.15	12.8833
+16831	Rheinsberg Zechow	Rheinsberg Zechow	Ostprignitz-Ruppin	12068	53.05	12.9167
+16831	Rheinsberg Zühlen	Rheinsberg Zühlen	Ostprignitz-Ruppin	12068	53.0833	12.8167
+16833	Fehrbellin	Fehrbellin	Ostprignitz-Ruppin	12068	52.8135	12.7644
+16833	Fehrbellin Betzin	Fehrbellin Betzin	Ostprignitz-Ruppin	12068	52.7667	12.7667
+16833	Fehrbellin Brunne	Fehrbellin Brunne	Ostprignitz-Ruppin	12068	52.7667	12.7333
+16833	Fehrbellin Dechtow	Fehrbellin Dechtow	Ostprignitz-Ruppin	12068	52.75	12.8167
+16833	Fehrbellin Hakenberg	Fehrbellin Hakenberg	Ostprignitz-Ruppin	12068	52.7833	12.8333
+16833	Fehrbellin Karwesee	Fehrbellin Karwesee	Ostprignitz-Ruppin	12068	52.75	12.7833
+16833	Fehrbellin Königshorst	Fehrbellin Königshorst	Ostprignitz-Ruppin	12068	52.7167	12.8
+16833	Fehrbellin Lentzke	Fehrbellin Lentzke	Ostprignitz-Ruppin	12068	52.8	12.7
+16833	Fehrbellin Linum	Fehrbellin Linum	Ostprignitz-Ruppin	12068	52.7815	12.7813
+16833	Fehrbellin Protzen	Fehrbellin Protzen	Ostprignitz-Ruppin	12068	52.85	12.7333
+16833	Fehrbellin Tarmow	Fehrbellin Tarmow	Ostprignitz-Ruppin	12068	52.8	12.8
+16833	Fehrbellin Walchow	Fehrbellin Walchow	Ostprignitz-Ruppin	12068	52.85	12.7667
+16835	Herzberg	Herzberg	Ostprignitz-Ruppin	12068	52.9027	12.9698
+16835	Lindow (Mark)	Lindow (Mark)	Ostprignitz-Ruppin	12068	52.9748	12.9869
+16835	Lindow (Mark) Hindenberg	Lindow (Mark) Hindenberg	Ostprignitz-Ruppin	12068	53.0333	13
+16835	Lindow (Mark) Schönberg (Mark)	Lindow (Mark) Schönberg (Mark)	Ostprignitz-Ruppin	12068	52.9333	12.9667
+16835	Rheinsberg Dierberg	Rheinsberg Dierberg	Ostprignitz-Ruppin	12068	53.0333	12.9667
+16835	Rüthnick	Rüthnick	Ostprignitz-Ruppin	12068	52.8812	12.9965
+16835	Seebeck-Strubensee	Seebeck-Strubensee	Ostprignitz-Ruppin	12068	52.9395	13.0207
+16835	Vielitz	Vielitz	Ostprignitz-Ruppin	12068	52.9338	13.0161
+16837	Rheinsberg Dorf Zechlin	Rheinsberg Dorf Zechlin	Ostprignitz-Ruppin	12068	53.1333	12.7667
+16837	Rheinsberg Flecken Zechlin	Rheinsberg Flecken Zechlin	Ostprignitz-Ruppin	12068	53.15	12.7667
+16837	Rheinsberg Kagar	Rheinsberg Kagar	Ostprignitz-Ruppin	12068	53.1333	12.8167
+16837	Rheinsberg Luhme	Rheinsberg Luhme	Ostprignitz-Ruppin	12068	53.1833	12.8333
+16837	Rheinsberg Wallitz	Rheinsberg Wallitz	Ostprignitz-Ruppin	12068	53.1167	12.7667
+16837	Wittstock/Dosse Zempow	Wittstock/Dosse Zempow	Ostprignitz-Ruppin	12068	53.2167	12.7333
+16845	Breddin	Breddin	Ostprignitz-Ruppin	12068	52.8856	12.2237
+16845	Dreetz	Dreetz	Ostprignitz-Ruppin	12068	52.803	12.4596
+16845	Fehrbellin Manker	Fehrbellin Manker	Ostprignitz-Ruppin	12068	52.85	12.6667
+16845	Großderschau	Großderschau	Havelland	12063	52.7906	12.3682
+16845	Kyritz Holzhausen	Kyritz Holzhausen	Ostprignitz-Ruppin	12068	52.9167	12.35
+16845	Märkisch Linden	Märkisch Linden	Ostprignitz-Ruppin	12068	52.9292	12.7083
+16845	Neustadt (Dosse)	Neustadt (Dosse)	Ostprignitz-Ruppin	12068	52.8528	12.4492
+16845	Sieversdorf-Hohenofen	Sieversdorf-Hohenofen	Ostprignitz-Ruppin	12068	52.825	12.4083
+16845	Stüdenitz-Schönermark	Stüdenitz-Schönermark	Ostprignitz-Ruppin	12068	52.8917	12.3
+16845	Temnitztal	Temnitztal	Ostprignitz-Ruppin	12068	52.8567	12.6367
+16845	Temnitztal Garz	Temnitztal Garz	Ostprignitz-Ruppin	12068	52.85	12.6333
+16845	Temnitztal Wildberg	Temnitztal Wildberg	Ostprignitz-Ruppin	12068	52.8775	12.6278
+16845	Zernitz-Lohm	Zernitz-Lohm	Ostprignitz-Ruppin	12068	52.875	12.3417
+16866	Barenthin	Barenthin	Prignitz	12070	52.9236	12.234
+16866	Bork-Lellichow	Bork-Lellichow	Ostprignitz-Ruppin	12068	53.0333	12.45
+16866	Dannenwalde	Dannenwalde	Prignitz	12070	53.0266	12.2404
+16866	Demerthin	Demerthin	Prignitz	12070	52.9743	12.2932
+16866	Döllen	Döllen	Prignitz	12070	52.9906	12.1854
+16866	Granzow	Granzow	Prignitz	12070	52.9587	12.2504
+16866	Groß Welle	Groß Welle	Prignitz	12070	53.012	12.0841
+16866	Gumtow	Gumtow	Prignitz	12070	52.9833	12.25
+16866	Görike	Görike	Prignitz	12070	52.9436	12.2013
+16866	Kolrep	Kolrep	Prignitz	12070	53.0309	12.2863
+16866	Kunow	Kunow	Prignitz	12070	52.995	12.133
+16866	Kyritz	Kyritz	Ostprignitz-Ruppin	12068	52.9808	12.3274
+16866	Kyritz Drewen	Kyritz Drewen	Ostprignitz-Ruppin	12068	52.9833	12.4
+16866	Kyritz Kötzlin	Kyritz Kötzlin	Ostprignitz-Ruppin	12068	52.9	12.2333
+16866	Rehfeld-Berlitt	Rehfeld-Berlitt	Ostprignitz-Ruppin	12068	52.95	12.2917
+16866	Schrepkow	Schrepkow	Prignitz	12070	52.9778	12.1107
+16866	Schönhagen	Schönhagen	Prignitz	12070	52.9623	12.1825
+16866	Teetz-Ganz	Teetz-Ganz	Ostprignitz-Ruppin	12068	53.025	12.5083
+16866	Vehlin	Vehlin	Prignitz	12070	52.9569	12.139
+16866	Vehlow	Vehlow	Prignitz	12070	53.0123	12.3192
+16866	Wutike	Wutike	Prignitz	12070	53.0185	12.3748
+16868	Wusterhausen (Dosse)	Wusterhausen (Dosse)	Ostprignitz-Ruppin	12068	52.8833	12.4667
+16909	Heiligengrabe	Heiligengrabe	Ostprignitz-Ruppin	12068	53.1446	12.3625
+16909	Heiligengrabe Blandikow	Heiligengrabe Blandikow	Ostprignitz-Ruppin	12068	53.1167	12.3833
+16909	Heiligengrabe Blesendorf	Heiligengrabe Blesendorf	Ostprignitz-Ruppin	12068	53.2	12.3333
+16909	Heiligengrabe Grabow bei Blumenthal	Heiligengrabe Grabow bei Blumenthal	Ostprignitz-Ruppin	12068	53.0833	12.4
+16909	Heiligengrabe Jabel	Heiligengrabe Jabel	Ostprignitz-Ruppin	12068	53.1667	12.4333
+16909	Heiligengrabe Liebenthal	Heiligengrabe Liebenthal	Ostprignitz-Ruppin	12068	53.15	12.4
+16909	Heiligengrabe Maulbeerwalde	Heiligengrabe Maulbeerwalde	Ostprignitz-Ruppin	12068	53.1833	12.35
+16909	Heiligengrabe Papenbruch	Heiligengrabe Papenbruch	Ostprignitz-Ruppin	12068	53.1333	12.4333
+16909	Heiligengrabe Wernikow	Heiligengrabe Wernikow	Ostprignitz-Ruppin	12068	53.2167	12.4333
+16909	Heiligengrabe Zaatzke	Heiligengrabe Zaatzke	Ostprignitz-Ruppin	12068	53.1833	12.4
+16909	Wittstock/Dosse	Wittstock/Dosse	Ostprignitz-Ruppin	12068	53.1549	12.487
+16909	Wittstock/Dosse Berlinchen	Wittstock/Dosse Berlinchen	Ostprignitz-Ruppin	12068	53.2167	12.5833
+16909	Wittstock/Dosse Christdorf	Wittstock/Dosse Christdorf	Ostprignitz-Ruppin	12068	53.0833	12.4667
+16909	Wittstock/Dosse Dossow	Wittstock/Dosse Dossow	Ostprignitz-Ruppin	12068	53.1167	12.5333
+16909	Wittstock/Dosse Dranse	Wittstock/Dosse Dranse	Ostprignitz-Ruppin	12068	53.2	12.6167
+16909	Wittstock/Dosse Fretzdorf	Wittstock/Dosse Fretzdorf	Ostprignitz-Ruppin	12068	53.0667	12.55
+16909	Wittstock/Dosse Gadow	Wittstock/Dosse Gadow	Ostprignitz-Ruppin	12068	53.1167	12.6167
+16909	Wittstock/Dosse Goldbeck	Wittstock/Dosse Goldbeck	Ostprignitz-Ruppin	12068	53.1333	12.5167
+16909	Wittstock/Dosse Groß Haßlow	Wittstock/Dosse Groß Haßlow	Ostprignitz-Ruppin	12068	53.1833	12.55
+16909	Wittstock/Dosse Herzsprung	Wittstock/Dosse Herzsprung	Ostprignitz-Ruppin	12068	53.0667	12.4667
+16909	Wittstock/Dosse Königsberg	Wittstock/Dosse Königsberg	Ostprignitz-Ruppin	12068	53.0667	12.4333
+16909	Wittstock/Dosse Niemerlang	Wittstock/Dosse Niemerlang	Ostprignitz-Ruppin	12068	53.25	12.35
+16909	Wittstock/Dosse Rossow	Wittstock/Dosse Rossow	Ostprignitz-Ruppin	12068	53.05	12.5667
+16909	Wittstock/Dosse Schweinrich	Wittstock/Dosse Schweinrich	Ostprignitz-Ruppin	12068	53.1833	12.6333
+16909	Wittstock/Dosse Sewekow	Wittstock/Dosse Sewekow	Ostprignitz-Ruppin	12068	53.25	12.65
+16909	Wittstock/Dosse Wulfersdorf	Wittstock/Dosse Wulfersdorf	Ostprignitz-Ruppin	12068	53.25	12.4333
+16909	Wittstock/Dosse Zootzen	Wittstock/Dosse Zootzen	Ostprignitz-Ruppin	12068	53.1333	12.5833
+16918	Wittstock/Dosse Freyenstein	Wittstock/Dosse Freyenstein	Ostprignitz-Ruppin	12068	53.2833	12.35
+16921	Alt Krüssow	Alt Krüssow	Prignitz	12070	53.15	12.2667
+16928	Alt Krüssow	Alt Krüssow	Prignitz	12070	53.15	12.2667
+16928	Beveringen	Beveringen	Prignitz	12070	53.1507	12.2208
+16928	Boddin-Langnow	Boddin-Langnow	Prignitz	12070	53.1	12.2778
+16928	Buchholz	Buchholz	Prignitz	12070	53.1175	12.1835
+16928	Falkenhagen	Falkenhagen	Prignitz	12070	53.2065	12.2031
+16928	Gerdshagen	Gerdshagen	Prignitz	12070	53.2446	12.1981
+16928	Groß Pankow	Groß Pankow	Prignitz	12070	53.1195	12.0497
+16928	Groß Woltersdorf	Groß Woltersdorf	Prignitz	12070	53.0824	12.1506
+16928	Heiligengrabe Blumenthal	Heiligengrabe Blumenthal	Prignitz	12070	53.0833	12.3667
+16928	Heiligengrabe Rosenwinkel	Heiligengrabe Rosenwinkel	Prignitz	12070	53.05	12.3667
+16928	Helle	Helle	Prignitz	12070	53.1679	12.0326
+16928	Hoppenrade	Hoppenrade	Prignitz	12070	53.0365	12.0616
+16928	Kehrberg	Kehrberg	Prignitz	12070	53.0474	12.1869
+16928	Kemnitz	Kemnitz	Prignitz	12070	53.1394	12.236
+16928	Klein Woltersdorf	Klein Woltersdorf	Prignitz	12070	53.0754	12.1849
+16928	Kuhbier	Kuhbier	Prignitz	12070	53.1484	12.0942
+16928	Kuhsdorf	Kuhsdorf	Prignitz	12070	53.1185	12.1072
+16928	Lindenberg	Lindenberg	Prignitz	12070	53.0377	12.1291
+16928	Mesendorf	Mesendorf	Prignitz	12070	53.0953	12.1309
+16928	Pritzwalk	Pritzwalk	Prignitz	12070	53.1494	12.1741
+16928	Sadenbeck	Sadenbeck	Prignitz	12070	53.1866	12.2652
+16928	Schönebeck	Schönebeck	Prignitz	12070	53.0595	12.2331
+16928	Steffenshagen	Steffenshagen	Prignitz	12070	53.1985	12.1175
+16928	Tüchen	Tüchen	Prignitz	12070	53.0621	12.0933
+16928	Vettin	Vettin	Prignitz	12070	53.0332	12.1706
+16928	Wilmersdorf	Wilmersdorf	Prignitz	12070	53.1622	12.3074
+16945	Halenbeck-Rohlsdorf	Halenbeck-Rohlsdorf	Prignitz	12070	53.2333	12.28
+16945	Kümmernitztal	Kümmernitztal	Prignitz	12070	53.2417	12.1583
+16945	Marienfließ	Marienfließ	Prignitz	12070	53.32	12.1233
+16945	Meyenburg	Meyenburg	Prignitz	12070	53.3133	12.2425
+16949	Putlitz	Putlitz	Prignitz	12070	53.249	12.0418
+16949	Triglitz	Triglitz	Prignitz	12070	53.2167	12.1
+17268	Beutel	Beutel	Uckermark	12073	53.1138	13.3889
+17268	Boitzenburger Land	Boitzenburger Land	Uckermark	12073	53.255	13.5867
+17268	Densow	Densow	Uckermark	12073	53.1453	13.3779
+17268	Flieth-Stegelitz	Flieth-Stegelitz	Uckermark	12073	53.1417	13.8333
+17268	Gandenitz	Gandenitz	Uckermark	12073	53.1735	13.4409
+17268	Gerswalde	Gerswalde	Uckermark	12073	53.1699	13.7485
+17268	Gollin	Gollin	Uckermark	12073	53.049	13.6032
+17268	Groß Dölln	Groß Dölln	Uckermark	12073	52.9928	13.5255
+17268	Grunewald	Grunewald	Uckermark	12073	53.0235	13.4806
+17268	Hammelspring	Hammelspring	Uckermark	12073	53.0714	13.4319
+17268	Herzfelde	Herzfelde	Uckermark	12073	53.1975	13.6031
+17268	Klosterwalde	Klosterwalde	Uckermark	12073	53.1711	13.5617
+17268	Milmersdorf	Milmersdorf	Uckermark	12073	53.1119	13.6415
+17268	Mittenwalde	Mittenwalde	Uckermark	12073	53.1833	13.6667
+17268	Petznick	Petznick	Uckermark	12073	53.1621	13.6253
+17268	Röddelin	Röddelin	Uckermark	12073	53.1017	13.4442
+17268	Storkow	Storkow	Uckermark	12073	53.047	13.4424
+17268	Temmen-Ringenwalde	Temmen-Ringenwalde	Uckermark	12073	53.08	13.7417
+17268	Templin	Templin	Uckermark	12073	53.1262	13.5455
+17268	Vietmannsdorf	Vietmannsdorf	Uckermark	12073	53.0502	13.5295
+17279	Lychen	Lychen	Uckermark	12073	53.2124	13.3148
+17291	Carmzow-Wallmow	Carmzow-Wallmow	Uckermark	12073	53.3667	14.068
+17291	Gramzow	Gramzow	Uckermark	12073	53.2125	14.0075
+17291	Grünow	Grünow	Uckermark	12073	53.3167	13.95
+17291	Göritz	Göritz	Uckermark	12073	53.4063	13.9156
+17291	Nordwestuckermark	Nordwestuckermark	Uckermark	12073	53.2697	13.6046
+17291	Oberuckersee	Oberuckersee	Uckermark	12073	53.2125	13.8875
+17291	Prenzlau	Prenzlau	Uckermark	12073	53.3162	13.8626
+17291	Randowtal	Randowtal	Uckermark	12073	53.3056	14.0556
+17291	Schenkenberg	Schenkenberg	Uckermark	12073	53.3667	13.95
+17291	Schönfeld	Schönfeld	Uckermark	12073	53.4136	13.9857
+17291	Uckerfelde	Uckerfelde	Uckermark	12073	53.2583	13.9667
+17326	Brüssow	Brüssow	Uckermark	12073	53.3997	14.1253
+17337	Uckerland	Uckerland	Uckermark	12073	53.4569	13.7806
+19309	Besandten	Besandten	Prignitz	12070	53.0895	11.2931
+19309	Eldenburg	Eldenburg	Prignitz	12070	53.1142	11.4387
+19309	Lanz	Lanz	Prignitz	12070	53.0744	11.5991
+19309	Lenzen (Elbe)	Lenzen (Elbe)	Prignitz	12070	53.0833	11.4833
+19309	Mellen	Mellen	Prignitz	12070	53.1532	11.589
+19309	Wootz	Wootz	Prignitz	12070	53.0663	11.3535
+19322	Breese	Breese	Prignitz	12070	53	11.8
+19322	Cumlosen	Cumlosen	Prignitz	12070	53.0333	11.6667
+19322	Groß Breese	Groß Breese	Prignitz	12070	53.0051	11.8232
+19322	Rühstädt	Rühstädt	Prignitz	12070	52.9167	11.8667
+19322	Weisen	Weisen	Prignitz	12070	53.0252	11.7871
+19322	Wittenberge	Wittenberge	Prignitz	12070	53.0054	11.7503
+19336	Bad Wilsnack	Bad Wilsnack	Prignitz	12070	52.9561	11.949
+19336	Kletzke	Kletzke	Prignitz	12070	52.9962	12.0554
+19336	Legde/Quitzöbel	Legde/Quitzöbel	Prignitz	12070	52.9111	11.9778
+19336	Viesecke	Viesecke	Prignitz	12070	53.0134	12.0278
+19339	Bendelin	Bendelin	Prignitz	12070	52.91	12.1689
+19339	Glöwen	Glöwen	Prignitz	12070	52.9142	12.0855
+19339	Netzow	Netzow	Prignitz	12070	52.9216	12.1385
+19348	Baek	Baek	Prignitz	12070	53.1633	11.9164
+19348	Berge	Berge	Prignitz	12070	53.2333	11.8667
+19348	Gülitz-Reetz	Gülitz-Reetz	Prignitz	12070	53.1889	11.9278
+19348	Klein Gottschow	Klein Gottschow	Prignitz	12070	53.097	12.0039
+19348	Kleinow	Kleinow	Prignitz	12070	53.0525	11.958
+19348	Krampfer	Krampfer	Prignitz	12070	53.0597	12.0191
+19348	Nebelin	Nebelin	Prignitz	12070	53.1089	11.7226
+19348	Perleberg	Perleberg	Prignitz	12070	53.0758	11.8574
+19348	Pirow	Pirow	Prignitz	12070	53.2167	11.9
+19348	Retzin	Retzin	Prignitz	12070	53.1141	11.9948
+19348	Wolfshagen	Wolfshagen	Prignitz	12070	53.1482	12.0114
+19357	Boberow	Boberow	Prignitz	12070	53.146	11.6146
+19357	Garlin	Garlin	Prignitz	12070	53.1843	11.6788
+19357	Karstädt	Karstädt	Prignitz	12070	53.1622	11.7424
+19357	Mankmuß	Mankmuß	Prignitz	12070	53.1315	11.6664
+19357	Pröttlin	Pröttlin	Prignitz	12070	53.197	11.5785
+60647	Berlin	Servicecenter Fahrgastrechte	Berlin	11000	52.5159	13.328
+96076	Berlin	GEMA Geschäftsstelle Berlin	Berlin	11000	52.5044	13.346

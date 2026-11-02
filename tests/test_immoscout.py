@@ -163,6 +163,10 @@ class _DbTest(unittest.TestCase):
             mock.patch.object(immoscout_store, "DBSession", session),
             mock.patch.object(housing_search_store, "DBSession", session),
             mock.patch("user_jobs.housing_tier.DBSession", session),
+            # Берлін і Бранденбург — лише там, де тест про них.
+            mock.patch.object(immoscout_monitor, "REGIONS", ()),
+            # «Тиха ніч» платних (23–8 за Берліном): інакше вночі тести не бачили відправок.
+            mock.patch.object(housing_tier, "is_quiet_hours", return_value=False),
         ):
             patch.start()
             self.addCleanup(patch.stop)
@@ -338,6 +342,100 @@ class ImmoscoutMonitorTests(_DbTest):
             immoscout_monitor.check_job(SimpleNamespace(bot=bot))
 
         self.assertEqual(bot.messages, [])
+
+
+class ImmoscoutRegionTests(_DbTest):
+    """Етап 1 «Берлін і Бранденбург» (02.11.2026)."""
+
+    BERLIN = {"kind": "city", "name": "Berlin", "code": "11000", "radius_km": 0}
+
+    def _berlin(self, key, **extra):
+        return self._listing(key, address="10247 Berlin, Friedrichshain", district=None,
+                             plz="10247", city="Berlin", region="berlin", **extra)
+
+    def test_the_parser_keeps_postcode_and_city(self):
+        payload = {"resultListItems": [{"type": "EXPOSE_RESULT", "item": {
+            "id": "1", "title": "Wohnung", "realEstateType": "apartmentrent", "attributes": [],
+            "address": {"line": "10247 Berlin, Friedrichshain (unvollständige Adresse)", "postcode": "10247"},
+        }}]}
+        flat = immoscout_parser.parse_listings(payload)[0]
+        self.assertEqual((flat["plz"], flat["city"]), ("10247", "Berlin"))
+
+    def test_only_new_pages_are_read_between_full_sweeps(self):
+        def page(keys, pages=5):
+            return {"numberOfPages": pages, "resultListItems": [
+                {"type": "EXPOSE_RESULT", "item": {"id": key, "realEstateType": "apartmentrent", "attributes": [],
+                                                    "address": {"line": "10247 Berlin", "postcode": "10247"}}}
+                for key in keys
+            ]}
+        pages = {1: page(["n1", "n2"]), 2: page(["n3", "old"]), 3: page(["old2"]), 4: page(["x"])}
+        with mock.patch.object(immoscout_monitor, "_list_page", side_effect=lambda region, number: pages[number]),              mock.patch.object(immoscout_monitor, "REGION_PAGE_PAUSE", 0):
+            listings = immoscout_monitor._fetch_region("berlin", known={"old", "old2"}, full=False)
+        # Сторінка 3 — без жодного нового: далі не читаємо.
+        self.assertEqual([item["listing_key"] for item in listings], ["n1", "n2", "n3", "old", "old2"])
+        self.assertTrue(all(item["region"] == "berlin" for item in listings))
+
+    def test_a_partial_region_scan_takes_nothing_down(self):
+        immoscout_store.upsert_listings([self._listing("p")])  # Потсдам
+        immoscout_store.upsert_listings([self._berlin("b1"), self._berlin("b2")], region="berlin", deactivate_missing=True)
+        immoscout_store.upsert_listings([self._berlin("b3")], region="berlin", deactivate_missing=False)
+        self.assertEqual({item["listing_key"] for item in immoscout_store.list_active_listings()}, {"p", "b1", "b2", "b3"})
+        # Повний обхід Берліна знімає зниклі берлінські, але не потсдамські.
+        immoscout_store.upsert_listings([self._berlin("b3")], region="berlin", deactivate_missing=True)
+        self.assertEqual({item["listing_key"] for item in immoscout_store.list_active_listings()}, {"p", "b3"})
+        # А потсдамський — навпаки.
+        immoscout_store.upsert_listings([self._listing("p2")])
+        self.assertEqual({item["listing_key"] for item in immoscout_store.list_active_listings()}, {"p2", "b3"})
+
+    def test_old_filters_stay_in_potsdam_and_berlin_ones_get_berlin(self):
+        old = immoscout_store.create_filter(user_id=7, title="t")
+        berlin = immoscout_store.create_filter(user_id=8, title="t", area=self.BERLIN)
+        filters = {item["filter_id"]: item for item in immoscout_store.list_filters()}
+        flat, potsdam_flat = self._berlin("b"), self._listing("p")
+        self.assertFalse(immoscout_matching.matches_filter(flat, filters[old]))
+        self.assertTrue(immoscout_matching.matches_filter(flat, filters[berlin]))
+        self.assertTrue(immoscout_matching.matches_filter(potsdam_flat, filters[old]))
+        self.assertFalse(immoscout_matching.matches_filter(potsdam_flat, filters[berlin]))
+
+    def test_an_old_edit_path_keeps_the_place(self):
+        filter_id = immoscout_store.create_filter(user_id=8, title="t", area=self.BERLIN)
+        immoscout_store.update_filter(filter_id, 8, "t", min_rooms=2)
+        self.assertEqual(immoscout_store.list_filters()[0]["area"]["name"], "Berlin")
+        immoscout_store.update_filter(filter_id, 8, "t", area=None)
+        self.assertIsNone(immoscout_store.list_filters()[0]["area"])
+
+    def test_listing_pages_only_for_fresh_regional_flats_someone_wants(self):
+        immoscout_store.create_filter(user_id=7, title="t")  # лише Потсдам
+        wanted, unwanted = self._berlin("w", detail=False), self._berlin("u", detail=False, rooms=1.0)
+        immoscout_store.upsert_listings([wanted, unwanted], region="berlin", deactivate_missing=False)
+        filters = immoscout_store.list_filters(active_only=True)
+        self.assertEqual(immoscout_monitor._detail_candidates([], [wanted, unwanted], filters), [])
+        immoscout_store.create_filter(user_id=8, title="t", min_rooms=2, area=self.BERLIN)
+        filters = immoscout_store.list_filters(active_only=True)
+        self.assertEqual(immoscout_monitor._detail_candidates([], [wanted, unwanted], filters), [wanted])
+
+    def test_a_berlin_flat_reaches_the_berlin_filter_only(self):
+        immoscout_store.create_filter(user_id=7, title="t")
+        immoscout_store.create_filter(user_id=8, title="t", area=self.BERLIN)
+        bot = FakeBot()
+        state = {"pages": [self._berlin("old")]}
+
+        def regions(_bot, skip=frozenset()):
+            immoscout_store.upsert_listings(state["pages"], region="berlin", deactivate_missing=False)
+            return state["pages"]
+
+        def details(listings):
+            for item in listings:
+                item["detail_fetched"] = True
+            return len(listings)
+
+        with mock.patch.object(immoscout_monitor, "REGIONS", ("berlin",)),              mock.patch.object(immoscout_monitor, "_fetch_listings", return_value=[]),              mock.patch.object(immoscout_monitor, "_scan_regions", side_effect=regions),              mock.patch.object(immoscout_monitor, "_add_details", side_effect=details),              mock.patch.object(immoscout_monitor, "_backfill_existing_searches"),              mock.patch("user_jobs.housing_tier.premium_user_ids", return_value={7, 8}):
+            immoscout_monitor.check_job(SimpleNamespace(bot=bot))
+            self.assertEqual([chat for chat, _ in bot.messages], [8])
+            # Наступного обходу — нічого повторно.
+            state["pages"] = [self._berlin("old")]
+            immoscout_monitor.check_job(SimpleNamespace(bot=bot))
+        self.assertEqual([chat for chat, _ in bot.messages], [8])
 
 
 if __name__ == "__main__":

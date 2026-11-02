@@ -280,5 +280,112 @@ class HousingCardTest(unittest.TestCase):
         self.assertEqual(self._search()['criteria']['min_rooms'], 2)
 
 
+class HousingCardPlaceTest(HousingCardTest):
+    """Місце пошуку (етап 1 «Берлін і Бранденбург», 02.11.2026)."""
+
+    def setUp(self):
+        super().setUp()
+        patch = mock.patch.object(housing_card, 'PLACE_FOR_ALL', True)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def _start(self):
+        self.context.user_data['hcard'] = {'new_flow': True, 'input': 'place'}
+
+    def _scout(self, search):
+        from user_jobs import immoscout_store
+        [filter_id] = [fid for source, fid in search['members'] if source == 'immoscout']
+        return next(f for f in immoscout_store.list_filters() if f['filter_id'] == filter_id)
+
+    def test_place_is_for_the_admin_until_switched_on(self):
+        with mock.patch.object(housing_card, 'PLACE_FOR_ALL', False):
+            self._new('no')
+            self.assertNotIn('hcard:pl', self._callbacks(self._tap('hcard:open')))
+            self.assertIn('hcard:pl', self._callbacks(self._tap('hcard:open', user_id=ADMIN)))
+
+    def test_a_new_berlin_search_has_only_immoscout_and_no_coops(self):
+        self._start()
+        query = self._tap('hcard:pc:berlin')
+        self.assertIn('hcard:pr:10', self._callbacks(query))
+        query = self._tap('hcard:pr:10')
+        search = self._search()
+        self.assertEqual(hm._search_sources(search), ['immoscout'])
+        self.assertEqual(search['coops'], [])
+        self.assertTrue(hm._search_paused(search))
+        self.assertEqual(search['criteria']['area']['name'], 'Berlin')
+        self.assertEqual(self._scout(search)['area']['radius_km'], 10)
+        text = query.edit_message_text.call_args.args[0]
+        self.assertIn('Berlin + 10 км', text)
+        self.assertNotIn('Райони', text)
+        self.assertNotIn('hcard:dist', self._callbacks(query))
+
+    def test_potsdam_asks_jobcenter_and_keeps_every_portal(self):
+        self._start()
+        self._tap('hcard:pc:potsdam')
+        query = self._tap('hcard:pr:0')
+        self.assertIn('hcard:new:3', self._callbacks(query))  # питання Jobcenter
+        self._new('3')
+        search = self._search()
+        self.assertEqual(sorted(hm._search_sources(search)), sorted(hm.AVAILABLE_SOURCE_KEYS))
+        self.assertIsNone(search['criteria'].get('area'))
+        self.assertEqual(search['coops'], hm.COOP_KEYS)
+
+    def test_a_typed_place_offers_choices_and_says_when_it_knows_none(self):
+        self._start()
+        handled, message = self._type('Werder')
+        self.assertTrue(handled)
+        markup = message.replies[-1][1]['reply_markup']
+        labels = [b.text for row in markup.inline_keyboard for b in row]
+        self.assertIn('📍 Werder (Havel) (Potsdam-Mittelmark)', labels)
+        self.assertTrue(any('Märkisch-Oderland' in label for label in labels))
+        self._start()
+        handled, message = self._type('Hamburg')
+        self.assertTrue(handled)
+        self.assertIn('Не знайшов', message.replies[-1][0])
+        # Кнопка нижнього меню — не місто: її обробляють далі.
+        self._start()
+        handled, _message = self._type('🏠 Житло')
+        self.assertFalse(handled)
+
+    def test_moving_a_search_to_berlin_and_back_keeps_what_was_switched_off(self):
+        self._new('no')
+        self._tap('hcard:src')
+        self._tap('hcard:st:schoba')
+        self._tap('hcard:sok')
+        self._tap('hcard:v:min_rooms:2')
+        self._tap('hcard:pl')
+        self._tap('hcard:pc:berlin')
+        self._tap('hcard:pr:0')
+        search = self._search()
+        self.assertEqual(hm._search_sources(search), ['immoscout'])
+        self.assertEqual(search['coops'], [])
+        self.assertEqual(search['criteria']['districts'], [])
+        self.assertEqual(self._scout(search)['area']['name'], 'Berlin')
+        self.assertEqual(self._scout(search)['min_rooms'], 2)
+        self._tap('hcard:pl')
+        self._tap('hcard:pc:potsdam')
+        self._tap('hcard:pr:0')
+        search = self._search()
+        self.assertEqual(sorted(hm._search_sources(search)),
+                         sorted(s for s in hm.AVAILABLE_SOURCE_KEYS if s != 'schoba'))
+        self.assertEqual(search['coops'], hm.COOP_KEYS)
+        self.assertIsNone(search['criteria']['area'])
+        self.assertIsNone(self._scout(search)['area'])
+
+    def test_jobcenter_limits_only_for_potsdam(self):
+        self._new('no')
+        housing_journey_store.set_household(USER, 2)
+        self.assertTrue(any('Jobcenter' in b.text for row in housing_card._field_keyboard(
+            'max_price_eur', USER, 'uk', None).inline_keyboard for b in row))
+        berlin = housing_card.housing_area.make(housing_card.housing_area.find('Berlin')[0], 0)
+        self.assertFalse(any('Jobcenter' in b.text for row in housing_card._field_keyboard(
+            'max_price_eur', USER, 'uk', berlin).inline_keyboard for b in row))
+
+
+# Успадковані тести картки вже йдуть у HousingCardTest — тут лише свої.
+for _name in [name for name in vars(HousingCardTest) if name.startswith('test_')]:
+    setattr(HousingCardPlaceTest, _name, None)
+
+
 if __name__ == '__main__':
     unittest.main()

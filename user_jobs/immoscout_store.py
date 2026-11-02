@@ -6,6 +6,7 @@ The listing page is read once per listing (`detail_fetched_at`) for the full
 rent, the exact district and the gallery.
 """
 
+import json
 from datetime import datetime
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
@@ -19,6 +20,8 @@ from database import (
 from user_jobs import immoscout_matching, immoscout_parser
 
 STATUS_KEY = "global"
+# update_filter без area лишає місце як є: старі шляхи (майстер адміна) його не знають.
+KEEP = object()
 
 
 def utc_now() -> datetime:
@@ -43,8 +46,21 @@ def filter_to_dict(row: ImmoscoutFilter) -> Dict:
         "max_price_eur": row.max_price_eur,
         "min_price_warm_eur": row.min_price_warm_eur,
         "max_price_warm_eur": row.max_price_warm_eur,
+        "area": _load_area(row.area),
         "active": row.active,
     }
+
+
+def _load_area(raw) -> Optional[Dict]:
+    try:
+        area = json.loads(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+    return area if isinstance(area, dict) else None
+
+
+def _dump_area(area: Optional[Dict]) -> Optional[str]:
+    return json.dumps(area, ensure_ascii=False, sort_keys=True) if area else None
 
 
 def listing_to_dict(row: ImmoscoutListing) -> Dict:
@@ -63,6 +79,9 @@ def listing_to_dict(row: ImmoscoutListing) -> Dict:
         "plus_until": row.plus_until or "",
         "detail_fetched": row.detail_fetched_at is not None,
         "first_seen_at": row.first_seen_at,
+        "plz": row.plz or "",
+        "city": row.city or "",
+        "region": row.region or "potsdam",
     }
 
 
@@ -78,6 +97,7 @@ def create_filter(
     max_price_eur: Optional[float] = None,
     min_price_warm_eur: Optional[float] = None,
     max_price_warm_eur: Optional[float] = None,
+    area: Optional[Dict] = None,
 ) -> int:
     session = DBSession()
     try:
@@ -93,6 +113,7 @@ def create_filter(
             max_price_eur=max_price_eur,
             min_price_warm_eur=min_price_warm_eur,
             max_price_warm_eur=max_price_warm_eur,
+            area=_dump_area(area),
             active=True,
             created_at=utc_now(),
         )
@@ -130,6 +151,7 @@ def update_filter(
     max_price_eur: Optional[float] = None,
     min_price_warm_eur: Optional[float] = None,
     max_price_warm_eur: Optional[float] = None,
+    area=KEEP,
 ) -> bool:
     session = DBSession()
     try:
@@ -149,6 +171,8 @@ def update_filter(
         row.max_price_eur = max_price_eur
         row.min_price_warm_eur = min_price_warm_eur
         row.max_price_warm_eur = max_price_warm_eur
+        if area is not KEEP:
+            row.area = _dump_area(area)
         session.flush()
         filter_data = filter_to_dict(row)
         now = utc_now()
@@ -233,7 +257,11 @@ def keys_with_details() -> Set[str]:
         session.close()
 
 
-def upsert_listings(listings: Iterable[Dict]) -> int:
+def upsert_listings(listings: Iterable[Dict], region: str = "potsdam", deactivate_missing: bool = True) -> int:
+    """Зберігає видачу одного регіону. Знятими (`is_active=False`) стають лише
+    квартири цього ж регіону, яких немає в повній видачі: пошук «Берлін», що
+    дочитав лише нові сторінки, не повинен «знімати» решту Берліна, а
+    потсдамський — берлінські квартири."""
     session = DBSession()
     try:
         now = utc_now()
@@ -246,8 +274,14 @@ def upsert_listings(listings: Iterable[Dict]) -> int:
             seen.add(key)
             row = session.query(ImmoscoutListing).filter(ImmoscoutListing.listing_key == key).first()
             if row is None:
-                row = ImmoscoutListing(listing_key=key, first_seen_at=now)
+                row = ImmoscoutListing(listing_key=key, first_seen_at=now, region=region)
                 session.add(row)
+            elif not row.region:
+                row.region = "potsdam"
+            if listing.get("plz"):
+                row.plz = listing.get("plz")
+            if listing.get("city"):
+                row.city = listing.get("city")
             row.title = listing.get("title") or "ImmoScout24 Wohnung"
             # Картка оголошення знає адресу й район точніше за видачу — після
             # неї видача їх уже не перезаписує.
@@ -278,16 +312,37 @@ def upsert_listings(listings: Iterable[Dict]) -> int:
             row.last_seen_at = now
             row.is_active = True
             count += 1
-        if seen:
-            session.query(ImmoscoutListing).filter(~ImmoscoutListing.listing_key.in_(seen)).update(
-                {"is_active": False}, synchronize_session=False
-            )
-        else:
-            session.query(ImmoscoutListing).filter(ImmoscoutListing.is_active.is_(True)).update(
-                {"is_active": False}, synchronize_session=False
-            )
+        if deactivate_missing:
+            same_region = ImmoscoutListing.region == region
+            if region == "potsdam":
+                same_region = same_region | ImmoscoutListing.region.is_(None)
+            query = session.query(ImmoscoutListing).filter(same_region, ImmoscoutListing.is_active.is_(True))
+            if seen:
+                query = query.filter(~ImmoscoutListing.listing_key.in_(seen))
+            query.update({"is_active": False}, synchronize_session=False)
         session.commit()
         return count
+    finally:
+        session.close()
+
+
+def known_keys() -> Set[str]:
+    """Усі оголошення, які вже бачили (щоб пошук регіону знав, де зупинитися)."""
+    session = DBSession()
+    try:
+        return {str(row.listing_key) for row in session.query(ImmoscoutListing.listing_key).all()}
+    finally:
+        session.close()
+
+
+def recent_keys_without_details(since: datetime) -> Set[str]:
+    """Нові (з `since`) оголошення без прочитаної картки."""
+    session = DBSession()
+    try:
+        rows = session.query(ImmoscoutListing.listing_key).filter(
+            ImmoscoutListing.detail_fetched_at.is_(None), ImmoscoutListing.first_seen_at >= since,
+        ).all()
+        return {str(row.listing_key) for row in rows}
     finally:
         session.close()
 

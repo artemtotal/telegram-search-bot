@@ -38,6 +38,7 @@ from user_jobs import (
     coop_watchdog,
     coop_watchdog_store,
     housing_access_store,
+    housing_area,
     housing_journey_store,
     housing_search_grouping,
     housing_search_store,
@@ -851,6 +852,10 @@ def _describe_criteria(criteria: Dict[str, object], lang: str = "uk") -> str:
         ", ".join(str(item) for item in districts) if districts
         else i18n.t("housing.describe.all_districts", lang)
     ]
+    place = criteria.get("area")
+    if isinstance(place, dict) and not housing_area.is_default(place):
+        # Не Потсдам (чи Потсдам з радіусом): районів там немає, є місце.
+        parts = ["📍 " + housing_area.label(place, lang)]
     # Дві ціни поруч — холодна й повна. Позначаємо обидві навіть коли задано
     # лише одну: уся ця плутанина й почалась із того, що «800 €» у різних
     # порталах означало різні величини, а в описі фільтра було не видно, яку.

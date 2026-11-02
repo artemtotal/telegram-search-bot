@@ -12,10 +12,19 @@
 Новий фільтр - одне питання (Jobcenter, скільки осіб), далі картка. Він
 створюється на паузі: людина перевіряє умови й тисне «▶️ Почати пошук»,
 інакше фільтр без жодної межі одразу засипав би її всіма квартирами міста.
+
+Місце (02.11.2026, етап 1 «Берлін і Бранденбург», docs/housing-region-plan.md):
+рядок «📍 Де» — місто чи індекс і радіус (`criteria["area"]`, housing_area).
+Новий фільтр спершу питає місце, Jobcenter — лише для Потсдама (ліміти
+потсдамські). Поза Потсдамом працюють лише площадки з REGION_SOURCES; решту
+пошук пам'ятає в `criteria["sources_off"]` (що людина сама вимкнула) і
+повертає, щойно місце знову Потсдам. Поки — лише для адміна, усім —
+HOUSING_PLACE_FOR_ALL=1.
 """
 
 import html
 import logging
+import os
 from typing import Dict, List, Optional, Tuple
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -23,7 +32,7 @@ from telegram.ext import CallbackContext, CallbackQueryHandler
 
 import i18n
 from user_handlers import housing_monitor as hm
-from user_jobs import housing_journey_store, housing_search_store, propotsdam_store
+from user_jobs import housing_area, housing_journey_store, housing_search_store, propotsdam_store
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +63,28 @@ OTHER_END = {"min_rooms": "max_rooms", "max_rooms": "min_rooms", "min_area_m2": 
 PRICE_MIN_OF = {"max_price_eur": "min_price_eur", "max_price_warm_eur": "min_price_warm_eur"}
 MAX_VALUE = {"min_rooms": 20, "max_rooms": 20, "min_area_m2": 1000, "max_area_m2": 1000}
 JOBCENTER_CHOICES = (1, 2, 3, 4, 5, 6)
+# Площадки, що шукають і поза Потсдамом. Решта поки збирає лише Потсдам.
+REGION_SOURCES = {"immoscout"}
+PLACE_FOR_ALL = os.getenv("HOUSING_PLACE_FOR_ALL", "0") == "1"
+
+
+def place_enabled(user_id: int) -> bool:
+    return PLACE_FOR_ALL or int(user_id) == hm.ADMIN_ID
+
+
+def covering_sources(area: Optional[Dict]) -> List[str]:
+    """Площадки, які шукають у цьому місці."""
+    if housing_area.covers_potsdam(area):
+        return list(hm.AVAILABLE_SOURCE_KEYS)
+    return [source for source in hm.AVAILABLE_SOURCE_KEYS if source in REGION_SOURCES]
+
+
+def place_sources(criteria: Dict) -> List[str]:
+    off = set(criteria.get("sources_off") or [])
+    wanted = [source for source in covering_sources(criteria.get("area")) if source not in off]
+    # Людина колись вимкнула ImmoScout24, а тепер шукає в Берліні: без нього
+    # пошук був би порожнім.
+    return wanted or covering_sources(criteria.get("area"))
 
 
 def _t(key: str, lang: str, **kwargs) -> str:
@@ -93,7 +124,7 @@ def _member_kwargs(source: str, criteria: Dict, sources) -> Dict:
             "min_total_rent_eur": warm["min_price_warm_eur"], "max_total_rent_eur": warm["max_price_warm_eur"],
         }
     if source == "immoscout":
-        return {"districts": ",".join(districts), **rooms_area, **kalt, **warm}
+        return {"districts": ",".join(districts), **rooms_area, **kalt, **warm, "area": c.get("area")}
     if source in ("semmelhaack", "regiomakler", "vonovia"):
         return {**rooms_area, **kalt, **warm}
     if source == "karlmarx":
@@ -214,7 +245,8 @@ def _range(criteria: Dict, low_key: str, high_key: str, unit: str, lang: str) ->
     return _t("to", lang, value=_value(high, unit))
 
 
-def card_text(number: int, search: Dict, lang: str, pointer: Optional[str] = None, note: str = "") -> str:
+def card_text(number: int, search: Dict, lang: str, pointer: Optional[str] = None, note: str = "",
+              show_place: bool = False) -> str:
     criteria = search["criteria"]
     status = _t("status_off", lang) if _paused(search) else _t("status_on", lang)
     sources = _sources(search)
@@ -230,7 +262,14 @@ def card_text(number: int, search: Dict, lang: str, pointer: Optional[str] = Non
     )
     if search.get("coops"):
         portals += _t("coops", lang, n=len(search["coops"]))
-    lines = [
+    place = criteria.get("area")
+    if not housing_area.covers_potsdam(place):
+        # Поза Потсдамом — не «1 з 11», а які саме площадки шукають.
+        portals = ", ".join(hm.SOURCE_LABEL.get(source, source) for source in sources)
+    lines = []
+    if show_place or place is not None:
+        lines.append(("place", _t("line.place", lang, value=html.escape(housing_area.label(place, lang)))))
+    lines += [
         ("kalt", _t("line.kalt", lang, value=_range(criteria, "min_price_eur", "max_price_eur", "€", lang))),
         ("warm", _t("line.warm", lang, value=_range(criteria, "min_price_warm_eur", "max_price_warm_eur", "€", lang))),
         ("rooms", _t("line.rooms", lang, value=_range(criteria, "min_rooms", "max_rooms", "", lang))),
@@ -238,6 +277,8 @@ def card_text(number: int, search: Dict, lang: str, pointer: Optional[str] = Non
         ("districts", _t("line.districts", lang, value=html.escape(shown))),
         ("sources", _t("line.sources", lang, value=portals)),
     ]
+    if not housing_area.is_default(place):
+        lines = [line for line in lines if line[0] != "districts"]
     types = hm.normalize_property_types(criteria.get("property_types"))
     if "immowelt" in sources and types and len(types) < len(hm.PROPERTY_TYPE_KEYS):
         lines.append(("ptypes", _t("line.ptypes", lang, value=", ".join(
@@ -251,6 +292,8 @@ def card_text(number: int, search: Dict, lang: str, pointer: Optional[str] = Non
     # списку фільтрів, див. hm._unbounded_note).
     if pointer is None and not hm._has_room_bound(criteria):
         parts += ["", _t("no_rooms", lang)]
+    if pointer is None and not housing_area.is_default(place):
+        parts += ["", _t("place_note_outside" if not housing_area.covers_potsdam(place) else "place_note_radius", lang)]
     if note:
         parts += ["", note]
     return "\n".join(parts)
@@ -272,14 +315,19 @@ def card_keyboard(search: Dict, lang: str, viewer_id: int = 0) -> InlineKeyboard
     paused = _paused(search)
     if paused:
         rows.append([InlineKeyboardButton(_t("btn.start", lang), callback_data=f"{PREFIX}on")])
+    place = criteria.get("area")
+    if place_enabled(viewer_id) or place is not None:
+        rows.append([InlineKeyboardButton(
+            _t("btn.place", lang, value=housing_area.label(place, lang)), callback_data=f"{PREFIX}pl",
+        )])
     rows += [
         [_field_button("max_price_eur", criteria, lang), _field_button("max_price_warm_eur", criteria, lang)],
         [_field_button("min_rooms", criteria, lang), _field_button("max_rooms", criteria, lang)],
         [_field_button("min_area_m2", criteria, lang), _field_button("max_area_m2", criteria, lang)],
-        [
-            InlineKeyboardButton(_t("btn.districts", lang), callback_data=f"{PREFIX}dist"),
-            InlineKeyboardButton(_t("btn.sources", lang), callback_data=f"{PREFIX}src"),
-        ],
+        # Райони — лише в самому Потсдамі.
+        ([InlineKeyboardButton(_t("btn.districts", lang), callback_data=f"{PREFIX}dist")]
+         if housing_area.is_default(place) else [])
+        + [InlineKeyboardButton(_t("btn.sources", lang), callback_data=f"{PREFIX}src")],
     ]
     owner = int(search["user_id"])
     admin_view = int(viewer_id) == hm.ADMIN_ID and owner != hm.ADMIN_ID
@@ -307,7 +355,10 @@ def _show(update: Update, context: CallbackContext, note: str = "", edit: bool =
         ]]), edit)
         return
     st.pop("input", None)
-    hm._edit_or_reply(update, card_text(number, search, lang, note=note), card_keyboard(search, lang, int(user.id)), edit)
+    hm._edit_or_reply(
+        update, card_text(number, search, lang, note=note, show_place=place_enabled(int(user.id))),
+        card_keyboard(search, lang, int(user.id)), edit,
+    )
 
 
 def open_card(update: Update, context: CallbackContext, search_id: int, edit: bool = True) -> None:
@@ -319,6 +370,19 @@ def open_card(update: Update, context: CallbackContext, search_id: int, edit: bo
 # --- новий фільтр ----------------------------------------------------------------
 
 def start_new(update: Update, context: CallbackContext, edit: bool = False) -> None:
+    user = update.effective_user
+    if place_enabled(int(user.id)):
+        # Спершу місце; Jobcenter — після нього і лише для Потсдама.
+        context.user_data["hcard"] = {"new_flow": True}
+        query = getattr(update, "callback_query", None)
+        if query:
+            query.answer()
+        _place_screen(update, context, edit=edit and bool(query))
+        return
+    _jobcenter_screen(update, context, edit)
+
+
+def _jobcenter_screen(update: Update, context: CallbackContext, edit: bool = False) -> None:
     user = update.effective_user
     lang = i18n.get_lang(user.id)
     buttons = [
@@ -340,7 +404,10 @@ def _create_new(update: Update, context: CallbackContext, raw: str) -> None:
     query = update.callback_query
     user = update.effective_user
     lang = i18n.get_lang(user.id)
+    place = (context.user_data.get("hcard") or {}).get("new_area")
     criteria: Dict = {"districts": [], "property_types": []}
+    if place is not None:
+        criteria["area"] = place
     persons = int(raw) if raw.isdigit() else None
     if persons:
         _area, price, warm = hm.jobcenter_limits(persons)
@@ -351,9 +418,8 @@ def _create_new(update: Update, context: CallbackContext, raw: str) -> None:
     except Exception:
         logger.exception("Could not save the Jobcenter household of %s", user.id)
     query.answer()
-    search_id = create_search(
-        int(user.id), criteria, list(hm.AVAILABLE_SOURCE_KEYS), list(hm.COOP_KEYS), active=False,
-    )
+    coops = list(hm.COOP_KEYS) if housing_area.covers_potsdam(place) else []
+    search_id = create_search(int(user.id), criteria, place_sources(criteria), coops, active=False)
     if search_id is None:
         hm._edit_or_reply(update, i18n.t("housing.finalize.nothing_saved", lang), InlineKeyboardMarkup([[
             InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu"),
@@ -365,7 +431,7 @@ def _create_new(update: Update, context: CallbackContext, raw: str) -> None:
 
 # --- поле ----------------------------------------------------------------------------
 
-def _field_keyboard(field: str, owner: int, lang: str) -> InlineKeyboardMarkup:
+def _field_keyboard(field: str, owner: int, lang: str, place: Optional[Dict] = None) -> InlineKeyboardMarkup:
     unit = UNITS.get(field, "")
     buttons = [
         InlineKeyboardButton(_value(value, unit), callback_data=f"{PREFIX}v:{field}:{value}")
@@ -373,7 +439,8 @@ def _field_keyboard(field: str, owner: int, lang: str) -> InlineKeyboardMarkup:
     ]
     rows = _pairs(buttons, 3)
     persons = None
-    if field in PRICE_MIN_OF:
+    # Ліміти Jobcenter у боті — потсдамські.
+    if field in PRICE_MIN_OF and housing_area.is_potsdam(place):
         try:
             persons = housing_journey_store.get_household(owner)
         except Exception:
@@ -403,7 +470,8 @@ def _ask_field(update: Update, context: CallbackContext, field: str) -> None:
     query.answer()
     st["input"] = field
     text = card_text(number, search, lang, pointer=FIELD_LINE[field]) + "\n\n" + _t(f"ask.{field}", lang) + "\n" + _t("ask_hint", lang)
-    hm._edit_or_reply(update, text, _field_keyboard(field, int(search["user_id"]), lang), True)
+    keyboard = _field_keyboard(field, int(search["user_id"]), lang, search["criteria"].get("area"))
+    hm._edit_or_reply(update, text, keyboard, True)
 
 
 def _set_value(update: Update, context: CallbackContext, field: str, value: Optional[float]) -> Optional[str]:
@@ -449,6 +517,8 @@ def handle_text(update: Update, context: CallbackContext) -> bool:
     if not field or not update.message or not update.message.text:
         return False
     text = update.message.text.strip()
+    if field == "place":
+        return _place_text(update, context, text)
     value = None if text == "-" else _parse_number(text)
     if value is None and text != "-":
         st.pop("input", None)
@@ -490,17 +560,20 @@ def _sources_screen(update: Update, context: CallbackContext) -> None:
     lang = i18n.get_lang(update.effective_user.id)
     sources = set(st.get("draft_sources") or [])
     coops = set(st.get("draft_coops") or [])
+    place = st.get("draft_place")
+    covering = set(covering_sources(place))
     rows = _pairs([
         InlineKeyboardButton(("✅ " if spec["key"] in sources else "☐ ") + spec["label"], callback_data=f"{PREFIX}st:{spec['key']}")
-        for spec in hm.AVAILABLE_SOURCES
+        for spec in hm.AVAILABLE_SOURCES if spec["key"] in covering
     ])
-    rows += _pairs([
+    # Кооперативи — потсдамські.
+    rows += [] if not housing_area.covers_potsdam(place) else _pairs([
         InlineKeyboardButton(
             ("✅ " if coop["key"] in coops else "☐ ") + coop["label"], callback_data=f"{PREFIX}ct:{coop['key']}",
         )
         for coop in hm.coop_watchdog.COOPERATIVES
     ])
-    if "immowelt" in sources:
+    if "immowelt" in sources and "immowelt" in covering:
         types = set(st.get("draft_ptypes") or [])
         rows.append([
             InlineKeyboardButton(
@@ -512,13 +585,17 @@ def _sources_screen(update: Update, context: CallbackContext) -> None:
         InlineKeyboardButton(_t("btn.save", lang), callback_data=f"{PREFIX}sok"),
         InlineKeyboardButton(_t("btn.back", lang), callback_data=f"{PREFIX}open"),
     ])
-    hm._edit_or_reply(update, _t("sources_text", lang), InlineKeyboardMarkup(rows), True)
+    text = _t("sources_text", lang)
+    if not housing_area.covers_potsdam(place):
+        text += "\n\n" + _t("place_note_outside", lang)
+    hm._edit_or_reply(update, text, InlineKeyboardMarkup(rows), True)
 
 
 def _load_drafts(context: CallbackContext, search: Dict) -> None:
     st = _state(context)
     st["draft_sources"] = _sources(search)
     st["draft_coops"] = list(search.get("coops") or [])
+    st["draft_place"] = search["criteria"].get("area")
     # Порожній список у фільтрі - «усі райони». На екрані це всі галочки, а
     # не жодної: інакше людина бачила «нічого не вибрано» й думала, що
     # квартир не буде ніде (27.10.2026).
@@ -537,11 +614,15 @@ def _toggle(items: list, key: str) -> list:
 def _save_sources(update: Update, context: CallbackContext, search: Dict) -> Optional[str]:
     st = _state(context)
     lang = i18n.get_lang(update.effective_user.id)
-    wanted = [source for source in hm.AVAILABLE_SOURCE_KEYS if source in set(st.get("draft_sources") or [])]
+    covering = covering_sources(search["criteria"].get("area"))
+    wanted = [source for source in covering if source in set(st.get("draft_sources") or [])]
     if not wanted:
         return i18n.t("housing.toast.pick_a_source", lang)
     owner = int(search["user_id"])
     criteria = dict(search["criteria"])
+    # Що людина вимкнула сама — пам'ятаємо й для інших місць (див. place_sources).
+    off = set(criteria.get("sources_off") or []) - set(covering)
+    criteria["sources_off"] = sorted(off | {source for source in covering if source not in wanted})
     types = [key for key in hm.PROPERTY_TYPE_KEYS if key in set(st.get("draft_ptypes") or [])]
     criteria["property_types"] = [] if len(types) == len(hm.PROPERTY_TYPE_KEYS) else types
     active = not _paused(search)
@@ -564,6 +645,8 @@ def _save_sources(update: Update, context: CallbackContext, search: Dict) -> Opt
             hm._set_one_filter_active(source, filter_id, False, owner)
         housing_search_store.add_member(search["search_id"], source, filter_id)
     coops = [key for key in hm.COOP_KEYS if key in set(st.get("draft_coops") or [])]
+    if not housing_area.covers_potsdam(criteria.get("area")):
+        coops = []
     housing_search_store.update(search["search_id"], coops=coops)
     hm._sync_coop_subscriptions(owner)
     refreshed = housing_search_store.get_any(search["search_id"]) or search
@@ -572,6 +655,194 @@ def _save_sources(update: Update, context: CallbackContext, search: Dict) -> Opt
     if failed:
         return _t("save_failed", lang, sources=", ".join(hm.SOURCE_LABEL.get(s, s) for s in sorted(set(failed))))
     return None
+
+
+# --- місце ---------------------------------------------------------------------------
+
+QUICK_PLACES = {"potsdam": housing_area.POTSDAM, "berlin": housing_area.BERLIN}
+
+
+def _place_screen(update: Update, context: CallbackContext, edit: bool = True, note: str = "") -> None:
+    """Де шукати: дві кнопки або своє місто/індекс у чат."""
+    st = _state(context)
+    lang = i18n.get_lang(update.effective_user.id)
+    st["input"] = "place"
+    new_flow = bool(st.get("new_flow"))
+    rows = [[
+        InlineKeyboardButton("📍 Potsdam", callback_data=f"{PREFIX}pc:potsdam"),
+        InlineKeyboardButton("📍 Berlin", callback_data=f"{PREFIX}pc:berlin"),
+    ], [
+        InlineKeyboardButton(hm.BTN_CANCEL, callback_data="housing:menu") if new_flow
+        else InlineKeyboardButton(_t("btn.back", lang), callback_data=f"{PREFIX}open"),
+    ]]
+    text = _t("new_place_question" if new_flow else "place_text", lang)
+    if note:
+        text += "\n\n" + note
+    hm._edit_or_reply(update, text, InlineKeyboardMarkup(rows), edit)
+
+
+def _option_label(option: Dict) -> str:
+    """«📍 Werder (Märkisch-Oderland)» — два Werder різняться округом."""
+    name = option["name"] if option.get("kind") == "city" else f"{option['plz']} {option['name']}"
+    kreis = option.get("kreis") or ""
+    return f"📍 {name}" + (f" ({kreis})" if kreis and kreis != option["name"] else "")
+
+
+def _choices_screen(update: Update, context: CallbackContext, options: List[Dict], edit: bool) -> None:
+    st = _state(context)
+    lang = i18n.get_lang(update.effective_user.id)
+    st["place_options"] = options
+    rows = [[InlineKeyboardButton(_option_label(option), callback_data=f"{PREFIX}pc:{index}")]
+            for index, option in enumerate(options)]
+    rows.append([InlineKeyboardButton(_t("btn.back", lang), callback_data=f"{PREFIX}pl")])
+    hm._edit_or_reply(update, _t("place_choose", lang), InlineKeyboardMarkup(rows), edit)
+
+
+def _radius_screen(update: Update, context: CallbackContext, place: Dict, edit: bool) -> None:
+    st = _state(context)
+    lang = i18n.get_lang(update.effective_user.id)
+    st["place_draft"] = place
+    st.pop("input", None)
+    km = "km" if lang == "de" else "км"
+    buttons = [InlineKeyboardButton(_t("btn.radius_city", lang), callback_data=f"{PREFIX}pr:0")] + [
+        InlineKeyboardButton(f"+ {radius} {km}", callback_data=f"{PREFIX}pr:{radius}")
+        for radius in housing_area.RADII if radius
+    ]
+    rows = _pairs(buttons, 3)
+    rows.append([InlineKeyboardButton(_t("btn.back", lang), callback_data=f"{PREFIX}pl")])
+    name = housing_area.label(dict(place, radius_km=0), lang)
+    text = _t("radius_text", lang, place=html.escape(name))
+    if housing_area.is_potsdam(place):
+        text += "\n\n" + _t("radius_potsdam_hint", lang)
+    hm._edit_or_reply(update, text, InlineKeyboardMarkup(rows), edit)
+
+
+def _picked(update: Update, context: CallbackContext, options: List[Dict], edit: bool) -> None:
+    if len(options) == 1:
+        _radius_screen(update, context, options[0], edit)
+    else:
+        _choices_screen(update, context, options, edit)
+
+
+def _place_text(update: Update, context: CallbackContext, text: str) -> bool:
+    """Місто чи індекс, написані в чат після «📍»."""
+    lang = i18n.get_lang(update.effective_user.id)
+    options = housing_area.find(text)
+    if not options and not text[:1].isalnum():
+        # Кнопка нижнього меню («🏠 …»), а не місто — віддаємо далі.
+        _state(context).pop("input", None)
+        return False
+    if not options:
+        _place_screen(update, context, edit=False, note=_t("place_not_found", lang, text=html.escape(text[:60])))
+        return True
+    _picked(update, context, options, edit=False)
+    return True
+
+
+def _sync_members(search: Dict, criteria: Dict) -> List[str]:
+    """Записи площадок — під місце: зайві видаляє, потрібні створює (на паузі,
+    якщо пошук на паузі). Повертає площадки, з якими не вдалося."""
+    owner = int(search["user_id"])
+    wanted = place_sources(criteria)
+    active = not _paused(search)
+    present = {source for source, _ in search["members"]}
+    failed = []
+    for source, filter_id in search["members"]:
+        if source in wanted:
+            continue
+        if hm._delete_one_filter(source, filter_id, owner):
+            housing_search_store.remove_member(search["search_id"], source, filter_id)
+        else:
+            failed.append(source)
+    for source in wanted:
+        if source in present:
+            continue
+        filter_id = _create_member(source, owner, criteria, wanted)
+        if filter_id is None:
+            failed.append(source)
+            continue
+        if not active:
+            hm._set_one_filter_active(source, filter_id, False, owner)
+        housing_search_store.add_member(search["search_id"], source, filter_id)
+    return failed
+
+
+def _save_place(update: Update, context: CallbackContext, search: Dict, place: Optional[Dict]) -> Optional[str]:
+    lang = i18n.get_lang(update.effective_user.id)
+    criteria = dict(search["criteria"])
+    old = criteria.get("area")
+    if "sources_off" not in criteria and housing_area.covers_potsdam(old):
+        # Старий пошук: вимкнене людиною — те, чого серед записів немає.
+        present = set(_sources(search))
+        criteria["sources_off"] = [source for source in hm.AVAILABLE_SOURCE_KEYS if source not in present]
+    criteria["area"] = place
+    if not housing_area.is_default(place):
+        criteria["districts"] = []
+    coops = list(search.get("coops") or [])
+    if not housing_area.covers_potsdam(place):
+        coops = []
+    elif not housing_area.covers_potsdam(old):
+        coops = list(hm.COOP_KEYS)  # повернулись у Потсдам — кооперативи, як у нового пошуку
+    housing_search_store.update(search["search_id"], criteria=criteria, coops=coops)
+    hm._sync_coop_subscriptions(int(search["user_id"]))
+    refreshed = housing_search_store.get_any(search["search_id"]) or search
+    failed = _sync_members(dict(refreshed, items=search.get("items", [])), criteria)
+    refreshed = housing_search_store.get_any(search["search_id"]) or refreshed
+    failed += apply_criteria(refreshed, criteria)
+    _state(context)["dirty"] = True
+    if failed:
+        return _t("save_failed", lang, sources=", ".join(hm.SOURCE_LABEL.get(s, s) for s in sorted(set(failed))))
+    return None
+
+
+def _place_callback(update: Update, context: CallbackContext, action: str, arg: str) -> None:
+    query = update.callback_query
+    st = _state(context)
+    lang = i18n.get_lang(update.effective_user.id)
+    if action == "pl":
+        query.answer()
+        _place_screen(update, context)
+        return
+    if action == "pc":
+        if arg in QUICK_PLACES:
+            options = housing_area.find(QUICK_PLACES[arg])
+        else:
+            try:
+                options = [list(st.get("place_options") or [])[int(arg)]]
+            except (IndexError, ValueError):
+                options = []
+        query.answer()
+        if not options:
+            _place_screen(update, context)
+            return
+        _picked(update, context, options, edit=True)
+        return
+    # pr — радіус обрано, місце готове.
+    draft = st.get("place_draft")
+    if not draft:
+        query.answer()
+        _place_screen(update, context)
+        return
+    try:
+        radius = int(arg)
+    except ValueError:
+        radius = 0
+    place = housing_area.make(draft, radius)
+    if st.get("new_flow"):
+        st["new_area"] = place
+        if housing_area.is_potsdam(place):
+            _jobcenter_screen(update, context, edit=True)  # сам відповідає на натискання
+        else:
+            _create_new(update, context, "no")
+        return
+    _number, search = _load(int(update.effective_user.id), int(st.get("sid") or 0))
+    if search is None:
+        query.answer()
+        _show(update, context)
+        return
+    error = _save_place(update, context, search, place)
+    query.answer(error or _t("saved", lang), show_alert=bool(error))
+    _show(update, context)
 
 
 # --- пауза й готово -------------------------------------------------------------------
@@ -622,6 +893,9 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
     action = parts[1] if len(parts) > 1 else ""
     st = _state(context)
 
+    if action in ("pl", "pc", "pr"):
+        _place_callback(update, context, action, parts[2] if len(parts) > 2 else "")
+        return
     if action == "new":
         _create_new(update, context, parts[2] if len(parts) > 2 else "no")
         return

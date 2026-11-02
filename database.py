@@ -826,11 +826,15 @@ class VonoviaDelivery(Base):
 
 
 class ImmoscoutListing(Base):
-    """Квартири ImmoScout24 у Потсдамі — з API мобільного застосунку.
+    """Квартири ImmoScout24 — з API мобільного застосунку.
 
     Сайт закритий капчею AWS WAF (картинки «оберіть штори»), а застосунок
     отримує ту саму видачу звичайним JSON. Ціна в списку — Kaltmiete; повна
     оренда, район з повної адреси й галерея — з картки оголошення (`detail_fetched_at`).
+
+    З 02.11.2026 — не лише Потсдам, а й Берлін і Бранденбург: `region` — яким
+    пошуком знайдено (порожньо = «potsdam», усі старі записи), `plz` — індекс,
+    за яким квартира потрапляє в місце фільтра (`housing_area`).
     """
 
     __tablename__ = 'immoscout_listing'
@@ -852,6 +856,9 @@ class ImmoscoutListing(Base):
     first_seen_at = Column(DATETIME, nullable=False)
     last_seen_at = Column(DATETIME, nullable=False)
     is_active = Column(BOOLEAN, nullable=False, default=True)
+    plz = Column(TEXT)
+    city = Column(TEXT)
+    region = Column(TEXT)
 
 
 class ImmoscoutFilter(Base):
@@ -872,6 +879,8 @@ class ImmoscoutFilter(Base):
     max_price_warm_eur = Column(FLOAT)
     active = Column(BOOLEAN, nullable=False, default=True)
     created_at = Column(DATETIME, nullable=False)
+    # Місце (JSON, див. housing_area); порожньо — лише Потсдам, як до 02.11.2026.
+    area = Column(TEXT)
 
 
 class ImmoscoutStatus(Base):
@@ -1296,6 +1305,11 @@ _ensure_column('econsul_state', 'login_id', 'TEXT')
 _ensure_column('econsul_state', 'login_message_id', 'INTEGER')
 _ensure_column('housing_payment', 'provisional_until', 'DATETIME')
 _ensure_column('housing_send_log', 'snapshot', 'TEXT')
+# Етап 1 «Берлін і Бранденбург» (02.11.2026): індекс і регіон квартири, місце фільтра.
+_ensure_column('immoscout_listing', 'plz', 'TEXT')
+_ensure_column('immoscout_listing', 'city', 'TEXT')
+_ensure_column('immoscout_listing', 'region', 'TEXT')
+_ensure_column('immoscout_filter', 'area', 'TEXT')
 
 # Keyword search (msg_ai._search_keyword_ids) runs up to ~30 per-keyword
 # `text_lower LIKE '%word%'` queries per user message, each filtered by

@@ -39,6 +39,18 @@ LIST_PARAMS = {
     "sorting": "-firstactivation",
 }
 LIST_BODY = {"supportedResultListType": [], "userData": {}}
+# Етап 1 «Берлін і Бранденбург» (02.11.2026): ті самі запити для інших регіонів.
+# На 02.11 у Берліні ≈4700 квартир (94 сторінки), у Бранденбурзі ≈2400 (48).
+# Пошук «Бранденбург» містить і Потсдам — такі квартири лишаються потсдамськими.
+REGION_GEOCODES = {
+    "potsdam": "/de/brandenburg/potsdam",
+    "berlin": "/de/berlin/berlin",
+    "brandenburg": "/de/brandenburg",
+}
+
+
+def list_params(region: str = "potsdam") -> dict:
+    return dict(LIST_PARAMS, geocodes=REGION_GEOCODES[region])
 IMAGE_SIZE = "1200x900"
 
 _SIZE_PLACEHOLDER = "%WIDTH%x%HEIGHT%"
@@ -97,6 +109,18 @@ def district_from_address(address: Any) -> Optional[str]:
     return None
 
 
+_PLZ_CITY_RE = re.compile(r"(?<!\d)(\d{5})\s+([^,(]+)")
+
+
+def plz_and_city(address_block: Any) -> tuple:
+    """(індекс, місто) з адреси видачі: «10247 Berlin, Friedrichshain» → ("10247", "Berlin")."""
+    block = address_block if isinstance(address_block, dict) else {}
+    match = _PLZ_CITY_RE.search(clean_text(block.get("line")))
+    plz = clean_text(block.get("postcode")) or (match.group(1) if match else "")
+    city = clean_text(match.group(2)) if match else ""
+    return plz, city
+
+
 def _attribute_values(item: dict) -> list[str]:
     return [clean_text(attr.get("value")) for attr in (item.get("attributes") or []) if isinstance(attr, dict)]
 
@@ -123,10 +147,13 @@ def parse_listings(payload: Any) -> list[dict[str, Any]]:
         paywall = item.get("paywallListing") or {}
         pictures = [jpeg_image(pic.get("urlScaleAndCrop")) for pic in item.get("pictures") or [] if isinstance(pic, dict)]
         cover = jpeg_image((item.get("titlePicture") or {}).get("full")) or (pictures[0] if pictures else "")
+        plz, city = plz_and_city(item.get("address"))
         listings.append({
             "listing_key": key,
             "title": clean_text(item.get("title")) or "ImmoScout24 Wohnung",
             "address": address,
+            "plz": plz,
+            "city": city,
             "district": district_from_address(address),
             "rooms": _pick(values, "Zi"),
             "area_m2": _pick(values, "m²"),

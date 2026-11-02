@@ -7,6 +7,11 @@ own page once — for the full rent, the exact district and the gallery — and
 only listings whose page has been read are matched: before that the warm
 bound and the district would be guesses.
 
+Since 02.11.2026 the scan also reads Berlin and the whole of Brandenburg
+(`REGIONS`) for filters with a place (`housing_area`): only the new pages each
+time and the full list once in four hours, and a listing page only for fresh
+regional flats that fit somebody — there are thousands of them.
+
 When the source went live (12.10.2026) every filter people had already made
 got an ImmoScout24 part too (`_backfill_existing_searches`) — after the first
 scan had stored the current listings, so that the flats already online on
@@ -26,7 +31,7 @@ from telegram import InputMediaPhoto
 import i18n
 from database import ImmoscoutListing
 from user_jobs import (
-    alert_cooldown, delivery_dedup, housing_search_store, housing_tier,
+    alert_cooldown, delivery_dedup, housing_area, housing_search_store, housing_tier,
     immoscout_matching, immoscout_parser, immoscout_store,
 )
 
@@ -43,6 +48,18 @@ MAX_PAGES = 10
 # дочитають наступні обходи, а нові оголошення зазвичай укладаються в один.
 DETAILS_PER_SCAN = 40
 DETAIL_PAUSE_SECONDS = 0.5
+# Етап 1 «Берлін і Бранденбург» (02.11.2026, docs/housing-region-plan.md).
+REGIONS = tuple(
+    region.strip() for region in os.getenv("IMMOSCOUT_REGIONS", "berlin,brandenburg").split(",")
+    if region.strip() in immoscout_parser.REGION_GEOCODES and region.strip() != "potsdam"
+)
+REGION_FULL_SWEEP = timedelta(hours=4)
+REGION_MAX_PAGES = 120
+REGION_NEW_PAGES = 10
+REGION_PAGE_PAUSE = 0.3
+# Картку читаємо лише свіжим оголошенням регіону: старі, що вже були онлайн,
+# новій людині все одно не розсилаються (база фільтра).
+REGION_DETAIL_WINDOW = timedelta(days=2)
 GALLERY_ALBUM_MAX = 10
 CAPTION_LIMIT = 1024
 # Позначка в immoscout_status: існуючим фільтрам частину ImmoScout24 вже додано.
@@ -60,20 +77,25 @@ def _headers() -> Dict[str, str]:
     return {"User-Agent": immoscout_parser.USER_AGENT, "Accept": "application/json"}
 
 
+def _list_page(region: str, page: int) -> Dict:
+    response = requests.post(
+        immoscout_parser.LIST_URL,
+        params=dict(immoscout_parser.list_params(region), pagenumber=page),
+        json=immoscout_parser.LIST_BODY,
+        headers=_headers(),
+        timeout=TIMEOUT,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def _fetch_listings() -> List[Dict]:
+    """Уся видача Потсдама — щообходу, як до 02.11.2026."""
     listings: List[Dict] = []
     seen = set()
     page = 1
     while page <= MAX_PAGES:
-        response = requests.post(
-            immoscout_parser.LIST_URL,
-            params=dict(immoscout_parser.LIST_PARAMS, pagenumber=page),
-            json=immoscout_parser.LIST_BODY,
-            headers=_headers(),
-            timeout=TIMEOUT,
-        )
-        response.raise_for_status()
-        payload = response.json()
+        payload = _list_page("potsdam", page)
         for listing in immoscout_parser.parse_listings(payload):
             if listing["listing_key"] not in seen:
                 seen.add(listing["listing_key"])
@@ -82,6 +104,91 @@ def _fetch_listings() -> List[Dict]:
             break
         page += 1
     return listings
+
+
+def _fetch_region(region: str, known: set, full: bool) -> List[Dict]:
+    """Видача Берліна чи Бранденбургу, найновіші першими.
+
+    Зазвичай — лише нові сторінки: обхід зупиняється на першій сторінці, де
+    немає жодного нового оголошення. Раз на REGION_FULL_SWEEP — уся видача, щоб
+    позначити зняті."""
+    listings: List[Dict] = []
+    seen = set()
+    page = 1
+    limit = REGION_MAX_PAGES if full else REGION_NEW_PAGES
+    while page <= limit:
+        payload = _list_page(region, page)
+        fresh = 0
+        for listing in immoscout_parser.parse_listings(payload):
+            key = listing["listing_key"]
+            if key in seen:
+                continue
+            seen.add(key)
+            fresh += key not in known
+            listings.append(dict(listing, region=region))
+        if page >= immoscout_parser.page_count(payload) or (not full and not fresh):
+            break
+        page += 1
+        time.sleep(REGION_PAGE_PAUSE)
+    return listings
+
+
+def _full_sweep_due(region: str) -> bool:
+    last = (immoscout_store.latest_status_for(f"region_full:{region}") or {}).get("last_checked_at")
+    return last is None or immoscout_store.utc_now() - last >= REGION_FULL_SWEEP
+
+
+def _scan_regions(bot, skip=frozenset()) -> List[Dict]:
+    """Берлін і Бранденбург (етап 1, 02.11.2026). Помилка тут не зупиняє Потсдам.
+
+    Повертає нові оголошення регіонів цього обходу (для читання карток)."""
+    fetched: List[Dict] = []
+    known = immoscout_store.known_keys()
+    full_done = False
+    for region in REGIONS:
+        # Повний обхід — не більше одного регіону за раз, щоб обхід не розтягувався.
+        full = not full_done and _full_sweep_due(region)
+        try:
+            # Потсдамські квартири з пошуку «Бранденбург» — справа потсдамського пошуку.
+            listings = [item for item in _fetch_region(region, known, full) if item["listing_key"] not in skip]
+        except Exception as exc:
+            previous = immoscout_store.latest_status_for(f"region:{region}")
+            _notify_admin_fetch_failed(bot, exc, previous)
+            immoscout_store.record_status_for(f"region:{region}", "error", error=str(exc))
+            logger.warning("ImmoScout24 %s scan failed: %s", region, exc)
+            continue
+        stored = immoscout_store.upsert_listings(listings, region=region, deactivate_missing=full)
+        immoscout_store.record_status_for(f"region:{region}", "ok", listings_count=stored)
+        if full:
+            full_done = True
+            immoscout_store.record_status_for(f"region_full:{region}", "ok", listings_count=stored)
+        fetched.extend(listings)
+        logger.info("ImmoScout24 %s scan full=%s listings=%s new=%s", region, full, len(listings),
+                    sum(1 for item in listings if item["listing_key"] not in known))
+    return fetched
+
+
+def _wanted_by_someone(listing: Dict, filters: List[Dict]) -> bool:
+    """Квартира поза Потсдамом підходить хоч комусь за тим, що видно у видачі.
+
+    Картки читаємо лише таким: у Берліні й Бранденбурзі тисячі оголошень, а
+    шукають там поки одиниці."""
+    return any(filt.get("area") and immoscout_matching.matches_filter(listing, filt) for filt in filters)
+
+
+def _detail_candidates(potsdam: List[Dict], regional: List[Dict], filters: List[Dict]) -> List[Dict]:
+    """Потсдам — усі, як раніше; регіони — нові (до 2 діб), що комусь підходять."""
+    recent = immoscout_store.recent_keys_without_details(immoscout_store.utc_now() - REGION_DETAIL_WINDOW)
+    seen = {item["listing_key"] for item in potsdam}
+    picked = []
+    for listing in regional:
+        key = listing["listing_key"]
+        if key in seen or key not in recent or housing_area.from_potsdam_search(listing):
+            continue
+        seen.add(key)
+        if _wanted_by_someone(listing, filters):
+            picked.append(listing)
+    return list(potsdam) + picked
 
 
 def _add_details(listings: List[Dict]) -> int:
@@ -215,8 +322,14 @@ def check_job(context) -> Dict[str, int]:
         immoscout_store.record_status("error", listings_count=0, error=str(exc))
         logger.warning("ImmoScout24 scan failed; admin_alerted=%s: %s", alerted, exc)
         return {"ok": 0, "enabled": 1, "sent": 0, "admin_alerted": int(alerted)}
-    detailed = _add_details(all_listings)
+    potsdam_keys = {item["listing_key"] for item in all_listings}
+    regional = _scan_regions(bot, skip=potsdam_keys)
+    detailed = _add_details(_detail_candidates(all_listings, regional, immoscout_store.list_filters(active_only=True)))
     stored = immoscout_store.upsert_listings(all_listings)
+    for region in REGIONS:
+        read = [item for item in regional if item.get("region") == region and item.get("detail_fetched")]
+        if read:
+            immoscout_store.upsert_listings(read, region=region, deactivate_missing=False)
     immoscout_store.record_status("ok", listings_count=stored)
     try:
         _backfill_existing_searches()
