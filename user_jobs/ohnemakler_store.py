@@ -249,8 +249,12 @@ def upsert_listings(listings: Iterable[Dict], deactivate_missing: bool = False) 
             row.plz = listing.get("plz")
             row.region = listing.get("region")
             row.address = listing.get("address")
-            row.rooms = listing.get("rooms")
-            row.area_m2 = listing.get("area_m2")
+            # Порожнє з цього обходу не затирає відоме: квартира без кімнат і площі
+            # проходить будь-який фільтр (02.11.2026, обрізана остання картка).
+            if listing.get("rooms") is not None or row.rooms is None:
+                row.rooms = listing.get("rooms")
+            if listing.get("area_m2") is not None or row.area_m2 is None:
+                row.area_m2 = listing.get("area_m2")
             row.price_eur = listing.get("price_eur")
             if listing.get("price_warm_eur") is not None:
                 row.price_warm_eur = listing.get("price_warm_eur")

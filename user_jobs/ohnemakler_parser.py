@@ -71,7 +71,13 @@ def parse_listings(page_html: str) -> list[dict[str, Any]]:
         if key in seen:
             continue
         seen.add(key)
-        end = matches[index + 1].start() if index + 1 < len(matches) else match.end() + 4000
+        # Картка — один <a>…</a>, кінець — перше «</a>». Раніше остання на сторінці
+        # бралась як 4000 символів, а SVG-іконки займають більше: кімнати й площа
+        # губились, і квартира без них проходила будь-який фільтр (02.11.2026:
+        # 2 кімнати в Гольмі пішли 17 людям «від 3–4 кімнат»).
+        following = matches[index + 1].start() if index + 1 < len(matches) else len(page_html)
+        close = page_html.find("</a>", match.end(), following)
+        end = close if close >= 0 else min(following, match.end() + 12000)
         parts = _parts(page_html[match.end():end])
         price = title = plz = city = district = None
         rooms = area = None

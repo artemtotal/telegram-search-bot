@@ -45,10 +45,24 @@ STUDENT_WG_RE = re.compile(
 )
 
 
+# Кімната в WG, а не квартира (самоперевірка 02.11.2026: «WG-Zimmer zur Miete» з Immowelt
+# пішла 16 людям без вибору «Кімнати в WG», «1 Zimmer in einer 4-Zimmer-Wohnung / Zweck-WG»
+# на 11 м² — 43). Лише явна кімната: «4-Zimmer-Wohnung, geeignet für Familien oder WG»,
+# «WG gesucht für 3-Zimmer-Wohnung» — це ціла квартира, сюди не входить.
+WG_ROOM_RE = re.compile(
+    r"\bwg[\s-]*(?:zimmer|room)"
+    r"|\bzimmer\b[^|]{0,80}?\bin\s+(?:(?:einer|der|unserer|meiner)\s+)?(?:\d+\s*-?\s*er[\s-]*)?wg\b"
+    r"|\bzimmer\s+in\s+(?:einer|der|unserer|meiner|einem)\s+(?:\S+\s+){0,2}?\S*wohnung\b"
+    r"|\bzweck[\s!-]*wg\b"
+    r"|\broom\s+in\s+(?:a\s+)?shared\s+(?:flat|apartment)",
+    re.IGNORECASE,
+)
+
+
 def is_sublet(title: Any) -> bool:
-    """Суборенда, тимчасова оренда чи житло лише для студентів / під WG."""
+    """Суборенда, тимчасова оренда, кімната в WG чи житло лише для студентів / під WG."""
     text = str(title or "")
-    return bool(SUBLET_RE.search(text) or STUDENT_WG_RE.search(text))
+    return bool(SUBLET_RE.search(text) or STUDENT_WG_RE.search(text) or WG_ROOM_RE.search(text))
 
 
 def wants_rooms(user_id: int) -> bool:

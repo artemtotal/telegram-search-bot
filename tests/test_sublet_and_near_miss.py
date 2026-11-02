@@ -65,6 +65,13 @@ class SubletTitlesTests(unittest.TestCase):
             'Möbliertes Appartement mit Balkon nur für Studenten!',
             'Gemütliches teilmöbliertes 1 Zimmer Apartment in Potsdam nur für Studenten/Azubis',
             'Helle 3-Zimmer-Wohnung für eine 3er WG',
+            # Кімната в WG (самоперевірка 02.11.2026).
+            'WG-Zimmer zur Miete',
+            '1 Zimmer in einer 4-Zimmer-Wohnung / Zweck-WG',
+            'Ca 25m Zimmer in einer Zweck!-WG in Potsdam-West ab 1.10. frei',
+            'Möbliertes Zimmer in 8er WG in zentraler Lage mit Anmeldung',
+            'Helles, möbliertes Zimmer mit eigenem Bad, Terrasse & Garten in einer 2er-WG in Zehlendorf',
+            'Private Room in Shared Apartment (WG) – Berlin Mitte',
         ):
             self.assertTrue(sublet.is_sublet(title), title)
 
@@ -77,6 +84,10 @@ class SubletTitlesTests(unittest.TestCase):
             'Helle 3-Zimmer Wohnung mitten in Potsdam Waldstadt',
             'WG-geeignete 4-Zimmer-Wohnung am Park',
             'Wohnung nahe Uni Potsdam, ideal für Studenten und Familien',
+            "Tolle 4-Zimmer Wohnung über den Dächern Berlins, geeignet für Familien oder WG's",
+            'WG gesucht für schöne helle 3-Zimmer-Wohnung!',
+            'WG und Familien geeignet 3-Zimmer-Wohnung in Berlin-Prenzlauer Berg',
+            '2 Zimmer in einer ruhigen Seitenstraße',
         ):
             self.assertFalse(sublet.is_sublet(title), title)
 

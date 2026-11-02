@@ -27,6 +27,15 @@ class OhnemaklerParserTests(unittest.TestCase):
         self.assertEqual(flats["235423"]["rooms"], 3.5)
         self.assertTrue(flat["cover_image_url"].endswith("/immobilie/210414/picture/0/medium.jpg"))
 
+    def test_last_card_keeps_rooms_and_area(self):
+        # 02.11.2026: остання картка бралась як 4000 символів, а SVG-іконки довші — без
+        # кімнат і площі. (Остання картка фікстури сама збережена так, урізаною, — прибираємо її.)
+        page = PAGE[:PAGE.rindex("data-om-id=")]
+        flats = ohnemakler_parser.parse_listings(page)
+        self.assertEqual(len(flats), 23)
+        self.assertEqual([f["listing_key"] for f in flats if not (f["rooms"] and f["area_m2"])], [])
+        self.assertEqual(flats[-1], ohnemakler_parser.parse_listings(PAGE)[-2])
+
     def test_total_count_and_pages(self):
         self.assertEqual(ohnemakler_parser.total_count("<b>172 Immobilien</b>"), 172)
         self.assertTrue(ohnemakler_parser.page_url("brandenburg", 3).endswith("/wohnung-mieten/brandenburg/?page=3"))
@@ -75,6 +84,13 @@ class OhnemaklerMonitorTests(unittest.TestCase):
             ohnemakler_monitor.check_job(SimpleNamespace(bot=bot))
         self.assertEqual(bot.messages, [8])
         self.assertIn((berlin, self.flats[0]["listing_key"]), ohnemakler_store.delivered_pairs())
+
+    def test_a_blank_scan_does_not_wipe_known_rooms(self):
+        flat = self.flats[0]
+        ohnemakler_store.upsert_listings([flat])
+        ohnemakler_store.upsert_listings([dict(flat, rooms=None, area_m2=None)])
+        stored = [item for item in ohnemakler_store.list_active_listings() if item["listing_key"] == flat["listing_key"]][0]
+        self.assertEqual((stored["rooms"], stored["area_m2"]), (flat["rooms"], flat["area_m2"]))
 
     def test_matching(self):
         flat = self.flats[0]
