@@ -98,9 +98,14 @@ class HousingPaymentTest(unittest.TestCase):
         self.assertTrue(housing_payment.handle_callback(update, self.context))
         keyboard = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
         buttons = [b for row in keyboard.inline_keyboard for b in row]
-        months = [b.callback_data for b in buttons if b.callback_data.startswith("housing:pay:m:")]
+        months = [b.callback_data for b in buttons if (b.callback_data or "").startswith("housing:pay:m:")]
         self.assertEqual(months, [f"housing:pay:m:{n}" for n in range(1, 7)])
         self.assertIn("250", buttons[0].text)
+        # 03.11.2026: гривнева карта — предупреждение и кнопка «написать админу» (наличные в Потсдаме от 6 месяцев)
+        text = update.callback_query.edit_message_text.call_args.args[0]
+        self.assertIn("гривнева", text)
+        self.assertIn("від 6 місяців", text)
+        self.assertTrue(any((b.url or "").startswith("tg://user?id=") for b in buttons))
 
     def test_month_choice_shows_card_and_sum(self):
         update = _callback("housing:pay:m:2")

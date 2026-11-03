@@ -282,6 +282,8 @@ def _months_keyboard(lang: str, rate: float) -> InlineKeyboardMarkup:
         for months in MONTH_OPTIONS
     ]
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    if ADMIN_ID:   # 03.11.2026: нет украинской карты — договориться с админом о наличных в Потсдаме
+        rows.append([InlineKeyboardButton(i18n.t("housing.pay.btn.cash", lang), url=f"tg://user?id={ADMIN_ID}")])
     rows.append([InlineKeyboardButton(i18n.t("housing.pay.btn.cancel", lang), callback_data="housing:pay:cancel")])
     return InlineKeyboardMarkup(rows)
 
@@ -333,6 +335,7 @@ def _pick_months(update: Update, context: CallbackContext) -> None:
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton(i18n.t("housing.pay.btn.other", lang), callback_data="housing:pay:start")],
+            *([[InlineKeyboardButton(i18n.t("housing.pay.btn.cash", lang), url=f"tg://user?id={ADMIN_ID}")]] if ADMIN_ID else []),
             [InlineKeyboardButton(i18n.t("housing.pay.btn.cancel", lang), callback_data="housing:pay:cancel")],
         ]),
     )
