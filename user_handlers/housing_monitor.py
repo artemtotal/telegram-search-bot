@@ -19,6 +19,7 @@ from telegram.error import BadRequest
 import i18n
 from user_handlers import housing_letter
 from user_handlers import housing_payment
+from user_handlers import housing_leave
 from database import (
     DBSession,
     HousingFilterEvent,
@@ -1221,8 +1222,13 @@ def filter_summary_text(bot, since: datetime, until: datetime) -> Optional[str]:
         ]
     finally:
         session.close()
+    # 07.11.2026: хто заблокував бота / вимкнув моніторинг - навіть у день без змін фільтрів
+    leave = housing_leave.summary_lines(bot, since, until, _display_name)
     if not events:
-        return None
+        if not leave:
+            return None
+        return "\n".join([f"📊 <b>Фільтри житла за добу</b> ({_format_time(since)} – {_format_time(until)})", "",
+                          "🆕 Нових: <b>0</b> · ✏️ Змінено: <b>0</b>", ""] + leave)
     created = [e for e in events if not e["edited"]]
     edited = [e for e in events if e["edited"]]
     people: Dict[int, Dict[str, object]] = {}
@@ -1257,6 +1263,8 @@ def filter_summary_text(bot, since: datetime, until: datetime) -> Optional[str]:
         lines.append(f"{mark}{html.escape(name)} · <code>{user_id}</code> — {', '.join(parts)}")
     if len(people) > FILTER_SUMMARY_PEOPLE_SHOWN:
         lines.append(f"…і ще людей: {len(people) - FILTER_SUMMARY_PEOPLE_SHOWN}")
+    if leave:
+        lines += [""] + leave
     return "\n".join(lines)
 
 
@@ -3796,6 +3804,7 @@ def _search_action(update: Update, context: CallbackContext) -> None:
         if not failed:
             housing_search_store.delete(search_id, owner_id)
             _sync_coop_subscriptions(owner_id)
+            housing_leave.after_filter_deleted(owner_id)   # 07.11.2026: останній - «вимкнув моніторинг» у зведенні
         query.answer(i18n.t(
             "housing.toast.filter_delete_failed" if failed else "housing.toast.filter_deleted", lang,
         ), show_alert=bool(failed))

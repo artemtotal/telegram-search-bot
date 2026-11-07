@@ -312,6 +312,22 @@ class HousingFilterEvent(Base):
     created_at = Column(DATETIME, nullable=False, index=True)
 
 
+class HousingLeaveEvent(Base):
+    """07.11.2026 (Артём): хто за добу заблокував бота або вимкнув моніторинг житла - у вечірнє зведення.
+
+    kind: blocked (заблокував бота, Telegram my_chat_member → kicked), unblocked (повернувся),
+    stopped (видалив останній фільтр житла - моніторинг вимкнено).
+    """
+
+    __tablename__ = 'housing_leave_event'
+
+    id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    kind = Column(TEXT, nullable=False)
+    had_filters = Column(BOOLEAN, nullable=False, default=False)
+    created_at = Column(DATETIME, nullable=False, index=True)
+
+
 class HousingAccessUser(Base):
     __tablename__ = 'housing_access_user'
 

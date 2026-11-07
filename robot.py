@@ -25,6 +25,7 @@ from user_handlers import (
     housing_monitor,
     housing_card,
     housing_digest,
+    housing_leave,
     housing_payment,
     housing_receiver,
     housing_relax,
@@ -285,6 +286,7 @@ dispatcher.add_handler(housing_monitor.disable_handler)
 dispatcher.add_handler(housing_payment.receipt_handler, group=3)
 dispatcher.add_handler(chat_start.handler)
 # Заявки на вступ у групу: правила + питання в особисті, потім схвалення (07.11.2026, замість LOLS).
+dispatcher.add_handler(housing_leave.my_chat_member_handler)   # 07.11.2026: блок бота → вечірнє зведення
 dispatcher.add_handler(join_gate.join_request_handler)
 dispatcher.add_handler(join_gate.callback_handler)
 dispatcher.add_handler(join_gate.command_handler)

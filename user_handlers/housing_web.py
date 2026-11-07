@@ -306,6 +306,8 @@ def delete_search(user_id: int, search_id: int) -> bool:
         hm._delete_one_filter(source, filter_id, int(user_id))
     housing_search_store.delete(search_id, int(user_id))
     hm._sync_coop_subscriptions(int(user_id))
+    from user_handlers import housing_leave  # noqa: PLC0415
+    housing_leave.after_filter_deleted(int(user_id))   # 07.11.2026: останній - «вимкнув моніторинг» у зведенні
     return True
 
 
