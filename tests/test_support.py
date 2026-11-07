@@ -146,7 +146,10 @@ class BookedTest(_Base):
         calls = self.context.bot.send_message.call_args_list
         to_user = calls[0].kwargs
         self.assertEqual(to_user["chat_id"], USER)
-        self.assertEqual(to_user["reply_markup"].inline_keyboard[0][0].callback_data, "support:start")
+        kb = to_user["reply_markup"].inline_keyboard   # 07.11.2026: одразу суми подяки 1…5 €
+        self.assertEqual([b.callback_data for row in kb[:2] for b in row],
+                         [f"support:a:{eur * 100}" for eur in (1, 2, 3, 4, 5)])
+        self.assertEqual(kb[2][0].callback_data, "support:custom")
         self.assertEqual(calls[1].kwargs["chat_id"], ADMIN)
         self.assertIn("записався", calls[1].kwargs["text"])
 

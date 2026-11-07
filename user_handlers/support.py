@@ -24,6 +24,7 @@ from user_handlers import housing_payment
 logger = logging.getLogger(__name__)
 
 AMOUNTS_EUR = (1, 2, 3, 5, 10)
+BOOKED_AMOUNTS_EUR = (1, 2, 3, 4, 5)   # після «✅ Я записався» (ДП Документ, посольство) — подяка, 07.11.2026
 MAX_CUSTOM_EUR = 1000
 # Скільки чекаємо на свою суму після «✏️ Своя сума»: пізніше число в чаті
 # вже не вважаємо відповіддю.
@@ -214,7 +215,11 @@ def booked(query, bot, service_title: str, menu_callback: str) -> None:
         logger.debug("Could not drop the buttons of a booked alert", exc_info=True)
     rows = []
     if enabled():
-        rows.append([support_button(lang)])
+        # 07.11.2026 (Артём): суми подяки одразу під привітанням — 1…5 €, без зайвого кроку
+        amounts = [InlineKeyboardButton(i18n.t("support.amount_btn", lang, eur=eur, uah=_uah(eur * 100)),
+                                        callback_data=f"support:a:{eur * 100}") for eur in BOOKED_AMOUNTS_EUR]
+        rows += [amounts[:3], amounts[3:]]
+        rows.append([InlineKeyboardButton(i18n.t("support.btn.custom", lang), callback_data="support:custom")])
     rows.append([InlineKeyboardButton(i18n.t("support.btn.resubscribe", lang), callback_data=menu_callback)])
     key = "support.booked" if enabled() else "support.booked_plain"
     try:
