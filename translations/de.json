@@ -718,5 +718,13 @@
   "web.free_banner": "Kostenloser Zugang: Wohnungen kommen 2 Std. verzögert; hier Ihre Suchen, Statistik für 7 Tage und die letzten 10 Wohnungen.<br>⚡ <b>Abo 5 €/Monat:</b> Wohnungen sofort, Anschreiben an Vermieter, Statistik für 30 Tage und der ganze Verlauf. Im Bot: „🏘 Wohnungen“ → „⚡ Sofort erhalten“.",
   "web.link_text": "🌐 <b>Ihre Website zur Wohnungssuche</b>\n\nDer Anmeldelink gilt 10 Minuten und nur einmal. Dort: Ihre Suchen, Statistik und Verlauf (ohne Abo teilweise).",
   "web.open": "🌐 Website öffnen",
-  "housing.menu.btn.web": "🌐 Website"
+  "housing.menu.btn.web": "🌐 Website",
+  "jg.btn.read": "✅ Regeln gelesen",
+  "jg.btn.menu": "▶️ Bot-Menü öffnen",
+  "jg.question": "❓ <b>{q}</b>",
+  "jg.wrong": "❌ Nicht ganz. Bitte noch einmal:",
+  "jg.ok": "✅ Danke! Ihre Anfrage wurde angenommen.",
+  "jg.fail": "Leider wurde die Anfrage abgelehnt. Sie können es später noch einmal versuchen.",
+  "jg.wait_admin": "Danke! Ein Admin prüft Ihre Anfrage.",
+  "jg.expired": "Die Zeit ist abgelaufen — die Anfrage wurde abgelehnt. Stellen Sie sie gern erneut."
 }

@@ -1,3 +1,4 @@
+from telegram import Update
 from telegram.ext import Updater
 from threading import Thread
 import asyncio
@@ -28,6 +29,7 @@ from user_handlers import (
     housing_receiver,
     housing_relax,
     housing_send_audit,
+    join_gate,
     support,
 )
 from user_jobs.commands_set import set_bot_commands
@@ -144,6 +146,7 @@ if os.getenv("KB_BUILDER_ENABLED", "1") == "1":
     job.run_repeating(run_kb_builder, interval=900, first=240)
 
 job.run_repeating(equeue_monitor.check_job, interval=900, first=90)
+job.run_repeating(join_gate.expire_job, interval=600, first=120)   # заявки, на які не відповіли за timeout_minutes
 # DP Document test weeks: the check-log report goes to the admin on day 7 and 14.
 job.run_daily(equeue_monitor.report_job, time=equeue_monitor.REPORT_TIME)
 if os.getenv("PROPOTSDAM_CHECK_ENABLED", "0") == "1":
@@ -281,6 +284,10 @@ dispatcher.add_handler(housing_monitor.disable_handler)
 # Payment receipts (photo/PDF) - own group so msg_store and the rest still see them.
 dispatcher.add_handler(housing_payment.receipt_handler, group=3)
 dispatcher.add_handler(chat_start.handler)
+# Заявки на вступ у групу: правила + питання в особисті, потім схвалення (07.11.2026, замість LOLS).
+dispatcher.add_handler(join_gate.join_request_handler)
+dispatcher.add_handler(join_gate.callback_handler)
+dispatcher.add_handler(join_gate.command_handler)
 dispatcher.add_handler(chat_stop.handler)
 dispatcher.add_handler(chat_delete.handler)
 dispatcher.add_handler(bot_help.handler)
@@ -328,6 +335,8 @@ if __name__ == "__main__":
             poll_interval=1.0,       # check for updates every 1s
             timeout=20,              # long-poll timeout (seconds)
             drop_pending_updates=True,  # ignore updates queued while bot was down
+            # 07.11.2026: явно всі типи — інакше Telegram лишає попередній перелік і chat_join_request може не приходити
+            allowed_updates=Update.ALL_TYPES,
         )
 
     logging.info(_("robot start..."))
