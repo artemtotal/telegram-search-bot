@@ -42,7 +42,7 @@ from telegram import InputMediaPhoto
 import i18n
 from database import KleinanzeigenListing
 from user_jobs import (
-    alert_cooldown, delivery_dedup, housing_journey_store, housing_tier, kleinanzeigen_matching,
+    alert_cooldown, delivery_dedup, housing_journey_store, housing_tier, kleinanzeigen_block, kleinanzeigen_matching,
     kleinanzeigen_parser, kleinanzeigen_store,
 )
 
@@ -84,7 +84,8 @@ def _fetch_listings() -> List[Dict]:
     last_error = None
     for attempt in range(_FETCH_ATTEMPTS):
         try:
-            response = requests.get(
+            # 08.11.2026: на 403/429 повтор і проксі ПК — усередині kleinanzeigen_block.get
+            response = kleinanzeigen_block.get(
                 kleinanzeigen_parser.LISTINGS_URL, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT},
             )
             response.raise_for_status()
@@ -106,6 +107,9 @@ def _fetch_listings() -> List[Dict]:
             logger.info(
                 "Kleinanzeigen fetch attempt %s/%s failed: %s", attempt + 1, _FETCH_ATTEMPTS, exc,
             )
+            if kleinanzeigen_block.is_block(exc):
+                # Пауза, повтор і проксі вже були — ще дві спроби лише подражнять сайт.
+                break
         if attempt + 1 < _FETCH_ATTEMPTS:
             time.sleep(_RETRY_BACKOFF_SECONDS[attempt])
     if last_error is not None:
@@ -197,7 +201,7 @@ def _is_relevant(listing: Dict) -> bool:
 
 
 def _fetch_region_page(url: str) -> List[Dict]:
-    response = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT})
+    response = kleinanzeigen_block.get(url, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT})
     response.raise_for_status()
     response.encoding = response.apparent_encoding or "utf-8"
     return kleinanzeigen_parser.parse_listings(response.text)
@@ -227,7 +231,8 @@ def _scan_regions(bot, skip=frozenset()) -> List[Dict]:
                 if fresh < REGION_MORE_PAGES_AT:
                     break
         except requests.RequestException as exc:
-            alerted = _notify_admin_fetch_failed(bot, exc, {})
+            # 08.11.2026: відмова 403/429 — лише у вечірньому зведенні, не миттєво
+            alerted = False if kleinanzeigen_block.is_block(exc) else _notify_admin_fetch_failed(bot, exc, {})
             logger.warning("Kleinanzeigen %s scan failed; admin_alerted=%s: %s", region, alerted, exc)
             continue
         first_scan = not kleinanzeigen_store.has_region(region)
@@ -318,11 +323,14 @@ def _notify_admin_fetch_failed(bot, error: Exception, previous_status: Dict) -> 
         return False
     status_code = getattr(getattr(error, "response", None), "status_code", None)
     hint = ""
-    if status_code in (403, 429):
+    if status_code in kleinanzeigen_block.BLOCK_CODES:
+        # 08.11.2026: сюди доходить лише довга відмова — повтор, проксі ПК і
+        # подовжений інтервал бот уже спробував сам.
         hint = (
-            f"\n\n🚫 Код {status_code} — схоже, Kleinanzeigen почав "
-            "блокувати автоматичні запити. Варто повернути перевірку "
-            "на рідший інтервал (KLEINANZEIGEN_CHECK_INTERVAL_SECONDS)."
+            f"\n\n🚫 Код {status_code}: Kleinanzeigen блокує запити вже понад "
+            f"{int(kleinanzeigen_block.ALERT_AFTER.total_seconds() // 3600)} год поспіль, і через проксі ПК теж "
+            "(чи увімкнені ПК і тунель?). Бот сам перевіряє рідше: раз на "
+            f"{kleinanzeigen_block.interval_minutes(CHECK_INTERVAL_SECONDS)} хв."
         )
     text = f"⚠️ <b>Kleinanzeigen: не вдалося перевірити оголошення</b>\n\nПричина: {html.escape(str(error))}{hint}"
     try:
@@ -353,7 +361,7 @@ def _add_full_rent(listings: List[Dict]) -> int:
         if not detail_url:
             continue
         try:
-            response = requests.get(detail_url, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT})
+            response = kleinanzeigen_block.get(detail_url, timeout=TIMEOUT, headers={"User-Agent": _USER_AGENT})
             response.raise_for_status()
             response.encoding = response.apparent_encoding or "utf-8"
             prices = kleinanzeigen_parser.parse_detail_prices(response.text)
@@ -383,11 +391,19 @@ def check_job(context) -> Dict[str, int]:
         kleinanzeigen_store.record_status("disabled", listings_count=0)
         return {"ok": 1, "enabled": 0, "sent": 0}
     bot = context.bot
+    if not kleinanzeigen_block.begin_run():
+        logger.info("Kleinanzeigen: interval widened to %s min after a 403/429, skipping this run",
+                    kleinanzeigen_block.interval_minutes(CHECK_INTERVAL_SECONDS))
+        return {"ok": 1, "enabled": 1, "sent": 0, "skipped": 1}
     try:
         all_listings = _fetch_listings()
     except Exception as exc:
+        kleinanzeigen_block.end_run(False, CHECK_INTERVAL_SECONDS)
         previous_status = kleinanzeigen_store.latest_status()
-        alerted = _notify_admin_fetch_failed(bot, exc, previous_status)
+        if kleinanzeigen_block.is_block(exc) and not kleinanzeigen_block.failing_too_long():
+            alerted = False   # разова відмова — у зведенні 21:00, не миттєво
+        else:
+            alerted = _notify_admin_fetch_failed(bot, exc, previous_status)
         kleinanzeigen_store.record_status("error", listings_count=0, error=str(exc))
         logger.warning("Kleinanzeigen scan failed; admin_alerted=%s: %s", alerted, exc)
         return {"ok": 0, "enabled": 1, "sent": 0, "admin_alerted": int(alerted)}
@@ -404,6 +420,7 @@ def check_job(context) -> Dict[str, int]:
         if read:
             kleinanzeigen_store.upsert_listings(read, region=region, deactivate_missing=False)
     kleinanzeigen_store.record_status("ok", listings_count=stored)
+    kleinanzeigen_block.end_run(True, CHECK_INTERVAL_SECONDS)
     active_listings = kleinanzeigen_store.list_active_listings()
     matches = kleinanzeigen_store.select_unsent_matches(
         active_listings, filters, kleinanzeigen_store.delivered_pairs()

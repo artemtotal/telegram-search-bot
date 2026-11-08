@@ -54,6 +54,7 @@ from user_jobs import (
     ohnemakler_store,
     karlmarx_matching,
     karlmarx_store,
+    kleinanzeigen_block,
     kleinanzeigen_matching,
     kleinanzeigen_store,
     locals_matching,
@@ -1205,6 +1206,7 @@ def _record_filter_event(user_id: int, saved: list, hits: Dict[str, int], edited
 # pytz, а не ZoneInfo: APScheduler 3 під PTB 13 приймає лише pytz-зони.
 FILTER_SUMMARY_TIME = dtime(21, 0, tzinfo=pytz.timezone("Europe/Berlin"))
 FILTER_SUMMARY_PEOPLE_SHOWN = 15
+KLEINANZEIGEN_BASE_INTERVAL = 20 * 60   # = kleinanzeigen_monitor.CHECK_INTERVAL_SECONDS (не імпортуємо монітор сюди)
 
 
 def filter_summary_text(bot, since: datetime, until: datetime) -> Optional[str]:
@@ -1224,6 +1226,8 @@ def filter_summary_text(bot, since: datetime, until: datetime) -> Optional[str]:
         session.close()
     # 07.11.2026: хто заблокував бота / вимкнув моніторинг - навіть у день без змін фільтрів
     leave = housing_leave.summary_lines(bot, since, until, _display_name)
+    # 08.11.2026: відмови Kleinanzeigen (403/429) — тут, а не миттєвою тривогою
+    leave += kleinanzeigen_block.summary_lines(since, until, KLEINANZEIGEN_BASE_INTERVAL)
     if not events:
         if not leave:
             return None

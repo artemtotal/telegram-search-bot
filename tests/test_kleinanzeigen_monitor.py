@@ -4,7 +4,7 @@ from unittest import mock
 
 import requests
 
-from user_jobs import alert_cooldown, kleinanzeigen_monitor
+from user_jobs import alert_cooldown, kleinanzeigen_block, kleinanzeigen_monitor
 
 
 class FakeBot:
@@ -101,7 +101,9 @@ class KleinanzeigenMonitorCheckJobTests(unittest.TestCase):
         self.assertIn('connection refused', text)
         self.assertEqual(result['admin_alerted'], 1)
 
-    def test_a_403_response_flags_it_as_a_likely_block(self):
+    def test_a_one_off_403_does_not_alert_the_admin_at_once(self):
+        """08.11.2026: разова відмова — у зведенні 21:00, не миттєво (правило з 01.11)."""
+        self.addCleanup(kleinanzeigen_block.reset)
         context = SimpleNamespace(bot=FakeBot())
         error = requests.HTTPError('403 Client Error')
         error.response = SimpleNamespace(status_code=403)
@@ -110,10 +112,28 @@ class KleinanzeigenMonitorCheckJobTests(unittest.TestCase):
              mock.patch('requests.get', side_effect=error), \
              mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.latest_status', return_value={}), \
              mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.record_status'):
+            result = kleinanzeigen_monitor.check_job(context)
+
+        self.assertEqual(context.bot.sent, [])
+        self.assertEqual(result['admin_alerted'], 0)
+
+    def test_a_403_lasting_over_two_hours_alerts_once_with_the_block_hint(self):
+        self.addCleanup(kleinanzeigen_block.reset)
+        self.addCleanup(alert_cooldown.reset)
+        context = SimpleNamespace(bot=FakeBot())
+        error = requests.HTTPError('403 Client Error')
+        error.response = SimpleNamespace(status_code=403)
+        with mock.patch.object(kleinanzeigen_monitor, 'CHECK_ENABLED', True), \
+             mock.patch.object(kleinanzeigen_monitor, 'ADMIN_ID', 312029534), \
+             mock.patch('requests.get', side_effect=error), \
+             mock.patch.object(kleinanzeigen_block, 'failing_too_long', return_value=True), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.latest_status', return_value={}), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.record_status'):
             kleinanzeigen_monitor.check_job(context)
 
         text = context.bot.sent[0][1]
-        self.assertIn('блокувати', text)
+        self.assertIn('блокує', text)
+        self.assertIn('проксі', text)
 
     def test_a_second_failure_within_the_cooldown_does_not_alert_again(self):
         context = SimpleNamespace(bot=FakeBot())
