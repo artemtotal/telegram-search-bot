@@ -53,10 +53,29 @@ REGIONS = tuple(
     region.strip() for region in os.getenv("IMMOSCOUT_REGIONS", "berlin,brandenburg").split(",")
     if region.strip() in immoscout_parser.REGION_GEOCODES and region.strip() != "potsdam"
 )
-REGION_FULL_SWEEP = timedelta(hours=4)
+# 08.11.2026: повний обхід Берліна (≈94 сторінки підряд по 0,3 с) упирався в 429 Too Many Requests
+# на ~53-й сторінці — тепер рідше й повільніше, а на 429 — пауза всіх запитів без тривоги адміну.
+REGION_FULL_SWEEP = timedelta(hours=12)
 REGION_MAX_PAGES = 120
 REGION_NEW_PAGES = 10
 REGION_PAGE_PAUSE = 0.3
+REGION_FULL_PAGE_PAUSE = 1.5
+RATE_LIMIT_BACKOFF = timedelta(minutes=30)
+_rate_limited_until = None
+
+
+class RateLimited(requests.HTTPError):
+    """429 від API: зачекати, це не поломка (тривогу не шлемо)."""
+
+
+def _rate_limited() -> bool:
+    return _rate_limited_until is not None and immoscout_store.utc_now() < _rate_limited_until
+
+
+def _back_off() -> None:
+    global _rate_limited_until
+    _rate_limited_until = immoscout_store.utc_now() + RATE_LIMIT_BACKOFF
+    logger.warning("ImmoScout24: 429 Too Many Requests — pause until %s", _rate_limited_until)
 # Картку читаємо лише свіжим оголошенням регіону: старі, що вже були онлайн,
 # новій людині все одно не розсилаються (база фільтра).
 REGION_DETAIL_WINDOW = timedelta(days=2)
@@ -85,6 +104,9 @@ def _list_page(region: str, page: int) -> Dict:
         headers=_headers(),
         timeout=TIMEOUT,
     )
+    if getattr(response, "status_code", 200) == 429:
+        _back_off()
+        raise RateLimited(f"429 Too Many Requests (page {page})", response=response)
     response.raise_for_status()
     return response.json()
 
@@ -117,7 +139,13 @@ def _fetch_region(region: str, known: set, full: bool) -> List[Dict]:
     page = 1
     limit = REGION_MAX_PAGES if full else REGION_NEW_PAGES
     while page <= limit:
-        payload = _list_page(region, page)
+        try:
+            payload = _list_page(region, page)
+        except RateLimited as exc:
+            if not listings:
+                raise
+            exc.partial = listings   # що встигли — зберегти, але не як повний обхід
+            raise
         fresh = 0
         for listing in immoscout_parser.parse_listings(payload):
             key = listing["listing_key"]
@@ -129,7 +157,7 @@ def _fetch_region(region: str, known: set, full: bool) -> List[Dict]:
         if page >= immoscout_parser.page_count(payload) or (not full and not fresh):
             break
         page += 1
-        time.sleep(REGION_PAGE_PAUSE)
+        time.sleep(REGION_FULL_PAGE_PAUSE if full else REGION_PAGE_PAUSE)
     return listings
 
 
@@ -146,11 +174,20 @@ def _scan_regions(bot, skip=frozenset()) -> List[Dict]:
     known = immoscout_store.known_keys()
     full_done = False
     for region in REGIONS:
+        if _rate_limited():
+            break
         # Повний обхід — не більше одного регіону за раз, щоб обхід не розтягувався.
         full = not full_done and _full_sweep_due(region)
         try:
             # Потсдамські квартири з пошуку «Бранденбург» — справа потсдамського пошуку.
             listings = [item for item in _fetch_region(region, known, full) if item["listing_key"] not in skip]
+        except RateLimited as exc:
+            partial = [item for item in getattr(exc, "partial", []) if item["listing_key"] not in skip]
+            if partial:   # неповний обхід: нові зберігаємо, знятими нічого не позначаємо
+                immoscout_store.upsert_listings(partial, region=region, deactivate_missing=False)
+                fetched.extend(partial)
+            immoscout_store.record_status_for(f"region:{region}", "rate_limited", error=str(exc))
+            break
         except Exception as exc:
             previous = immoscout_store.latest_status_for(f"region:{region}")
             _notify_admin_fetch_failed(bot, exc, previous)
@@ -294,7 +331,9 @@ def _notify_admin_fetch_failed(bot, error: Exception, previous_status: Dict) -> 
         return False
     status_code = getattr(getattr(error, "response", None), "status_code", None)
     hint = ""
-    if status_code in (401, 403, 429):
+    if status_code == 429:   # 08.11.2026: перевантаження — не поломка, без тривоги
+        return False
+    if status_code in (401, 403):
         hint = (
             f"\n\n🚫 Код {status_code} — схоже, API застосунку перестало пускати нас. "
             "Можливо, треба оновити версію в USER_AGENT (immoscout_parser)."
@@ -314,8 +353,14 @@ def check_job(context) -> Dict[str, int]:
         immoscout_store.record_status("disabled", listings_count=0)
         return {"ok": 1, "enabled": 0, "sent": 0}
     bot = context.bot
+    if _rate_limited():
+        immoscout_store.record_status("rate_limited", listings_count=0, error="pause after 429")
+        return {"ok": 1, "enabled": 1, "sent": 0, "rate_limited": 1}
     try:
         all_listings = _fetch_listings()
+    except RateLimited as exc:
+        immoscout_store.record_status("rate_limited", listings_count=0, error=str(exc))
+        return {"ok": 1, "enabled": 1, "sent": 0, "rate_limited": 1}
     except Exception as exc:
         previous_status = immoscout_store.latest_status()
         alerted = _notify_admin_fetch_failed(bot, exc, previous_status)

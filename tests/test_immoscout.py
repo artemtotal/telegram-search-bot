@@ -375,6 +375,40 @@ class ImmoscoutRegionTests(_DbTest):
         self.assertEqual([item["listing_key"] for item in listings], ["n1", "n2", "n3", "old", "old2"])
         self.assertTrue(all(item["region"] == "berlin" for item in listings))
 
+    def _rate_limit_reset(self):
+        immoscout_monitor._rate_limited_until = None
+        self.addCleanup(setattr, immoscout_monitor, "_rate_limited_until", None)
+
+    def test_429_pauses_requests_without_an_admin_alert(self):
+        """08.11.2026: 429 у повному обході Берліна слав тривогу «оновіть USER_AGENT» — це перевантаження, не блок."""
+        self._rate_limit_reset()
+        bot = FakeBot()
+        too_many = SimpleNamespace(status_code=429, json=lambda: {}, raise_for_status=lambda: None)
+        with mock.patch.object(immoscout_monitor, "ADMIN_ID", 1),              mock.patch("requests.post", return_value=too_many) as post:
+            first = immoscout_monitor.check_job(SimpleNamespace(bot=bot))
+            second = immoscout_monitor.check_job(SimpleNamespace(bot=bot))
+        self.assertEqual((first["rate_limited"], second["rate_limited"]), (1, 1))
+        self.assertEqual(post.call_count, 1)   # під час паузи запитів немає
+        self.assertEqual(bot.messages, [])
+
+    def test_a_rate_limited_full_sweep_keeps_what_it_read_and_takes_nothing_down(self):
+        self._rate_limit_reset()
+        immoscout_store.upsert_listings([self._berlin("b-old")], region="berlin", deactivate_missing=True)
+
+        def page(number):
+            if number == 2:
+                immoscout_monitor._back_off()
+                raise immoscout_monitor.RateLimited("429 Too Many Requests (page 2)")
+            return {"numberOfPages": 5, "resultListItems": [{"type": "EXPOSE_RESULT", "item": {
+                "id": "b-new", "realEstateType": "apartmentrent", "attributes": [],
+                "address": {"line": "10247 Berlin", "postcode": "10247"}}}]}
+        with mock.patch.object(immoscout_monitor, "REGIONS", ("berlin",)),              mock.patch.object(immoscout_monitor, "REGION_FULL_PAGE_PAUSE", 0),              mock.patch.object(immoscout_monitor, "_list_page", side_effect=lambda region, number: page(number)):
+            fetched = immoscout_monitor._scan_regions(FakeBot())
+        self.assertEqual([item["listing_key"] for item in fetched], ["b-new"])
+        # повний обхід не завершено — «b-old» не знято, повтор повного обходу ще попереду
+        self.assertEqual({item["listing_key"] for item in immoscout_store.list_active_listings()}, {"b-old", "b-new"})
+        self.assertTrue(immoscout_monitor._full_sweep_due("berlin"))
+
     def test_a_partial_region_scan_takes_nothing_down(self):
         immoscout_store.upsert_listings([self._listing("p")])  # Потсдам
         immoscout_store.upsert_listings([self._berlin("b1"), self._berlin("b2")], region="berlin", deactivate_missing=True)
