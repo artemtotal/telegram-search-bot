@@ -298,7 +298,8 @@ def handle_immowelt_result(bot, payload, release=False):
         # сообщение при этом уже у человека, так что второй раз слать нечего.
         logger.info("Immowelt listing %s already delivered to %s; skipping", listing_id, user_id)
         return {"ok": True, "duplicate": True}
-    if sublet.is_sublet(listing.get("title")) and not sublet.wants_rooms(user_id):
+    if (sublet.is_sublet(listing.get("title")) or sublet.is_room_sized(listing.get("area_m2"))) \
+            and not sublet.wants_rooms(user_id):
         # «WG-Zimmer zur Miete auf Zeit» тощо — лише тим, хто шукає кімнату.
         logger.info("Immowelt listing %s is a sublet; %s is not looking for a room", listing_id, user_id)
         return {"ok": True, "skipped": "sublet"}

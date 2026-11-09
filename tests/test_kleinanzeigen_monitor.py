@@ -205,6 +205,42 @@ class KleinanzeigenMonitorCheckJobTests(unittest.TestCase):
         for title in flats:
             self.assertTrue(kleinanzeigen_monitor._is_relevant(_listing('1', title=title)), title)
 
+    def test_worker_lodging_and_placeholder_prices_are_not_flats(self):
+        # Самоперевірка 09.11.2026: житло для бригад за «50 €» і «Nachmieter gesucht» за «1 €».
+        lodging = [
+            'Möblierte Unterkünfte in Spandau – Für Firmen und Großunternehmen',
+            'Möblierte Unterkunft in Nauen',
+            'Monteurzimmer in Potsdam ab 25 € pro Nacht',
+            'Ferienwohnung am See',
+        ]
+        for title in lodging:
+            self.assertFalse(kleinanzeigen_monitor._is_flat_offer(_listing('1', title=title)), title)
+        self.assertFalse(kleinanzeigen_monitor._is_flat_offer(_listing('1', title='Nachmieter gesucht', price=1.0)))
+        self.assertFalse(kleinanzeigen_monitor._is_flat_offer(_listing('1', title='2-Zimmer-Wohnung', price=50.0)))
+        # Nachmieter-оголошення зі справжньою ціною — звичайна квартира.
+        self.assertTrue(kleinanzeigen_monitor._is_flat_offer(_listing('1', title='Ich suche einen Nachmieter.', price=450.0)))
+        self.assertTrue(kleinanzeigen_monitor._is_flat_offer(_listing('1', title='Wohnung in Potsdam', price=None)))
+
+    def test_already_stored_lodging_is_not_sent(self):
+        lodging = _listing('7', title='Möblierte Unterkunft in Nauen', price=50.0)
+        filt = {'filter_id': 9, 'user_id': 544675510}
+        context = SimpleNamespace(bot=FakeBot())
+        with mock.patch.object(kleinanzeigen_monitor, 'CHECK_ENABLED', True), \
+             mock.patch.object(kleinanzeigen_monitor, 'REGIONS', ()), \
+             mock.patch('requests.get', return_value=FakeResponse('irrelevant')), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_parser.parse_listings', return_value=[_listing('1')]), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.record_status'), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.upsert_listings', return_value=1), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.list_active_listings', return_value=[lodging]), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.list_active_listings_since', return_value=[]), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.list_filters', return_value=[filt]), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.delivered_pairs', return_value=set()), \
+             mock.patch('user_jobs.kleinanzeigen_monitor.kleinanzeigen_store.mark_delivered') as mark_delivered:
+            result = kleinanzeigen_monitor.check_job(context)
+        self.assertEqual(context.bot.sent, [])
+        mark_delivered.assert_not_called()
+        self.assertEqual(result['sent'], 0)
+
     def test_matches_are_sent_and_marked_delivered(self):
         potsdam = _listing('1')
         filt = {'filter_id': 9, 'user_id': 544675510, 'max_price_eur': 1000.0}

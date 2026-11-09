@@ -280,7 +280,23 @@ def save_search(user_id: int, search_id: int, form: Dict[str, List[str]], lang: 
     failed += housing_card.apply_criteria(search, criteria)
     if failed:
         return _t("save_failed", lang, sources=", ".join(sorted(set(failed))))
+    _record_web_edit(user_id, search_id)
     return None
+
+
+def _record_web_edit(user_id: int, search_id: int) -> None:
+    """Правка на сайті — та сама «зміна фільтра», що й у боті (09.11.2026): без цього
+    вечірня самоперевірка порівнювала вчорашню відправку з уже зміненим фільтром
+    («не підходить під фільтр #207»), а зведення не бачило змін, зроблених на сайті."""
+    from user_handlers import housing_monitor as hm
+    if hm.ADMIN_ID and int(user_id) == int(hm.ADMIN_ID):
+        return
+    try:
+        _n, search = _search(user_id, search_id)
+        saved = [(*hm.housing_search_grouping.item_key(item), None) for item in (search or {}).get("items", [])]
+        hm._record_filter_event(int(user_id), saved, {}, True, False)
+    except Exception:
+        logger.exception("Could not record the web filter edit of %s", user_id)
 
 
 def set_paused(user_id: int, search_id: int, paused: bool) -> bool:

@@ -190,9 +190,34 @@ def _is_room_offer(title: str) -> bool:
     return False
 
 
+# Самоперевірка 09.11.2026: «Möblierte Unterkünfte in Spandau – Für Firmen und
+# Großunternehmen» і «Möblierte Unterkunft in Nauen» за «50 €» (ціна за ніч/ліжко
+# для бригад) пішли 5 людям як квартира за 1 €/м². Житло для монтажників і фірм —
+# не оренда для життя: «Unterkunft/Unterkünfte», «Monteur», «für Firmen», «pro Nacht».
+_LODGING_RE = re.compile(
+    r"unterk(?:u|ü|ue)nft|monteur|arbeiter[\s-]*(?:zimmer|wohnung|unterk)|f(?:ü|ue|u)r\s+firmen"
+    r"|firmen[\s-]*(?:wohnung|unterk)|pro\s+(?:nacht|tag|person)|\bferien[\s-]*wohnung|\bfewo\b",
+    re.IGNORECASE,
+)
+# «Nachmieter gesucht» за «1 €» (09.11.2026): справжню ціну автор у список не поставив,
+# а квартира без правдивої ціни пройшла б будь-який фільтр. Оренда квартири дешевша за
+# 100 € не буває — таке не розсилаємо, доки ціна не стане схожою на справжню.
+MIN_REAL_RENT_EUR = 100.0
+
+
+def _placeholder_price(listing: Dict) -> bool:
+    price = listing.get("price_eur")
+    return isinstance(price, (int, float)) and 0 < price < MIN_REAL_RENT_EUR
+
+
 def _is_flat_offer(listing: Dict) -> bool:
     title = str(listing.get("title") or "").casefold()
-    return not any(keyword in title for keyword in _SWAP_KEYWORDS) and not _is_room_offer(title)
+    return (
+        not any(keyword in title for keyword in _SWAP_KEYWORDS)
+        and not _is_room_offer(title)
+        and not _LODGING_RE.search(title)
+        and not _placeholder_price(listing)
+    )
 
 
 def _is_relevant(listing: Dict) -> bool:
@@ -421,7 +446,8 @@ def check_job(context) -> Dict[str, int]:
             kleinanzeigen_store.upsert_listings(read, region=region, deactivate_missing=False)
     kleinanzeigen_store.record_status("ok", listings_count=stored)
     kleinanzeigen_block.end_run(True, CHECK_INTERVAL_SECONDS)
-    active_listings = kleinanzeigen_store.list_active_listings()
+    # Уже збережені до нових правил (житло для бригад, ціна-заглушка) теж не розсилаємо.
+    active_listings = [item for item in kleinanzeigen_store.list_active_listings() if _is_flat_offer(item)]
     matches = kleinanzeigen_store.select_unsent_matches(
         active_listings, filters, kleinanzeigen_store.delivered_pairs()
     )
@@ -478,7 +504,8 @@ def _send_near_misses(bot, filters: List[Dict], gate) -> int:
     вона позначається всім фільтрам людини, для яких це той самий випадок,
     щоб за 4 дні та сама квартира не прийшла вдруге.
     """
-    fresh = kleinanzeigen_store.list_active_listings_since(kleinanzeigen_store.utc_now() - NEAR_MISS_FRESH)
+    fresh = [item for item in kleinanzeigen_store.list_active_listings_since(
+        kleinanzeigen_store.utc_now() - NEAR_MISS_FRESH) if _is_flat_offer(item)]
     if not fresh:
         return 0
     delivered = kleinanzeigen_store.delivered_pairs()

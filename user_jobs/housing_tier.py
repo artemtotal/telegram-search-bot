@@ -222,7 +222,7 @@ class DeliveryGate:
         return self._first_seen.get(str(listing.get("listing_key") or ""))
 
     def _sublet_unwanted(self, user_id: int, listing: Dict) -> bool:
-        if not sublet.is_sublet(listing.get("title")):
+        if not (sublet.is_sublet(listing.get("title")) or sublet.is_room_sized(listing.get("area_m2"))):
             return False
         user_id = int(user_id)
         if user_id not in self._wants_rooms:

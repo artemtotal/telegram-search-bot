@@ -103,6 +103,21 @@ class SubletDeliveryTests(_InMemoryDb):
         self.assertFalse(gate.due(888, self.SUBLET))
         self.assertTrue(gate.due(888, {'listing_key': 'f', 'title': '2-Zimmer-Wohnung in Potsdam'}))
 
+    def test_room_like_offers_and_tiny_areas_go_only_to_room_seekers(self):
+        # Самоперевірка 09.11.2026: «Wohnen gegen Hilfe» на 8 м², «2 Bedspace».
+        self._search(777, ['apartment', 'room'])
+        self._search(888)
+        gate = housing_tier.DeliveryGate('kleinanzeigen')
+        help_room = {'listing_key': 'h', 'title': 'Wohnen gegen Hilfe in Berlin Reinickendorf', 'area_m2': 8.0}
+        bedspace = {'listing_key': 'b', 'title': '2 Bedspace in Alt Mariendorf close to ubahn', 'area_m2': 20.0}
+        tiny = {'listing_key': 't', 'title': 'Kleine Wohnung', 'area_m2': 12.0}
+        for listing in (help_room, bedspace, tiny):
+            self.assertTrue(gate.due(777, listing), listing['title'])
+            self.assertFalse(gate.due(888, listing), listing['title'])
+        self.assertTrue(gate.due(888, {'listing_key': 'f', 'title': '1-Zimmer-Wohnung', 'area_m2': 22.0}))
+        # 1–4 м² — помилка розбору, а не кімната: квартиру не ховаємо.
+        self.assertTrue(gate.due(888, {'listing_key': 'p', 'title': 'Wohnung', 'area_m2': 1.0}))
+
     def test_immowelt_sublet_is_skipped_for_a_flat_seeker(self):
         self._search(888)
         payload = {

@@ -136,6 +136,13 @@ class HousingWebTest(card_tests.HousingCardTest):
         self.assertEqual(search["criteria"]["max_price_eur"], 900)
         self.assertEqual(search["criteria"]["wbs"], "none")
         self.assertEqual(sorted(hm._search_sources(search)), ["immoscout", "kleinanzeigen"])
+        # 09.11.2026: правка на сайті записується як зміна фільтра (самоперевірка, зведення).
+        session = hm.DBSession()
+        try:
+            edits = session.query(hm.HousingFilterEvent).filter_by(user_id=USER, edited=True).count()
+        finally:
+            session.close()
+        self.assertEqual(edits, 1)
         # Невідоме місто — помилка, а пошук не змінюється.
         status, _headers, body = self._req("POST", f"/search/{search_id}", dict(form, place="Hamburg"))
         self.assertEqual(status, 400)

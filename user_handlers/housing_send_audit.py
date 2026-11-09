@@ -42,7 +42,12 @@ MIN_AREA_M2 = 10.0
 MAX_AREA_M2 = 300.0
 MIN_M2_PER_ROOM = 9.0
 # Не квартира взагалі: кімната в WG, обмін, пошук житла.
-NOT_A_FLAT_RE = re.compile(r"\bwg\b|wg-zimmer|tausch|swap|\bsuche\b|gesucht wird", re.IGNORECASE)
+# «Ich suche einen Nachmieter» — навпаки, пропозиція квартири (жилець з'їжджає), не пошук
+# (хибна тривога 09.11.2026).
+NOT_A_FLAT_RE = re.compile(
+    r"\bwg\b|wg-zimmer|tausch|swap|\bsuche\b(?!\s+(?:einen?\s+|eine\s+)?nach(?:mieter|folger))|gesucht wird",
+    re.IGNORECASE,
+)
 
 
 def _num(value) -> Optional[float]:

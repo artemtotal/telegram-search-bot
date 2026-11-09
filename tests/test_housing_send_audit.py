@@ -27,6 +27,14 @@ class ListingProblemsTests(unittest.TestCase):
         problems = housing_send_audit.listing_problems({'title': 'WG Zimmer in Golm', 'rooms': 1, 'area_m2': 15, 'price_eur': 450})
         self.assertIn('за заголовком — не квартира', problems)
 
+    def test_looking_for_a_next_tenant_is_a_flat_offer(self):
+        # 09.11.2026: «Ich suche einen Nachmieter» — жилець з'їжджає, це пропозиція квартири.
+        for title in ('Ich suche einen Nachmieter.', 'Ich suche einen nachmieter', 'Suche Nachmieter für 2-Zimmer'):
+            self.assertNotIn('за заголовком — не квартира', housing_send_audit.listing_problems(
+                {'title': title, 'rooms': 1, 'area_m2': 40, 'price_eur': 450}), title)
+        self.assertIn('за заголовком — не квартира', housing_send_audit.listing_problems(
+            {'title': 'Suche 2-Zimmer-Wohnung in Potsdam', 'rooms': 2, 'area_m2': 50, 'price_eur': 600}))
+
     def test_an_ordinary_flat_is_fine(self):
         self.assertEqual(housing_send_audit.listing_problems(
             {'title': 'Helle 3-Zimmer Wohnung', 'rooms': 3, 'area_m2': 59.5, 'price_eur': 507, 'price_warm_eur': 757},

@@ -59,10 +59,33 @@ WG_ROOM_RE = re.compile(
 )
 
 
+# Самоперевірка 09.11.2026: «Wohnen gegen Hilfe in Berlin Reinickendorf» (8 м² за допомогу
+# по господарству) і «2 Bedspace in Alt Mariendorf» (ліжко в кімнаті) — не квартира.
+ROOM_LIKE_RE = re.compile(
+    r"wohnen\s+gegen\s+(?:mit)?hilfe|\bbed[\s-]*space|\bschlafplatz|\bbett\s+(?:in|im)\b",
+    re.IGNORECASE,
+)
+# Менше за 15 м² квартирою не буває — це кімната (той самий вибір «Кімнати в WG»).
+# Менше 5 м² — помилка розбору («Wohnung», 1 м²; «4 Zimmer, 104,56 m²» прочитано як 4 м²),
+# справжню квартиру через неї не ховаємо.
+MIN_FLAT_AREA_M2 = 15.0
+MIN_PARSED_AREA_M2 = 5.0
+
+
 def is_sublet(title: Any) -> bool:
     """Суборенда, тимчасова оренда, кімната в WG чи житло лише для студентів / під WG."""
     text = str(title or "")
-    return bool(SUBLET_RE.search(text) or STUDENT_WG_RE.search(text) or WG_ROOM_RE.search(text))
+    return bool(SUBLET_RE.search(text) or STUDENT_WG_RE.search(text) or WG_ROOM_RE.search(text)
+                or ROOM_LIKE_RE.search(text))
+
+
+def is_room_sized(area_m2: Any) -> bool:
+    """Площа кімнати, а не квартири (якщо площа відома)."""
+    try:
+        area = float(area_m2)
+    except (TypeError, ValueError):
+        return False
+    return MIN_PARSED_AREA_M2 <= area < MIN_FLAT_AREA_M2
 
 
 def wants_rooms(user_id: int) -> bool:
