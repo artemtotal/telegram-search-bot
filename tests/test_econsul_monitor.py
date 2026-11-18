@@ -282,12 +282,15 @@ class EconsulMonitorTest(unittest.TestCase):
 
         monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_link",
                                                  "login_id": "c3", "link": "https://mbnk.app/nbi"})
-        rows = self.bot.edit_message_text.call_args.kwargs["reply_markup"].inline_keyboard
+        # готове посилання - нове повідомлення (зі сповіщенням), а не правка старого
+        self.bot.edit_message_text.assert_not_called()
+        rows = self.bot.send_message.call_args.kwargs["reply_markup"].inline_keyboard
         self.assertEqual(rows[0][0].url, "https://mbnk.app/nbi")
         self.assertEqual(rows[1][0].callback_data, "econsul:login:c3")
 
     def test_login_reminder_replaces_the_old_message_with_a_fresh_one(self):
-        self.bot.send_message.side_effect = [SimpleNamespace(message_id=11), SimpleNamespace(message_id=12)]
+        self.bot.send_message.side_effect = [SimpleNamespace(message_id=11), SimpleNamespace(message_id=12),
+                                             SimpleNamespace(message_id=13)]
         monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_needed",
                                                  "login_id": "r1"})
         monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_reminder",
@@ -302,7 +305,9 @@ class EconsulMonitorTest(unittest.TestCase):
 
         monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_link",
                                                  "login_id": "r1", "link": "https://mbnk.app/x"})
-        self.assertEqual(self.bot.edit_message_text.call_args.kwargs["message_id"], 12)
+        self.bot.delete_message.assert_called_with(ADMIN, 12)
+        self.assertEqual(self.bot.send_message.call_count, 3)
+        self.bot.edit_message_text.assert_not_called()
 
     def test_login_reminder_strips_buttons_when_the_old_message_cannot_be_deleted(self):
         self.bot.send_message.side_effect = [SimpleNamespace(message_id=21), SimpleNamespace(message_id=22)]
@@ -315,8 +320,8 @@ class EconsulMonitorTest(unittest.TestCase):
         self.bot.edit_message_reply_markup.assert_called_once_with(ADMIN, 21, reply_markup=None)
         self.assertEqual(self.bot.send_message.call_count, 2)
 
-    def test_login_link_is_one_message_that_gets_updated_and_closed(self):
-        self.bot.send_message.return_value = SimpleNamespace(message_id=77)
+    def test_each_login_link_is_a_new_message_and_the_last_one_gets_closed(self):
+        self.bot.send_message.side_effect = [SimpleNamespace(message_id=77), SimpleNamespace(message_id=78)]
         link = {"source": "econsul_berlin", "status": "login_link", "login_id": "a1",
                 "link": "https://mbnk.app/nbi123", "wait_minutes": 30}
 
@@ -324,14 +329,14 @@ class EconsulMonitorTest(unittest.TestCase):
         monitor.handle_browser_result(self.bot, dict(link, link="https://mbnk.app/nbi456"))
         monitor.handle_browser_result(self.bot, {"source": "econsul_berlin", "status": "login_done", "login_id": "a1"})
 
-        [sent] = self.bot.send_message.call_args_list
-        self.assertEqual(sent.args[0], ADMIN)
-        button = sent.kwargs["reply_markup"].inline_keyboard[0][0]
-        self.assertEqual(button.url, "https://mbnk.app/nbi123")
-        edits = self.bot.edit_message_text.call_args_list
-        self.assertEqual(edits[0].kwargs["reply_markup"].inline_keyboard[0][0].url, "https://mbnk.app/nbi456")
-        self.assertIn("підтверджено", edits[1].args[0])
-        self.assertTrue(all(call.kwargs["message_id"] == 77 for call in edits))
+        first, second = self.bot.send_message.call_args_list
+        self.assertEqual(first.args[0], ADMIN)
+        self.assertEqual(first.kwargs["reply_markup"].inline_keyboard[0][0].url, "https://mbnk.app/nbi123")
+        self.assertEqual(second.kwargs["reply_markup"].inline_keyboard[0][0].url, "https://mbnk.app/nbi456")
+        self.bot.delete_message.assert_called_once_with(ADMIN, 77)
+        [closed] = self.bot.edit_message_text.call_args_list
+        self.assertIn("підтверджено", closed.args[0])
+        self.assertEqual(closed.kwargs["message_id"], 78)
 
     def test_login_messages_do_not_touch_the_check_status(self):
         monitor.handle_browser_result(self.bot, _payload({"7": ("Паспорт", [])}))

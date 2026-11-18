@@ -448,7 +448,10 @@ def _handle_login(bot, state: EconsulState, status: str, payload: Dict[str, obje
     text, keyboard = _login_message(status, payload, login_id, lang)
     same_login = state.login_id == login_id and state.login_message_id
     edited = False
-    if status == "login_reminder":
+    # 18.11.2026 (адмін): готове посилання теж приходить НОВИМ повідомленням, а не
+    # правкою «⏳ Готую посилання…» - правка не дає сповіщення, і посилання, що
+    # живе кілька хвилин, лишалося непоміченим.
+    if status in ("login_reminder", "login_link"):
         # Нагадування в годину розкладу: старе повідомлення прибираємо, щоб у
         # чаті висіло одне, а нове спливає сповіщенням. Без нього вхід, не
         # підтверджений 05.10, мовчки зупинив перевірки на три тижні.
