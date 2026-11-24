@@ -24,6 +24,7 @@ from user_handlers import housing_payment
 from user_handlers import housing_leave
 from user_handlers import housing_found, housing_pay_report, housing_pay_survey, housing_referral, housing_winback
 from user_jobs import housing_packages, housing_pay_store
+from user_jobs import housing_resume_guard  # noqa: F401  (таблиця housing_filter_pause - при старті)
 from database import (
     DBSession,
     HousingFilterEvent,
