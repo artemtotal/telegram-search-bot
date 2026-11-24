@@ -9,6 +9,7 @@ free-tier person gets what the feature is and the subscription button.
 
 import html
 import logging
+import os
 import threading
 from datetime import date
 from typing import Dict, Optional
@@ -203,6 +204,8 @@ def _generate_and_send(bot, user_id: int, ref_id: int, variant: bool) -> None:
             url = str(listing.get("detail_url") or "")
             if url.startswith("https://"):
                 rows.append([InlineKeyboardButton(i18n.t("housing.letter.btn.open", lang), url=url)])
+            if os.getenv("HOUSING_MAPPE", "1") != "0":
+                rows.append([InlineKeyboardButton(i18n.t("housing.mappe.btn.for_flat", lang), callback_data=f"housing:mappe:go:{ref_id}")])
             bot.send_message(
                 chat_id=user_id, text=f"<pre>{html.escape(letter[:3800])}</pre>", parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(rows),

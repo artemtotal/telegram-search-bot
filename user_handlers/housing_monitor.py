@@ -18,6 +18,7 @@ from telegram.error import BadRequest
 
 import i18n
 from user_handlers import housing_letter
+from user_handlers import housing_mappe
 from user_handlers import housing_payment
 from user_handlers import housing_leave
 from database import (
@@ -1734,6 +1735,7 @@ def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKey
         rows += [
             [btn("filters", "housing:self_manage"), btn("add", "housing:self_add")],
             [btn("matches", "housing:current_matches"), btn("letters", "housing:letter:menu")],
+            *([[btn("mappe", "housing:mappe:menu")]] if housing_mappe.ENABLED else []),
             [btn("notify", "housing:notify_settings"), btn("stats", "housing:stats")],
         ]
         # Сайт (етап 10, 02.11.2026): підписникам — усе, безкоштовним — частина.
@@ -5322,6 +5324,8 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
     text = update.message.text.strip()
     if housing_letter.handle_text(update, context):
         return True
+    if housing_mappe.handle_text(update, context):
+        return True
     from user_handlers import housing_card
     if housing_card.handle_text(update, context):
         return True
@@ -6620,6 +6624,8 @@ def _handle_callback(update: Update, context: CallbackContext) -> None:
         show_notify_settings(update, context, edit=True)
     elif query.data.startswith("housing:letter:"):
         housing_letter.handle_callback(update, context)
+    elif query.data.startswith("housing:mappe:"):
+        housing_mappe.handle_callback(update, context)
     elif query.data == "housing:notify_quiet_locked":
         toggle_quiet_hours(update, context, True)
     elif query.data.startswith("housing:notify_quiet:"):

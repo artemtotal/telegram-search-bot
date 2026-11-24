@@ -1066,6 +1066,29 @@ class HousingLetterLog(Base):
     created_at = Column(DATETIME, nullable=False)
 
 
+class HousingMappeProfile(Base):
+    """«📁 Папка заявника» (25.11.2026): що людина відповіла для Mieterselbstauskunft
+    (JSON; ключ є - питання було, навіть якщо відповідь порожня). Скани документів не зберігаємо."""
+
+    __tablename__ = 'housing_mappe_profile'
+
+    user_id = Column(INTEGER, primary_key=True)
+    data = Column(TEXT, nullable=False)
+    updated_at = Column(DATETIME)
+
+
+class HousingMappeLog(Base):
+    """Скільки папок бот склав людині — лише для денного ліміту; самих PDF не зберігаємо."""
+
+    __tablename__ = 'housing_mappe_log'
+
+    id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    source = Column(TEXT)
+    listing_key = Column(TEXT)
+    created_at = Column(DATETIME, nullable=False, index=True)
+
+
 class ImmoscoutListing(Base):
     """Квартири ImmoScout24 — з API мобільного застосунку.
 

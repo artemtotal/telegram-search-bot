@@ -6,3 +6,4 @@ PySocks>=1.7.1   # 08.11.2026: Kleinanzeigen через SOCKS ПК при 403 (K
 numpy>=1.24.0,<2.0
 fastembed==0.6.1
 matplotlib>=3.7,<4.0
+fpdf2>=2.7.9,<2.9   # 25.11.2026: «📁 Папка заявника» - PDF (шрифт DejaVu бере з matplotlib)
