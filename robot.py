@@ -234,7 +234,7 @@ if coop_offers.CHECK_ENABLED:
 
 # Housing access subscriptions: daily check for 3-day expiry warnings and
 # auto-closing access once the paid period actually runs out.
-job.run_repeating(housing_monitor.check_access_expiry, interval=86400, first=360)
+job.run_daily(housing_monitor.check_access_expiry, time=housing_monitor.ACCESS_EXPIRY_TIME)   # 25.11.2026: не вночі
 # The 1-day access given while a payment receipt waits for the admin.
 job.run_repeating(housing_payment.provisional_expiry_job, interval=600, first=300)
 # Подарочные дни «🎁 миттєві» и возврат ушедших через 7 дней (user_handlers/housing_winback.py).

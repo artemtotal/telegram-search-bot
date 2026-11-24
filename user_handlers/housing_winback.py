@@ -305,6 +305,9 @@ def expire_gifts(bot, now: Optional[datetime] = None) -> int:
     человек тем временем заплатил, подарок молча закрывается."""
     now = now or utc_now()
     closed = 0
+    if is_night(now):
+        # 25.11.2026: уночі (22-09 за Берліном) не пишемо - подарунок тихо дотягне до ранку.
+        return 0
     for gift in housing_pay_store.gifts_to_close(now):
         session = DBSession()
         try:

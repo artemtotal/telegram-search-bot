@@ -292,7 +292,8 @@ def expire_provisional(bot) -> int:
                     text=(
                         f"⏳ Тимчасовий день для {html.escape(payment.display_name or str(payment.user_id))} "
                         f"(<code>{int(payment.user_id)}</code>) минув, а оплату {payment.amount_uah} грн "
-                        f"за {payment.months} міс. ще не перевірено. Кнопки — під квитанцією вище."
+                        f"за {html.escape(housing_packages.admin_label(payment.package, payment.months))} ще не перевірено. "
+                        f"Кнопки — під квитанцією вище."
                     ),
                     parse_mode="HTML",
                 )

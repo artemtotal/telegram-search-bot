@@ -95,6 +95,14 @@ class _Db(unittest.TestCase):
 
 
 class RewriteTests(_Db):
+    def test_only_the_whole_address_is_replaced_not_a_prefix_of_another(self):
+        url = 'https://x.example/12'
+        text = f'<a href="{url}">A</a> {url}\nhttps://x.example/123'
+        out = housing_links.rewrite_text(text, 777, 'kleinanzeigen', 'k1', url)
+        self.assertIn('https://x.example/123', out)
+        self.assertEqual(out.count('/o/'), 2)
+
+
     def test_the_portal_address_in_the_text_becomes_our_link_and_resolves_back(self):
         text = housing_links.rewrite_text(self._message(), 777, 'kleinanzeigen', 'k1', PORTAL)
         self.assertNotIn('kleinanzeigen.de', text)
@@ -234,6 +242,21 @@ class WebServerTests(_Db):
         self.assertEqual(response.status, 302)
         self.assertEqual(response.getheader('Location'), PORTAL)
         self.assertEqual(response.getheader('Referrer-Policy'), 'no-referrer')
+
+    def test_an_address_with_umlauts_redirects_as_ascii_not_500(self):
+        url = 'https://www.immowelt.de/expose/Wohnung-Königs–Wusterhausen?a=1&b=ß'
+        token = housing_links.link_for(777, 'kleinanzeigen', 'k2', url).rsplit('/', 1)[1]
+        response, _ = self._request('GET', f'/o/{token}')
+        self.assertEqual(response.status, 302)
+        location = response.getheader('Location')
+        self.assertTrue(location.isascii())
+        from urllib.parse import unquote
+        self.assertEqual(unquote(location), url)
+
+    def test_a_broken_lookup_answers_404_not_500(self):
+        with mock.patch.object(housing_links, 'handle_open', side_effect=RuntimeError('db')):
+            response, _ = self._request('GET', '/o/abcdefgh')
+        self.assertEqual(response.status, 404)
 
     def test_the_address_in_the_request_is_ignored_no_open_redirect(self):
         token = housing_links.link_for(777, 'kleinanzeigen', 'k1', PORTAL).rsplit('/', 1)[1]

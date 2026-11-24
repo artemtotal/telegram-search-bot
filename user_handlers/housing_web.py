@@ -35,7 +35,7 @@ from datetime import datetime, timedelta
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -638,9 +638,14 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if not path.startswith("/o/"):
             return False
-        status, target = housing_links.handle_open(path[3:].strip("/"), method, self.headers.get("User-Agent") or "")
+        try:
+            status, target = housing_links.handle_open(path[3:].strip("/"), method, self.headers.get("User-Agent") or "")
+        except Exception:
+            logger.exception("/o/ lookup failed")
+            status, target = 404, ""
         if status == 302 and target:
-            self._send(302, "", {"Location": target, "Cache-Control": "no-store"})
+            # 25.11.2026: заголовок - лише ASCII (адреса з «ü», «–» інакше давала 500).
+            self._send(302, "", {"Location": quote(target, safe=":/?#[]@!$&'()*+,;=%~-._"), "Cache-Control": "no-store"})
         else:
             self._send(404, housing_links.not_found_page() if method == "GET" else "")
         return True

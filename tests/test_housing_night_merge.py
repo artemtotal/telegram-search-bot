@@ -232,6 +232,56 @@ class ResumeGuardTests(unittest.TestCase):
         self.assertEqual(self._unsent(), ["w1"])
 
 
+class GiftIsNotPaidTimeTests(unittest.TestCase):
+    def _grant(self, gift):
+        until = datetime.utcnow() + timedelta(days=2)
+        rows = [{"user_id": USER, "active": True, "is_trial": False, "expires_at": until, "display_name": "x"}]
+        with mock.patch.object(hm.housing_access_store, "list_users", return_value=rows), \
+                mock.patch.object(hm.housing_access_store, "grant_access") as grant, \
+                mock.patch.object(hm.housing_pay_store, "gift_running", return_value=gift):
+            expires = hm.grant_paid_months(USER, "x", 1, resume_filters=False)
+        grant.assert_called_once()
+        return until, expires
+
+    def test_a_month_during_the_gift_counts_from_now(self):
+        until, expires = self._grant(gift=object())
+        self.assertLess(expires, until + timedelta(days=27))
+
+    def test_a_month_during_a_paid_subscription_counts_from_its_end(self):
+        until, expires = self._grant(gift=None)
+        self.assertGreater(expires, until + timedelta(days=27))
+
+
+class NightTests(unittest.TestCase):
+    def test_gift_end_waits_for_the_morning(self):
+        from user_handlers import housing_winback
+
+        bot = mock.Mock()
+        with mock.patch.object(housing_winback, "is_night", return_value=True), \
+                mock.patch.object(housing_winback.housing_pay_store, "gifts_to_close") as gifts:
+            self.assertEqual(housing_winback.expire_gifts(bot), 0)
+        gifts.assert_not_called()
+        bot.send_message.assert_not_called()
+
+    def test_viewing_reminders_wait_for_the_morning(self):
+        from user_handlers import housing_tracker
+
+        bot = mock.Mock()
+        with mock.patch.object(housing_tracker, "DBSession") as session:
+            # 23:30 і 06:00 за Берліном (CET = UTC+1) - нічого не читаємо й не шлемо.
+            self.assertEqual(housing_tracker.send_due_reminders(bot, now=datetime(2026, 11, 27, 22, 30)), 0)
+            self.assertEqual(housing_tracker.send_due_reminders(bot, now=datetime(2026, 11, 28, 5, 0)), 0)
+        session.assert_not_called()
+        bot.send_message.assert_not_called()
+
+    def test_daily_access_check_runs_at_ten_in_berlin(self):
+        self.assertEqual((hm.ACCESS_EXPIRY_TIME.hour, hm.ACCESS_EXPIRY_TIME.minute), (10, 0))
+        with open(os.path.join(_ROOT, "robot.py"), encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertIn("run_daily(housing_monitor.check_access_expiry, time=housing_monitor.ACCESS_EXPIRY_TIME)", source)
+        self.assertNotIn("run_repeating(housing_monitor.check_access_expiry", source)
+
+
 class NewsPriceTests(unittest.TestCase):
     def test_prices_follow_the_package_variables(self):
         from user_jobs import housing_packages

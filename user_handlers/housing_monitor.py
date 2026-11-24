@@ -1209,6 +1209,10 @@ def _record_filter_event(user_id: int, saved: list, hits: Dict[str, int], edited
 # на кожен новий чи змінений фільтр.
 # pytz, а не ZoneInfo: APScheduler 3 під PTB 13 приймає лише pytz-зони.
 FILTER_SUMMARY_TIME = dtime(21, 0, tzinfo=pytz.timezone("Europe/Berlin"))
+# 25.11.2026: щоденна перевірка кінця доступу (попередження з особистим звітом,
+# кінець підписки, кінець подарунка) - о 10:00 за Берліном. Раніше вона йшла через
+# 6 хвилин після кожного старту й далі щодоби - після нічної викладки писала б людям уночі.
+ACCESS_EXPIRY_TIME = dtime(10, 0, tzinfo=pytz.timezone("Europe/Berlin"))
 FILTER_SUMMARY_PEOPLE_SHOWN = 15
 KLEINANZEIGEN_BASE_INTERVAL = 20 * 60   # = kleinanzeigen_monitor.CHECK_INTERVAL_SECONDS (не імпортуємо монітор сюди)
 
@@ -2671,6 +2675,13 @@ def grant_paid_months(target_id: int, name: str, months: int, resume_filters: bo
                 base = current
             name = name or str(row.get("display_name") or "")
             break
+    # 25.11.2026: подарункові дні («🎁», housing_winback) - не оплачений строк; місяць
+    # (бонус запрошувачу, ручна видача) рахуємо від зараз, а не від кінця подарунка.
+    try:
+        if base != now and housing_pay_store.gift_running(target_id, now):
+            base = now
+    except Exception:
+        logger.exception("Could not check the gift days of %s", target_id)
     expires_at = _add_months(base, months)
     housing_access_store.grant_access(target_id, name, expires_at=expires_at)
     if resume_filters:

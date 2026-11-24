@@ -143,7 +143,9 @@ def rewrite_text(text: str, user_id: int, source: str, listing_key: str, url: st
         ours = link_for(user_id, source, listing_key, url)
         if ours == url:
             return text
-        result = text.replace(found, html.escape(ours))
+        # 25.11.2026: лише адреса цілком (далі лапки, «<», пробіл чи кінець), а не префікс
+        # іншої адреси (https://x/12 у https://x/123).
+        result = re.sub(re.escape(found) + r"(?=[\"'<\s]|$)", lambda _m: html.escape(ours), text)
         return result if ours in result.replace("&amp;", "&") else text
     except Exception:
         logger.exception("rewrite_text failed, sending the direct link")

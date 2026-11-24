@@ -63,7 +63,10 @@ class HousingCardTest(unittest.TestCase):
         engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
         Base.metadata.create_all(engine)
         session = sessionmaker(bind=engine)
-        modules = [housing_search_store, coop_watchdog_store, user_settings_store, housing_journey_store, hm]
+        from user_handlers import housing_leave
+        # housing_leave теж у пам'ять: інакше «вимкнув моніторинг» після видалення пошуку
+        # лягав у файлову базу тестів і псував зведення в test_housing_free_tier.
+        modules = [housing_search_store, coop_watchdog_store, user_settings_store, housing_journey_store, hm, housing_leave]
         modules += [store for store, _matching in hm._LOCAL_SOURCE_MODULES.values()]
         modules += [matching for _store, matching in hm._LOCAL_SOURCE_MODULES.values() if hasattr(matching, 'DBSession')]
         self.immowelt = FakeImmowelt()

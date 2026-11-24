@@ -532,6 +532,11 @@ def send_due_reminders(bot, now: Optional[datetime] = None) -> int:
     """Evening-before and 2-hours-before reminders for subscribers. Returns
     how many were sent."""
     now = now or utc_now()
+    # 25.11.2026 (злиття): уночі (22-09 за Берліном) не пишемо. Нагадування «за 2 год»
+    # для раннього перегляду прийде о 9:00, якщо перегляд ще попереду; вечірнє о 19:00 - як було.
+    berlin_hour = pytz.utc.localize(now).astimezone(BERLIN).hour
+    if berlin_hour >= 22 or berlin_hour < 9:
+        return 0
     session = DBSession()
     try:
         rows = [_as_dict(r) for r in session.query(HousingApplication).filter(
