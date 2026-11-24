@@ -77,6 +77,9 @@ class HousingCardTest(unittest.TestCase):
             mock.patch.object(hm, '_sync_propot_filters'),
             mock.patch.object(hm, '_after_filter_saved'),
             mock.patch.object(hm, '_maybe_send_first_filter_congrats'),
+            # Ці тести писались, коли місце бачив лише адмін (з 25.11.2026 за замовчуванням - усі);
+            # місце для всіх перевіряє HousingCardPlaceTest нижче.
+            mock.patch.object(housing_card, 'PLACE_FOR_ALL', False),
         ]
         for patch in patches:
             patch.start()

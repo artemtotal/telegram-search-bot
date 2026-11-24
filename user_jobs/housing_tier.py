@@ -362,9 +362,11 @@ def forget_held(user_id: int, source: str, listing_key: str) -> None:
         session.close()
 
 
-def missed_notice(user_id: int, source_label: str, summary: str):
+def missed_notice(user_id: int, source_label: str, summary: str, listing_key: str = "", source: str = ""):
     """(text, keyboard) of "this flat was taken down before the free tier
-    could send it" - the same for polled sources and Immowelt."""
+    could send it" - the same for polled sources and Immowelt.
+    25.11.2026: plus the real «⚡ Підписники отримали о … · відкрили: N» line
+    (housing_links.listing_social_line) when there is something real to say."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     lang = i18n.get_lang(int(user_id))
@@ -372,6 +374,14 @@ def missed_notice(user_id: int, source_label: str, summary: str):
         "housing.missed.notice", lang, source=html.escape(source_label), summary=html.escape(summary or "—"),
         hours=free_delay_hours(), price=PREMIUM_PRICE_EUR,
     )
+    if listing_key:
+        try:
+            from user_jobs import housing_links
+            line = housing_links.listing_social_line(str(listing_key), lang, source or None)
+            if line:
+                text += "\n\n" + html.escape(line)
+        except Exception:
+            logger.exception("Social line for the missed notice failed")
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(
         i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request",
     )]])

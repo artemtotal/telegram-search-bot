@@ -72,8 +72,10 @@ SUSPICIOUS_GONE = 5
 FORGET_AFTER = timedelta(days=3)
 
 
-def _send(bot, user_id: int, source: str, summary: str) -> None:
-    text, keyboard = housing_tier.missed_notice(user_id, SOURCE_LABEL.get(source, source), summary)
+def _send(bot, user_id: int, source: str, summary: str, listing_key: str = "") -> None:
+    text, keyboard = housing_tier.missed_notice(
+        user_id, SOURCE_LABEL.get(source, source), summary, listing_key=listing_key, source=source,
+    )
     bot.send_message(chat_id=int(user_id), text=text, parse_mode="HTML", reply_markup=keyboard)
 
 
@@ -131,7 +133,7 @@ def missed_flats_job(context) -> Dict[str, int]:
     sent = 0
     for user_id, source, summary, listing_key in notify:
         try:
-            _send(bot, user_id, source, summary)
+            _send(bot, user_id, source, summary, listing_key)
             housing_pay_store.log_missed(user_id, source, listing_key)
             sent += 1
             logger.info("Missed flat: told %s that %s %s was taken down while held", user_id, source, listing_key)

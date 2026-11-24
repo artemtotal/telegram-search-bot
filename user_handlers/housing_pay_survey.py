@@ -81,6 +81,8 @@ def start(update: Update, context: CallbackContext) -> None:
         query.answer()
         return
     answer = housing_pay_store.survey_answer(user.id)
+    from user_jobs import housing_text_wait
+    housing_text_wait.claim(context.user_data, STATE_KEY)
     context.user_data[STATE_KEY] = {"at": _utc_now(), "answer": answer}
     query.answer()
     context.bot.send_message(

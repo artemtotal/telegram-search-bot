@@ -21,7 +21,7 @@ from user_handlers.anonymous_validation import (
     validate_submission as validate_submission_text,
 )
 from user_handlers import econsul_monitor, equeue_monitor, housing_monitor, housing_pay_survey, housing_payment, support
-from user_jobs import user_settings_store
+from user_jobs import housing_text_wait, user_settings_store
 from user_jobs.reindex_queue import enqueue_message_reindex
 
 
@@ -447,6 +447,10 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
     if housing_pay_survey.handle_text(update, context, lambda value: _is_menu_text(value, lang)):
         return
     if state.get("step") != "text":
+        # Кнопка нижнього меню завжди виходить з будь-якого очікування тексту
+        # (дата перегляду, анкета папки чи листа, своє число в картці).
+        if _is_menu_text(text, lang):
+            housing_text_wait.clear_all(context.user_data)
         if _is_button(text, "home", lang):
             show_home(update, context)
             return

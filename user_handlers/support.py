@@ -174,6 +174,8 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         query.answer(i18n.t("support.unavailable", lang), show_alert=True)
         return
     if action == "custom":
+        from user_jobs import housing_text_wait
+        housing_text_wait.claim(context.user_data, _STATE_KEY)
         context.user_data[_STATE_KEY] = datetime.utcnow()
         query.answer()
         query.edit_message_text(

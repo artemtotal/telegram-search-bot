@@ -20,8 +20,9 @@ jobcenter_tables); в округах Бранденбургу таблиць п�
 зону потрапляє частина Потсдама — ще й потсдамські агентства (їхні квартири
 звіряються за індексом, етап 2). Immowelt (етап 3) отримує місце в тілі
 запиту до check-Wohnung і шукає там само. Що людина сама вимкнула,
-пошук пам'ятає в `criteria["sources_off"]` і повертає, щойно місце знову Потсдам. Поки — лише для адміна, усім —
-HOUSING_PLACE_FOR_ALL=1.
+пошук пам'ятає в `criteria["sources_off"]` і повертає, щойно місце знову Потсдам. Відкрито всім
+з 02.11.2026 (HOUSING_PLACE_FOR_ALL, за замовчуванням 1 з 25.11.2026); HOUSING_PLACE_FOR_ALL=0 лишає
+місце лише адміну.
 
 WBS (02.11.2026): рядок «🪪 WBS» і питання в новому фільтрі (після Jobcenter) —
 `criteria["wbs"]`, див. housing_wbs. Видно разом із місцем (place_enabled).
@@ -38,7 +39,7 @@ from telegram.ext import CallbackContext, CallbackQueryHandler
 import i18n
 from user_handlers import housing_monitor as hm
 from user_jobs import (
-    coop_offers, housing_area, housing_journey_store, housing_search_store, housing_tier, housing_wbs,
+    coop_offers, housing_area, housing_journey_store, housing_search_store, housing_text_wait, housing_tier, housing_wbs,
     jobcenter_tables, propotsdam_store,
 )
 
@@ -79,7 +80,7 @@ REGION_SOURCES = {"immoscout", "kleinanzeigen", "vonovia", "immowelt", "ohnemakl
 POTSDAM_ONLY_SOURCES: set = set()
 # Лише Берлін: міські компанії з inberlinwohnen.de (етап 8).
 BERLIN_ONLY_SOURCES = {"inberlin"}
-PLACE_FOR_ALL = os.getenv("HOUSING_PLACE_FOR_ALL", "0") == "1"
+PLACE_FOR_ALL = os.getenv("HOUSING_PLACE_FOR_ALL", "1") == "1"
 
 
 def place_enabled(user_id: int) -> bool:
@@ -627,6 +628,7 @@ def _ask_field(update: Update, context: CallbackContext, field: str) -> None:
         _show(update, context)
         return
     query.answer()
+    housing_text_wait.claim(context.user_data, housing_text_wait.CARD)
     st["input"] = field
     text = card_text(number, search, lang, pointer=FIELD_LINE[field]) + "\n\n" + _t(f"ask.{field}", lang) + "\n" + _t("ask_hint", lang)
     keyboard = _field_keyboard(field, int(search["user_id"]), lang, search["criteria"].get("area"))
@@ -865,6 +867,7 @@ def _place_screen(update: Update, context: CallbackContext, edit: bool = True, n
     """Де шукати: дві кнопки або своє місто/індекс у чат."""
     st = _state(context)
     lang = i18n.get_lang(update.effective_user.id)
+    housing_text_wait.claim(context.user_data, housing_text_wait.CARD)
     st["input"] = "place"
     new_flow = bool(st.get("new_flow"))
     rows = [[

@@ -769,7 +769,7 @@
   "jg.wait_admin": "Danke! Ein Admin prüft Ihre Anfrage.",
   "jg.expired": "Die Zeit ist abgelaufen — die Anfrage wurde abgelehnt. Stellen Sie sie gern erneut.",
   "housing.menu.btn.mappe": "📁 Bewerbungsmappe",
-  "housing.mappe.locked": "📁 <b>Bewerbungsmappe</b> ist eine Abo-Funktion ⚡ ({price} €/Monat).\n\nDer Bot stellt für den Vermieter ein PDF auf Deutsch zusammen: Deckblatt, Anschreiben, Mieterselbstauskunft und eine Liste der Unterlagen zum Beilegen. Alles an einem Ort — nur noch senden oder ausdrucken.",
+  "housing.mappe.locked": "📁 <b>Bewerbungsmappe</b> ist eine Abo-Funktion ⚡ (ab {price} €).\n\nDer Bot stellt für den Vermieter ein PDF auf Deutsch zusammen: Deckblatt, Anschreiben, Mieterselbstauskunft und eine Liste der Unterlagen zum Beilegen. Alles an einem Ort — nur noch senden oder ausdrucken.",
   "housing.mappe.locked_short": "📁 Die Bewerbungsmappe ist eine Abo-Funktion ⚡",
   "housing.mappe.off": "📁 Die Bewerbungsmappe ist vorübergehend abgeschaltet.",
   "housing.mappe.menu": "📁 <b>Bewerbungsmappe</b>\n\nEin PDF auf Deutsch für den Vermieter:\n• Deckblatt\n• Anschreiben\n• Mieterselbstauskunft\n• Liste der beizulegenden Unterlagen\n\nScans von Dokumenten verlangt und speichert der Bot nicht.",

@@ -422,9 +422,11 @@ def handle_text(update: Update, context: CallbackContext) -> bool:
     return True
 
 
-def _call_mark_found(user_id: int) -> bool:
-    """Поток A: mark_found(user_id). True - модуль є й відпрацював (він сам
-    вітає); False - модуля немає, вітаємо самі."""
+def _call_mark_found(user_id: int, bot=None) -> bool:
+    """Поток A: mark_found(user_id) (пауза пошуків) + congrats(bot, user_id)
+    (вітання з подякою). True - модуль є й усе зроблено (або людина вже
+    позначена «знайшла» - тоді вдруге не вітаємо); False - модуля немає,
+    він вимкнений (HOUSING_FOUND_ENABLED=0) чи впав - вітаємо самі."""
     import importlib
 
     for name in FOUND_MODULES:
@@ -436,7 +438,16 @@ def _call_mark_found(user_id: int) -> bool:
         if func is None:
             continue
         try:
+            is_on = getattr(module, "enabled", None)
+            if is_on is not None and not is_on():
+                return False
+            already = getattr(module, "is_found", None)
+            if already is not None and already(int(user_id)):
+                return True
             func(int(user_id))
+            congrats = getattr(module, "congrats", None)
+            if bot is not None and congrats is not None:
+                congrats(bot, int(user_id))
             return True
         except Exception:
             logger.exception("mark_found failed for %s", user_id)
@@ -481,6 +492,8 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
             query.answer(i18n.t("housing.track.gone", lang), show_alert=True)
             return
         query.answer()
+        from user_jobs import housing_text_wait
+        housing_text_wait.claim(context.user_data, STATE_KEY)
         context.user_data[STATE_KEY] = num(arg)
         context.bot.send_message(
             chat_id=user_id, text=i18n.t("housing.track.date_ask", lang),
@@ -493,7 +506,7 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
             return
         set_status(user_id, num(arg), "found")
         query.answer()
-        if not _call_mark_found(user_id):
+        if not _call_mark_found(user_id, context.bot):
             context.bot.send_message(chat_id=user_id, text=i18n.t("housing.track.found_congrats", lang))
         show_card(update, context, num(arg), edit=False)
     elif action == "rm":

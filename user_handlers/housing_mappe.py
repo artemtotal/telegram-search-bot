@@ -319,6 +319,8 @@ def _summary(values: Dict[str, str], lang: str) -> str:
 
 def _start_questions(bot, context: CallbackContext, user_id: int, ref_id: Optional[int], force: bool, generate: bool) -> None:
     context.user_data.pop(housing_letter.STATE_KEY, None)
+    from user_jobs import housing_text_wait
+    housing_text_wait.claim(context.user_data, STATE_KEY)
     saved = store.get_answers(user_id) or {}
     state = {"answers": {} if force else dict(saved), "force": force, "ref": ref_id, "generate": generate}
     context.user_data[STATE_KEY] = state

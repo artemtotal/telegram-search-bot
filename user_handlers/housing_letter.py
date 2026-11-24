@@ -242,6 +242,8 @@ def _ask(bot, user_id: int, step: int) -> None:
 
 def _start_profile(bot, context: CallbackContext, user_id: int, ref_id: Optional[int]) -> None:
     old = store.get_profile(user_id) or {}
+    from user_jobs import housing_text_wait
+    housing_text_wait.claim(context.user_data, STATE_KEY)
     context.user_data[STATE_KEY] = {"step": 0, "answers": dict(old), "ref": ref_id}
     bot.send_message(chat_id=user_id, text=i18n.t("housing.letter.intro_profile", _lang(user_id)))
     _ask(bot, user_id, 0)

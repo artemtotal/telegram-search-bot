@@ -21,9 +21,9 @@ from database import (
     Base, HousingAccessUser, HousingApplication, HousingLinkOpen, HousingLinkRef, HousingSendLog,
     KleinanzeigenListing,
 )
-from user_handlers import chat_start, housing_letter, housing_monitor, housing_tracker, housing_web
+from user_handlers import chat_start, housing_leave, housing_letter, housing_monitor, housing_tracker, housing_web
 from user_jobs import (
-    housing_dateparse, housing_letter_store, housing_links, housing_tier, user_settings_store,
+    housing_dateparse, housing_letter_store, housing_links, housing_pay_store, housing_tier, user_settings_store,
 )
 
 PORTAL = 'https://www.kleinanzeigen.de/s-anzeige/k1?a=1&b=2'
@@ -33,7 +33,7 @@ WEB = 'https://web.example'
 class _Db(unittest.TestCase):
     MODULES = (
         housing_links, housing_tracker, housing_letter_store, housing_letter, housing_tier,
-        user_settings_store, housing_monitor,
+        user_settings_store, housing_monitor, housing_pay_store, housing_leave,
     )
 
     def setUp(self):
@@ -620,6 +620,19 @@ class TrackerTests(_Db):
         update, _ = self._update(data=f'hap:fd:{app.id}')
         housing_tracker.handle_callback(update, context)
         self.assertEqual(self._rows(HousingApplication)[0].status, 'found')
+        texts = [c.kwargs.get('text', '') for c in bot.send_message.call_args_list]
+        # Після злиття (25.11.2026) модуль потоку A є: пауза + його вітання з подякою, одне.
+        self.assertEqual(sum('Вітаємо з новим житлом' in t for t in texts), 1)
+        self.assertFalse(any('Вітаю з квартирою' in t for t in texts))
+        # Повторне «Отримав квартиру» - друге вітання не йде.
+        context, bot = self._ctx()
+        housing_tracker.handle_callback(update, context)
+        texts = [c.kwargs.get('text', '') for c in bot.send_message.call_args_list]
+        self.assertFalse(any('Вітаємо з новим житлом' in t or 'Вітаю з квартирою' in t for t in texts))
+        # Функцію вимкнено - вітаємо самі, пошуки не чіпаємо.
+        with mock.patch.dict(os.environ, {'HOUSING_FOUND_ENABLED': '0'}):
+            context, bot = self._ctx()
+            housing_tracker.handle_callback(update, context)
         texts = [c.kwargs.get('text', '') for c in bot.send_message.call_args_list]
         self.assertTrue(any('Вітаю з квартирою' in t for t in texts))
         fake = SimpleNamespace(mark_found=mock.Mock())

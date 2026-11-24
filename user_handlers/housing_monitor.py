@@ -2866,17 +2866,32 @@ def _set_all_filters_active_for_user(user_id: int, active: bool) -> int:
 
     propot_filters = propotsdam_store.list_filters(user_id=user_id)
     for filt in propot_filters:
+        _resume_guard("propotsdam", int(filt["filter_id"]), active, user_id)
         if propotsdam_store.set_filter_active(int(filt["filter_id"]), active, user_id=user_id):
             changed += 1
     if propot_filters:
         _sync_propot_filters()
 
-    for store in (semmelhaack_store, schoba_store, regiomakler_store, kleinanzeigen_store,
-                  locals_store, karlmarx_store, vonovia_store, immoscout_store, inberlin_store, ohnemakler_store):
+    for source, store in (("semmelhaack", semmelhaack_store), ("schoba", schoba_store),
+                          ("regiomakler", regiomakler_store), ("kleinanzeigen", kleinanzeigen_store),
+                          ("locals", locals_store), ("karlmarx", karlmarx_store), ("vonovia", vonovia_store),
+                          ("immoscout", immoscout_store), ("inberlin", inberlin_store), ("ohnemakler", ohnemakler_store)):
         for filt in store.list_filters(user_id=user_id):
+            _resume_guard(source, int(filt["filter_id"]), active, user_id)
             if store.set_filter_active(int(filt["filter_id"]), active, user_id=user_id):
                 changed += 1
     return changed
+
+
+def _resume_guard(source: str, filter_id: int, active: bool, user_id: int) -> None:
+    """25.11.2026: пауза дольше суток - при включении накопленное не шлём
+    (housing_resume_guard); на паузе - запоминаем, когда она началась."""
+    from user_jobs import housing_resume_guard
+
+    if active:
+        housing_resume_guard.before_activate(source, filter_id, user_id)
+    else:
+        housing_resume_guard.note_paused(source, filter_id, user_id)
 
 
 def confirm_access_delete(update: Update, context: CallbackContext, target_id: int) -> None:
@@ -4030,6 +4045,7 @@ def toggle_news_subscription(update: Update, context: CallbackContext, enabled: 
 
 
 def _set_one_filter_active(source: str, filter_id: int, active: bool, user_id: int) -> bool:
+    _resume_guard(source, filter_id, active, user_id)
     if source == "propotsdam":
         ok = propotsdam_store.set_filter_active(filter_id, active, user_id=user_id)
         if ok:

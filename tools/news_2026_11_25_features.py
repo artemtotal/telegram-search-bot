@@ -48,14 +48,15 @@ HEAD = {
 }
 PARTS = {
     "price": {
-        "uk": "💶 <b>Нові ціни підписки.</b>\n1 місяць — 5 €, 3 місяці — 12 €, «поки не знайду житло» — 15 € разово.",
-        "ru": "💶 <b>Новые цены подписки.</b>\n1 месяц — 5 €, 3 месяца — 12 €, «пока не найду жильё» — 15 € разово.",
-        "de": "💶 <b>Neue Abo-Preise.</b>\n1 Monat — 5 €, 3 Monate — 12 €, „bis ich eine Wohnung finde“ — 15 € einmalig.",
+        # Ціни - з тих самих змінних, що й кнопки оплати (housing_packages), див. compose().
+        "uk": "💶 <b>Нові ціни підписки.</b>\n1 місяць — {p1} €, 3 місяці — {p3} €, «поки не знайду житло» — {pf} € разово.",
+        "ru": "💶 <b>Новые цены подписки.</b>\n1 месяц — {p1} €, 3 месяца — {p3} €, «пока не найду жильё» — {pf} € разово.",
+        "de": "💶 <b>Neue Abo-Preise.</b>\n1 Monat — {p1} €, 3 Monate — {p3} €, „bis ich eine Wohnung finde“ — {pf} € einmalig.",
     },
     "tracker": {
         "uk": "📋 <b>«Мої заявки».</b>\nВідмічайте, куди ви вже подалися, — бот нагадає про перегляд квартири.",
         "ru": "📋 <b>«Мои заявки».</b>\nОтмечайте, куда вы уже подались, — бот напомнит о просмотре квартиры.",
-        "de": "📋 <b>„Meine Bewerbungen“.</b>\nMarkieren Sie, wo Sie sich beworben haben — der Bot erinnert Sie an den Besichtigungstermin.",
+        "de": "📋 <b>„Bewerbungen“.</b>\nMarkieren Sie, wo Sie sich beworben haben — der Bot erinnert Sie an den Besichtigungstermin.",
     },
     "mappe": {
         "uk": "📁 <b>«Папка заявника».</b>\nОдин PDF німецькою для орендодавця: титульний лист, супровідний лист, анкета орендаря й список документів. Для підписників ⚡",
@@ -96,8 +97,15 @@ def parse_parts(raw: Optional[str]) -> List[str]:
 
 
 def compose(lang: str, parts: Iterable[str], paid: bool) -> str:
+    from user_jobs import housing_packages  # noqa: PLC0415
+
     lang = lang if lang in HEAD else "uk"
-    blocks = [HEAD[lang]] + [PARTS[name][lang] for name in parts]
+    prices = {
+        "p1": housing_packages.price_eur(housing_packages.M1),
+        "p3": housing_packages.price_eur(housing_packages.M3),
+        "pf": housing_packages.price_eur(housing_packages.UNTIL_FOUND),
+    }
+    blocks = [HEAD[lang]] + [PARTS[name][lang].format(**prices) for name in parts]
     if paid:
         blocks.append(PAID_LINE[lang])
     return "\n\n".join(blocks)

@@ -205,10 +205,12 @@ def _tell_taken_down(bot, user_id, raw):
         payload = json.loads(raw)
     except ValueError:
         payload = {}
-    text, keyboard = housing_tier.missed_notice(user_id, "Immowelt", html.unescape(_immowelt_summary(payload)))
+    listing_id = str(((payload.get("listing") if isinstance(payload, dict) else None) or {}).get("listing_id") or "")
+    text, keyboard = housing_tier.missed_notice(
+        user_id, "Immowelt", html.unescape(_immowelt_summary(payload)), listing_key=listing_id, source="immowelt",
+    )
     bot.send_message(chat_id=int(user_id), text=text, parse_mode="HTML", reply_markup=keyboard)
     # Журнал «квартиру вже зняли» (повернення ушедших, housing_winback).
-    listing_id = str(((payload.get("listing") if isinstance(payload, dict) else None) or {}).get("listing_id") or "")
     housing_pay_store.log_missed(user_id, "immowelt", listing_id)
 
 
