@@ -107,6 +107,10 @@ def summary_lines(bot, since: datetime, until: datetime, display_name) -> List[s
     if stopped:
         lines.append(f"🔕 Вимкнули моніторинг (видалили всі фільтри): <b>{len(stopped)}</b>")
         lines.append(names(stopped))
+    found = list({e["user_id"]: e for e in evs if e["kind"] == "found"}.values())
+    if found:
+        lines.append(f"🏠 Знайшли житло (позначили в боті): <b>{len(found)}</b>")
+        lines.append(names(found))
     if back:
         lines.append(f"↩️ Повернулись (розблокували): <b>{len(back)}</b>")
     return lines

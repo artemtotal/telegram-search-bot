@@ -20,6 +20,8 @@ import i18n
 from user_handlers import housing_letter
 from user_handlers import housing_payment
 from user_handlers import housing_leave
+from user_handlers import housing_found, housing_pay_report, housing_pay_survey, housing_referral, housing_winback
+from user_jobs import housing_packages
 from database import (
     DBSession,
     HousingFilterEvent,
@@ -1736,8 +1738,12 @@ def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKey
             [btn("matches", "housing:current_matches"), btn("letters", "housing:letter:menu")],
             [btn("notify", "housing:notify_settings"), btn("stats", "housing:stats")],
         ]
+        premium = housing_tier.is_premium(user_id)
+        rows += housing_found.menu_rows(user_id, lang, premium)
         # Сайт (етап 10, 02.11.2026): підписникам — усе, безкоштовним — частина.
-        rows.append([btn("web", "housing:web")])
+        rows.append([btn("web", "housing:web")] + (
+            housing_found.free_resume_buttons(user_id, lang, premium) or housing_referral.menu_buttons(lang)
+        ))
         if is_admin:
             rows.append([btn("coops", "housing:coops"), btn("status", "housing:status")])
     else:
@@ -1834,6 +1840,8 @@ def _faq_text(lang: str = "uk") -> str:
         "housing.faq.text", lang,
         btn_self_manage=i18n.t("housing.btn.self_manage", lang),
         btn_request_access=i18n.t("housing.btn.request_access", lang),
+        p1=housing_packages.price_eur(housing_packages.M1), p3=housing_packages.price_eur(housing_packages.M3),
+        pf=housing_packages.price_eur(housing_packages.UNTIL_FOUND),
     )
 
 
@@ -2563,15 +2571,18 @@ def _downgrade_to_free(bot, user_id: int, trial: bool) -> None:
     housing_access_store.set_active(user_id, False)
     text_key = "housing.trial.stopped" if trial else "housing.access.expired_free"
     try:
-        bot.send_message(
-            chat_id=user_id,
-            text=i18n.t(
-                text_key, lang, hours=housing_tier.free_delay_hours(), price=housing_tier.PREMIUM_PRICE_EUR,
-            ),
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request"),
-            ]]),
+        text = i18n.t(
+            text_key, lang, hours=housing_tier.free_delay_hours(), price=housing_tier.PREMIUM_PRICE_EUR,
         )
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request"),
+        ]])
+        parse_mode = None
+        extra = None if trial else housing_pay_report.ended_addition(user_id)
+        if extra:
+            # Личные цифры за оплаченный период и три пакета (housing_pay_report).
+            text, keyboard, parse_mode = text + "\n\n" + extra[0], extra[1], "HTML"
+        bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard, parse_mode=parse_mode)
     except Exception:
         logger.exception("Could not tell user %s they are on the free tier now", user_id)
     if ADMIN_ID:
@@ -3014,12 +3025,14 @@ def housing_followups_job(context) -> None:
         housing_journey_store.mark_survey_sent(user_id)
 
 
-def _survey_write_keyboard(lang: str) -> Optional[InlineKeyboardMarkup]:
-    if not ADMIN_ID:
-        return None
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton(i18n.t("housing.survey.btn_write", lang), url=f"tg://user?id={ADMIN_ID}"),
-    ]])
+def _survey_write_keyboard(lang: str, negative: bool = False) -> Optional[InlineKeyboardMarkup]:
+    keyboard = None
+    if ADMIN_ID:
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(i18n.t("housing.survey.btn_write", lang), url=f"tg://user?id={ADMIN_ID}"),
+        ]])
+    # После отрицательного ответа - «✍️ Написати докладніше» (housing_pay_survey).
+    return housing_pay_survey.extend_keyboard(keyboard, lang) if negative else keyboard
 
 
 def _answer_survey_hard(update: Update, context: CallbackContext, detail: str) -> None:
@@ -3035,7 +3048,7 @@ def _answer_survey_hard(update: Update, context: CallbackContext, detail: str) -
         return
     query.answer()
     text_key = "housing.survey.hard.thanks_other" if detail == "other" else "housing.survey.thanks"
-    query.edit_message_text(i18n.t(text_key, lang), reply_markup=_survey_write_keyboard(lang))
+    query.edit_message_text(i18n.t(text_key, lang), reply_markup=_survey_write_keyboard(lang, negative=True))
     if ADMIN_ID:
         try:
             context.bot.send_message(
@@ -3074,10 +3087,13 @@ def _answer_survey(update: Update, context: CallbackContext, code: str) -> None:
                     i18n.t(f"housing.survey.hard.opt.{detail}", lang), callback_data=f"housing:survey_hard:{detail}",
                 )]
                 for detail in SURVEY_HARD_DETAILS
-            ]),
+            ] + ([housing_pay_survey.button_row(lang)] if housing_pay_survey.enabled() else [])),
         )
     else:
-        query.edit_message_text(i18n.t("housing.survey.thanks", lang), reply_markup=_survey_write_keyboard(lang))
+        query.edit_message_text(
+            i18n.t("housing.survey.thanks", lang),
+            reply_markup=_survey_write_keyboard(lang, negative=housing_pay_survey.is_negative(code)),
+        )
     if ADMIN_ID:
         tier = "💎 платний" if housing_tier.is_premium(user.id) else "🆓 безкоштовний"
         try:
@@ -3110,6 +3126,8 @@ def check_access_expiry(context) -> None:
     # The 1-day access given while a receipt is checked ends quietly with its
     # own message, not as "your subscription ended" below.
     housing_payment.expire_provisional(bot)
+    # Подарочные дни («🎁 миттєві», housing_winback) кончаются так же тихо.
+    housing_winback.expire_gifts(bot)
     for row in housing_access_store.list_expiring_soon(within_days=EXPIRY_WARNING_DAYS, trial=False):
         target_id = int(row["user_id"])
         name = str(row.get("display_name") or "")
@@ -3117,14 +3135,19 @@ def check_access_expiry(context) -> None:
         expires_str = expires_at.strftime("%d.%m.%Y") if expires_at else "?"
         expiry_lang = i18n.get_lang(target_id)
         try:
-            bot.send_message(
-                chat_id=target_id,
-                text=i18n.t("housing.access.expiry_warning", expiry_lang),
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton(i18n.t("housing.access.btn.continue", expiry_lang), callback_data=f"housing:access_continue:{target_id}"),
-                    InlineKeyboardButton(i18n.t("housing.access.btn.stop", expiry_lang), callback_data=f"housing:access_stop:{target_id}"),
-                ]]),
-            )
+            # Личный отчёт + три пакета (housing_pay_report); None - прежний текст.
+            report = housing_pay_report.warning_message(target_id, expires_at) if expires_at else None
+            if report:
+                bot.send_message(chat_id=target_id, text=report[0], parse_mode="HTML", reply_markup=report[1])
+            else:
+                bot.send_message(
+                    chat_id=target_id,
+                    text=i18n.t("housing.access.expiry_warning", expiry_lang),
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton(i18n.t("housing.access.btn.continue", expiry_lang), callback_data=f"housing:access_continue:{target_id}"),
+                        InlineKeyboardButton(i18n.t("housing.access.btn.stop", expiry_lang), callback_data=f"housing:access_stop:{target_id}"),
+                    ]]),
+                )
         except Exception:
             logger.exception("Could not send the expiry warning to user %s", target_id)
         if ADMIN_ID:
@@ -6436,6 +6459,12 @@ def _handle_callback(update: Update, context: CallbackContext) -> None:
     if not query or not query.data:
         return
     if housing_payment.handle_callback(update, context):
+        return
+    if (housing_found.handle_callback(update, context) or housing_winback.handle_callback(update, context)
+            or housing_pay_survey.handle_callback(update, context)):
+        return
+    if query.data == housing_referral.CALLBACK:
+        housing_referral.show_menu(update, context)
         return
     if query.data == "housing:menu":
         query.answer()

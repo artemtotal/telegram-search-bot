@@ -3253,7 +3253,7 @@ class HousingAccessRequestTests(unittest.TestCase):
                 for button in row
             ]
 
-        self.assertIn('⚡ Отримувати одразу — 5 €/міс', labels)
+        self.assertIn('⚡ Отримувати одразу', labels)
 
     def test_locked_menu_also_offers_the_faq(self):
         """People without access yet should still be able to read what the
@@ -3303,7 +3303,8 @@ class HousingAccessRequestTests(unittest.TestCase):
 
         text = update.effective_message.reply_text.call_args.args[0]
         self.assertIn('10 порталами', text)
-        self.assertIn('5 €', text)
+        # Ціни - на екрані оплати; тут - які є пакети (25.11.2026).
+        self.assertIn('«Поки не знайду житло»', text)
 
     def test_district_pickers_bold_the_current_selection(self):
         # Раніше вибрані райони губилися серед звичайного тексту — людина не

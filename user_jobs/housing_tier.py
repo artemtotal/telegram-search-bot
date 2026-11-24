@@ -23,13 +23,14 @@ import pytz
 
 import i18n
 from database import DBSession, HousingAccessUser, HousingHeldMatch, HousingSendLog
-from user_jobs import sublet
+from user_jobs import housing_packages, sublet
 
 logger = logging.getLogger(__name__)
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0") or 0)
 FREE_DELAY = timedelta(hours=float(os.getenv("HOUSING_FREE_DELAY_HOURS", "2") or 2))
-PREMIUM_PRICE_EUR = 5
+# «від N €» у всіх текстах - ціна найкоротшого пакета (1 місяць).
+PREMIUM_PRICE_EUR = housing_packages.price_eur(housing_packages.M1)
 
 # Тиха ніч за берлінським часом - функція підписки (25.10.2026): у платних
 # увімкнена за замовчуванням, безкоштовні отримують квартири й уночі. Бот

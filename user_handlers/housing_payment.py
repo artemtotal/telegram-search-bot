@@ -26,7 +26,7 @@ from telegram.ext import CallbackContext, Filters, MessageHandler
 
 import i18n
 from database import DBSession, HousingAccessUser, HousingPayment
-from user_jobs import housing_access_store, housing_tier
+from user_jobs import housing_access_store, housing_pay_store, housing_packages, housing_tier
 
 logger = logging.getLogger(__name__)
 
@@ -85,14 +85,57 @@ def _current_expiry(user_id: int) -> Optional[datetime]:
         row = session.query(HousingAccessUser).get(int(user_id))
         if row is None or not row.active or row.is_trial or not row.expires_at:
             return None
-        return row.expires_at if row.expires_at > utc_now() else None
+        if row.expires_at <= utc_now():
+            return None
+    finally:
+        session.close()
+    # Подарункові дні - не оплачена підписка: нові місяці рахуються від оплати.
+    if housing_pay_store.gift_running(user_id) is not None:
+        return None
+    return row.expires_at
+
+
+def until_found_expiry(user_id: int) -> Optional[datetime]:
+    """До коли діє пакет «Поки не знайду», якщо він зараз діє, інакше None.
+    Пакет - це останній схвалений платіж із цим пакетом, що ще не минув, і
+    доступ людини, який дотягує до його кінця."""
+    now = utc_now()
+    session = DBSession()
+    try:
+        paid = (
+            session.query(HousingPayment)
+            .filter(HousingPayment.user_id == int(user_id), HousingPayment.status == "approved")
+            .filter(HousingPayment.package == housing_packages.UNTIL_FOUND)
+            .filter(HousingPayment.expires_at.isnot(None), HousingPayment.expires_at > now)
+            .order_by(HousingPayment.id.desc()).first()
+        )
+        if paid is None:
+            return None
+        access = session.query(HousingAccessUser).get(int(user_id))
+        if access is None or not access.active or not access.expires_at or access.expires_at <= now:
+            return None
+        if access.expires_at < paid.expires_at - timedelta(minutes=1):
+            return None
+        return access.expires_at
     finally:
         session.close()
 
 
 # --- сховище -----------------------------------------------------------------
 
-def create_payment(user_id: int, display_name: str, months: int, rate: float) -> HousingPayment:
+def create_payment(
+    user_id: int, display_name: str, months: int, rate: float, package: Optional[str] = None,
+) -> HousingPayment:
+    """`package` (m1/m3/until_found) задає місяці та ціну; без нього - старий
+    вибір «N місяців» за ціною місяця."""
+    if housing_packages.valid(package):
+        months = housing_packages.months(package)
+        amount_eur = float(housing_packages.price_eur(package))
+        amount = housing_packages.amount_uah(package, rate)
+    else:
+        package = None
+        amount_eur = float(months * housing_tier.PREMIUM_PRICE_EUR)
+        amount = amount_uah(months, rate)
     session = DBSession()
     try:
         # Попередні незавершені вибори цієї людини більше не актуальні:
@@ -105,11 +148,12 @@ def create_payment(user_id: int, display_name: str, months: int, rate: float) ->
             user_id=int(user_id),
             display_name=str(display_name or "")[:120],
             months=int(months),
-            amount_eur=float(months * housing_tier.PREMIUM_PRICE_EUR),
-            amount_uah=amount_uah(months, rate),
+            amount_eur=amount_eur,
+            amount_uah=amount,
             eur_uah_rate=float(rate),
             status="awaiting_receipt",
             created_at=utc_now(),
+            package=package,
         )
         session.add(row)
         session.commit()
@@ -288,6 +332,51 @@ def _months_keyboard(lang: str, rate: float) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def _packages_keyboard(lang: str, rate: float) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(
+            i18n.t(
+                "pay.pkg.btn", lang, name=i18n.t(f"pay.pkg.name.{code}", lang),
+                eur=housing_packages.price_eur(code), uah=housing_packages.amount_uah(code, rate),
+            ),
+            callback_data=f"housing:pay:p:{code}",
+        )]
+        for code in housing_packages.CODES
+    ]
+    if ADMIN_ID:   # нема української карти — домовитися з адміном про готівку в Потсдамі
+        rows.append([InlineKeyboardButton(i18n.t("housing.pay.btn.cash", lang), url=f"tg://user?id={ADMIN_ID}")])
+    rows.append([InlineKeyboardButton(i18n.t("housing.pay.btn.cancel", lang), callback_data="housing:pay:cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
+def package_buttons(lang: str) -> list:
+    """Три кнопки пакетів для повідомлень про кінець підписки: тап одразу веде
+    до реквізитів (без ціни в гривнях - вона на наступному екрані)."""
+    return [
+        [InlineKeyboardButton(
+            i18n.t(
+                "pay.pkg.btn_short", lang, name=i18n.t(f"pay.pkg.name.{code}", lang),
+                eur=housing_packages.price_eur(code),
+            ),
+            callback_data=f"housing:pay:p:{code}",
+        )]
+        for code in housing_packages.CODES
+    ]
+
+
+def _show_until_found_status(update: Update, expiry: datetime, lang: str) -> None:
+    query = update.callback_query
+    text = i18n.t("pay.pkg.has_until_found", lang, date=expiry.strftime("%d.%m.%Y"))
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu"),
+    ]])
+    if query:
+        query.answer()
+        query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+    else:
+        update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+
 def show_months(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     user = update.effective_user
@@ -296,6 +385,25 @@ def show_months(update: Update, context: CallbackContext) -> None:
     lang = i18n.get_lang(user.id)
     rate = eur_uah_rate()
     expiry = _current_expiry(user.id)
+    if housing_packages.enabled():
+        # Хто вже на пакеті «Поки не знайду» - кнопку оплати не показуємо, лише строк.
+        found_until = until_found_expiry(user.id)
+        if found_until is not None:
+            _show_until_found_status(update, found_until, lang)
+            return
+        current = i18n.t("pay.pkg.current", lang, date=expiry.strftime("%d.%m.%Y")) if expiry else ""
+        text = i18n.t(
+            "pay.pkg.choose", lang,
+            p1=housing_packages.price_eur(housing_packages.M1), p3=housing_packages.price_eur(housing_packages.M3),
+            pf=housing_packages.price_eur(housing_packages.UNTIL_FOUND), rate=_format_rate(rate), current=current,
+        )
+        keyboard = _packages_keyboard(lang, rate)
+        if query:
+            query.answer()
+            query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+        else:
+            update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+        return
     current = i18n.t("housing.pay.current", lang, date=expiry.strftime("%d.%m.%Y")) if expiry else ""
     text = i18n.t(
         "housing.pay.choose", lang,
@@ -322,6 +430,14 @@ def _pick_months(update: Update, context: CallbackContext) -> None:
     if months not in MONTH_OPTIONS:
         query.answer()
         return
+    if housing_packages.enabled():
+        # Кнопка зі старого повідомлення («N місяців»): 1 і 3 - це пакети, решти більше нема.
+        package = housing_packages.for_months(months)
+        if package is None:
+            show_months(update, context)
+            return
+        _pick_package(update, context, package)
+        return
     lang = i18n.get_lang(user.id)
     payment = create_payment(user.id, housing_monitor._display_name(user), months, eur_uah_rate())
     holder = i18n.t("housing.pay.holder", lang, holder=html.escape(PAY_CARD_HOLDER)) if PAY_CARD_HOLDER else ""
@@ -335,6 +451,39 @@ def _pick_months(update: Update, context: CallbackContext) -> None:
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton(i18n.t("housing.pay.btn.other", lang), callback_data="housing:pay:start")],
+            *([[InlineKeyboardButton(i18n.t("housing.pay.btn.cash", lang), url=f"tg://user?id={ADMIN_ID}")]] if ADMIN_ID else []),
+            [InlineKeyboardButton(i18n.t("housing.pay.btn.cancel", lang), callback_data="housing:pay:cancel")],
+        ]),
+    )
+
+
+def _pick_package(update: Update, context: CallbackContext, package: str) -> None:
+    """Пакет обрано: показуємо суму й карту, оплата заводиться з цим пакетом."""
+    from user_handlers import housing_monitor
+
+    query = update.callback_query
+    user = update.effective_user
+    if not query or not user or not housing_packages.valid(package):
+        if query:
+            query.answer()
+        return
+    lang = i18n.get_lang(user.id)
+    found_until = until_found_expiry(user.id)
+    if found_until is not None:
+        _show_until_found_status(update, found_until, lang)
+        return
+    payment = create_payment(user.id, housing_monitor._display_name(user), 0, eur_uah_rate(), package=package)
+    holder = i18n.t("housing.pay.holder", lang, holder=html.escape(PAY_CARD_HOLDER)) if PAY_CARD_HOLDER else ""
+    query.answer()
+    query.edit_message_text(
+        i18n.t(
+            "pay.pkg.instructions", lang,
+            name=i18n.t(f"pay.pkg.name.{package}", lang), term=i18n.t(f"pay.pkg.term.{package}", lang),
+            uah=payment.amount_uah, eur=int(payment.amount_eur), card=_format_card(PAY_CARD), holder=holder,
+        ),
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton(i18n.t("pay.pkg.btn.other", lang), callback_data="housing:pay:start")],
             *([[InlineKeyboardButton(i18n.t("housing.pay.btn.cash", lang), url=f"tg://user?id={ADMIN_ID}")]] if ADMIN_ID else []),
             [InlineKeyboardButton(i18n.t("housing.pay.btn.cancel", lang), callback_data="housing:pay:cancel")],
         ]),
@@ -359,9 +508,19 @@ def _admin_caption(payment: HousingPayment, user_id: int, note: str = "") -> str
         "",
         f"Користувач: {html.escape(payment.display_name or str(user_id))}",
         f"Telegram ID: <code>{int(user_id)}</code>",
-        f"Термін: <b>{payment.months} міс.</b>",
+        (f"Пакет: <b>{housing_packages.admin_label(payment.package, payment.months)}</b>"
+         + (f" (технічно {payment.months} міс.)" if payment.package == housing_packages.UNTIL_FOUND else ""))
+        if housing_packages.valid(payment.package) else f"Термін: <b>{payment.months} міс.</b>",
         f"Сума: <b>{payment.amount_uah} грн</b> ({int(payment.amount_eur)} € за курсом {_format_rate(payment.eur_uah_rate)})",
     ]
+    try:
+        from user_handlers import housing_referral
+        referral_line = housing_referral.admin_card_line(payment)
+    except Exception:
+        logger.exception("Could not build the referral line of payment %s", payment.id)
+        referral_line = ""
+    if referral_line:
+        lines.append(referral_line)
     expiry = _current_expiry(user_id)
     if payment.provisional_until:
         lines.append(
@@ -377,7 +536,10 @@ def _admin_caption(payment: HousingPayment, user_id: int, note: str = "") -> str
 
 def _admin_keyboard(payment: HousingPayment, user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"✅ Дозволити {payment.months} міс.", callback_data=f"housing:pay:ok:{payment.id}")],
+        [InlineKeyboardButton(
+            f"✅ Дозволити {housing_packages.admin_label(payment.package, payment.months)}",
+            callback_data=f"housing:pay:ok:{payment.id}",
+        )],
         [
             InlineKeyboardButton("✖ Відхилити", callback_data=f"housing:pay:no:{payment.id}"),
             InlineKeyboardButton("💌 Написати в ЛС", url=f"tg://user?id={int(user_id)}"),
@@ -467,6 +629,17 @@ def _edit_admin_message(query, text: str) -> None:
             logger.debug("Could not update the admin payment message", exc_info=True)
 
 
+def _tell_until_found(bot, user_id: int, expires_at: datetime) -> None:
+    """Пакет «Поки не знайду»: після загального «підписку ввімкнено» - як він діє."""
+    try:
+        bot.send_message(
+            chat_id=user_id,
+            text=i18n.t("pay.pkg.granted_until_found", i18n.get_lang(user_id), date=expires_at.strftime("%d.%m.%Y")),
+        )
+    except Exception:
+        logger.exception("Could not explain the until-found package to %s", user_id)
+
+
 def _decide(update: Update, context: CallbackContext, approve: bool) -> None:
     from user_handlers import housing_monitor
 
@@ -491,16 +664,30 @@ def _decide(update: Update, context: CallbackContext, approve: bool) -> None:
         return
     provisional_running = _provisional_running(payment)
     if approve:
-        if provisional_running:
-            # Оплачені місяці - від підтвердження, а не після тимчасового дня.
+        if provisional_running or housing_pay_store.gift_running(target_id) is not None:
+            # Оплачені місяці - від підтвердження, а не після тимчасового дня чи подарунка.
             housing_access_store.set_active(target_id, False)
-        expires_at = housing_monitor.grant_paid_months(target_id, payment.display_name, payment.months)
+        # Скільки давати - за пакетом цієї оплати (для старих записів без пакета - як збережено).
+        months = housing_packages.effective_months(payment.package, payment.months)
+        expires_at = housing_monitor.grant_paid_months(target_id, payment.display_name, months)
         if not _set_status(payment.id, "approved", decided_at=utc_now(), expires_at=expires_at):
             query.answer("Цю оплату вже оброблено.", show_alert=True)
             return
         query.answer("✅ Підписку ввімкнено")
-        _edit_admin_message(query, f"{base}\n\n<b>✅ Дозволено до {expires_at.strftime('%d.%m.%Y')}</b>")
+        outcome = f"{base}\n\n<b>✅ Дозволено до {expires_at.strftime('%d.%m.%Y')}</b>"
         housing_monitor._notify_user_access_granted(context.bot, target_id, expires_at)
+        if payment.package == housing_packages.UNTIL_FOUND:
+            _tell_until_found(context.bot, target_id, expires_at)
+        # «Приведи друга»: перша оплата друга - місяць запрошувачу (рядок адміну - у картку).
+        try:
+            from user_handlers import housing_referral
+            reward_line = housing_referral.reward_on_approval(context.bot, payment, expires_at)
+        except Exception:
+            logger.exception("Referral reward failed after approving payment %s", payment.id)
+            reward_line = ""
+        if reward_line:
+            outcome += f"\n{reward_line}"
+        _edit_admin_message(query, outcome)
         return
     if not _set_status(payment.id, "rejected", decided_at=utc_now()):
         query.answer("Цю оплату вже оброблено.", show_alert=True)
@@ -535,6 +722,9 @@ def handle_callback(update: Update, context: CallbackContext) -> bool:
             housing_monitor.request_access(update, context)
     elif action == "m":
         _pick_months(update, context)
+    elif action == "p":
+        parts = query.data.split(":")
+        _pick_package(update, context, parts[3] if len(parts) > 3 else "")
     elif action == "cancel":
         _cancel(update, context)
     elif action == "ok":

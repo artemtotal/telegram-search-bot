@@ -1467,6 +1467,9 @@ class HousingPayment(Base):
     # До кінця якого дня діяли миттєві сповіщення, видані одразу після
     # квитанції, поки адмін перевіряє оплату. None - не видавались.
     provisional_until = Column(DATETIME)
+    # Який пакет куплено: m1 / m3 / until_found («Поки не знайду житло»).
+    # None - старі записи 1-6 місяців до пакетів (рахуються за months).
+    package = Column(TEXT)
 
 
 class SlowSearch(Base):
@@ -1551,6 +1554,7 @@ _ensure_column('econsul_state', 'token_reminded_for', 'DATETIME')
 _ensure_column('econsul_state', 'login_id', 'TEXT')
 _ensure_column('econsul_state', 'login_message_id', 'INTEGER')
 _ensure_column('housing_payment', 'provisional_until', 'DATETIME')
+_ensure_column('housing_payment', 'package', 'TEXT')
 _ensure_column('housing_send_log', 'snapshot', 'TEXT')
 # Етап 1 «Берлін і Бранденбург» (02.11.2026): індекс і регіон квартири, місце фільтра.
 _ensure_column('immoscout_listing', 'plz', 'TEXT')
