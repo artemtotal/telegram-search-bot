@@ -1376,6 +1376,67 @@ class HousingLetterRef(Base):
     created_at = Column(DATETIME, nullable=False)
 
 
+class HousingLinkRef(Base):
+    """Our own redirect link for one flat sent to one person:
+    <HOUSING_WEB_URL>/o/<token> -> `url` (the portal address saved here at
+    send time, never taken from the request)."""
+
+    __tablename__ = 'housing_link_ref'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'source', 'listing_key', name='uq_housing_link_ref'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    token = Column(TEXT, nullable=False, unique=True, index=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    source = Column(TEXT, nullable=False)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    url = Column(TEXT, nullable=False)
+    created_at = Column(DATETIME, nullable=False)
+
+
+class HousingLinkOpen(Base):
+    """One visit of a /o/<token> link. Robots and link previews are written
+    with is_human=False and never counted."""
+
+    __tablename__ = 'housing_link_open'
+
+    id = Column(INTEGER, primary_key=True)
+    token = Column(TEXT, nullable=False, index=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    source = Column(TEXT, nullable=False)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    opened_at = Column(DATETIME, nullable=False)
+    is_human = Column(BOOLEAN, nullable=False, default=True)
+
+
+class HousingApplication(Base):
+    """«📋 Мої заявки»: a flat the person says they applied to. The flat's
+    title/address/price/link are copied here, so the record outlives the
+    listing. `hidden` rows stay (they still count in «подались»)."""
+
+    __tablename__ = 'housing_application'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'source', 'listing_key', name='uq_housing_application'),
+    )
+
+    id = Column(INTEGER, primary_key=True)
+    user_id = Column(INTEGER, nullable=False, index=True)
+    source = Column(TEXT, nullable=False)
+    listing_key = Column(TEXT, nullable=False, index=True)
+    title = Column(TEXT)
+    address = Column(TEXT)
+    price_text = Column(TEXT)
+    url = Column(TEXT)
+    status = Column(TEXT, nullable=False, default='applied')
+    viewing_at = Column(DATETIME)
+    remind_eve_sent = Column(BOOLEAN, nullable=False, default=False)
+    remind_2h_sent = Column(BOOLEAN, nullable=False, default=False)
+    hidden = Column(BOOLEAN, nullable=False, default=False)
+    created_at = Column(DATETIME, nullable=False)
+    updated_at = Column(DATETIME, nullable=False)
+
+
 class HousingHeldMatch(Base):
     """A flat that matched a free-tier person's filter but is still waiting
     out the delay (or the night) - polled sources only, Immowelt keeps its

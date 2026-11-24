@@ -16,7 +16,7 @@ from telegram.error import NetworkError
 
 import i18n
 from database import DBSession, HousingDelivery, HousingPendingDelivery, ImmoweltListing
-from user_jobs import housing_letter_store, housing_tier, sublet
+from user_jobs import housing_letter_store, housing_links, housing_tier, sublet
 
 
 logger = logging.getLogger(__name__)
@@ -340,17 +340,20 @@ def handle_immowelt_result(bot, payload, release=False):
     if listing.get("availability"):
         lines.append("📅 " + _text(listing["availability"]))
 
+    # Посилання через наш перехід (HOUSING_LINK_REDIRECT); будь-яка проблема - пряме.
+    shown_url = housing_links.link_for(user_id, "immowelt", listing_id, url)
     keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Відкрити на Immowelt", url=url)]]
+        [[InlineKeyboardButton("Відкрити на Immowelt", url=shown_url)]]
     )
     text = "\n".join(lines)
     if not premium:
         text += housing_tier.free_footer(user_id)
+        text += housing_links.free_social_footer(user_id, "immowelt", listing_id)
     text += housing_letter_store.letter_link(user_id, "immowelt", listing_id, premium)
     images = [str(u).strip() for u in (listing.get("images") or []) if str(u).strip()][:GALLERY_ALBUM_MAX]
 
     try:
-        _send_immowelt_post(bot, user_id, images, text, keyboard, url)
+        _send_immowelt_post(bot, user_id, images, text, keyboard, shown_url)
     except NetworkError as exc:
         if _request_never_left(exc):
             raise

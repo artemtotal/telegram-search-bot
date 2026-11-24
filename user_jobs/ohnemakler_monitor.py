@@ -158,7 +158,7 @@ def check_job(context) -> Dict[str, int]:
             ohnemakler_store.mark_delivered(int(filt["filter_id"]), listing_key)
             continue
         text = ohnemakler_matching.format_notification(listing, lang=i18n.get_lang(chat_id))
-        text += gate.footer(chat_id, listing_key)
+        text = gate.finish(text, chat_id, listing_key)
         try:
             if not _send_listing(bot, chat_id, listing, text):
                 bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)

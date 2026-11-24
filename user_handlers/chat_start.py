@@ -35,6 +35,11 @@ def start(update, context):
             from user_handlers import housing_letter
             housing_letter.handle_start(update, context, str(context.args[0]))
             return
+        # «✅ Подався» під квартирою - t.me/<bot>?start=ap<id> (трекер заявок).
+        if context.args and str(context.args[0]).startswith('ap') and str(context.args[0])[2:].isdigit():
+            from user_handlers import housing_tracker
+            housing_tracker.handle_start(update, context, str(context.args[0]))
+            return
         from user_handlers.anonymous_posts import show_home
         show_home(update, context)
         return

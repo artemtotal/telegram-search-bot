@@ -70,11 +70,12 @@ class LetterLinkTests(_Db):
         gate = housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing)
         free = gate.footer(777, 'k1')
         self.assertIn('https://t.me/PotsdamTestBot?start=lt1', free)
-        self.assertIn('⚡ підписка', free)
+        self.assertIn('✍️ Лист ⚡</a>', free)  # compact «✍️ Лист · ✅ Подався» line (tracker on by default)
         self._subscribe(888)
         paid = housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing).footer(888, 'k1')
         self.assertIn('?start=lt1', paid)  # the same flat keeps the same reference
         self.assertNotIn('підписка', paid)
+        self.assertNotIn('⚡</a>', paid)
 
     def test_no_link_while_the_bot_username_is_unknown(self):
         with mock.patch.object(housing_letter_store, '_bot_username', None):

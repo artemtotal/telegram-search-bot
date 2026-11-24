@@ -30,6 +30,7 @@ from user_handlers import (
     housing_receiver,
     housing_relax,
     housing_send_audit,
+    housing_tracker,
     join_gate,
     support,
 )
@@ -243,6 +244,8 @@ job.run_repeating(housing_receiver.send_due_immowelt, interval=300, first=420)
 # Free tier: a held flat taken down before its delay ran out -> a short note
 # instead of silence (user_jobs/housing_missed.py).
 job.run_repeating(housing_missed.missed_flats_job, interval=600, first=480)
+# «📋 Мої заявки»: нагадування про перегляд (HOUSING_APPLY_TRACKER).
+job.run_repeating(housing_tracker.reminders_job, interval=300, first=510)
 # Follow-ups: the "you haven't created a filter yet" nudge and the
 # two-weeks-after-the-first-filter survey.
 job.run_repeating(housing_monitor.housing_followups_job, interval=1800, first=450)
@@ -278,6 +281,7 @@ dispatcher.add_handler(support.callback_handler)
 dispatcher.add_handler(housing_monitor.command_handler)
 dispatcher.add_handler(housing_monitor.callback_handler)
 dispatcher.add_handler(housing_card.callback_handler)
+dispatcher.add_handler(housing_tracker.callback_handler)
 dispatcher.add_handler(housing_monitor.add_handler)
 dispatcher.add_handler(housing_monitor.list_handler)
 dispatcher.add_handler(housing_monitor.enable_handler)

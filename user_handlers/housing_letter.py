@@ -201,6 +201,11 @@ def _generate_and_send(bot, user_id: int, ref_id: int, variant: bool) -> None:
                 InlineKeyboardButton(i18n.t("housing.letter.btn.edit_profile", lang), callback_data="housing:letter:profile"),
             ]]
             url = str(listing.get("detail_url") or "")
+            from user_handlers import housing_tracker  # «позначити як подану»
+
+            if housing_tracker.enabled():
+                rows.append([InlineKeyboardButton(
+                    i18n.t("housing.track.btn.mark", lang), callback_data=f"hap:mark:{ref_id}")])
             if url.startswith("https://"):
                 rows.append([InlineKeyboardButton(i18n.t("housing.letter.btn.open", lang), url=url)])
             bot.send_message(

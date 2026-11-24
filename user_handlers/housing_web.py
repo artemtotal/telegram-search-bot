@@ -41,7 +41,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import i18n
 from database import DBSession, HousingSendLog, HousingWebToken
-from user_jobs import housing_access_store, housing_area, housing_letter_store, housing_search_store, housing_tier, housing_wbs
+from user_jobs import housing_access_store, housing_area, housing_letter_store, housing_links, housing_search_store, housing_tier, housing_wbs
 
 logger = logging.getLogger(__name__)
 
@@ -499,6 +499,30 @@ def page_stats(user_id: int, lang: str) -> str:
     return _page(lang, _t("nav.stats", lang), body, user_id)
 
 
+def _applications_block(user_id: int, lang: str, full: bool) -> str:
+    """«📋 Мої заявки» from the bot, read-only (tracker). "" when there are none
+    or the tracker is off."""
+    try:
+        from user_handlers import housing_tracker
+
+        if not housing_tracker.enabled():
+            return ""
+        apps = housing_tracker.list_apps(user_id, 100 if full else housing_tracker.FREE_LIMIT)
+        if not apps:
+            return ""
+        items = []
+        for app in apps:
+            url = str(app.get("url") or "")
+            title = html.escape(str(app.get("title") or ""))
+            link = f'<a href="{html.escape(url)}" target="_blank" rel="noopener">{title}</a>' if url.startswith("https://") else title
+            status = html.escape(housing_tracker._status_text(app, lang))
+            items.append(f'<tr><td>{app["created_at"].strftime("%d.%m %H:%M")}</td><td>{link}<br><span class="muted">{status}</span></td></tr>')
+        return f'<h2>{html.escape(i18n.t("housing.track.list_header", lang))}</h2><div class="card"><table>{"".join(items)}</table></div>'
+    except Exception:
+        logger.exception("Could not show the applications on the web history")
+        return ""
+
+
 def page_history(user_id: int, lang: str) -> str:
     from user_handlers import housing_monitor as hm
     full = full_access(user_id)
@@ -529,7 +553,8 @@ def page_history(user_id: int, lang: str) -> str:
         letters.append(f'<div class="card"><div class="muted">{item["created_at"].strftime("%d.%m.%Y %H:%M")}</div>{link}'
                        f'<details><summary>{_t("show_letter", lang)}</summary><pre>{html.escape(item.get("letter") or "")}</pre></details></div>')
     no_letters = _t("no_letters" if full else "letters_paid", lang)
-    body = (f'<h2>{_t("letters", lang)}</h2>' + ("".join(letters) or f'<p class="muted">{no_letters}</p>') +
+    applications = _applications_block(user_id, lang, full)
+    body = (applications + f'<h2>{_t("letters", lang)}</h2>' + ("".join(letters) or f'<p class="muted">{no_letters}</p>') +
             f'<h2>{_t("sent", lang)}</h2>' +
             (f'<div class="card"><table>{"".join(rows)}</table></div>' if rows else f'<p class="muted">{_t("no_sends", lang)}</p>'))
     return _page(lang, _t("nav.history", lang), body, user_id)
@@ -585,8 +610,34 @@ class Handler(BaseHTTPRequestHandler):
             logger.exception("Web POST %s failed", self.path)
             self._send(500, "Error")
 
+    def do_HEAD(self):  # noqa: N802
+        try:
+            if urlparse(self.path).path.startswith("/o/"):
+                self._open_link("HEAD")
+            else:
+                self._send(405, "")
+        except Exception:
+            logger.exception("Web HEAD %s failed", self.path)
+            self._send(500, "")
+
+    def _open_link(self, method: str) -> bool:
+        """/o/<token>: 302 to the address saved for the token (housing_links).
+        Never takes an address from the request."""
+        path = urlparse(self.path).path
+        if not path.startswith("/o/"):
+            return False
+        status, target = housing_links.handle_open(path[3:].strip("/"), method, self.headers.get("User-Agent") or "")
+        if status == 302 and target:
+            self._send(302, "", {"Location": target, "Cache-Control": "no-store"})
+        else:
+            self._send(404, housing_links.not_found_page() if method == "GET" else "")
+        return True
+
     def _get(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/o/"):
+            self._open_link("GET")
+            return
         if parsed.path == "/login":
             user_id = redeem_token((parse_qs(parsed.query).get("t") or [""])[0])
             if user_id is None or not allowed(user_id):
@@ -674,6 +725,7 @@ def start() -> Optional[ThreadingHTTPServer]:
         return None
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     threading.Thread(target=server.serve_forever, name="housing-web", daemon=True).start()
+    housing_links.mark_web_up()  # посилання на квартири йдуть через нас, лише поки сервер працює
     logger.info("Housing web started at http://%s:%s (public %s)", HOST, PORT, PUBLIC_URL)
     return server
 
