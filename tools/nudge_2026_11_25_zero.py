@@ -10,6 +10,9 @@
     python nudge_zero.py 459543419                 # сухий прогін для однієї людини
     python nudge_zero.py 459543419 --send          # справді надіслати
 
+Пошук на паузі (напр. ніколи не запускався) сюди не потрапляє: його вмикає
+tools/activate_never_started_2026_11_25.py одним повідомленням, щоб людина не отримала два.
+
 Людина пропускається (з причиною), якщо: не підписник; їй уже щось надсилали; повідомлення
 вже було (файл .done); за `--days` днів під її пошук підходили квартири (тоді «їх не було»
 було б неправдою - це інша проблема, її треба розбирати окремо); пошуків немає.
@@ -29,7 +32,7 @@ sys.path.insert(0, os.getenv("APP_DIR", "/app"))
 
 import i18n  # noqa: E402
 from database import DBSession, HousingPayment, HousingSendLog  # noqa: E402
-from user_handlers import housing_monitor as hm, housing_relax, housing_resume  # noqa: E402
+from user_handlers import housing_monitor as hm, housing_relax  # noqa: E402
 from user_jobs import housing_journey_store, housing_search_store, housing_tier  # noqa: E402
 
 ZERO_DAYS = 14
@@ -45,11 +48,6 @@ TEXT = {
         "base": "Для порівняння: підходящих квартир за {month} днів без змін у пошуку: {total}.",
         "offers": "Що дало б розширення (за {month} днів):",
         "line": "• {label} — <b>{count}</b>",
-        "paused_head": "⏸ <b>Ваш пошук стоїть на паузі</b>",
-        "paid_short": "Ви оформили підписку {date}.",
-        "paused_body": "Новий пошук створюється на паузі й починає працювати лише після кнопки «{button}». Ваш досі не запущено — тому бот нічого не надсилав.",
-        "paused_count": "Підходящих квартир за останні {days} днів: {total}.",
-        "paused_tap": "Натисніть кнопку нижче — і пошук почне працювати.",
     },
     "ru": {
         "head": "🔕 <b>Честно о вашем поиске</b>",
@@ -58,11 +56,6 @@ TEXT = {
         "base": "Для сравнения: подходящих квартир за {month} дней без изменений в поиске: {total}.",
         "offers": "Что дало бы расширение (за {month} дней):",
         "line": "• {label} — <b>{count}</b>",
-        "paused_head": "⏸ <b>Ваш поиск стоит на паузе</b>",
-        "paid_short": "Вы оформили подписку {date}.",
-        "paused_body": "Новый поиск создаётся на паузе и начинает работать только после кнопки «{button}». Ваш до сих пор не запущен — поэтому бот ничего не присылал.",
-        "paused_count": "Подходящих квартир за последние {days} дней: {total}.",
-        "paused_tap": "Нажмите кнопку ниже — и поиск начнёт работать.",
     },
     "de": {
         "head": "🔕 <b>Ehrlich zu Ihrer Suche</b>",
@@ -71,11 +64,6 @@ TEXT = {
         "base": "Zum Vergleich: passende Wohnungen in {month} Tagen bei unveränderter Suche: {total}.",
         "offers": "Was eine Lockerung bringen würde (in {month} Tagen):",
         "line": "• {label} — <b>{count}</b>",
-        "paused_head": "⏸ <b>Ihre Suche ist pausiert</b>",
-        "paid_short": "Sie haben das Abo am {date} abgeschlossen.",
-        "paused_body": "Eine neue Suche wird pausiert angelegt und startet erst mit der Schaltfläche „{button}“. Ihre wurde noch nicht gestartet — deshalb hat der Bot nichts geschickt.",
-        "paused_count": "Passende Wohnungen in den letzten {days} Tagen: {total}.",
-        "paused_tap": "Tippen Sie unten auf die Schaltfläche — dann beginnt die Suche.",
     },
 }
 
@@ -154,7 +142,9 @@ def build_messages(user_id: int, week: "housing_relax.Market", month: "housing_r
             notes.append(f"пошук {search['search_id']}: за {ZERO_DAYS} днів порахувати не вдалося")
             continue
         if search["search_id"] in live and hm._search_paused(live[search["search_id"]]):
-            messages.append(paused_message(search, lang, paid, recent))
+            # Пошук на паузі - не «квартир не було». Таких вмикає activate_never_started_2026_11_25.py
+            # (одне повідомлення), тут вони другого не отримують.
+            notes.append(f"пошук {search['search_id']}: на паузі - див. activate_never_started_2026_11_25.py")
             continue
         if recent > 0:
             notes.append(f"пошук {search['search_id']}: за {ZERO_DAYS} днів підходило {recent} - слати не можна")
@@ -189,26 +179,6 @@ def build_messages(user_id: int, week: "housing_relax.Market", month: "housing_r
         if len(messages) >= MAX_SEARCHES:
             break
     return messages, notes
-
-
-def paused_message(search: Dict, lang: str, paid: Optional[datetime], recent: int) -> Dict:
-    """Пошук ніколи не запускали (або поставили на паузу): правда інша, ніж «квартир не було»."""
-    words = TEXT[lang]
-    start = i18n.t("housing.card.btn.start", lang)
-    parts = [words["paused_head"]]
-    if paid is not None:
-        parts.append(words["paid_short"].format(date=paid.strftime("%d.%m")))
-    parts.append(words["paused_body"].format(button=start))
-    if recent > 0:
-        parts.append(words["paused_count"].format(days=ZERO_DAYS, total=recent))
-    parts.append(words["paused_tap"])
-    return {
-        "search_id": int(search["search_id"]), "text": "\n\n".join(parts), "paused": True, "base": recent, "found": [],
-        "buttons": [
-            (start, f"{housing_resume.CALLBACK_PREFIX}{int(search['search_id'])}"),
-            (i18n.t("housing.btn.self_manage", lang), "housing:self_manage"),
-        ],
-    }
 
 
 def _night_now() -> bool:

@@ -6683,9 +6683,6 @@ def _handle_callback(update: Update, context: CallbackContext) -> None:
     elif query.data.startswith("housing:relax:"):
         from user_handlers import housing_relax
         housing_relax.apply(update, context)
-    elif query.data.startswith("housing:resume:"):
-        from user_handlers import housing_resume
-        housing_resume.apply(update, context)
     elif query.data == "housing:au_ask":
         query.answer()
         start_admin_user_lookup(update, context)

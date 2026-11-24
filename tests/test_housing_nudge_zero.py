@@ -1,4 +1,4 @@
-"""tools/nudge_2026_11_25_zero.py and the «▶️ Почати пошук» button (housing_resume), 25.11.2026."""
+"""tools/nudge_2026_11_25_zero.py (25.11.2026)."""
 
 import importlib.util
 import io
@@ -15,7 +15,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from database import Base, HousingAccessUser, HousingPayment, HousingSendLog
-from user_handlers import housing_card, housing_resume
 from user_jobs import housing_tier
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -126,19 +125,16 @@ class MessageTests(_Db):
         self.assertEqual(messages, [])
         self.assertIn('підходило 5', notes[0])
 
-    def test_a_never_started_search_gets_the_start_button_instead_of_the_zero_claim(self):
-        [message], _ = self._build(True, 948)
-        self.assertTrue(message['paused'])
-        self.assertIn('на паузі', message['text'])
-        self.assertIn('948', message['text'])
-        self.assertNotIn('жодної квартири', message['text'])
-        self.assertEqual(message['buttons'][0][1], 'housing:resume:9')
-        [paused_zero], _ = self._build(True, 0)
-        self.assertNotIn('Підходящих квартир', paused_zero['text'])  # zero is not shown
+    def test_a_paused_search_gets_no_zero_claim_and_no_message_from_here(self):
+        messages, notes = self._build(True, 948)
+        self.assertEqual(messages, [])
+        self.assertIn('activate_never_started', notes[0])
+        messages, notes = self._build(True, 0)
+        self.assertEqual(messages, [])  # a paused search never gets "no flats appeared" either
 
     def test_german_and_russian_are_complete(self):
-        for lang, needle in (('de', 'pausiert'), ('ru', 'на паузе')):
-            [message], _ = self._build(True, 10, lang=lang)
+        for lang, needle in (('de', 'eine einzige Wohnung'), ('ru', 'ни одной квартиры')):
+            [message], _ = self._build(False, 0, lang=lang)
             self.assertIn(needle, message['text'])
             self.assertNotIn('[[', message['text'])
         for lang in ('uk', 'ru', 'de'):
@@ -157,7 +153,7 @@ class MainTests(_Db):
                 mock.patch.object(nudge, '_night_now', return_value=now_night), \
                 mock.patch.object(nudge.housing_search_store, 'list_for_user', return_value=[
                     {"search_id": 9, "criteria": CRITERIA, "members": [("kleinanzeigen", 1)], "coops": []}]), \
-                mock.patch.object(nudge.hm, 'user_searches', return_value=[{"search_id": 9, "items": [{"active": False}]}]), \
+                mock.patch.object(nudge.hm, 'user_searches', return_value=[{"search_id": 9, "items": [{"active": True}]}]), \
                 mock.patch.object(nudge.housing_journey_store, 'mark_quiet_nudge_sent') as marked, \
                 mock.patch.dict(os.environ, {'BOT_TOKEN': 'x'}):
             code = nudge.main(argv)
@@ -178,7 +174,7 @@ class MainTests(_Db):
         with mock.patch('telegram.Bot') as bot:
             code, out, marked = self._run([str(USER)])
         self.assertEqual(code, 0)
-        self.assertIn('housing:resume:9', out)
+        self.assertIn('housing:self_manage', out)
         self.assertIn("'dry_run': True", out)
         bot.assert_not_called()
         marked.assert_not_called()
@@ -208,62 +204,11 @@ class MainTests(_Db):
         self.session.commit()
         code, out, _ = self._run([str(USER)])
         self.assertIn('квартир уже надсилали', out)
-        self.assertNotIn('housing:resume', out)
+        self.assertNotIn('housing:self_manage', out)
 
     def test_not_a_subscriber_is_skipped(self):
         code, out, _ = self._run(['999'])
         self.assertIn('не підписник', out)
-
-
-class ResumeButtonTests(unittest.TestCase):
-    def _update(self, data, user_id=USER):
-        query = SimpleNamespace(data=data, answer=mock.Mock(), edit_message_reply_markup=mock.Mock())
-        return SimpleNamespace(callback_query=query, effective_user=SimpleNamespace(id=user_id)), query
-
-    def _context(self):
-        return SimpleNamespace(bot=mock.Mock(), user_data={})
-
-    def test_it_starts_a_paused_search_like_the_card_button(self):
-        update, query = self._update('housing:resume:9')
-        search = {"search_id": 9, "user_id": USER, "items": [{"active": False}]}
-        context = self._context()
-        seen = {}
-
-        def started(u, c, s, active):
-            seen['state'] = dict(c.user_data['hcard'])
-            seen['active'] = active
-
-        with mock.patch.object(housing_card, '_load', return_value=(1, search)), \
-                mock.patch.object(housing_resume.hm, 'is_allowed', return_value=True), \
-                mock.patch.object(housing_card, 'can_activate', return_value=True), \
-                mock.patch.object(housing_card, '_set_active', side_effect=started):
-            housing_resume.apply(update, context)
-        self.assertEqual(seen, {'state': {'sid': 9, 'new': True}, 'active': True})
-        self.assertNotIn('hcard', context.user_data)
-        query.edit_message_reply_markup.assert_called_once_with(reply_markup=None)
-
-    def test_someone_elses_search_is_refused(self):
-        update, query = self._update('housing:resume:9')
-        search = {"search_id": 9, "user_id": 1, "items": [{"active": False}]}
-        with mock.patch.object(housing_card, '_load', return_value=(1, search)), \
-                mock.patch.object(housing_card, '_set_active') as started:
-            housing_resume.apply(update, self._context())
-        started.assert_not_called()
-        self.assertTrue(query.answer.call_args.kwargs.get('show_alert'))
-
-    def test_an_already_running_search_is_left_alone(self):
-        update, query = self._update('housing:resume:9')
-        search = {"search_id": 9, "user_id": USER, "items": [{"active": True}]}
-        with mock.patch.object(housing_card, '_load', return_value=(1, search)), \
-                mock.patch.object(housing_resume.hm, 'is_allowed', return_value=True), \
-                mock.patch.object(housing_card, '_set_active') as started:
-            housing_resume.apply(update, self._context())
-        started.assert_not_called()
-
-    def test_bad_data_is_ignored(self):
-        update, query = self._update('housing:resume:x')
-        housing_resume.apply(update, self._context())
-        query.answer.assert_called_once_with()
 
 
 if __name__ == '__main__':

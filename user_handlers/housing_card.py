@@ -563,13 +563,28 @@ def _create_new(update: Update, context: CallbackContext, raw: str) -> None:
         return
     query.answer()
     coops = list(hm.COOP_KEYS) if housing_area.covers_potsdam(place) else []
-    search_id = create_search(int(user.id), criteria, place_sources(criteria), coops, active=False)
+    # 25.11.2026: новий пошук одразу працює, без кнопки «▶️ Почати» (люди її не натискали й сиділи
+    # без квартир). Записи площадок при створенні беруть тиху базу - що вже висить на ринку, не
+    # прийде як нове. Єдиний виняток: другий активний пошук безкоштовного.
+    active = can_activate(int(user.id), 0)
+    sources = place_sources(criteria)
+    search_id = create_search(int(user.id), criteria, sources, coops, active=active)
     if search_id is None:
         hm._edit_or_reply(update, i18n.t("housing.finalize.nothing_saved", lang), InlineKeyboardMarkup([[
             InlineKeyboardButton(i18n.t("housing.btn.back_to_monitor", lang), callback_data="housing:menu"),
         ]]), True)
         return
-    context.user_data["hcard"] = {"sid": search_id, "new": True}
+    if not active:
+        context.user_data["hcard"] = {"sid": search_id, "new": True}
+        _show(update, context, note=_t("new_hint_paused", lang))
+        return
+    context.user_data["hcard"] = {"sid": search_id}
+    _n, created = _load(int(user.id), search_id)
+    if created is not None:
+        # Перший запуск - як після кнопки «Почати»: перший фільтр людини, звіт «за 30 днів», привітання.
+        saved = [(source, filter_id, created["criteria"]) for source, filter_id in created["members"]]
+        hm._after_filter_saved(context, int(user.id), saved, search_id=search_id)
+        hm._maybe_send_first_filter_congrats(context, int(user.id))
     _show(update, context, note=_t("new_hint", lang))
 
 
