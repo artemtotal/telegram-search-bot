@@ -294,6 +294,14 @@ class PackagePaymentTest(PayDbCase):
                 for key in (f"pay.pkg.name.{code}", f"pay.pkg.term.{code}"):
                     self.assertNotIn("[[", i18n.t(key, lang))
 
+    def test_faq_names_the_three_packages_with_their_prices(self):
+        for lang in i18n.SUPPORTED_LANGS:
+            text = self.housing_monitor._faq_text(lang)
+            self.assertNotIn("{", text, lang)
+            self.assertNotIn("[[", text, lang)
+            for price in ("1", "5 €", "12 €", "15 €"):
+                self.assertIn(price, text, lang)
+
     def test_every_price_text_names_no_fixed_five_euro_a_month(self):
         """Ни в одной строке для человека не осталось «5 €/міс» как единственной цены."""
         for lang in i18n.SUPPORTED_LANGS:
