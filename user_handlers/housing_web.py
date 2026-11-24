@@ -313,6 +313,17 @@ def set_paused(user_id: int, search_id: int, paused: bool) -> bool:
     return True
 
 
+def start_new_search(user_id: int, search_id: int) -> bool:
+    """Новий пошук із сайту після першого збереження форми стає активним (25.11.2026).
+    Правка форми вже перебазувала записи (update_filter), тож те, що висить на ринку, не прийде як нове.
+    Другий активний пошук безкоштовного, як і раніше, не вмикається (set_paused перевіряє)."""
+    from user_handlers import housing_monitor as hm
+    _n, search = _search(user_id, search_id)
+    if search is None or not hm._search_paused(search):
+        return False
+    return set_paused(user_id, search_id, False)
+
+
 def delete_search(user_id: int, search_id: int) -> bool:
     from user_handlers import housing_monitor as hm
     _n, search = _search(user_id, search_id)
@@ -424,7 +435,7 @@ def page_searches(user_id: int, lang: str, note: str = "") -> str:
     return _page(lang, _t("nav.searches", lang), "".join(blocks), user_id)
 
 
-def page_edit(user_id: int, search_id: int, lang: str, note: str = "") -> Optional[str]:
+def page_edit(user_id: int, search_id: int, lang: str, note: str = "", fresh: bool = False) -> Optional[str]:
     from user_handlers import housing_card, housing_monitor as hm
     number, search = _search(user_id, search_id)
     if search is None:
@@ -460,6 +471,7 @@ def page_edit(user_id: int, search_id: int, lang: str, note: str = "") -> Option
     body = (
         f'<h2>#{number}</h2>' + (f'<p class="warn">{note}</p>' if note else "") +
         f'<form method="post" action="/search/{search_id}" class="card"><input type="hidden" name="csrf" value="{csrf_token(user_id)}">'
+        + ('<input type="hidden" name="new" value="1">' if fresh else '') +
         f'<div class="grid"><div><label>{_t("field.place", lang)}</label><input name="place" value="{html.escape(place_text)}"></div>'
         f'<div><label>{_t("field.radius", lang)}</label><select name="radius">{radius_options}</select></div></div>'
         f'<p class="muted">{_t("place_hint", lang)}</p>'
@@ -671,7 +683,7 @@ class Handler(BaseHTTPRequestHandler):
             except (IndexError, ValueError):
                 self._send(404, "Not found")
                 return
-            page = page_edit(user_id, search_id, lang)
+            page = page_edit(user_id, search_id, lang, fresh=parse_qs(parsed.query).get("new") == ["1"])
             self._send(200, page) if page else self._send(404, "Not found")
         else:
             self._send(404, "Not found")
@@ -690,7 +702,7 @@ class Handler(BaseHTTPRequestHandler):
         parts = urlparse(self.path).path.strip("/").split("/")
         if parts == ["search", "new"]:
             search_id = new_search(user_id)
-            self._redirect(f"/search/{search_id}" if search_id else "/")
+            self._redirect(f"/search/{search_id}?new=1" if search_id else "/")
             return
         if len(parts) >= 2 and parts[0] == "search":
             try:
@@ -710,8 +722,11 @@ class Handler(BaseHTTPRequestHandler):
             elif action == "save":
                 error = save_search(user_id, search_id, form, lang)
                 if error:
-                    self._send(400, page_edit(user_id, search_id, lang, note=error) or "Not found")
+                    self._send(400, page_edit(user_id, search_id, lang, note=error, fresh=(form.get("new") or [""])[0] == "1")
+                               or "Not found")
                 else:
+                    if (form.get("new") or [""])[0] == "1":
+                        start_new_search(user_id, search_id)
                     self._redirect("/")
             else:
                 self._send(404, "Not found")

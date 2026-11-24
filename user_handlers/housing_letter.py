@@ -9,6 +9,7 @@ free-tier person gets what the feature is and the subscription button.
 
 import html
 import logging
+import os
 import threading
 from datetime import date
 from typing import Dict, Optional
@@ -200,6 +201,8 @@ def _generate_and_send(bot, user_id: int, ref_id: int, variant: bool) -> None:
                 InlineKeyboardButton(i18n.t("housing.letter.btn.again", lang), callback_data=f"housing:letter:again:{ref_id}"),
                 InlineKeyboardButton(i18n.t("housing.letter.btn.edit_profile", lang), callback_data="housing:letter:profile"),
             ]]
+            if os.getenv("HOUSING_MAPPE", "1") != "0":
+                rows.append([InlineKeyboardButton(i18n.t("housing.mappe.btn.for_flat", lang), callback_data=f"housing:mappe:go:{ref_id}")])
             url = str(listing.get("detail_url") or "")
             from user_handlers import housing_tracker  # «позначити як подану»
 

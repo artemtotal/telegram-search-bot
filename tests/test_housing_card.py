@@ -115,19 +115,20 @@ class HousingCardTest(unittest.TestCase):
 
     # --- новий фільтр ---------------------------------------------------------------
 
-    def test_new_search_covers_every_portal_and_starts_paused(self):
+    def test_new_search_covers_every_portal_and_starts_active(self):
         query = self._new('3')
         search = self._search()
         self.assertEqual(sorted(hm._search_sources(search)), sorted(POTSDAM_SOURCES))
         self.assertEqual(search['coops'], hm.COOP_KEYS)
-        self.assertTrue(hm._search_paused(search))
+        self.assertFalse(hm._search_paused(search))  # 25.11.2026: одразу працює, без кнопки «Почати»
         _area, price, warm = hm.jobcenter_limits(3)
         self.assertEqual(search['criteria']['max_price_eur'], price)
         self.assertEqual(search['criteria']['max_price_warm_eur'], warm)
         text = query.edit_message_text.call_args.args[0]
-        self.assertIn('на паузі', text)
-        self.assertIn('Почати пошук', text)
-        self.assertEqual(self._callbacks(query)[0], 'hcard:on')
+        self.assertIn('уже працює', text)
+        self.assertNotIn('Почати пошук', text)
+        self.assertNotIn('hcard:on', self._callbacks(query))
+        self.assertIn('hcard:off', self._callbacks(query))  # пауза лишається в картці
 
     def test_a_free_user_gets_one_search_and_the_second_is_paid(self):
         self._new('3')
@@ -408,7 +409,7 @@ class HousingCardPlaceTest(HousingCardTest):
         [immowelt_filter] = self.immowelt.filters.values()
         self.assertEqual(immowelt_filter['area']['name'], 'Berlin')  # check-Wohnung отримує місце
         self.assertEqual(search['coops'], [])
-        self.assertTrue(hm._search_paused(search))
+        self.assertFalse(hm._search_paused(search))
         self.assertEqual(search['criteria']['area']['name'], 'Berlin')
         self.assertEqual(self._scout(search)['area']['radius_km'], 10)
         text = query.edit_message_text.call_args.args[0]

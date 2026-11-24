@@ -19,6 +19,7 @@ from telegram.error import BadRequest
 import i18n
 from user_handlers import housing_letter
 from user_handlers import housing_tracker
+from user_handlers import housing_mappe
 from user_handlers import housing_payment
 from user_handlers import housing_leave
 from user_handlers import housing_found, housing_pay_report, housing_pay_survey, housing_referral, housing_winback
@@ -1738,26 +1739,33 @@ def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKey
     if is_admin or is_allowed(user_id):
         if not is_admin and not housing_tier.is_premium(user_id):
             rows.append([InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request")])
-        rows += [
-            [btn("filters", "housing:self_manage"), btn("add", "housing:self_add")],
-            [btn("matches", "housing:current_matches"), btn("letters", "housing:letter:menu")],
-            [btn("notify", "housing:notify_settings"), btn("stats", "housing:stats")],
-        ]
+        # 25.11.2026: по дві кнопки в ряд, спершу щоденне; меню ≤ 7 рядків.
         premium = housing_tier.is_premium(user_id)
-        rows += housing_found.menu_rows(user_id, lang, premium)
-        # Сайт (етап 10, 02.11.2026): підписникам — усе, безкоштовним — частина.
-        # «📋 Мої заявки» стоїть поруч із сайтом: меню не росте (≤7 рядків).
+        buttons = [btn("filters", "housing:self_manage"), btn("add", "housing:self_add"),
+                   btn("matches", "housing:current_matches")]
         if housing_tracker.enabled():
-            rows.append([btn("applications", "hap:list:0"), btn("web", "housing:web")])
-        else:
-            rows.append([btn("web", "housing:web")])
-        rows[-1] += housing_found.free_resume_buttons(user_id, lang, premium) or housing_referral.menu_buttons(lang)
+            buttons.append(btn("applications", "hap:list:0"))
+        buttons.append(btn("letters", "housing:letter:menu"))
+        if housing_mappe.ENABLED:
+            buttons.append(btn("mappe", "housing:mappe:menu"))
+        # Сайт (етап 10, 02.11.2026): підписникам — усе, безкоштовним — частина.
+        buttons += [btn("notify", "housing:notify_settings"), btn("web", "housing:web"), btn("stats", "housing:stats")]
+        buttons += housing_found.free_resume_buttons(user_id, lang, premium) or housing_referral.menu_buttons(lang)
+        buttons += [b for row in housing_found.menu_rows(user_id, lang, premium) for b in row]
         if is_admin:
-            rows.append([btn("coops", "housing:coops"), btn("status", "housing:status")])
+            buttons += [btn("coops", "housing:coops"), btn("status", "housing:status")]
     else:
-        rows.append([btn("stats", "housing:stats")])
-    rows.append([btn("faq", "housing:faq"), btn("lang", "housing:lang:menu")])
-    rows.append([InlineKeyboardButton(i18n.t("housing.btn.back_home", lang), callback_data="anon:home")])
+        buttons = [btn("stats", "housing:stats")]
+    buttons += [btn("faq", "housing:faq"), btn("lang", "housing:lang:menu")]
+    rows += [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    back = InlineKeyboardButton(i18n.t("housing.btn.back_home", lang), callback_data="anon:home")
+    if len(rows[-1]) == 1:
+        rows[-1].append(back)
+    elif len(rows) >= 7:
+        # «❓ Довідка · 🌐 Мова · ⬅» - короткі, утрьох вміщаються.
+        rows[-1].append(back)
+    else:
+        rows.append([back])
     return InlineKeyboardMarkup(rows)
 
 
@@ -5361,6 +5369,8 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
         return True
     if housing_tracker.handle_text(update, context):
         return True
+    if housing_mappe.handle_text(update, context):
+        return True
     from user_handlers import housing_card
     if housing_card.handle_text(update, context):
         return True
@@ -6665,6 +6675,8 @@ def _handle_callback(update: Update, context: CallbackContext) -> None:
         show_notify_settings(update, context, edit=True)
     elif query.data.startswith("housing:letter:"):
         housing_letter.handle_callback(update, context)
+    elif query.data.startswith("housing:mappe:"):
+        housing_mappe.handle_callback(update, context)
     elif query.data == "housing:notify_quiet_locked":
         toggle_quiet_hours(update, context, True)
     elif query.data.startswith("housing:notify_quiet:"):
