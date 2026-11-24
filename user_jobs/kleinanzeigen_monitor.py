@@ -465,7 +465,7 @@ def check_job(context) -> Dict[str, int]:
             kleinanzeigen_store.mark_delivered(int(filt["filter_id"]), listing_key)
             continue
         text = kleinanzeigen_matching.format_notification(listing, lang=i18n.get_lang(chat_id))
-        text += gate.footer(chat_id, listing_key)
+        text = gate.finish(text, chat_id, listing_key)
         try:
             posted_as_caption = _send_listing(bot, chat_id, listing, text)
             if not posted_as_caption:
@@ -533,10 +533,10 @@ def _send_near_misses(bot, filters: List[Dict], gate) -> int:
     for user_id, (over, filt, listing) in best.items():
         listing_key = str(listing["listing_key"])
         lang = i18n.get_lang(user_id)
-        text = (
+        text = gate.finish(
             i18n.t("housing.near_miss.header", lang, over=f"{over:.0f}", limit=f"{float(filt['max_price_eur']):.0f}")
-            + "\n\n" + kleinanzeigen_matching.format_notification(listing, lang=lang)
-            + gate.footer(user_id, listing_key)
+            + "\n\n" + kleinanzeigen_matching.format_notification(listing, lang=lang),
+            user_id, listing_key,
         )
         try:
             if not _send_listing(bot, user_id, listing, text):

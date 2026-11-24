@@ -282,11 +282,27 @@ class DeliveryGate:
         link (a subscription feature; free people see it with a ⚡)."""
         premium = self.is_premium(user_id)
         text = "" if premium else free_footer(user_id)
+        if listing_key and not premium:
+            from user_jobs import housing_links
+
+            text += housing_links.free_social_footer(user_id, self.source, str(listing_key))
         if listing_key:
             from user_jobs import housing_letter_store
 
             text += housing_letter_store.letter_link(user_id, self.source, str(listing_key), premium)
         return text
+
+    def finish(self, text: str, user_id: int, listing_key: str) -> str:
+        """The ready notification: the portal address in it goes through our
+        redirect (HOUSING_LINK_REDIRECT), then the footer. Any problem in the
+        redirect leaves the direct link in the text."""
+        try:
+            from user_jobs import housing_links
+
+            text = housing_links.rewrite_for_gate(text, user_id, self.source, str(listing_key), self._listing_model)
+        except Exception:
+            logger.exception("Could not route the link of %s through the redirect", listing_key)
+        return text + self.footer(user_id, listing_key)
 
     def sent(self, user_id: int, listing_key: str, filter_id: Optional[int] = None) -> None:
         log_sent(

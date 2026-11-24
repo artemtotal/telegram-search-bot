@@ -118,6 +118,16 @@ def letter_link(user_id: int, source: str, listing_key: str, premium: bool) -> s
     Empty when the bot's username isn't known yet (no broken link)."""
     if not _bot_username or not listing_key:
         return ""
+    try:
+        # «✍️ Лист · ✅ Подався» одним рядком (HOUSING_APPLY_TRACKER=1).
+        from user_handlers import housing_tracker
+
+        if housing_tracker.enabled():
+            line = housing_tracker.footer_line(user_id, source, listing_key, premium)
+            if line:
+                return line
+    except Exception:
+        logger.exception("Tracker footer failed, using the letter link only")
     ref_id = ref_for(source, listing_key)
     if ref_id is None:
         return ""

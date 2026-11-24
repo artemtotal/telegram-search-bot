@@ -18,6 +18,7 @@ from telegram.error import BadRequest
 
 import i18n
 from user_handlers import housing_letter
+from user_handlers import housing_tracker
 from user_handlers import housing_payment
 from user_handlers import housing_leave
 from database import (
@@ -1334,7 +1335,7 @@ def _send_recent_matches(update: Update, context: CallbackContext, hours: int) -
                 continue
             if not gate.due(owner_id, listing):
                 continue
-            text = matching.format_notification(listing) + gate.footer(owner_id, str(listing["listing_key"]))
+            text = gate.finish(matching.format_notification(listing), owner_id, str(listing["listing_key"]))
             context.bot.send_message(
                 chat_id=owner_id, text=text, parse_mode="HTML", disable_web_page_preview=False,
             )
@@ -1367,7 +1368,7 @@ def _current_matches(source: str, filt: Dict[str, object]) -> list:
     return [listing for listing in listings if matching.matches_filter(listing, filt)]
 
 
-def _match_line(source: str, listing: Dict[str, object], lang: str = "uk") -> str:
+def _match_line(source: str, listing: Dict[str, object], lang: str = "uk", user_id: Optional[int] = None) -> str:
     title = html.escape(str(listing.get("title") or "Wohnung"))
     bits = []
     district = listing.get("district")
@@ -1388,6 +1389,10 @@ def _match_line(source: str, listing: Dict[str, object], lang: str = "uk") -> st
     url = listing.get("url") or listing.get("detail_url")
     if not url and source == "propotsdam":
         url = propotsdam_parser.PORTAL_URL
+    if url and user_id and listing.get("listing_key"):
+        from user_jobs import housing_links
+
+        url = housing_links.link_for(int(user_id), source, str(listing["listing_key"]), str(url))
     link = f' — <a href="{html.escape(str(url))}">{i18n.t("housing.matches.open_link", lang)}</a>' if url else ""
     return f"• {title}{suffix}{link}"
 
@@ -1465,7 +1470,7 @@ def show_current_matches(update: Update, context: CallbackContext) -> None:
             lines.append(i18n.t("housing.matches.none_for_filter", lang))
         else:
             for listing in matches[:MAX_MATCHES_SHOWN_PER_FILTER]:
-                lines.append(_match_line(source, listing, lang))
+                lines.append(_match_line(source, listing, lang, chat_id))
             if len(matches) > MAX_MATCHES_SHOWN_PER_FILTER:
                 lines.append(i18n.t("housing.matches.more_count", lang, n=len(matches) - MAX_MATCHES_SHOWN_PER_FILTER))
         blocks.append("\n".join(lines))
@@ -1737,7 +1742,11 @@ def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKey
             [btn("notify", "housing:notify_settings"), btn("stats", "housing:stats")],
         ]
         # Сайт (етап 10, 02.11.2026): підписникам — усе, безкоштовним — частина.
-        rows.append([btn("web", "housing:web")])
+        # «📋 Мої заявки» стоїть поруч із сайтом: меню не росте (≤7 рядків).
+        if housing_tracker.enabled():
+            rows.append([btn("applications", "hap:list:0"), btn("web", "housing:web")])
+        else:
+            rows.append([btn("web", "housing:web")])
         if is_admin:
             rows.append([btn("coops", "housing:coops"), btn("status", "housing:status")])
     else:
@@ -5321,6 +5330,8 @@ def handle_private_text(update: Update, context: CallbackContext) -> bool:
         return False
     text = update.message.text.strip()
     if housing_letter.handle_text(update, context):
+        return True
+    if housing_tracker.handle_text(update, context):
         return True
     from user_handlers import housing_card
     if housing_card.handle_text(update, context):
