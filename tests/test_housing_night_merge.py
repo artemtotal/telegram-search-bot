@@ -245,11 +245,13 @@ class GiftIsNotPaidTimeTests(unittest.TestCase):
 
     def test_a_month_during_the_gift_counts_from_now(self):
         until, expires = self._grant(gift=object())
-        self.assertLess(expires, until + timedelta(days=27))
+        # Від зараз: ~30 днів = until + ~28; від кінця подарунка було б until + 30..31.
+        self.assertLess(expires, until + timedelta(days=29, hours=12))
+        self.assertGreater(expires, datetime.utcnow() + timedelta(days=27))
 
     def test_a_month_during_a_paid_subscription_counts_from_its_end(self):
         until, expires = self._grant(gift=None)
-        self.assertGreater(expires, until + timedelta(days=27))
+        self.assertGreater(expires, until + timedelta(days=29, hours=12))
 
 
 class NightTests(unittest.TestCase):
