@@ -339,14 +339,34 @@ class FlowTests(_Db):
         bot.send_message.assert_not_called()
 
     def test_the_menu_has_the_button_and_the_letter_offers_a_folder_for_that_flat(self):
-        keyboard = housing_monitor._menu_keyboard(777, 'uk')
-        buttons = {b.callback_data: b.text for row in keyboard.inline_keyboard for b in row}
-        # only people with access see the monitoring block; the free text is still translated
-        self.assertIn('housing:faq', buttons)
+        with mock.patch.object(housing_monitor, 'is_allowed', return_value=True):
+            keyboard = housing_monitor._menu_keyboard(777, 'uk')
+            rows = [[b.callback_data for b in row] for row in keyboard.inline_keyboard]
+            self.assertIn('housing:mappe:menu', [c for row in rows for c in row])
+            with mock.patch.object(housing_mappe, 'ENABLED', False):
+                off = housing_monitor._menu_keyboard(777, 'uk')
+            self.assertNotIn('housing:mappe:menu', [b.callback_data for row in off.inline_keyboard for b in row])
         from i18n import t
         for lang in ('uk', 'ru', 'de'):
             self.assertNotIn('[[', t('housing.menu.btn.mappe', lang))
             self.assertNotIn('[[', t('housing.mappe.btn.for_flat', lang))
+
+    def test_the_letter_result_offers_the_folder_for_that_flat(self):
+        self._subscribe()
+        housing_letter_store.save_profile(777, {'full_name': 'X'})
+        session = self._session()
+        session.add(KleinanzeigenListing(
+            listing_key='k1', title='Helle 3-Zimmer-Wohnung', address='Babelsberg', rooms=3, area_m2=75, price_eur=850,
+            detail_url='https://x/k1', first_seen_at=datetime.utcnow(), last_seen_at=datetime.utcnow(), is_active=True))
+        session.commit()
+        session.close()
+        ref = housing_letter_store.ref_for('kleinanzeigen', 'k1')
+        bot, context = self._ctx()
+        with mock.patch.object(housing_letter.threading, 'Thread', _SyncThread),                 mock.patch.object(housing_letter, '_call_ai', return_value='Brief'):
+            housing_letter.handle_start(SimpleNamespace(effective_user=SimpleNamespace(id=777)), context, f'lt{ref}')
+        markup = bot.send_message.call_args.kwargs['reply_markup']
+        callbacks = [b.callback_data for row in markup.inline_keyboard for b in row]
+        self.assertIn(f'housing:mappe:go:{ref}', callbacks)
 
 
 if __name__ == '__main__':

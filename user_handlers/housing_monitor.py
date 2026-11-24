@@ -1735,11 +1735,10 @@ def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKey
         rows += [
             [btn("filters", "housing:self_manage"), btn("add", "housing:self_add")],
             [btn("matches", "housing:current_matches"), btn("letters", "housing:letter:menu")],
-            *([[btn("mappe", "housing:mappe:menu")]] if housing_mappe.ENABLED else []),
             [btn("notify", "housing:notify_settings"), btn("stats", "housing:stats")],
         ]
         # Сайт (етап 10, 02.11.2026): підписникам — усе, безкоштовним — частина.
-        rows.append([btn("web", "housing:web")])
+        rows.append([btn("web", "housing:web")] + ([btn("mappe", "housing:mappe:menu")] if housing_mappe.ENABLED else []))
         if is_admin:
             rows.append([btn("coops", "housing:coops"), btn("status", "housing:status")])
     else:
