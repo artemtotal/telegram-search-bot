@@ -10,9 +10,9 @@ housing_receiver - тож таблиці є ще до першого запис�
 import logging
 import secrets
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
-from sqlalchemy import BOOLEAN, DATETIME, INTEGER, TEXT, Column, UniqueConstraint, func
+from sqlalchemy import DATETIME, INTEGER, TEXT, Column, UniqueConstraint, func
 
 from database import (
     AnonymousUser,

@@ -73,6 +73,19 @@ class MarkFoundTest(FoundBase):
         self.assertFalse(housing_found.is_found(USER))
         self.assertFalse(housing_found.resume(USER))
 
+    def test_paying_again_resumes_the_searches_and_clears_the_mark(self):
+        housing_found.mark_found(USER)
+        self.housing_monitor.grant_paid_months(USER, "Olena", 1)
+        self.paused.assert_called_with(USER, True)
+        self.assertFalse(housing_found.is_found(USER))
+
+    def test_extending_without_resuming_keeps_the_pause(self):
+        housing_found.mark_found(USER)
+        self.paused.reset_mock()
+        self.housing_monitor.grant_paid_months(USER, "Olena", 1, resume_filters=False)
+        self.paused.assert_not_called()
+        self.assertTrue(housing_found.is_found(USER))
+
     def test_found_again_after_resume_pauses_again(self):
         housing_found.mark_found(USER)
         housing_found.resume(USER)

@@ -21,7 +21,7 @@ from user_handlers import housing_letter
 from user_handlers import housing_payment
 from user_handlers import housing_leave
 from user_handlers import housing_found, housing_pay_report, housing_pay_survey, housing_referral, housing_winback
-from user_jobs import housing_packages
+from user_jobs import housing_packages, housing_pay_store
 from database import (
     DBSession,
     HousingFilterEvent,
@@ -2639,10 +2639,13 @@ def _resolve_access_request(update: Update, context: CallbackContext, grant: boo
         logger.exception("Could not notify user %s about the housing access denial", target_id)
 
 
-def grant_paid_months(target_id: int, name: str, months: int) -> datetime:
+def grant_paid_months(target_id: int, name: str, months: int, resume_filters: bool = True) -> datetime:
     """Opens (or extends) the subscription for `months` and returns the new
     expiry. A subscription still running is extended from its current end,
-    so paying early never eats the days already paid for."""
+    so paying early never eats the days already paid for.
+
+    `resume_filters=False` - продовжити, не вмикаючи фільтри (бонус «приведи
+    друга» людині, яка знайшла житло й поставила пошуки на паузу)."""
     now = datetime.utcnow()
     base = now
     for row in housing_access_store.list_users():
@@ -2654,10 +2657,13 @@ def grant_paid_months(target_id: int, name: str, months: int) -> datetime:
             break
     expires_at = _add_months(base, months)
     housing_access_store.grant_access(target_id, name, expires_at=expires_at)
-    # Switches back on any filters left paused from before 27.09.2026, when
-    # an expired trial still paused them. A no-op for everyone else, since
-    # expiry no longer touches the filters (see _downgrade_to_free).
-    _set_all_filters_active_for_user(target_id, True)
+    if resume_filters:
+        # Switches back on any filters left paused from before 27.09.2026, when
+        # an expired trial still paused them. A no-op for everyone else, since
+        # expiry no longer touches the filters (see _downgrade_to_free).
+        _set_all_filters_active_for_user(target_id, True)
+        # Заплатив сам - пошуки знову йдуть, позначка «знайшов житло» знята.
+        housing_pay_store.clear_found(target_id)
     return expires_at
 
 

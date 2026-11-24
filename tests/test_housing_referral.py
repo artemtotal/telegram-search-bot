@@ -305,6 +305,16 @@ class RewardTest(ReferralBase):
         self.assertIsNotNone(self.expiry(INVITER))
         self.assertIsNotNone(self.referral().rewarded_at)
 
+    def test_reward_does_not_switch_on_the_paused_searches_of_someone_who_found_a_flat(self):
+        self.invite()
+        self.housing_monitor._set_all_filters_active_for_user.reset_mock()
+        before = self.housing_monitor._set_all_filters_active_for_user.call_args_list
+        self.friend_pays("m1")
+        # продление запрошувачу - без включения его фильтров; фильтры друга (он платит сам) включаются
+        resumed_for = [c.args[0] for c in self.housing_monitor._set_all_filters_active_for_user.call_args_list]
+        self.assertNotIn(INVITER, resumed_for)
+        self.assertIn(FRIEND, resumed_for)
+
     def test_off_switch_gives_no_reward(self):
         self.invite()
         with mock.patch.dict("os.environ", {"HOUSING_REFERRAL_ENABLED": "0"}):

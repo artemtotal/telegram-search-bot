@@ -118,7 +118,7 @@ def reward_on_approval(bot, payment: HousingPayment, friend_expires_at: Optional
         from user_handlers import housing_monitor
 
         try:
-            new_expiry = housing_monitor.grant_paid_months(inviter_id, "", REWARD_MONTHS)
+            new_expiry = housing_monitor.grant_paid_months(inviter_id, "", REWARD_MONTHS, resume_filters=False)
         except Exception:
             logger.exception("Could not extend the subscription of inviter %s", inviter_id)
             housing_pay_store.unclaim_reward(friend_id)
