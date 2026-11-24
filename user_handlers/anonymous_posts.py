@@ -20,7 +20,7 @@ from user_handlers.anonymous_validation import (
     text_fingerprint,
     validate_submission as validate_submission_text,
 )
-from user_handlers import econsul_monitor, equeue_monitor, housing_monitor, housing_payment, support
+from user_handlers import econsul_monitor, equeue_monitor, housing_monitor, housing_pay_survey, housing_payment, support
 from user_jobs import user_settings_store
 from user_jobs.reindex_queue import enqueue_message_reindex
 
@@ -123,6 +123,11 @@ def _is_button(text: str, name: str, lang: str) -> bool:
     """Нижня кнопка - і нова коротка, і стара довга підпис (anon.btn.*): у
     людей ще висять клавіатури, надіслані до 27.10.2026."""
     return text in (i18n.t(f"anon.kb.{name}", lang), i18n.t(f"anon.btn.{name}", lang))
+
+
+def _is_menu_text(text: str, lang: str) -> bool:
+    """Текст - це кнопка нижнього меню (а не відповідь на питання бота)."""
+    return any(_is_button(text, name, lang) for name in ("home", "feedback", "equeue", "econsul", "housing", "menu", "support", "lang"))
 
 
 def _cancel_keyboard(lang: str = "uk") -> InlineKeyboardMarkup:
@@ -438,6 +443,9 @@ def handle_private_text(update: Update, context: CallbackContext) -> None:
     text = update.message.text.strip()
     user_id = update.effective_user.id if update.effective_user else None
     lang = i18n.get_lang(user_id) if user_id else "uk"
+    # «✍️ Написати докладніше» після опитування: один вільний текст (housing_pay_survey).
+    if housing_pay_survey.handle_text(update, context, lambda value: _is_menu_text(value, lang)):
+        return
     if state.get("step") != "text":
         if _is_button(text, "home", lang):
             show_home(update, context)

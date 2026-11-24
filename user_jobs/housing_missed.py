@@ -39,7 +39,7 @@ from database import (
     InberlinListing,
     OhnemaklerListing,
 )
-from user_jobs import housing_tier
+from user_jobs import housing_pay_store, housing_tier
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +132,7 @@ def missed_flats_job(context) -> Dict[str, int]:
     for user_id, source, summary, listing_key in notify:
         try:
             _send(bot, user_id, source, summary)
+            housing_pay_store.log_missed(user_id, source, listing_key)
             sent += 1
             logger.info("Missed flat: told %s that %s %s was taken down while held", user_id, source, listing_key)
         except Exception as exc:

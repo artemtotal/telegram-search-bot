@@ -579,7 +579,11 @@ class SurveyHardFollowupTests(_InMemoryDb):
         query = self._press('housing:survey:hard', context)
         markup = query.edit_message_text.call_args.kwargs['reply_markup']
         callbacks = [b.callback_data for row in markup.inline_keyboard for b in row]
-        self.assertEqual(callbacks, [f'housing:survey_hard:{d}' for d in housing_monitor.SURVEY_HARD_DETAILS])
+        # + «✍️ Написати докладніше» (housing_pay_survey, 25.11.2026)
+        self.assertEqual(
+            callbacks,
+            [f'housing:survey_hard:{d}' for d in housing_monitor.SURVEY_HARD_DETAILS] + ['housing:survey_more'],
+        )
 
         self._press('housing:survey_hard:night', context)
         again = self._press('housing:survey_hard:many', context)

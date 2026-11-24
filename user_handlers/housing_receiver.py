@@ -16,7 +16,7 @@ from telegram.error import NetworkError
 
 import i18n
 from database import DBSession, HousingDelivery, HousingPendingDelivery, ImmoweltListing
-from user_jobs import housing_letter_store, housing_links, housing_tier, sublet
+from user_jobs import housing_letter_store, housing_links, housing_pay_store, housing_tier, sublet
 
 
 logger = logging.getLogger(__name__)
@@ -207,6 +207,9 @@ def _tell_taken_down(bot, user_id, raw):
         payload = {}
     text, keyboard = housing_tier.missed_notice(user_id, "Immowelt", html.unescape(_immowelt_summary(payload)))
     bot.send_message(chat_id=int(user_id), text=text, parse_mode="HTML", reply_markup=keyboard)
+    # Журнал «квартиру вже зняли» (повернення ушедших, housing_winback).
+    listing_id = str(((payload.get("listing") if isinstance(payload, dict) else None) or {}).get("listing_id") or "")
+    housing_pay_store.log_missed(user_id, "immowelt", listing_id)
 
 
 def send_due_immowelt(context):

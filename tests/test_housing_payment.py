@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from database import Base, HousingAccessUser, HousingPayment
 from user_handlers import housing_monitor, housing_payment
-from user_jobs import housing_access_store, housing_tier, user_settings_store
+from user_jobs import housing_access_store, housing_pay_store, housing_packages, housing_tier, user_settings_store
 
 ADMIN = 999
 USER = 777
@@ -37,7 +37,7 @@ def _photo(user_id=USER, caption=None):
 
 
 class HousingPaymentTest(unittest.TestCase):
-    MODULES = (housing_payment, housing_access_store, housing_tier, user_settings_store)
+    MODULES = (housing_payment, housing_access_store, housing_tier, user_settings_store, housing_pay_store)
 
     def setUp(self):
         self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
@@ -52,6 +52,9 @@ class HousingPaymentTest(unittest.TestCase):
             mock.patch.object(housing_payment, 'eur_uah_rate', return_value=48.3),
             mock.patch.object(housing_monitor, '_set_all_filters_active_for_user'),
             mock.patch.object(housing_monitor, '_notify_user_access_granted'),
+            # Эти тесты - про прежний выбор 1-6 месяцев (HOUSING_PACKAGES_ENABLED=0);
+            # пакеты проверяет test_housing_pay_packages.
+            mock.patch.object(housing_packages, 'enabled', return_value=False),
         ]
         for patch in self.patches:
             patch.start()

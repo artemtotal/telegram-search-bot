@@ -40,6 +40,11 @@ def start(update, context):
             from user_handlers import housing_tracker
             housing_tracker.handle_start(update, context, str(context.args[0]))
             return
+        # «🎁 Запроси друга»: /start rf<код> - тихо привʼязуємо нову людину до запрошувача
+        # (ДО show_home: він уже створює записи про людину, а привʼязка - лише для нових).
+        if context.args and str(context.args[0]).startswith('rf'):
+            from user_handlers import housing_referral
+            housing_referral.handle_start(update, context, str(context.args[0]))
         from user_handlers.anonymous_posts import show_home
         show_home(update, context)
         return

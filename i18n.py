@@ -7,6 +7,7 @@ crashed handler. See tests/test_i18n.py for the coverage guarantee that keeps
 ru/de from silently drifting out of sync with uk.
 """
 
+import glob
 import json
 import os
 
@@ -25,6 +26,11 @@ def _load_translations():
         path = os.path.join(_TRANSLATIONS_DIR, f"{lang}.json")
         with open(path, "r", encoding="utf-8") as fh:
             translations[lang] = json.load(fh)
+        # Додаткові файли функцій: translations/<функція>.<lang>.json (pay.uk.json
+        # тощо) - щоб нові рядки не жили в одному файлі з усіма й не конфліктували.
+        for extra in sorted(glob.glob(os.path.join(_TRANSLATIONS_DIR, f"*.{lang}.json"))):
+            with open(extra, "r", encoding="utf-8") as fh:
+                translations[lang].update(json.load(fh))
     return translations
 
 
