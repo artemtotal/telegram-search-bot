@@ -13,6 +13,10 @@ ENV LOCAL_EMBED_CACHE=/app/models \
     LOCAL_EMBED_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 RUN python -c "from fastembed import TextEmbedding; list(TextEmbedding(model_name='sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2', cache_dir='/app/models').embed(['warmup']))"
 
+# Small extra dependencies in their own layer (heavy layers above stay cached)
+COPY requirements-pdf.txt .
+RUN pip install -r requirements-pdf.txt
+
 # Copy application code (only this layer rebuilds when code changes)
 ADD . /app
 RUN rm -rf extra docs preview README.md LICENSE .gitignore
