@@ -2209,6 +2209,10 @@ def _tier_line(user_id: int, lang: str = "uk") -> str:
     return text + "\n" + i18n.t("housing.tier.free_night", lang, quiet_hours=housing_tier.quiet_hours_label())
 
 
+# Запас до ліміту Telegram (4096): місце для рядка «ще N» і розмітки.
+MENU_TEXT_BUDGET = 3600
+
+
 def _render_menu(user_id: int, lang: str = "uk") -> str:
     """Deliberately short - per-service crawl status used to be dumped right
     here (see _status_lines), which turned this into a wall of text on every
@@ -2233,10 +2237,21 @@ def _render_menu(user_id: int, lang: str = "uk") -> str:
             "vonovia": "V", "immoscout": "I", "inberlin": "B", "ohnemakler": "O",
             **COOP_PREFIXES,
         }
+        # Ліміт Telegram 4096 символів: у кого багато фільтрів (55 → 4145), меню не відкривалось
+        # (25.11.2026). Показуємо перші, решту - рядком «ще N»; повний список - у «Мої фільтри».
+        used = len("\n".join(lines))
+        shown = 0
         for item in filters:
             prefix = prefixes.get(_item_source(item), "")
             title = html.escape(str(item.get('title') or i18n.t("housing.filter.default_title", lang)))
-            lines.append(f"• #{prefix}{int(item.get('filter_id'))}: {title}")
+            line = f"• #{prefix}{int(item.get('filter_id'))}: {title}"
+            if used + 1 + len(line) > MENU_TEXT_BUDGET:
+                break
+            lines.append(line)
+            used += 1 + len(line)
+            shown += 1
+        if shown < len(filters):
+            lines.append(i18n.t("housing.menu.more_filters", lang, n=len(filters) - shown))
     return "\n".join(lines)
 
 

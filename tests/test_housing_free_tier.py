@@ -617,6 +617,29 @@ class OpenToAllMenuTests(_InMemoryDb):
         self.assertIn('housing:access_request', callbacks)
         self.assertIn('housing:self_add', callbacks)
 
+    def test_a_long_filter_list_stays_under_the_telegram_limit(self):
+        # 55 фільтрів давали 4145 символів і «Message is too long» (25.11.2026).
+        items = [
+            {'filter_id': 1000 + i, 'source': 'kleinanzeigen',
+             'title': 'Потсдам, 2 кімнати, до 900 € <тест> ' + 'x' * 20}
+            for i in range(120)
+        ]
+        for lang in ('uk', 'ru', 'de'):
+            with mock.patch.object(housing_monitor, 'user_filters', return_value=items):
+                text = housing_monitor._render_menu(999, lang)
+            self.assertLess(len(text), 4096, lang)
+            shown = text.count('• #K')
+            self.assertGreater(shown, 10, lang)
+            self.assertIn(str(120 - shown), text.splitlines()[-1], lang)
+            self.assertIn('&lt;тест&gt;', text, lang)
+
+    def test_a_short_filter_list_has_no_more_line(self):
+        items = [{'filter_id': 1 + i, 'source': 'kleinanzeigen', 'title': 'T'} for i in range(5)]
+        with mock.patch.object(housing_monitor, 'user_filters', return_value=items):
+            text = housing_monitor._render_menu(999, 'uk')
+        self.assertEqual(text.count('• #K'), 5)
+        self.assertNotIn('Усі —', text)
+
     def test_a_subscriber_sees_neither(self):
         with mock.patch.object(housing_monitor, 'user_filters', return_value=[]), \
              mock.patch.object(housing_monitor.housing_tier, 'is_premium', return_value=True), \

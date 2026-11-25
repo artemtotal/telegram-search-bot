@@ -23,6 +23,7 @@
   "housing.status_screen.title": "📡 <b>Статус мониторинга</b>",
   "housing.menu.no_filters": "Для вашего Telegram ID пока нет активных фильтров.",
   "housing.menu.your_filters": "Ваши фильтры:",
+  "housing.menu.more_filters": "… и ещё {n}. Все — в «⚙️ Мои фильтры».",
   "housing.filter.default_title": "Поиск жилья",
   "housing.btn.request_access": "⚡ Получать сразу",
   "housing.btn.faq": "❓ Справка / Частые вопросы",
