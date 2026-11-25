@@ -40,6 +40,15 @@ def start(update, context):
             from user_handlers import housing_tracker
             housing_tracker.handle_start(update, context, str(context.args[0]))
             return
+        # «⚡ Підписка від N €» під квартирою безкоштовного: /start sub - одразу вибір пакета оплати.
+        if context.args and str(context.args[0]) == 'sub':
+            try:
+                from user_jobs import housing_free_hints
+                if housing_free_hints.start_param_payment(update, context):
+                    return
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('start=sub failed, showing home')
         # «🎁 Запроси друга»: /start rf<код> - тихо привʼязуємо нову людину до запрошувача
         # (ДО show_home: він уже створює записи про людину, а привʼязка - лише для нових).
         if context.args and str(context.args[0]).startswith('rf'):

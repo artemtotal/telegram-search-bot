@@ -1,0 +1,16 @@
+{
+  "hints.sub_link": "⚡ Abo ab {price} €",
+  "hints.flats.1": "Wohnung",
+  "hints.flats.2": "Wohnungen",
+  "hints.flats.5": "Wohnungen",
+  "hints.speed": "⏱ Diese Wohnung kam mit ~{hours} Std. Verzögerung. Mit Abo kommt sie sofort, sobald der Bot sie findet.",
+  "hints.letter": "📝 Mit Abo schreibt der Bot ein Anschreiben auf Deutsch genau für diese Wohnung: unten auf „Anschreiben“ tippen, dann nur noch senden.",
+  "hints.mappe": "📁 Mit Abo gibt es die „Bewerbungsmappe“: ein PDF für den Vermieter mit Anschreiben, Selbstauskunft und Dokumentenliste.",
+  "hints.applications": "📋 Mit Abo zeigt „Bewerbungen“ die ganze Liste (kostenlos — bis {n}) und erinnert an den Besichtigungstermin.",
+  "hints.quiet": "🌙 Mit Abo gibt es die „Nachtruhe“: ab {night} stört der Bot nicht, die Wohnungen kommen morgens.",
+  "hints.matches": "🔍 Mit Abo zeigt „Passt jetzt“ alle Wohnungen zu Ihrem Filter sofort, nicht nur deren Anzahl.",
+  "hints.searches": "🔎 Kostenlos läuft eine Suche. Mit Abo können mehrere Suchen gleichzeitig laufen.",
+  "hints.missed": "⏳ Zu Ihrem Filter in 7 Tagen: {n} {flats} schon weg, bevor die kostenlose Version sie senden konnte.",
+  "hints.packages": "📦 Es gibt Pakete: 3 Monate — {p3} €, oder „Bis ich eine Wohnung finde“ — {pf} € einmalig.",
+  "hints.referral": "🎁 Laden Sie einen Freund ein (Menü „Wohnung“): Wenn er ein Abo abschließt, bekommen Sie einen Monat geschenkt."
+}

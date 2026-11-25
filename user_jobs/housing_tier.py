@@ -103,7 +103,18 @@ def free_delay_hours() -> str:
 
 
 def free_footer(user_id: int) -> str:
-    """The line under every flat a free-tier person gets."""
+    """The note under every flat a free-tier person gets: the next hint about
+    one paid feature (housing_free_hints), and the old fixed line when hints
+    are off or anything in them fails - the flat must be delivered anyway."""
+    try:
+        from user_jobs import housing_free_hints
+
+        if housing_free_hints.enabled():
+            hint = housing_free_hints.build(int(user_id))
+            if hint:
+                return hint
+    except Exception:
+        logger.exception("Free-tier hint failed for %s, using the fixed footer", user_id)
     lang = i18n.get_lang(int(user_id))
     return "\n\n" + i18n.t(
         "housing.free.footer", lang, hours=free_delay_hours(), price=PREMIUM_PRICE_EUR,
