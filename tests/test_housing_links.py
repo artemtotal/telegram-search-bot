@@ -788,12 +788,16 @@ class ReminderTests(_Db):
         self.assertEqual(housing_tracker.send_due_reminders(self.bot, now=datetime(2026, 11, 28, 10, 10)), 1)
 
     def test_the_job_respects_the_switch(self):
-        viewing = datetime.utcnow() + timedelta(hours=1)
-        self._app(viewing, set_at=datetime.utcnow() - timedelta(days=2))
-        with mock.patch.dict(os.environ, {'HOUSING_APPLY_TRACKER': '0'}):
+        # Время зафиксировано (13:00 по Берлину): ночью 22-09 напоминания не шлются,
+        # тест не должен зависеть от часа, в который его запускают.
+        noon = datetime(2026, 11, 26, 12, 0)
+        viewing = noon + timedelta(hours=1)
+        self._app(viewing, set_at=noon - timedelta(days=2))
+        with mock.patch.object(housing_tracker, 'utc_now', return_value=noon):
+            with mock.patch.dict(os.environ, {'HOUSING_APPLY_TRACKER': '0'}):
+                housing_tracker.reminders_job(SimpleNamespace(bot=self.bot))
+            self.bot.send_message.assert_not_called()
             housing_tracker.reminders_job(SimpleNamespace(bot=self.bot))
-        self.bot.send_message.assert_not_called()
-        housing_tracker.reminders_job(SimpleNamespace(bot=self.bot))
         self.assertEqual(self.bot.send_message.call_count, 1)
 
 
