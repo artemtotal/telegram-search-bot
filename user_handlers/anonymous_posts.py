@@ -41,6 +41,8 @@ BTN_EQUEUE = "🛂 ДП Документ"
 BTN_HOUSING = "🏘 Житло"
 BTN_FEEDBACK = "💬 Написати нам"
 ADS_BOT_URL = "https://t.me/AdvertisingPotsdam_bot"
+# 26.11.2026: каталог «Майстри Потсдама» (окремий сайт). Порожньо = кнопки немає.
+MASTERS_URL = os.environ.get("MASTERS_URL", "").strip()
 FEEDBACK_MIN_LENGTH = 5
 FEEDBACK_MAX_LENGTH = 2000
 
@@ -63,6 +65,8 @@ def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
     rows.extend(support.home_rows(user_id))
     rows.append([InlineKeyboardButton(i18n.t("anon.btn.feedback", lang), callback_data="anon:feedback")])
     # 31.10.2026: advertising in the group is sold by the separate ad bot.
+    if MASTERS_URL:
+        rows.append([InlineKeyboardButton(i18n.t("anon.btn.masters", lang), url=MASTERS_URL)])
     rows.append([InlineKeyboardButton(i18n.t("anon.btn.ads", lang), url=ADS_BOT_URL)])
     rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="anon:lang:menu")])
     return InlineKeyboardMarkup(rows)
