@@ -68,8 +68,9 @@ class MatchTest(unittest.TestCase):
             self.assertIsNone(self.mh.match(text), text)
 
     def test_text_is_short_ukrainian_with_link(self):
-        self.assertEqual(self.mh.text_for(""), "🧰 Увесь каталог майстрів і послуг нашого чату тут: https://example.org/m/")
-        self.assertIn("https://example.org/m/#cat=beauty", self.mh.text_for("beauty"))
+        self.assertEqual(self.mh.text_for(""), "🧰 Увесь каталог майстрів і послуг нашого чату тут: https://example.org/m/?s=hint")
+        self.assertIn("https://example.org/m/?s=hint#cat=beauty", self.mh.text_for("beauty"))
+        self.assertEqual(self.mh.link("bot"), "https://example.org/m/?s=bot")
         self.assertIn("«Краса»", self.mh.text_for("beauty"))
         self.assertLess(len(self.mh.text_for("docs")), 160)
 

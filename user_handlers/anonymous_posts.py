@@ -68,7 +68,7 @@ def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
     rows.append([InlineKeyboardButton(i18n.t("anon.btn.feedback", lang), callback_data="anon:feedback")])
     # 31.10.2026: advertising in the group is sold by the separate ad bot.
     if MASTERS_URL:
-        rows.append([InlineKeyboardButton(i18n.t("anon.btn.masters", lang), url=MASTERS_URL)])
+        rows.append([InlineKeyboardButton(i18n.t("anon.btn.masters", lang), url=_masters_hint.link("bot"))])
     rows.append([InlineKeyboardButton(i18n.t("anon.btn.ads", lang), url=ADS_BOT_URL)])
     rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="anon:lang:menu")])
     return InlineKeyboardMarkup(rows)

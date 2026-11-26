@@ -152,11 +152,20 @@ def match(text: str) -> Optional[str]:
     return None
 
 
-def text_for(cat: str) -> str:
+def link(src: str, cat: str = "") -> str:
+    """Посилання на каталог із позначкою джерела (?s=bot — кнопка в меню, ?s=hint — підказка в чаті): для статистики сайту."""
     url = MASTERS_URL
+    if src:
+        url += ("&" if "?" in url else "?") + "s=" + src
     if cat and cat in CAT_NAMES:
-        return "🧰 Увесь каталог майстрів і послуг нашого чату тут: %s#cat=%s (розділ «%s»)" % (url, cat, CAT_NAMES[cat])
-    return "🧰 Увесь каталог майстрів і послуг нашого чату тут: %s" % url
+        url += "#cat=" + cat
+    return url
+
+
+def text_for(cat: str) -> str:
+    if cat and cat in CAT_NAMES:
+        return "🧰 Увесь каталог майстрів і послуг нашого чату тут: %s (розділ «%s»)" % (link("hint", cat), CAT_NAMES[cat])
+    return "🧰 Увесь каталог майстрів і послуг нашого чату тут: %s" % link("hint")
 
 
 def _load() -> dict:
