@@ -19,11 +19,36 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-MASTERS_URL = os.environ.get("MASTERS_URL", "").strip()
-MODE = os.environ.get("MASTERS_HINT", "off").strip().lower()          # off | log | on
-USER_DAYS = float(os.environ.get("MASTERS_HINT_USER_DAYS", "7"))
-GAP_MIN = float(os.environ.get("MASTERS_HINT_GAP_MIN", "20"))
-MAX_PER_DAY = int(os.environ.get("MASTERS_HINT_MAX_PER_DAY", "10"))
+# Налаштування: змінна оточення, а якщо її немає — файл /app/config/masters.json
+# ({"url": "...", "hint": "on", "user_days": 7, "gap_min": 20, "max_per_day": 10}). Файл лежить у томі з даними,
+# тож увімкнути чи вимкнути можна без перестворення контейнера: поправити файл і перезапустити бота.
+CONFIG_PATH = os.environ.get("MASTERS_CONFIG", "/app/config/masters.json")
+
+
+def _file_cfg() -> dict:
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+_CFG = _file_cfg()
+
+
+def _setting(env_name: str, key: str, default: str) -> str:
+    value = os.environ.get(env_name)
+    if value is None or value == "":
+        value = _CFG.get(key, default)
+    return str(value).strip()
+
+
+MASTERS_URL = _setting("MASTERS_URL", "url", "")
+MODE = _setting("MASTERS_HINT", "hint", "off").lower()          # off | log | on
+USER_DAYS = float(_setting("MASTERS_HINT_USER_DAYS", "user_days", "7"))
+GAP_MIN = float(_setting("MASTERS_HINT_GAP_MIN", "gap_min", "20"))
+MAX_PER_DAY = int(float(_setting("MASTERS_HINT_MAX_PER_DAY", "max_per_day", "10")))
 STATE_PATH = os.environ.get("MASTERS_HINT_STATE", "/app/config/masters_hint.json")
 
 _lock = threading.Lock()

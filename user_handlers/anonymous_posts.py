@@ -42,7 +42,9 @@ BTN_HOUSING = "🏘 Житло"
 BTN_FEEDBACK = "💬 Написати нам"
 ADS_BOT_URL = "https://t.me/AdvertisingPotsdam_bot"
 # 26.11.2026: каталог «Майстри Потсдама» (окремий сайт). Порожньо = кнопки немає.
-MASTERS_URL = os.environ.get("MASTERS_URL", "").strip()
+from user_handlers import masters_hint as _masters_hint  # noqa: E402  (налаштування каталогу: оточення або /app/config/masters.json)
+
+MASTERS_URL = _masters_hint.MASTERS_URL
 FEEDBACK_MIN_LENGTH = 5
 FEEDBACK_MAX_LENGTH = 2000
 

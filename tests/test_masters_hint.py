@@ -117,6 +117,20 @@ class ReplyTest(unittest.TestCase):
         mh = load(MASTERS_URL="", MASTERS_HINT_STATE=self.state)           # без ссылки выключено
         self.assertFalse(mh.enabled())
 
+    def test_settings_from_config_file_and_env_wins(self):
+        import json
+        cfg = os.path.join(self.tmp.name, "masters.json")
+        with open(cfg, "w", encoding="utf-8") as fh:
+            json.dump({"url": "https://file.example/", "hint": "on", "gap_min": 5, "max_per_day": 3}, fh)
+        clean = {k: "" for k in ("MASTERS_URL", "MASTERS_HINT", "MASTERS_HINT_GAP_MIN", "MASTERS_HINT_MAX_PER_DAY")}
+        mh = load(MASTERS_CONFIG=cfg, MASTERS_HINT_STATE=self.state, **clean)
+        self.assertEqual((mh.MASTERS_URL, mh.MODE, mh.GAP_MIN, mh.MAX_PER_DAY), ("https://file.example/", "on", 5.0, 3))
+        self.assertTrue(mh.enabled())
+        mh = load(MASTERS_CONFIG=cfg, MASTERS_HINT_STATE=self.state, MASTERS_URL="https://env.example/", MASTERS_HINT="off")
+        self.assertEqual((mh.MASTERS_URL, mh.MODE), ("https://env.example/", "off"))
+        mh = load(MASTERS_CONFIG=os.path.join(self.tmp.name, "nope.json"), MASTERS_HINT_STATE=self.state, **clean)
+        self.assertEqual((mh.MASTERS_URL, mh.MODE), ("", "off"))
+
     def test_reply_failure_is_swallowed(self):
         mh = load(MASTERS_HINT_STATE=self.state)
         msg = FakeMessage("Порадьте стоматолога в Потсдамі, будь ласка?")
