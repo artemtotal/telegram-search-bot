@@ -23,6 +23,8 @@ from typing import Dict, List, Optional, Tuple
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, CallbackQueryHandler, Filters, MessageHandler
 
+from user_handlers import masters_hint
+
 from user_jobs import kb_common as kb
 
 logger = logging.getLogger(__name__)
@@ -269,28 +271,52 @@ def _proactive_text(body: str, question: str, bot_username: str) -> str:
     if _HOUSING_RE.search(question) and bot_username:
         text += (f"\n\n🏘 Шукаєте житло? Нові квартири в Потсдамі одразу в Telegram — "
                  f"моніторинг у @{bot_username} (кнопка «🏘 Житло»).")
+    if masters_hint.enabled() and masters_hint.MODE == "on":
+        cat = masters_hint.match(question)
+        if cat is not None:
+            text += "\n\n" + masters_hint.text_for(cat)
     text += "\n\nПитайте ще: напишіть «потсдамбот» і своє питання."
     return text
 
 
+def _is_real_reply(message) -> bool:
+    """У темах форуму кожне повідомлення формально «відповідає» на заголовок теми: це не відповідь людині."""
+    replied = message.reply_to_message
+    if replied is None:
+        return False
+    if getattr(replied, "forum_topic_created", None):
+        return False
+    if getattr(message, "is_topic_message", False) and replied.message_id == getattr(message, "message_thread_id", None):
+        return False
+    return True
+
+
 def on_group_message(update: Update, context: CallbackContext) -> None:
     message = update.effective_message
-    if KB_PROACTIVE == "off" or message is None or not message.text:
+    if message is None or not message.text:
         return
     user = message.from_user
-    if user is None or user.is_bot or message.reply_to_message is not None:
+    if user is None or user.is_bot or _is_real_reply(message):
         return
     text = message.text
-    if "потсдамбот" in text.lower() or "потсдам бот" in text.lower() or not looks_like_question(text):
+    if "потсдамбот" in text.lower() or "потсдам бот" in text.lower():
         return
-    if not ready():
-        return
+    sent = False
+    if KB_PROACTIVE != "off" and looks_like_question(text) and ready():
+        sent = _proactive_answer(message, user, text, context)
+    if not sent:
+        # 26.11.2026: шукають майстра, а відповіді з довідника в чат не було: коротке посилання на каталог.
+        masters_hint.maybe_reply(message, user, text)
+
+
+def _proactive_answer(message, user, text: str, context: CallbackContext) -> bool:
+    """Відповідь із довідника чату. True, якщо бот написав у чат."""
     chat_id = message.chat_id
     with _db_lock:
         store = _store()
         try:
             if not _limits_ok(store, chat_id, user.id):
-                return
+                return False
             row_id = store.execute(
                 "INSERT INTO proactive(chat_id, msg_id, user_id, question, status) VALUES (?,?,?,?,?)",
                 (chat_id, message.message_id, user.id, text[:1000], "working"),
@@ -339,6 +365,9 @@ def on_group_message(update: Update, context: CallbackContext) -> None:
         finally:
             store.close()
     logger.info("Proactive %s for message %s", status, message.message_id)
+    if status == "sent" and masters_hint.enabled() and masters_hint.match(text) is not None:
+        masters_hint.note_sent(chat_id, user.id)
+    return status == "sent"
 
 
 def on_admin_button(update: Update, context: CallbackContext) -> None:
