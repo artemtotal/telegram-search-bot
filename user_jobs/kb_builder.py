@@ -17,7 +17,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, "/app")
@@ -218,7 +218,8 @@ def run(force: bool, max_batches: int) -> None:
             store.commit()
             return True
         except RuntimeError as exc:
-            until = next_quota_reset()
+            # Never wait more than 2 h: a failure that is not the quota (proxy down) must not stop the builder for a day.
+            until = min(next_quota_reset(), datetime.now(TZ) + timedelta(hours=2))
             kb.set_meta(store, "embed_pause_until", until.isoformat(timespec="minutes"))
             store.commit()
             log.warning("Embeddings unavailable (%s), pausing until %s", exc, until.isoformat(timespec="minutes"))
