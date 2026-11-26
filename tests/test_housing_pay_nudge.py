@@ -1,6 +1,7 @@
 """Одне нагадування тим, хто кинув оплату на екрані з карткою (26.11.2026)."""
 
 import json
+import tempfile
 import os
 import unittest
 from datetime import timedelta
@@ -11,7 +12,7 @@ from telegram.error import Unauthorized
 from database import HousingLeaveEvent, HousingPayment
 from user_jobs.housing_pay_store import HousingPayNudge
 from pay_helpers import ADMIN, USER, FRIEND, PayDbCase
-from user_handlers import housing_pay_nudge
+from user_handlers import housing_pay_nudge, switches
 from user_jobs import housing_pay_store
 
 
@@ -42,11 +43,58 @@ class PayNudgeTest(PayDbCase):
 
     def test_off_by_default(self):
         self.pay()
-        with mock.patch.dict(os.environ):
+        with mock.patch.dict(os.environ), mock.patch.object(switches, "CONFIG_PATH", os.path.join(tempfile.gettempdir(), "no-such-switches.json")):
             os.environ.pop("HOUSING_PAY_NUDGE_ENABLED", None)
             self.assertFalse(housing_pay_nudge.enabled())
             self.assertEqual(self.run_job(), {"sent": 0})
         self.assertEqual(self.sent_texts(USER), [])
+
+    def with_switch_file(self, content, env=None):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, "bot_switches.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        env_patch = mock.patch.dict(os.environ)
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+        os.environ.pop("HOUSING_PAY_NUDGE_ENABLED", None)
+        if env is not None:
+            os.environ["HOUSING_PAY_NUDGE_ENABLED"] = env
+        file_patch = mock.patch.object(switches, "CONFIG_PATH", path)
+        file_patch.start()
+        self.addCleanup(file_patch.stop)
+
+    def test_switch_in_file_turns_it_on_without_env(self):
+        self.with_switch_file('{"housing_pay_nudge": true}')
+        self.pay()
+        self.assertTrue(housing_pay_nudge.enabled())
+        self.assertEqual(self.run_job()["sent"], 1)
+
+    def test_file_false_or_missing_key_keeps_it_off(self):
+        self.with_switch_file('{"housing_pay_nudge": false, "ad_shadow": true}')
+        self.pay()
+        self.assertFalse(housing_pay_nudge.enabled())
+        self.assertEqual(self.run_job(), {"sent": 0})
+        self.with_switch_file('{"ad_shadow": true}')
+        self.assertFalse(housing_pay_nudge.enabled())
+
+    def test_env_wins_over_file(self):
+        self.with_switch_file('{"housing_pay_nudge": true}', env="0")
+        self.assertFalse(housing_pay_nudge.enabled())
+
+    def test_turning_on_does_not_mail_everyone(self):
+        """Старі оплати (понад 72 год) не отримують нічого; з вікна 24-72 год - не більше MAX_PER_RUN за запуск, по одному на людину."""
+        self.with_switch_file('{"housing_pay_nudge": true}')
+        for index in range(30):
+            self.pay(user_id=5000 + index, hours_ago=73 + index * 20)           # усі старші за 72 год
+        self.assertEqual(self.run_job()["sent"], 0)
+        for index in range(30):
+            self.pay(user_id=7000 + index, hours_ago=30)
+        self.pay(user_id=7000, hours_ago=31)                                     # друга оплата тієї ж людини
+        self.assertEqual(self.run_job()["sent"], housing_pay_nudge.MAX_PER_RUN)
+        self.assertEqual(self.session().query(HousingPayNudge).count(), housing_pay_nudge.MAX_PER_RUN)
+        self.assertEqual(self.sent_texts(5000), [])
 
     def test_sends_once_after_a_day_with_package_buttons(self):
         self.pay()

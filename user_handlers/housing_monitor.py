@@ -1287,6 +1287,16 @@ def daily_filter_summary_job(context: CallbackContext) -> None:
         return
     until = datetime.utcnow()
     text = filter_summary_text(context.bot, until - timedelta(days=1), until)
+    try:
+        # 26.11.2026: один рядок про схожі на рекламу повідомлення повз оплату (тіньовий підрахунок, у чат нічого не пишемо).
+        from user_handlers import ad_shadow
+
+        shadow = ad_shadow.summary_text(until - timedelta(days=1), until)
+    except Exception:
+        logger.exception("Could not build the ad shadow line")
+        shadow = ""
+    if shadow:
+        text = f"{text}\n\n{shadow}" if text else shadow
     if not text:
         # Тихий день - нема про що писати, окреме «нічого не сталося» теж спам.
         return

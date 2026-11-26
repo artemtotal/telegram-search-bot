@@ -16,6 +16,7 @@ from user_handlers import (
     chat_delete,
     chatid_get,
     kb_search,
+    ad_shadow,
     msg_ai,
     msg_store,
     faq_admin,
@@ -320,6 +321,8 @@ dispatcher.add_handler(anonymous_posts.forum_observer_handler, group=2)
 # Proactive answers to questions in the chat: own group, so storing and the
 # other handlers still see every message (31.10.2026, KB_PROACTIVE).
 dispatcher.add_handler(kb_search.group_handler, group=4)
+# 26.11.2026: тіньовий підрахунок реклами повз оплату, у чат нічого не пише (AD_SHADOW_ENABLED / bot_switches.json).
+dispatcher.add_handler(ad_shadow.group_handler, group=5)
 
 def run_telethon_thread():
     loop = asyncio.new_event_loop()

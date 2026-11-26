@@ -7,7 +7,8 @@ housing_payment.RECEIPT_WINDOW), і пише людині ОДИН раз за �
 бота, у нічні години (22-09 за Берліном), тим, у кого вже є схвалена оплата
 після цієї, і тим, хто вже надіслав чек (статус «sent»).
 
-ЗА ЗАМОВЧУВАННЯМ ВИМКНЕНО. Увімкнути: HOUSING_PAY_NUDGE_ENABLED=1.
+ЗА ЗАМОВЧУВАННЯМ ВИМКНЕНО. Увімкнути: HOUSING_PAY_NUDGE_ENABLED=1 або {"housing_pay_nudge": true}
+у /app/config/bot_switches.json (контейнер перестворювати не треба, достатньо перезапуску).
 """
 
 import logging
@@ -20,7 +21,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import i18n
 from database import DBSession, HousingPayment
-from user_handlers import housing_winback
+from user_handlers import housing_winback, switches
 from user_jobs import housing_pay_store, housing_tier
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,8 @@ SEND_PAUSE_SECONDS = 0.1
 
 
 def enabled() -> bool:
-    return (os.getenv("HOUSING_PAY_NUDGE_ENABLED", "0") or "0").strip() == "1"
+    """Змінна HOUSING_PAY_NUDGE_ENABLED=1 важливіша; інакше {"housing_pay_nudge": true} у /app/config/bot_switches.json."""
+    return switches.flag("HOUSING_PAY_NUDGE_ENABLED", "housing_pay_nudge", False)
 
 
 def utc_now() -> datetime:
