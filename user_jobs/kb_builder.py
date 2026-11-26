@@ -158,6 +158,31 @@ def build_cards(batch, reply: dict):
     return cards
 
 
+def next_quota_reset(now=None):
+    """Gemini's free quota resets at midnight Pacific time (+5 min margin)."""
+    la = ZoneInfo("America/Los_Angeles")
+    now_la = (now or datetime.now(la)).astimezone(la)
+    reset = now_la.replace(hour=0, minute=5, second=0, microsecond=0)
+    if reset <= now_la:
+        from datetime import timedelta
+        reset = (now_la + timedelta(days=1)).replace(hour=0, minute=5, second=0, microsecond=0)
+    return reset
+
+
+def paused(store) -> bool:
+    """26.11.2026: the embedding quota ran out on 25.11 and the builder retried
+    (and crashed with a traceback) every 15 minutes. Now a failed embedding
+    sets embed_pause_until and the ticks do nothing until then."""
+    raw = kb.get_meta(store, "embed_pause_until", "")
+    if not raw:
+        return False
+    try:
+        until = datetime.fromisoformat(raw)
+    except ValueError:
+        return False
+    return datetime.now(until.tzinfo or TZ) < until
+
+
 def embed_pending(store, limit: int = 500) -> int:
     rows = store.execute(
         "SELECT * FROM cards WHERE embedded = 0 ORDER BY id LIMIT ?", (limit,)
@@ -184,8 +209,27 @@ def run(force: bool, max_batches: int) -> None:
     main = kb.main_db()
     kb.ensure_collection()
     done = 0
+
+    def embed_or_pause() -> bool:
+        """False when embeddings are unavailable: stop the run and wait for the quota reset."""
+        try:
+            embed_pending(store)
+            kb.set_meta(store, "embed_pause_until", "")
+            store.commit()
+            return True
+        except RuntimeError as exc:
+            until = next_quota_reset()
+            kb.set_meta(store, "embed_pause_until", until.isoformat(timespec="minutes"))
+            store.commit()
+            log.warning("Embeddings unavailable (%s), pausing until %s", exc, until.isoformat(timespec="minutes"))
+            return False
+
     try:
-        embed_pending(store)
+        if paused(store):
+            log.info("Paused until %s (embedding quota)", kb.get_meta(store, "embed_pause_until"))
+            return
+        if not embed_or_pause():
+            return
         while max_batches <= 0 or done < max_batches:
             if not force and not in_window(datetime.now(TZ)):
                 log.info("Out of the working window, stopping")
@@ -231,10 +275,11 @@ def run(force: bool, max_batches: int) -> None:
             )
             kb.set_meta(store, "cursor", last_rowid)
             store.commit()
-            embed_pending(store)
             done += 1
             log.info("Batch %d: rows %d..%d, %d messages -> %d cards, %s, %.0f s",
                      done, cursor + 1, last_rowid, len(batch), len(cards), model, seconds)
+            if not embed_or_pause():
+                break  # cards are saved with embedded=0 and get embedded after the pause
     finally:
         store.close()
         main.close()
