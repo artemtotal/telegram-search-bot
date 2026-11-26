@@ -18,7 +18,7 @@ USER = 777
 FRIEND = 778
 
 MODULE_NAMES = (
-    "user_handlers.housing_payment", "user_handlers.housing_pay_report", "user_handlers.housing_winback",
+    "user_handlers.housing_payment", "user_handlers.housing_pay_report", "user_handlers.housing_winback", "user_handlers.housing_pay_nudge",
     "user_handlers.housing_referral", "user_handlers.housing_found", "user_handlers.housing_leave",
     "user_handlers.housing_pay_survey", "user_jobs.housing_access_store", "user_jobs.housing_tier",
     "user_jobs.user_settings_store", "user_jobs.housing_pay_store", "user_jobs.housing_missed",

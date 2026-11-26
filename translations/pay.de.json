@@ -62,5 +62,6 @@
   "pay.survey.more_prompt": "✍️ Schreiben Sie mit eigenen Worten, was im Bot unbequem oder unklar ist. In einer Nachricht — wir lesen jede.",
   "pay.survey.btn_cancel": "✖ Abbrechen",
   "pay.survey.more_thanks": "Danke! 🙏 An den Autor des Bots weitergeleitet.",
-  "pay.survey.more_cancelled": "Alles gut, kein Problem."
+  "pay.survey.more_cancelled": "Alles gut, kein Problem.",
+  "pay.nudge.text": "👋 Sie haben die Abo-Zahlung geöffnet, aber der Beleg ist nicht angekommen. Kein Problem, falls etwas dazwischenkam: Sie können jetzt ein Paket wählen und zahlen, und ohne ukrainische Karte schreiben Sie dem Admin, er nennt einen anderen Weg."
 }

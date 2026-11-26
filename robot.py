@@ -35,6 +35,7 @@ from user_handlers import (
     support,
 )
 from user_handlers import housing_winback
+from user_handlers import housing_pay_nudge
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
 from user_jobs import propotsdam_monitor
@@ -240,6 +241,8 @@ job.run_repeating(housing_payment.provisional_expiry_job, interval=600, first=30
 # Подарочные дни «🎁 миттєві» и возврат ушедших через 7 дней (user_handlers/housing_winback.py).
 job.run_repeating(housing_winback.gift_expiry_job, interval=600, first=330)
 job.run_repeating(housing_winback.winback_job, interval=1800, first=660)
+# 26.11.2026: одне нагадування тим, хто кинув оплату на екрані з карткою; ВИМКНЕНО (HOUSING_PAY_NUDGE_ENABLED=1).
+job.run_repeating(housing_pay_nudge.pay_nudge_job, interval=1800, first=690)
 # e-Consul: fewer checks (and no login prompts) when few people subscribe.
 job.run_repeating(econsul_monitor.schedule_job, interval=1800, first=60)
 # Free tier: Immowelt flats held back for FREE_DELAY go out from here (the

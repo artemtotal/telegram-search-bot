@@ -60,6 +60,17 @@ class HousingWinback(Base):
     sent_at = Column(DATETIME, nullable=False)
 
 
+class HousingPayNudge(Base):
+    """Одне нагадування «ви почали оплату, але чек не надійшов» на людину
+    (26.11.2026, housing_pay_nudge). user_id - ключ: повторно не пишемо ніколи."""
+
+    __tablename__ = 'housing_pay_nudge'
+
+    user_id = Column(INTEGER, primary_key=True)
+    payment_id = Column(INTEGER, nullable=False)
+    sent_at = Column(DATETIME, nullable=False)
+
+
 class HousingGift(Base):
     """«🎁 2 дні миттєвих»: натиснута людиною, не частіше разу на 90 днів."""
 
@@ -120,7 +131,7 @@ class HousingSurveyMore(Base):
 _TABLES = [
     HousingMissedLog.__table__, HousingWinback.__table__, HousingGift.__table__,
     HousingReferralCode.__table__, HousingReferral.__table__, HousingFoundState.__table__,
-    HousingSurveyMore.__table__,
+    HousingSurveyMore.__table__, HousingPayNudge.__table__,
 ]
 Base.metadata.create_all(engine, tables=_TABLES)
 
@@ -258,6 +269,27 @@ def mark_winback_sent(user_id: int, ended_at: datetime) -> bool:
     session = DBSession()
     try:
         session.add(HousingWinback(user_id=int(user_id), ended_at=ended_at, sent_at=utc_now()))
+        session.commit()
+        return True
+    except Exception:
+        session.rollback()
+        return False
+    finally:
+        session.close()
+
+
+def pay_nudge_sent(user_id: int) -> bool:
+    session = DBSession()
+    try:
+        return session.query(HousingPayNudge.user_id).filter(HousingPayNudge.user_id == int(user_id)).first() is not None
+    finally:
+        session.close()
+
+
+def mark_pay_nudge_sent(user_id: int, payment_id: int) -> bool:
+    session = DBSession()
+    try:
+        session.add(HousingPayNudge(user_id=int(user_id), payment_id=int(payment_id), sent_at=utc_now()))
         session.commit()
         return True
     except Exception:
