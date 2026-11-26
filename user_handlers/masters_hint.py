@@ -212,8 +212,9 @@ _TOPICS = {
     ],
     "docs": [
         _topic(r"перекладач|переводчик|переклад|перевод|dolmetscher|übersetz", r"перекладач|переводчик|переклад|перевод|dolmetsch|übersetz", True),
-        _topic(r"присяжн|(?:переклад|перевод)\w*\s+(?:документ|диплом|свідоцтв|свидетельств|довідк|справк|паспорт|атестат|аттестат)"
-               r"|диплом|атестат|аттестат|свідоцтв|свидетельств|письмов|письмен",
+        # переклад документів: саме слово «свідоцтво» чи «диплом» ще не означає, що шукають перекладача (може, апостиль)
+        _topic(r"присяжн|письмов\w*\s+переклад|письмен\w*\s+перевод"
+               r"|(?:переклад|перевод|перекласти|перевести)\w*\s+(?:\w+\s+){0,2}(?:документ|диплом|свідоцтв|свидетельств|довідк|справк|паспорт|атестат|аттестат)",
                r"присяжн|завірен|заверен|письмов|письмен"      # без Beglaubigung: так пише й нотаріус
                r"|(?:переклад|перевод)\w*\s+(?:документ|диплом|свідоцтв|свидетельств|атестат|аттестат)"),
         # усний переклад і супровід: до лікаря, в установу, на конкретний день і годину
@@ -270,8 +271,11 @@ _TOPICS = {
     "legal": [
         _topic(r"адвокат|anwalt|rechtsanw"),
         _topic(r"юрист", r"юрист|адвокат"),
-        _topic(r"страхов", r"страхов|versicherung"),
-        _topic(r"податков|налогов|steuer|бухгалтер", r"податк|налог|steuer|бухгалтер|buchhalt"),
+        _topic(r"міграц|миграц", r"міграц|миграц|migration"),
+        _topic(r"трудов", r"трудов|arbeitsrecht"),
+        _topic(r"страхов", r"страхуванн|страховк|страховани|страховик|versicherung"),      # «страховой спор» — це вже адвокат
+        _topic(r"бухгалтер", r"бухгалтер|buchhalt"),
+        _topic(r"податков|налогов|steuer", r"податк|налог|steuer|деклараці|деклараци"),
     ],
     "pets": [
         _topic(r"ветеринар|tierarzt", r"ветеринар|ветлікар|ветврач|ветклін|ветклин|tier[aä]rzt|tierklinik"),
@@ -344,6 +348,9 @@ _LANG = (_word(r"російськ|русск|рос\b|україномовн|у�
 _VISIT_RE = _word(r"на\s+дому|на\s+дом\b|додому|виїзд|выезд")      # картки з mode: visit
 _ONLINE_RE = _word(r"онлайн|online|дистанц")                        # картки з mode: online
 _BUT_RE = re.compile(r"(?:крім|окрім|кроме)\s+([^\W\d_]{5,})", re.IGNORECASE)      # «крім Манукової»: цю картку не радимо
+# Місто назвали, щоб його відкинути: «тільки не в Берліні», «Берлін не підходить» (але «якщо не в Потсдамі, то …» — не відмова).
+_NOT_BEFORE_RE = re.compile(r"(?<!якщо )(?<!если )\b(?:не|крім|окрім|кроме)\s+(?:в|у|з|із|из)?\s*$", re.IGNORECASE)
+_NOT_AFTER_RE = re.compile(r"[^\W\d_]*\s+не\s+(?:підход|подход|підійд|подойд|потрібн|нужн|треба|надо|хоч)", re.IGNORECASE)
 _NOT_A_NAME = _word(r"studio|salon|praxis|zentrum|center|centre|gmbh|schule|school|academy|service|klinik|[aä]rzt")
 _GERMANY_RE = _word(r"німеч|герман|deutsch|german")
 
@@ -557,6 +564,23 @@ def _own_names(text: str) -> List[str]:
     return stems
 
 
+def _cities(text: str) -> Tuple[List[str], List[str]]:
+    """Міста з прохання: де шукають і які відкинули («тільки не в Берліні», «Берлін не підходить»)."""
+    want, avoid = [], []
+    for ask, needle in _CITIES:
+        yes = no = False
+        for found in ask.finditer(text):
+            if _NOT_BEFORE_RE.search(text[:found.start()]) or _NOT_AFTER_RE.match(text, found.start()):
+                no = True
+            else:
+                yes = True
+        if yes:
+            want.append(needle)
+        elif no:
+            avoid.append(needle)
+    return want, avoid
+
+
 def pick(cat: str, text: str, cards: List[dict], day: str = "") -> List[dict]:
     """До трьох карток розділу, які підходять під слова прохання. [] — підхожих немає.
 
@@ -564,7 +588,8 @@ def pick(cat: str, text: str, cards: List[dict], day: str = "") -> List[dict]:
     закріплені (реклама); ті, де є ще й «для дитини» чи назване в проханні ім'я; свіжі перед давніми (до 2024 року);
     названо місто — картки з цього міста, потім без адреси, потім з інших міст, разом із мовою, виїздом, онлайном;
     збіг із більшою кількістю тем; кого частіше радили в чаті; список перевірених перевізників; рекламодавці; свіжість.
-    Цілком рівних щодня чергуємо. Дві картки однієї людини поруч не показуємо; «крім Іваненка» цю картку прибирає."""
+    Цілком рівних щодня чергуємо. Дві картки однієї людини поруч не показуємо; «крім Іваненка» цю картку прибирає,
+    «тільки не в Берліні» ставить берлінські картки останніми."""
     fired = [topic for topic in _TOPICS.get(cat, ()) if topic.ask.search(text)]
     need = [topic for topic in fired if not topic.wide] or fired
     if not need:
@@ -574,7 +599,7 @@ def pick(cat: str, text: str, cards: List[dict], day: str = "") -> List[dict]:
     # ім'я з прохання рахуємо, лише коли воно вказує на одну-дві картки розділу: «Дмитрий» — так, «Документ» — ні
     named = [stem for stem in _own_names(text)
              if stem not in banned and 0 < sum(1 for card in section if stem in card["stems"]) <= 2]
-    cities = [needle for ask, needle in _CITIES if ask.search(text)]
+    cities, far = _cities(text)
     kids, lang = bool(_KIDS[0].search(text)), bool(_LANG[0].search(text))
     visit, online = bool(_VISIT_RE.search(text)), bool(_ONLINE_RE.search(text))
     day = day or time.strftime("%Y-%m-%d")
@@ -586,12 +611,14 @@ def pick(cat: str, text: str, cards: List[dict], day: str = "") -> List[dict]:
             continue
         strong = (1 if kids and _KIDS[1].search(card["hay2"]) else 0) + (1 if any(stem in card["stems"] for stem in named) else 0)
         area = card["area"].lower()
-        if not cities:
-            near = 0
-        elif any(needle in area for needle in cities):
+        if any(needle in area for needle in cities):
             near = 2
-        else:           # без адреси, «вся Німеччина» чи наш Потсдам — можливо, підходить; інше місто — ні
+        elif any(needle in area for needle in far):
+            near = -1
+        elif cities:    # без адреси, «вся Німеччина» чи наш Потсдам — можливо, підходить; інше місто — ні
             near = 1 if not area or "potsdam" in area or "deutschland" in area or "ukraine" in area else 0
+        else:
+            near = 0
         soft = near + (1 if lang and _LANG[1].search(card["hay2"]) else 0)
         soft += (1 if visit and "visit" in card["mode"] else 0) + (1 if online and "online" in card["mode"] else 0)
         topics = sum(1 for topic in fired if topic.card.search(card["hay"]))

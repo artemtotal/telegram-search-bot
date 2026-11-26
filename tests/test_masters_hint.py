@@ -335,6 +335,29 @@ class CardsTest(unittest.TestCase):
         ask = "Порадьте, будь ласка, перекладача Остапа, треба переклад свідоцтва"
         self.assertEqual([c["id"] for c in self.mh.pick("docs", ask, cards, "2026-11-26")], ["d9", "d2", "d1"])    # а это имя: одна карточка
 
+    def test_city_named_to_avoid_goes_down(self):
+        self.fill()
+        self.assertEqual(self.ids("Порадьте, будь ласка, стоматолога"), ["den2", "den1", "den3"])
+        self.assertEqual(self.ids("Порадьте, будь ласка, стоматолога, тільки не в Берліні"), ["den1", "den2", "den3"])
+        self.assertEqual(self.ids("Порадьте стоматолога? Берлін не підходить"), ["den1", "den2", "den3"])
+        # «якщо не в Потсдамі, то в Берліні» — не відмова від Потсдама
+        self.assertEqual(self.mh._cities("Порадьте стоматолога, якщо не в Потсдамі, то в Берліні"), (["potsdam", "berlin"], []))
+
+    def test_legal_and_document_topics(self):
+        data = {"items": CATALOG["items"] + [
+            card("tax1", "Steuerberatung Muster", "legal", "податковий консультант", ["налоговый консультант", "Steuerberater"], rec=2),
+            card("buh1", "Бухгалтер Тест", "legal", "бухгалтерія", ["бухгалтер"], rec=5),
+            card("ins1", "Versicherung Muster", "legal", "страхування", ["страховка", "Versicherung"], rec=7),
+        ]}
+        self.fill(data)
+        self.assertEqual(self.ids("Порадьте, будь ласка, податкового консультанта"), ["tax1"])     # бухгалтер і страховик — інше
+        self.assertEqual(self.ids("Підкажіть хорошого бухгалтера, будь ласка"), ["buh1"])
+        # апостиль на свідоцтво: це не переклад, а апостилю в каталозі немає — одне посилання
+        ask = "Підкажіть, де зробити апостиль на свідоцтво про народження?"
+        self.assertEqual(self.mh.match(ask), "docs")
+        self.assertEqual(self.ids(ask), [])
+        self.assertEqual(self.ids("Порадьте присяжного, треба перекласти свідоцтво про народження"), ["tr2"])
+
     def test_reply_is_never_longer_than_600(self):
         long_name = "Дуже довга назва салону краси з усіма послугами одразу для всіх"
         rows = [card("x" * 39 + str(n), long_name + " " + str(n), "beauty", "манікюр, педикюр, нарощування вій, брови, ламінування, епіляція",
