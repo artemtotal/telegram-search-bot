@@ -1,0 +1,5 @@
+{
+  "hsite.bad_request": "Die Anfrage konnte nicht verarbeitet werden. Bitte Werte prüfen und erneut versuchen.",
+  "hsite.no_access": "Das Wohnungs-Monitoring ist für Ihr Konto noch nicht freigeschaltet. Tippen Sie auf „Bezahlen“ oder schreiben Sie dem Administrator.",
+  "hsite.slow": "Der Dienst antwortet langsam. Bitte in einer Minute erneut versuchen."
+}
