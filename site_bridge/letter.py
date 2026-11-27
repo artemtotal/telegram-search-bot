@@ -159,6 +159,16 @@ def _refs_for(items) -> dict:
     return out
 
 
+def _mappe_on() -> bool:
+    """Включена ли «Папка заявника» (пакет H6): страница письма предлагает «Папка під цю квартиру» только если да."""
+    try:
+        from user_handlers import housing_mappe
+
+        return bool(housing_mappe.ENABLED)
+    except Exception:
+        return False
+
+
 def _profile_out(user_id: int):
     return _store().get_profile(int(user_id))
 
@@ -168,7 +178,7 @@ def _profile_out(user_id: int):
 @op("letter", "overview")
 def overview(user_id, lang, params):
     premium = _premium(user_id)
-    out = {"premium": premium, "fields": _fields()}
+    out = {"premium": premium, "fields": _fields(), "mappe": _mappe_on()}
     if not premium:
         from user_jobs import housing_tier
 
@@ -209,6 +219,7 @@ def listing(user_id, lang, params):
     return {
         "ref": ref, "flat": _flat(row), "profile": _profile_out(user_id), "fields": _fields(),
         "last": _last_for(user_id, found["source"], found["listing_key"]), **_limit_block(user_id),
+        "mappe": _mappe_on(),
     }
 
 

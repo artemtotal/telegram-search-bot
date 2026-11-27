@@ -1,0 +1,7 @@
+{
+  "h6.bad": "Die Anfrage konnte nicht verarbeitet werden. Bitte Werte prüfen und erneut versuchen.",
+  "h6.mappe.noprofile": "Bitte zuerst den Mappe-Fragebogen speichern: danach lässt sich die Mappe erstellen.",
+  "h6.mappe.busy": "Die Mappe wird schon erstellt. Bitte eine Minute warten.",
+  "h6.mappe.started": "Wir erstellen die Mappe. Das fertige PDF kommt in den Chat mit dem Bot.",
+  "h6.feedback.rate": "Zu viele Nachrichten in kurzer Zeit. Bitte etwas später versuchen."
+}

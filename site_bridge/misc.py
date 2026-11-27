@@ -451,3 +451,51 @@ def anon_delete(user_id, lang, params):
     if not done:
         raise Refuse("refused", q.last() or i18n.t("anon.delete.failed", lang, error=""))
     return {"deleted": True, "message": i18n.t("anon.delete.success", lang)}
+
+
+# ---------------------------------------------------------------- пакет H6: язык бота и «Написати нам»
+
+FEEDBACK_PER_HOUR = 5
+_feedback_log = {}
+
+
+@op("misc", "lang_set")
+def lang_set(user_id, lang, params):
+    """Язык бота (сообщения, уведомления): то же, что кнопка «🌐 Мова» в боте (user_settings_store.set_language). Язык самой страницы не затрагивается."""
+    from user_jobs import user_settings_store
+
+    value = params.get("lang")
+    if not isinstance(value, str) or value not in i18n.SUPPORTED_LANGS:
+        raise _bad(lang)
+    user_settings_store.set_language(int(user_id), value)
+    return {"lang": value, "label": i18n.LANG_LABELS[value]}
+
+
+@op("misc", "feedback")
+def feedback(user_id, lang, params):
+    """«💬 Написати нам»: одно сообщение лично админу, тот же текст и та же функция, что в боте (anonymous_posts._handle_feedback_text)."""
+    ap = _ap()
+    text = params.get("text")
+    if not isinstance(text, str) or len(text) > 4 * ap.FEEDBACK_MAX_LENGTH:
+        raise _bad(lang)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text).strip()
+    if len(text) < ap.FEEDBACK_MIN_LENGTH:
+        raise Refuse("too_short", i18n.t("anon.feedback.too_short", lang, n=ap.FEEDBACK_MIN_LENGTH))
+    now = time.time()
+    with _LOCK:
+        recent = [t for t in _feedback_log.get(user_id, []) if now - t < 3600]
+        if len(recent) >= FEEDBACK_PER_HOUR:
+            raise Refuse("too_many", i18n.t("h6.feedback.rate", lang))
+        recent.append(now)
+        _feedback_log[user_id] = recent
+        if len(_feedback_log) > 5000:
+            _feedback_log.clear()
+    replies = []
+    message = SimpleNamespace(text=text, reply_text=lambda body, **kw: replies.append(body))
+    update = SimpleNamespace(message=message, effective_user=_who(user_id))
+    ap._handle_feedback_text(update, _context({"feedback": {"step": "text"}}))
+    # функция бота отвечает на языке из настроек бота, а страница может быть на другом: сравниваем со всеми тремя
+    sent = bool(replies) and replies[0] in {i18n.t("anon.feedback.delivered", code) for code in i18n.SUPPORTED_LANGS}
+    if not sent:
+        raise Refuse("failed", i18n.t("anon.feedback.failed", lang))
+    return {"sent": True, "message": i18n.t("anon.feedback.delivered", lang)}

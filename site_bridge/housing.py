@@ -255,7 +255,14 @@ def _status(user_id: int, lang: str) -> dict:
         "applied": applied,
         "tracker": _tracker_on(),
         "admin": uid == hm.ADMIN_ID,
+        **_extra_flags(),
     }
+
+
+def _extra_flags() -> dict:
+    """Какие пункты меню жилья включены в боте (пакет H6): папка заявника, «запроси друга». Только чтение переключателей."""
+    from user_handlers import housing_mappe, housing_referral
+    return {"mappe": bool(housing_mappe.ENABLED), "invite": bool(housing_referral.enabled())}
 
 
 def _tracker_on() -> bool:
@@ -450,7 +457,7 @@ def listing(user_id, lang, params):
         "url": tokens.get((source, key)) or _direct_url(source, key, row),
         "ts": _iso((sent or {}).get("sent_at")), "dl": bool((sent or {}).get("delayed")),
         "ap": ({"id": app["id"], "status": app["status"]} if app and not app["hidden"] else None),
-        "full": _full(user_id), "tracker": _tracker_on(),
+        "full": _full(user_id), "tracker": _tracker_on(), "mappe": _extra_flags()["mappe"],
     }
 
 
@@ -1122,3 +1129,6 @@ def letters(user_id, lang, params):
         items.append({"ref": ref, "t": str(item.get("title") or item.get("listing_key") or "")[:200], "url": _https(item.get("url")),
                       "ts": _iso(item.get("created_at")), "text": str(item.get("letter") or "")[:6000]})
     return {"items": items, "full": True}
+
+
+from site_bridge import housing_extra  # noqa: E402,F401  (пакет H6: папка заявника, «запроси друга», справка; операции той же области)
