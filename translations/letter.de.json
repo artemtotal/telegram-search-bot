@@ -1,0 +1,7 @@
+{
+  "letter.site.err.bad": "Die Anfrage konnte nicht verarbeitet werden. Bitte Seite neu laden und erneut versuchen.",
+  "letter.site.err.long": "Zu lang: höchstens {n} Zeichen pro Feld.",
+  "letter.site.err.required": "Bitte die Pflichtfelder ausfüllen: Name, wer einzieht, Arbeit oder Einkommen, Einzugsdatum.",
+  "letter.site.err.noprofile": "Bitte zuerst den Fragebogen ausfüllen: das Schreiben wird danach verfasst.",
+  "letter.site.err.nojob": "Dieser Vorgang wurde nicht gefunden. Bitte das Schreiben erneut erstellen."
+}
