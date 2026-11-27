@@ -38,6 +38,7 @@ from user_handlers import (
 from user_handlers import housing_winback
 from user_handlers import housing_pay_nudge
 from user_handlers import masters_hint
+from user_handlers import housing_site
 from user_handlers import webapp_access
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
@@ -308,6 +309,7 @@ dispatcher.add_handler(chat_stop.handler)
 dispatcher.add_handler(chat_delete.handler)
 dispatcher.add_handler(bot_help.handler)
 dispatcher.add_handler(masters_hint.command_handler)   # 27.11.2026: /masters, /maistry, /mastera
+dispatcher.add_handler(housing_site.command_handler)   # 27.11.2026: /site, вхід на сайт «Потсдам» у браузері
 dispatcher.add_handler(chatid_get.handler)
 
 if not is_userbot_mode():

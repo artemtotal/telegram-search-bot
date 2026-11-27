@@ -49,6 +49,15 @@ def start(update, context):
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception('start=sub failed, showing home')
+        # 27.11.2026, «Увійти через Telegram» на сайті «Потсдам»: /start site - одноразове посилання входу (як /site).
+        if context.args and str(context.args[0]) == 'site':
+            try:
+                from user_handlers import housing_site
+                housing_site.send_link(context, int(from_user_id), with_old=False)
+                return
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('start=site failed, showing home')
         # 27.11.2026, сайт каталогу: /start housing - одразу меню моніторингу житла, /start masters - як /masters.
         if context.args and str(context.args[0]) in ('housing', 'masters'):
             try:

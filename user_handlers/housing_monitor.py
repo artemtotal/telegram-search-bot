@@ -6550,8 +6550,9 @@ def _handle_callback(update: Update, context: CallbackContext) -> None:
         query.answer()
         show_menu(update, context, edit=True)
     elif query.data == "housing:web":
-        from user_handlers import housing_web
-        housing_web.send_login_link(update, context)
+        # 27.11.2026: сайт «Потсдам» (вхід одноразовим кодом) і, поруч, старий кабінет зі зміною фільтрів.
+        from user_handlers import housing_site
+        housing_site.site_callback(update, context)
     elif query.data == "housing:status":
         query.answer()
         show_monitoring_status(update, context, edit=True)
