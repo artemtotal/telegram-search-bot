@@ -37,6 +37,7 @@ from user_handlers import (
 )
 from user_handlers import housing_winback
 from user_handlers import housing_pay_nudge
+from user_handlers import masters_hint
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
 from user_jobs import propotsdam_monitor
@@ -305,6 +306,7 @@ dispatcher.add_handler(join_gate.command_handler)
 dispatcher.add_handler(chat_stop.handler)
 dispatcher.add_handler(chat_delete.handler)
 dispatcher.add_handler(bot_help.handler)
+dispatcher.add_handler(masters_hint.command_handler)   # 27.11.2026: /masters, /maistry, /mastera
 dispatcher.add_handler(chatid_get.handler)
 
 if not is_userbot_mode():

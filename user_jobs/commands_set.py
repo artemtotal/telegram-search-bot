@@ -13,6 +13,7 @@ def set_bot_commands(context: telegram.ext.CallbackContext):
         ('dps_document', 'перевірка термінів ДП Документ'),
         ('embassy', 'терміни посольства в Берліні (e-Consul)'),
         ('housing', 'моніторинг житла'),
+        ('masters', 'контакти майстрів і послуг'),
     ]
     commands = [
         ('start', _('start bot in current group ( userbot mode need `start <group_id>`)')),
@@ -20,6 +21,7 @@ def set_bot_commands(context: telegram.ext.CallbackContext):
         ('dps_document', 'перевірка термінів ДП Документ'),
         ('embassy', 'терміни посольства в Берліні (e-Consul)'),
         ('housing', 'моніторинг житла'),
+        ('masters', 'контакти майстрів і послуг'),
         ('help', 'довідка про команди бота'),
         ('chat_id', _('get current chat id (group or user)')),
         ('stop', _('stop bot in current group (userbot mode need `stop <group_id>`)')),

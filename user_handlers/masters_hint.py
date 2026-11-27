@@ -744,3 +744,37 @@ def maybe_reply(message, user, text: str) -> bool:
     except Exception:
         logger.exception("masters_hint: reply failed")
         return False
+
+
+# ── Команда /masters (27.11.2026) ─────────────────────────────────────────────────────────────────────────────
+
+CMD_GROUP_GAP_SEC = 180             # у групі не частіше одного разу на 3 хвилини на чат: без спаму
+_cmd_last = {}
+
+
+def masters_command(update, context) -> None:
+    """/masters, /maistry, /mastera: коротка відповідь мовою людини з кнопкою-посиланням на каталог."""
+    message = update.effective_message
+    chat = update.effective_chat
+    if message is None or chat is None or not MASTERS_URL:
+        return
+    private = chat.type == "private"
+    if not private:
+        now = time.time()
+        if now - _cmd_last.get(chat.id, 0.0) < CMD_GROUP_GAP_SEC:
+            return
+        _cmd_last[chat.id] = now
+    import i18n
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    user = update.effective_user
+    lang = i18n.get_lang(user.id) if user else "uk"
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton(i18n.t("masters.cmd.btn", lang), url=link("bot" if private else "hint"))]])
+    try:
+        message.reply_text(i18n.t("masters.cmd.text", lang), reply_markup=markup, disable_web_page_preview=True)
+    except Exception:
+        logger.exception("masters_hint: /masters reply failed")
+
+
+from telegram.ext import CommandHandler  # noqa: E402
+
+command_handler = CommandHandler(["masters", "maistry", "mastera"], masters_command)
