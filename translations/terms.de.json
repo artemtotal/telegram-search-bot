@@ -1,0 +1,5 @@
+{
+  "terms.err.bad": "Die Anfrage konnte nicht verarbeitet werden. Bitte Seite neu laden und erneut versuchen.",
+  "terms.err.not_found": "Dieses Abo oder diese Leistung gibt es nicht. Bitte Seite neu laden.",
+  "terms.err.not_subscribed": "Das Abo ist bereits ausgeschaltet."
+}
