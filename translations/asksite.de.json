@@ -1,0 +1,9 @@
+{
+  "ask.err.bad": "Die Anfrage konnte nicht verarbeitet werden. Seite neu laden und noch einmal versuchen.",
+  "ask.rules": "{min} bis {max} Zeichen. Keine Links, @Namen, E-Mail-Adressen oder Telefonnummern.",
+  "ask.tip1": "Eine Frage pro Beitrag: so wird schneller geantwortet.",
+  "ask.tip2": "Keine Namen, Adressen oder Nummern angeben: Die Frage sieht der ganze Chat.",
+  "ask.tip3": "Antworten auf deine Frage schickt dir der Bot in Telegram.",
+  "ask.preview_note": "Nach der Bestätigung erscheint die Frage sofort im Chat. Du kannst sie innerhalb von {minutes} Min. löschen.",
+  "ask.no_topics": "Die Themen für Fragen sind noch nicht geladen. Bitte etwas später versuchen."
+}
