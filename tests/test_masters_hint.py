@@ -1,6 +1,7 @@
 import importlib
 import json
 import os
+import re
 import tempfile
 import threading
 import time
@@ -97,7 +98,9 @@ class ReplyTest(unittest.TestCase):
         first = FakeMessage(ask)
         self.assertTrue(mh.maybe_reply(first, self.user, ask))
         self.assertEqual(len(first.sent), 1)
-        self.assertIn("#cat=health", first.sent[0][0])
+        self.assertNotIn("http", first.sent[0][0])                        # ссылок в тексте нет: они на кнопке
+        self.assertEqual(first.sent[0][1]["parse_mode"], "HTML")
+        self.assertIn("#cat=health", first.sent[0][1]["reply_markup"].inline_keyboard[0][0].url)
         again = FakeMessage(ask, message_id=2)
         self.assertFalse(mh.maybe_reply(again, self.user, ask))          # тому же человеку не повторяем
         other = FakeMessage(ask, message_id=3)
@@ -267,11 +270,11 @@ class CardsTest(unittest.TestCase):
         self.assertNotIn("ort1", shown)                               # Zahnspange у ортодонта не делает его стоматологом
         lines = body.split("\n")
         self.assertEqual(lines[0], "🧰 З каталогу майстрів і послуг нашого чату:")
-        self.assertEqual(lines[1:3], ["• Zahnarztpraxis Muster: стоматологія, Berlin", "https://example.org/m/?s=hint#id=den2"])
-        self.assertEqual(lines[3], "• Стоматолог Олена Зразкова: стоматолог, Potsdam")
-        self.assertEqual(lines[5], "• Стоматологія для дітей «Усмішка»: дитячий стоматолог")      # района нет: без запятой
-        self.assertEqual(lines[-1], "Увесь розділ «Здоров’я»: https://example.org/m/?s=hint#cat=health")
-        self.assertEqual(len(lines), 8)
+        self.assertEqual(lines[1], "• <b>Zahnarztpraxis Muster</b>: стоматологія, Berlin")
+        self.assertEqual(lines[2], "• <b>Стоматолог Олена Зразкова</b>: стоматолог, Potsdam")
+        self.assertEqual(lines[3], "• <b>Стоматологія для дітей «Усмішка»</b>: дитячий стоматолог")      # района нет: без запятой
+        self.assertEqual(len(lines), 4)
+        self.assertNotIn("http", body)                                # в тексте нет ни одной ссылки
         for secret in ("5550100", "+49", "tel:"):                     # телефоны в чат не выводим
             self.assertNotIn(secret, body)
 
@@ -313,7 +316,7 @@ class CardsTest(unittest.TestCase):
         self.assertEqual(shown, ["pin1", "den1", "den2"])             # закреп первым, хотя он в Берлине и его не советовали
         self.assertNotIn("pin2", shown)                               # закреп другого мастера (массаж) сюда не попадает
         lines = body.split("\n")
-        self.assertEqual(lines[1], "• Стоматолог Реклама (реклама): стоматолог, Berlin")
+        self.assertEqual(lines[1], "• <b>Стоматолог Реклама</b> (реклама): стоматолог, Berlin")
         self.assertEqual(body.count("(реклама)"), 1)
 
     def test_city_child_name_and_exception(self):
@@ -366,9 +369,10 @@ class CardsTest(unittest.TestCase):
         body, shown = self.mh.answer("beauty", "Порадьте майстра манікюру")
         self.assertLessEqual(len(body), 600)
         self.assertGreaterEqual(len(shown), 1)
-        self.assertEqual(body.count("#id="), len(shown))
-        self.assertTrue(body.endswith("#cat=beauty"))
-        self.assertIn("…", body)                                       # длинное сокращено, а не обрезано посреди ссылки
+        self.assertEqual(body.count("• "), len(shown))
+        self.assertNotIn("http", body)
+        self.assertIn("…", body)                                       # длинное сокращено
+        self.assertLessEqual(len(re.sub(r"<[^>]+>", "", body)), 600)
         self.fill()
         for ask in ("Порадьте, будь ласка, стоматолога", "Потрібен перекладач", "Хто робить перевезення по Потсдаму?"):
             self.assertLessEqual(len(self.mh.answer(self.mh.match(ask), ask)[0]), 600)
@@ -377,24 +381,24 @@ class CardsTest(unittest.TestCase):
         ask = "Порадьте, будь ласка, стоматолога"
         with mock.patch.object(self.mh, "_download", side_effect=OSError("no network")):
             self.assertFalse(self.mh._refresh())
-        self.assertEqual(self.mh.answer("health", ask), (self.mh.text_for("health"), []))
+        self.assertEqual(self.mh.answer("health", ask), (self.mh.plain_text("health"), []))
         self.fill()                                                   # сайт ответил: карточки есть
         self.assertTrue(self.mh.answer("health", ask)[1])
         with mock.patch.object(self.mh, "_download", side_effect=OSError("no network")):
             self.assertFalse(self.mh._refresh())                      # короткий сбой: прежняя копия ещё годится
         self.assertTrue(self.mh.answer("health", ask)[1])
         self.mh._catalog["at"] = time.time() - self.mh.STALE_SEC - 1  # сайт молчит дольше 45 минут: снова одна ссылка
-        self.assertEqual(self.mh.answer("health", ask), (self.mh.text_for("health"), []))
+        self.assertEqual(self.mh.answer("health", ask), (self.mh.plain_text("health"), []))
 
     def test_empty_or_broken_catalog_gives_plain_link(self):
         ask = "Порадьте, будь ласка, стоматолога"
         for raw in ({"built": "2026-11-26", "items": []}, {"oops": 1}, b"<html>502 Bad Gateway</html>", b"", b"[1, 2, 3]"):
             self.assertFalse(self.fill(raw), raw)
-            self.assertEqual(self.mh.answer("health", ask), (self.mh.text_for("health"), []), raw)
+            self.assertEqual(self.mh.answer("health", ask), (self.mh.plain_text("health"), []), raw)
         self.fill()
         self.assertTrue(self.mh.answer("health", ask)[1])
         self.assertFalse(self.fill({"items": []}))                    # каталог опустел: прежние карточки больше не показываем
-        self.assertEqual(self.mh.answer("health", ask), (self.mh.text_for("health"), []))
+        self.assertEqual(self.mh.answer("health", ask), (self.mh.plain_text("health"), []))
 
     def test_no_suitable_cards_or_no_section_gives_plain_link(self):
         self.fill()
@@ -407,15 +411,15 @@ class CardsTest(unittest.TestCase):
             "Доброго дня. Підкажіть будь ласка контакти майстра з татуювання у Потсдамі": "",    # раздел не определён
         }.items():
             self.assertEqual(self.mh.match(ask), cat, ask)
-            self.assertEqual(self.mh.answer(cat, ask), (self.mh.text_for(cat), []), ask)
-        self.assertEqual(self.mh.answer("", "Порадьте майстра")[0], "🧰 Увесь каталог майстрів і послуг нашого чату тут: https://example.org/m/?s=hint")
+            self.assertEqual(self.mh.answer(cat, ask), (self.mh.plain_text(cat), []), ask)
+        self.assertEqual(self.mh.answer("", "Порадьте майстра")[0], "🧰 Увесь каталог майстрів і послуг нашого чату — у кнопці нижче.")
 
     def test_switch_off(self):
         ask = "Порадьте, будь ласка, стоматолога"
         self.assertTrue(self.mh.CARDS)                                # по умолчанию включено
         mh = load(MASTERS_HINT_CARDS="off")
         self.fill(mh=mh)
-        self.assertEqual(mh.answer("health", ask), (mh.text_for("health"), []))
+        self.assertEqual(mh.answer("health", ask), (mh.plain_text("health"), []))
         cfg = os.path.join(self.tmp.name, "masters.json")
         for value, expected in ((False, False), ("off", False), (0, False), (True, True), ("on", True)):
             with open(cfg, "w", encoding="utf-8") as fh:
@@ -438,8 +442,8 @@ class CardsTest(unittest.TestCase):
         self.assertTrue(self.fill({"items": rows}))
         body, shown = self.mh.answer("health", "Порадьте, будь ласка, стоматолога")
         self.assertEqual(sorted(shown), ["min1", "ok1"])
-        self.assertIn("• Стоматолог Перший\n", body)                  # специализация и район с телефоном отброшены целиком
-        self.assertNotRegex(body.replace("https://example.org/m/?s=hint#", ""), r"\d{4}")
+        self.assertIn("• <b>Стоматолог Перший</b>\n", body)                  # специализация и район с телефоном отброшены целиком
+        self.assertNotRegex(body, r"\d{4}")
 
     def test_links_and_data_url(self):
         self.assertEqual(self.mh.link("hint", card="den1"), "https://example.org/m/?s=hint#id=den1")
@@ -466,18 +470,63 @@ class CardsTest(unittest.TestCase):
         ):
             self.assertIsNone(self.mh.match(text), text)
 
-    def test_maybe_reply_sends_cards_as_plain_text(self):
+    @staticmethod
+    def rows(kwargs):
+        return [(row[0].text, row[0].url) for row in kwargs["reply_markup"].inline_keyboard]
+
+    def test_maybe_reply_sends_cards_with_url_buttons(self):
         self.fill()
         ask = "Порадьте, будь ласка, стоматолога в Потсдамі"
         msg = FakeMessage(ask)
         self.assertTrue(self.mh.maybe_reply(msg, self.user, ask))
         text, kwargs = msg.sent[0]
-        self.assertIn("https://example.org/m/?s=hint#id=den1", text)
-        self.assertTrue(text.endswith("https://example.org/m/?s=hint#cat=health"))
-        self.assertEqual(kwargs, {"parse_mode": None, "disable_web_page_preview": True})
+        self.assertNotIn("http", text)                                # голых ссылок в тексте нет
+        self.assertEqual((kwargs["parse_mode"], kwargs["disable_web_page_preview"]), ("HTML", True))
+        self.assertEqual(self.rows(kwargs), [
+            ("Стоматолог Олена Зразкова", "https://example.org/m/?s=hint#id=den1"),
+            ("Zahnarztpraxis Muster", "https://example.org/m/?s=hint#id=den2"),
+            ("Стоматологія для дітей «Усм…", "https://example.org/m/?s=hint#id=den3"),
+            ("🧰 Усі майстри розділу", "https://example.org/m/?s=hint#cat=health"),
+        ])
+        self.assertTrue(all(len(label) <= 28 for label, _ in self.rows(kwargs)))
         generic = FakeMessage("Доброго дня. Підкажіть будь ласка контакти майстра з татуювання у Потсдамі", chat_id=-200)
         self.assertTrue(self.mh.maybe_reply(generic, SimpleNamespace(id=8, is_bot=False), generic.text))
-        self.assertEqual(generic.sent[0][0], self.mh.text_for(""))    # раздел не определён: общая ссылка, как раньше
+        self.assertEqual(generic.sent[0][0], self.mh.plain_text(""))   # раздел не определён: одна фраза и одна кнопка
+        self.assertEqual(self.rows(generic.sent[0][1]), [("🧰 Відкрити каталог", "https://example.org/m/?s=hint")])
+
+    def test_buttons_use_app_link_startapp(self):
+        mh = load(MASTERS_APP_LINK="https://t.me/Potsdambot/potsdam", MASTERS_HINT_STATE=os.path.join(self.tmp.name, "a.json"))
+        self.fill(mh=mh)
+        ask = "Порадьте, будь ласка, стоматолога в Потсдамі"
+        msg = FakeMessage(ask)
+        self.assertTrue(mh.maybe_reply(msg, self.user, ask))
+        rows = self.rows(msg.sent[0][1])
+        self.assertEqual(rows[0][1], "https://t.me/Potsdambot/potsdam?startapp=id_den1")
+        self.assertEqual(rows[-1], ("🧰 Усі майстри розділу", "https://t.me/Potsdambot/potsdam?startapp=cat_health"))
+        for _, url in rows:
+            self.assertRegex(url.split("startapp=")[1], r"^[A-Za-z0-9_-]{1,64}$")
+        self.assertNotIn("http", msg.sent[0][0])
+        # раздел не определён: одна кнопка «Відкрити каталог» на Mini App
+        self.assertEqual(mh.answer_full("", "Порадьте майстра")[2], [("🧰 Відкрити каталог", "https://t.me/Potsdambot/potsdam")])
+
+    def test_long_card_name_is_clipped_on_button_and_html_is_escaped(self):
+        rows = [card("e1", "Салон <Краса> & «Стиль» дуже довга назва салону краси", "beauty", "манікюр <b>x</b>", ["маникюр"],
+                     area="Potsdam & Berlin")]
+        self.fill({"items": rows})
+        body, shown, buttons = self.mh.answer_full("beauty", "Порадьте майстра манікюру")
+        self.assertEqual(shown, ["e1"])
+        self.assertIn("&lt;Краса&gt; &amp;", body)
+        self.assertNotIn("<Краса>", body)
+        self.assertIn("манікюр &lt;b&gt;x&lt;/b&gt;", body)
+        self.assertIn("Potsdam &amp; Berlin", body)
+        self.assertLessEqual(len(buttons[0][0]), 28)
+        self.assertTrue(buttons[0][0].endswith("…"))
+        self.assertEqual(buttons[0][1], "https://example.org/m/?s=hint#id=e1")
+
+    def test_plain_text_has_no_url(self):
+        for cat in ("", "beauty", "docs", "unknown"):
+            self.assertNotIn("http", self.mh.plain_text(cat))
+        self.assertIn("«Краса»", self.mh.plain_text("beauty"))
 
 
 class BackgroundCatalogTest(unittest.TestCase):
@@ -512,7 +561,7 @@ class BackgroundCatalogTest(unittest.TestCase):
         started = time.monotonic()
         self.assertTrue(self.mh.maybe_reply(msg, self.user, self.ask))
         self.assertLess(time.monotonic() - started, 3)
-        self.assertEqual(msg.sent[0][0], self.mh.text_for("health"))  # ответили как раньше, одной ссылкой
+        self.assertEqual(msg.sent[0][0], self.mh.plain_text("health"))  # ответили одной фразой и кнопкой на каталог
         self.assertEqual(calls, [1])
         self.mh.warm()                                                # второй поток не заводится
         self.assertEqual(sum(1 for t in threading.enumerate() if t.name == "masters-catalog"), 1)
@@ -521,7 +570,7 @@ class BackgroundCatalogTest(unittest.TestCase):
         self.mh._download = lambda: json.dumps(CATALOG).encode("utf-8")
         msg = FakeMessage(self.ask)
         self.assertTrue(self.mh.maybe_reply(msg, self.user, self.ask))  # первая подсказка после старта: дождались загрузки
-        self.assertIn("#id=den1", msg.sent[0][0])
+        self.assertIn("#id=den1", msg.sent[0][1]["reply_markup"].inline_keyboard[0][0].url)
         self.assertEqual(self.mh._loader.name, "masters-catalog")
         self.assertTrue(self.mh._loader.daemon)
 

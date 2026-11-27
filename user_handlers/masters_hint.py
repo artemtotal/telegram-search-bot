@@ -16,6 +16,7 @@ MASTERS_HINT = off | log | on   (типово off; log — нічого не п�
 стоїть "cards": false — відповідь, як і раніше, одним посиланням на розділ.
 """
 import collections
+import html
 import json
 import logging
 import os
@@ -676,40 +677,78 @@ def pick(cat: str, text: str, cards: List[dict], day: str = "") -> List[dict]:
 
 def _card_line(card: dict, name_len: int, sub_len: int, with_area: bool) -> str:
     details = [part for part in (_clip(card["sub"], sub_len) if sub_len else "", card["area"] if with_area else "") if part]
-    line = "• " + _clip(card["name"], name_len) + (" (реклама)" if card["pin"] else "")
+    line = "• <b>" + _esc(_clip(card["name"], name_len)) + "</b>" + (" (реклама)" if card["pin"] else "")
     if details:
-        line += ": " + ", ".join(details)
-    return line + "\n" + link("hint", card=card["id"])
+        line += ": " + _esc(", ".join(details))
+    return line
+
+
+def _esc(text: str) -> str:
+    return html.escape(text, quote=False)
 
 
 def _compose(cat: str, cards: List[dict]) -> Tuple[str, int]:
-    """Вступ, до трьох рядків «• Назва: спеціалізація, район» з посиланням на картку, наприкінці посилання на розділ.
-    Не довше MAX_LEN: спершу коротшають спеціалізація й назва, потім зникає район, потім остання картка.
+    """28.11.2026: вступ і до трьох рядків «• Назва: спеціалізація, район» (HTML, назва жирним) БЕЗ посилань:
+    на картки й розділ ведуть кнопки під повідомленням. Не довше MAX_LEN (видимого тексту): спершу коротшають
+    спеціалізація й назва, потім зникає район, потім остання картка.
     Повертає текст і скільки карток у нього вмістилося ("" і 0 — не вмістилася жодна)."""
-    tail = "Увесь розділ «%s»: %s" % (CAT_NAMES[cat], link("hint", cat))
     for count in range(len(cards), 0, -1):
         for name_len, sub_len, with_area in ((60, 60, True), (60, 30, True), (40, 30, True), (40, 0, True), (40, 0, False)):
             lines = ["🧰 З каталогу майстрів і послуг нашого чату:"]
             lines += [_card_line(card, name_len, sub_len, with_area) for card in cards[:count]]
-            body = "\n".join(lines + [tail])
-            if len(body) <= MAX_LEN:
+            body = "\n".join(lines)
+            if len(html.unescape(re.sub(r"<[^>]+>", "", body))) <= MAX_LEN:
                 return body, count
     return "", 0
 
 
-def answer(cat: str, text: str, wait: float = 0.0) -> Tuple[str, List[str]]:
-    """Текст підказки і id названих карток. Без карток (розділ не визначено, підхожих немає, каталог не завантажився,
-    вимикач) — те саме одне посилання, що й раніше."""
+def plain_text(cat: str) -> str:
+    """Підказка без карток: без посилання в тексті, до каталогу веде кнопка."""
+    if cat and cat in CAT_NAMES:
+        return "🧰 Увесь каталог майстрів і послуг нашого чату — у кнопці нижче (розділ «%s»)." % _esc(CAT_NAMES[cat])
+    return "🧰 Увесь каталог майстрів і послуг нашого чату — у кнопці нижче."
+
+
+BTN_NAME_LEN = 28
+
+
+def _buttons(cat: str, cards: List[dict]) -> List[Tuple[str, str]]:
+    """Підписи й посилання кнопок під підказкою: по одній на майстра, знизу розділ; без карток — одна «Відкрити каталог»."""
+    if not cards:
+        return [("🧰 Відкрити каталог", link("hint", cat))]
+    rows = [(_clip(card["name"], BTN_NAME_LEN), link("hint", card=card["id"])) for card in cards]
+    if cat and cat in CAT_NAMES:
+        rows.append(("🧰 Усі майстри розділу", link("hint", cat)))
+    else:
+        rows.append(("🧰 Відкрити каталог", link("hint")))
+    return rows
+
+
+def answer_full(cat: str, text: str, wait: float = 0.0) -> Tuple[str, List[str], List[Tuple[str, str]]]:
+    """HTML-текст підказки, id названих карток і кнопки (підпис, url). Без карток (розділ не визначено, підхожих немає,
+    каталог не завантажився, вимикач) — коротка фраза й одна кнопка на каталог."""
     if CARDS and cat in CAT_NAMES:
         try:
             if any(topic.ask.search(text) for topic in _TOPICS.get(cat, ())):      # без теми каталог не потрібен
                 cards = pick(cat, text, catalog(wait))
                 body, count = _compose(cat, cards) if cards else ("", 0)
                 if body:
-                    return body, [card["id"] for card in cards[:count]]
+                    return body, [card["id"] for card in cards[:count]], _buttons(cat, cards[:count])
         except Exception:
-            logger.exception("masters_hint: cards failed, plain link instead")
-    return text_for(cat), []
+            logger.exception("masters_hint: cards failed, plain text instead")
+    return plain_text(cat), [], _buttons(cat, [])
+
+
+def answer(cat: str, text: str, wait: float = 0.0) -> Tuple[str, List[str]]:
+    """Текст підказки і id названих карток (кнопки — в answer_full)."""
+    body, ids, _ = answer_full(cat, text, wait)
+    return body, ids
+
+
+def markup(buttons: List[Tuple[str, str]]):
+    """URL-кнопки по одній у рядок (у групі web_app-кнопок немає)."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup([[InlineKeyboardButton(label, url=url)] for label, url in buttons])
 
 
 def _load() -> dict:
@@ -770,13 +809,13 @@ def maybe_reply(message, user, text: str) -> bool:
     if not _reserve(message.chat_id, user.id):
         logger.info("masters_hint: limit, message %s", message.message_id)
         return False
-    body, shown = answer(cat, text, COLD_WAIT)
+    body, shown, buttons = answer_full(cat, text, COLD_WAIT)
     cards = ",".join(shown) or "-"
     if MODE != "on":
         logger.info("masters_hint: would reply (cat=%s, cards=%s) to message %s", cat or "-", cards, message.message_id)
         return False
     try:
-        message.reply_text(body, parse_mode=None, disable_web_page_preview=True)
+        message.reply_text(body, parse_mode="HTML", reply_markup=markup(buttons), disable_web_page_preview=True)
         logger.info("masters_hint: sent (cat=%s, cards=%s) to message %s", cat or "-", cards, message.message_id)
         return True
     except Exception:
