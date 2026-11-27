@@ -1,0 +1,17 @@
+{
+  "paysite.until_found": "Sie haben das Paket „Bis ich etwas finde“ bis {date}: keine Zahlung nötig.",
+  "paysite.unavailable": "Die Zahlung auf der Seite ist gerade nicht verfügbar. Schreiben Sie dem Administrator.",
+  "paysite.closed": "Diese Paketwahl ist abgeschlossen oder abgelaufen. Wählen Sie das Paket bitte neu.",
+  "paysite.bad_file": "Die Datei konnte nicht gelesen werden. Senden Sie ein Foto (JPG, PNG) oder PDF.",
+  "paysite.bad_type": "Nur JPG, PNG oder PDF sind möglich.",
+  "paysite.too_big": "Die Datei ist zu groß: bis {mb} MB.",
+  "paysite.duplicate": "Diese Datei wurde schon gesendet.",
+  "paysite.too_many": "Zu viele Belege zu dieser Zahlung. Wenn Sie noch etwas ergänzen müssen, schreiben Sie dem Administrator.",
+  "paysite.too_fast": "Warten Sie eine Minute und versuchen Sie es erneut.",
+  "paysite.rate_limit": "Zu viele Versuche. Bitte später erneut versuchen.",
+  "paysite.received": "✅ Danke! Beleg erhalten. Der Administrator prüft die Zahlung und schaltet das Abo frei — die Nachricht kommt in Telegram.",
+  "paysite.received_prov": "✅ Danke! Beleg erhalten.\n\n⚡ Während der Administrator die Zahlung prüft, sind die Sofort-Benachrichtigungen schon für 1 Tag aktiv — Sie können sie gleich nutzen. Nach der Bestätigung schalten wir das ganze bezahlte Abo frei, die Nachricht kommt in Telegram.",
+  "paysite.card_warn": "Nur von einer ukrainischen Karte in Hrywnja — von ausländischen Karten und in Fremdwährung geht die Überweisung nicht durch.",
+  "paysite.cash_note": "Keine ukrainische Karte? Schreiben Sie dem Administrator: Barzahlung in Potsdam ist möglich, wenn Sie ab 6 Monate (ab 30 €) zahlen.",
+  "paysite.note_prefix": "🌐 von der Seite"
+}

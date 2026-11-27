@@ -550,6 +550,38 @@ def _admin_keyboard(payment: HousingPayment, user_id: int) -> InlineKeyboardMark
     ])
 
 
+def submit_receipt(bot, payment: HousingPayment, user_id: int, note: str, send_media) -> Optional[str]:
+    """Спільний крок «квитанцію отримано» для чату й сайту (28.11.2026, виніс із handle_receipt без змін поведінки):
+    тимчасовий день, картка адміну з тими ж кнопками, статус sent. `send_media(caption, keyboard)` кладе саму квитанцію адміну
+    (у чаті - copy_message, на сайті - send_photo/send_document). Повертає "provisional" (видано день миттєвих), "plain" або None,
+    якщо адміну не вдалося нічого надіслати (людині тоді показати «не вдалося надіслати запит»)."""
+    provisional = None
+    if payment.status == "awaiting_receipt":
+        provisional = _grant_provisional(payment)
+    caption = _admin_caption(payment, user_id, note or "")
+    try:
+        send_media(caption, _admin_keyboard(payment, user_id))
+    except Exception as exc:
+        # 01.11.2026: квитанція Наталії не скопіювалась, вона побачила «Не вдалося
+        # надіслати запит», а адмін — нічого; оплата висіла без рішення. Тепер адмін
+        # отримує ту саму картку текстом із кнопками й просить фото в ЛС, якщо треба.
+        logger.exception("Could not forward a payment receipt of user %s to the admin", user_id)
+        try:
+            bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"{caption}\n\n⚠️ Квитанцію не вдалося переслати ({html.escape(str(exc)[:200])}) — "
+                     f"за потреби попросіть її в ЛС.",
+                parse_mode="HTML",
+                reply_markup=_admin_keyboard(payment, user_id),
+            )
+        except Exception:
+            logger.exception("Could not tell the admin about a payment receipt of user %s", user_id)
+            return None
+    if payment.status == "awaiting_receipt":
+        _set_status(payment.id, "sent", receipt_at=utc_now())
+    return "provisional" if provisional else "plain"
+
+
 def handle_receipt(update: Update, context: CallbackContext) -> None:
     """Фото або файл у приватному чаті. Без відкритої оплати нічого не робить -
     фото в бота може бути надіслане й до чогось іншого."""
@@ -561,39 +593,22 @@ def handle_receipt(update: Update, context: CallbackContext) -> None:
     if payment is None:
         return
     lang = i18n.get_lang(user.id)
-    provisional = None
-    if payment.status == "awaiting_receipt":
-        provisional = _grant_provisional(payment)
-    caption = _admin_caption(payment, user.id, message.caption or "")
-    try:
+
+    def copy_to_admin(caption, keyboard):
         context.bot.copy_message(
             chat_id=ADMIN_ID,
             from_chat_id=message.chat_id,
             message_id=message.message_id,
             caption=caption,
             parse_mode="HTML",
-            reply_markup=_admin_keyboard(payment, user.id),
+            reply_markup=keyboard,
         )
-    except Exception as exc:
-        # 01.11.2026: квитанція Наталії не скопіювалась, вона побачила «Не вдалося
-        # надіслати запит», а адмін — нічого; оплата висіла без рішення. Тепер адмін
-        # отримує ту саму картку текстом із кнопками й просить фото в ЛС, якщо треба.
-        logger.exception("Could not forward a payment receipt of user %s to the admin", user.id)
-        try:
-            context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"{caption}\n\n⚠️ Квитанцію не вдалося переслати ({html.escape(str(exc)[:200])}) — "
-                     f"за потреби попросіть її в ЛС.",
-                parse_mode="HTML",
-                reply_markup=_admin_keyboard(payment, user.id),
-            )
-        except Exception:
-            logger.exception("Could not tell the admin about a payment receipt of user %s", user.id)
-            message.reply_text(i18n.t("housing.access.request_failed", lang))
-            return
-    if payment.status == "awaiting_receipt":
-        _set_status(payment.id, "sent", receipt_at=utc_now())
-    if provisional:
+
+    result = submit_receipt(context.bot, payment, user.id, message.caption or "", copy_to_admin)
+    if result is None:
+        message.reply_text(i18n.t("housing.access.request_failed", lang))
+        return
+    if result == "provisional":
         message.reply_text(i18n.t("housing.pay.receipt_received_provisional", lang))
     else:
         message.reply_text(i18n.t("housing.pay.receipt_received", lang))
