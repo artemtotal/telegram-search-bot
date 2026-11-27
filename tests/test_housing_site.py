@@ -51,5 +51,49 @@ class SiteCodeTests(unittest.TestCase):
         self.assertNotEqual(i18n.t("housing.site.text", "de"), i18n.t("housing.site.text", "uk"))
 
 
+class MiniAppEntryTests(unittest.TestCase):
+    """27.11.2026: /site и кнопки жилья открывают Mini App на вкладке «Житло», а не ссылку входа для Chrome."""
+
+    def _send(self, webapp):
+        from types import SimpleNamespace
+        from user_handlers import masters_hint as mh
+        bot = mock.Mock()
+        context = SimpleNamespace(bot=bot)
+        with mock.patch.multiple(mh, MASTERS_URL="https://example.test/", WEBAPP=webapp, APP_LINK="https://t.me/Potsdambot/potsdam"):
+            housing_site.send_link(context, 5, with_old=True)
+        return bot.send_message.call_args.kwargs
+
+    def test_site_command_gives_web_app_button_on_housing_tab(self):
+        kwargs = self._send(True)
+        rows = kwargs["reply_markup"].inline_keyboard
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0].web_app.url, "https://example.test/?s=bot&tab=housing#tab=housing")
+        self.assertIsNone(rows[0][0].url)
+
+    def test_text_has_mini_app_link_not_login_code(self):
+        kwargs = self._send(True)
+        self.assertIn("https://t.me/Potsdambot/potsdam?startapp=tab_housing", kwargs["text"])
+        self.assertNotIn("?k=", kwargs["text"])
+
+    def test_without_webapp_plain_url_on_housing_tab_never_login_code(self):
+        rows = self._send(False)["reply_markup"].inline_keyboard
+        self.assertTrue(rows[0][0].url.endswith("#tab=housing"))
+        self.assertNotIn("?k=", rows[0][0].url)
+
+    def test_home_button_is_web_app_when_on_and_menu_callback_when_off(self):
+        from user_handlers import housing_monitor, masters_hint as mh
+        with mock.patch.multiple(mh, MASTERS_URL="https://example.test/", WEBAPP=True):
+            button = housing_monitor.private_home_rows(5)[0][0]
+        self.assertEqual(button.web_app.url, "https://example.test/?s=bot&tab=housing#tab=housing")
+        with mock.patch.multiple(mh, MASTERS_URL="https://example.test/", WEBAPP=False):
+            button = housing_monitor.private_home_rows(5)[0][0]
+        self.assertEqual(button.callback_data, "housing:menu")
+
+    def test_text_link_is_in_all_languages(self):
+        import i18n
+        for lang in ("uk", "ru", "de"):
+            self.assertIn("https://x.y", i18n.t("housing.site.text", lang, link="https://x.y"))
+
+
 if __name__ == "__main__":
     unittest.main()

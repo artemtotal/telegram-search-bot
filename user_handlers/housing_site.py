@@ -68,38 +68,27 @@ def site_link(user_id: int) -> Optional[str]:
     return f"{site_origin()}/?k={code}" if code else None
 
 
-def _keyboard(user_id: int, lang: str) -> Optional[InlineKeyboardMarkup]:
-    link = site_link(user_id)
-    if not link:
-        return None
-    rows = [[InlineKeyboardButton(i18n.t("housing.site.btn", lang), url=link)]]
-    return InlineKeyboardMarkup(rows)
+def app_text_link() -> str:
+    """Текстове посилання на Mini App, вкладка «Житло» (для повідомлень; кнопка web_app працює лише в особистому чаті)."""
+    from user_handlers import masters_hint
+
+    base = masters_hint.APP_LINK or "https://t.me/Potsdambot"
+    return base + ("&" if "?" in base else "?") + "startapp=tab_housing"
 
 
-def _old_cabinet_row(user_id: int, lang: str):
-    """Старий кабінет бота (зміна фільтрів на великому екрані) лишається поруч, доки нове не вміє те саме."""
-    try:
-        from user_handlers import housing_web
+def _keyboard(user_id: int, lang: str) -> InlineKeyboardMarkup:
+    """Одна кнопка: сайт «Потсдам» усередині Telegram (web_app) на вкладці «Житло». Одноразовий код `?k=` лишається в коді
+    (make_code/site_link), але людині більше не пропонується: рішення 27.11.2026, лише Mini App, без Chrome."""
+    from user_handlers import masters_hint
 
-        if housing_web.PUBLIC_URL and housing_web.allowed(user_id):
-            return [InlineKeyboardButton(i18n.t("housing.site.btn_old", lang), url=housing_web.create_login_link(user_id))]
-    except Exception:
-        logger.exception("housing_site: old cabinet link failed")
-    return None
+    return InlineKeyboardMarkup([[masters_hint.private_button(i18n.t("housing.site.btn", lang), tab="housing")]])
 
 
-def send_link(context, user_id: int, with_old: bool) -> bool:
+def send_link(context, user_id: int, with_old: bool = False) -> bool:
+    """Відкриває Mini App на «Житло». with_old лишено для сумісності: старий кабінет у браузері більше не пропонується."""
     lang = i18n.get_lang(user_id)
-    markup = _keyboard(user_id, lang)
-    if markup is None:
-        context.bot.send_message(chat_id=user_id, text=i18n.t("housing.site.off", lang))
-        return False
-    if with_old:
-        row = _old_cabinet_row(user_id, lang)
-        if row:
-            markup = InlineKeyboardMarkup(list(markup.inline_keyboard) + [row])
-    context.bot.send_message(chat_id=user_id, text=i18n.t("housing.site.text", lang), reply_markup=markup,
-                             parse_mode="HTML", disable_web_page_preview=True)
+    context.bot.send_message(chat_id=user_id, text=i18n.t("housing.site.text", lang, link=app_text_link()),
+                             reply_markup=_keyboard(user_id, lang), parse_mode="HTML", disable_web_page_preview=True)
     return True
 
 
@@ -115,7 +104,7 @@ def site_command(update, context) -> None:
 
 
 def site_callback(update, context) -> None:
-    """Кнопка «🌐 Сайт» у меню житла (housing:web): нове посилання на «Потсдам» і, поруч, старий кабінет."""
+    """Кнопка «🌐 Сайт» у меню житла (housing:web): відкриває Mini App «Потсдам» на вкладці «Житло»."""
     query = update.callback_query
     user_id = int(update.effective_user.id)
     try:

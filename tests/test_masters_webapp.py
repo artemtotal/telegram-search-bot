@@ -34,7 +34,7 @@ class StartKeyboardTests(unittest.TestCase):
         with _on():
             button = self._row()
         self.assertIsNone(button.url)
-        self.assertEqual(button.web_app.url, URL + "?s=bot#tab=masters")
+        self.assertEqual(button.web_app.url, URL + "?s=bot&tab=masters#tab=masters")
 
     def test_http_url_never_web_app(self):
         with mock.patch.multiple(mh, MASTERS_URL="http://example.test/", WEBAPP=True):

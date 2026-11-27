@@ -28,7 +28,7 @@ class MastersButtonOrderTests(unittest.TestCase):
                 mock.patch.object(mh, "WEBAPP", True):
             rows = anonymous_posts._home_keyboard(None).inline_keyboard
         self.assertEqual(rows[0][0].web_app.url, "https://example.test/?s=bot")
-        self.assertEqual(rows[1][0].web_app.url, "https://example.test/?s=bot#tab=masters")
+        self.assertEqual(rows[1][0].web_app.url, "https://example.test/?s=bot&tab=masters#tab=masters")
 
     def test_site_name_in_three_languages(self):
         self.assertEqual(i18n.t("anon.btn.site", "de"), "🌐 Unsere Seite")

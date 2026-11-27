@@ -420,7 +420,11 @@ def webapp_info(tab: str = ""):
         from telegram import WebAppInfo
     except ImportError:
         return None
-    return WebAppInfo(url=link("bot") + ("#tab=" + tab if tab else ""))
+    # вкладка и в query (?tab=), и во фрагменте: Telegram дописывает к фрагменту свои параметры, query сохраняет надёжнее
+    url = link("bot")
+    if tab:
+        url += ("&" if "?" in url else "?") + "tab=" + tab + "#tab=" + tab
+    return WebAppInfo(url=url)
 
 
 def private_button(text: str, src: str = "bot", tab: str = ""):

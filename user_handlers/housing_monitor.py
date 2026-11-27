@@ -1737,7 +1737,17 @@ def private_home_rows(user_id: Optional[int]) -> Iterable[list]:
     # попросити, а закритий екран сам пояснює, що робити далі.
     if not user_id:
         return []
-    return [[InlineKeyboardButton(i18n.t("housing.btn.home_monitor", i18n.get_lang(user_id)), callback_data="housing:menu")]]
+    label = i18n.t("housing.btn.home_monitor", i18n.get_lang(user_id))
+    # 27.11.2026: мониторинг жилья целиком на сайте внутри Telegram: кнопка открывает Mini App на вкладке «Житло».
+    # Mini App выключен (masters.json "webapp") — прежнее меню бота.
+    try:
+        from user_handlers import masters_hint
+        info = masters_hint.webapp_info("housing")
+        if info is not None:
+            return [[InlineKeyboardButton(label, web_app=info)]]
+    except Exception:
+        pass
+    return [[InlineKeyboardButton(label, callback_data="housing:menu")]]
 
 
 def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKeyboardMarkup:
