@@ -24,6 +24,8 @@ from user_jobs import (
 
 logger = logging.getLogger(__name__)
 
+from user_jobs import housing_site_buttons  # noqa: E402  (28.11.2026, H5a: кнопки под уведомлением)
+
 CHECK_ENABLED = os.getenv("OHNEMAKLER_CHECK_ENABLED", "1") == "1"
 TIMEOUT = int(os.getenv("OHNEMAKLER_TIMEOUT", "30") or 30)
 CHECK_INTERVAL_SECONDS = 30 * 60
@@ -93,12 +95,14 @@ def _baseline(listings: List[Dict]) -> int:
     return marked
 
 
-def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
+def _send_listing(bot, chat_id: int, listing: Dict, text: str, reply_markup=None) -> bool:
     photo = str(listing.get("cover_image_url") or "").strip()
     if not photo or len(text) > CAPTION_LIMIT:
         return False
     try:
-        bot.send_photo(chat_id=chat_id, photo=photo, caption=text, parse_mode="HTML")
+        bot.send_photo(
+            chat_id=chat_id, photo=photo, caption=text, parse_mode="HTML", **housing_site_buttons.kw(reply_markup),
+        )
         return True
     except Exception:
         logger.exception("Could not send ohne-makler.net photo to %s", chat_id)
@@ -159,9 +163,12 @@ def check_job(context) -> Dict[str, int]:
             continue
         text = ohnemakler_matching.format_notification(listing, lang=i18n.get_lang(chat_id))
         text = gate.finish(text, chat_id, listing_key)
+        markup = gate.keyboard(chat_id, listing_key, listing.get("detail_url"))
         try:
-            if not _send_listing(bot, chat_id, listing, text):
-                bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
+            if not _send_listing(bot, chat_id, listing, text, **housing_site_buttons.kw(markup)):
+                bot.send_message(
+                    chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False, **housing_site_buttons.kw(markup),
+                )
         except Exception as exc:
             if housing_tier.recipient_gone(exc):
                 ohnemakler_store.mark_delivered(int(filt["filter_id"]), listing_key)

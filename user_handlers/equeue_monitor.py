@@ -108,7 +108,8 @@ def _menu_keyboard(active: bool, lang: str = "uk") -> InlineKeyboardMarkup:
     rows.append([InlineKeyboardButton(i18n.t("equeue.btn.check_now", lang), callback_data="equeue:check")])
     rows.append([InlineKeyboardButton(i18n.t("equeue.btn.open_site", lang), url=SERVICE_URL)])
     rows.append([InlineKeyboardButton(i18n.t("anon.btn.back_home", lang), callback_data="anon:home")])
-    return InlineKeyboardMarkup(rows)
+    from user_handlers import masters_hint as _mh      # 28.11.2026 (H5a): сверху «Зручніше на сайті»
+    return _mh.with_site_row(InlineKeyboardMarkup(rows), lang, "terms_dp")
 
 
 def _get_subscription(session, user_id: int) -> Optional[EqueueSubscription]:
@@ -635,6 +636,20 @@ def _notify_admin_stale(bot) -> None:
         session.close()
 
 
+def _with_site_button(keyboard: InlineKeyboardMarkup, user_id: int, section: str) -> InlineKeyboardMarkup:
+    """28.11.2026 (H5a): внизу уведомления кнопка «🏠 Відкрити в Потсдамботі» (раздел терминов на сайте внутри Telegram).
+    Нет ссылки Mini App или любая ошибка: клавиатура остаётся прежней."""
+    try:
+        from user_jobs import housing_site_buttons
+
+        extra = housing_site_buttons.terms_keyboard(user_id, section)
+        if extra is not None:
+            return InlineKeyboardMarkup([list(row) for row in keyboard.inline_keyboard] + [list(row) for row in extra.inline_keyboard])
+    except Exception:
+        logger.exception("Could not add the site button to the terms notification")
+    return keyboard
+
+
 def _notify_available(bot, subscribers, result: Dict[str, object]) -> int:
     sent = 0
     for user_id, last_status, _last_notified_at in subscribers:
@@ -649,6 +664,7 @@ def _notify_available(bot, subscribers, result: Dict[str, object]) -> int:
             [InlineKeyboardButton(i18n.t("support.btn.booked", lang), callback_data="equeue:booked")],
             [InlineKeyboardButton(i18n.t("equeue.btn.unsubscribe_short", lang), callback_data="equeue:unsubscribe")],
         ])
+        keyboard = _with_site_button(keyboard, user_id, "dp")
         try:
             bot.send_message(
                 user_id,

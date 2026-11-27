@@ -408,6 +408,24 @@ class ImmoweltPriceLabelTests(unittest.TestCase):
         housing_receiver.handle_immowelt_result(bot, _payload(**kwargs))
         return bot.messages[-1]['text']
 
+    def test_site_button_is_added_above_the_portal_button_and_text_is_unchanged(self):
+        """28.11.2026 (H5a): «🏠 Відкрити в Потсдамботі» над «Відкрити на Immowelt»; текст уведомления тот же."""
+        from user_handlers import masters_hint
+        plain = FakeBot()
+        housing_receiver.handle_immowelt_result(plain, _payload(listing_id='site-plain'))
+        marked = FakeBot()
+        with mock.patch.multiple(masters_hint, APP_LINK='https://t.me/Potsdambot/potsdam', SITE_BUTTONS=True), \
+                mock.patch('user_jobs.housing_letter_store.ref_for', return_value=321):
+            housing_receiver.handle_immowelt_result(marked, _payload(listing_id='site-marked'))
+        sent_plain = (plain.messages or plain.photos)[-1]
+        sent_marked = (marked.messages or marked.photos)[-1]
+        self.assertEqual(sent_plain.get('text', sent_plain.get('caption')).replace('site-plain', 'X'),
+                         sent_marked.get('text', sent_marked.get('caption')).replace('site-marked', 'X'))
+        rows = sent_marked['reply_markup'].inline_keyboard
+        self.assertEqual(rows[0][0].url, 'https://t.me/Potsdambot/potsdam?startapp=go_housing_listing_321')
+        self.assertEqual(rows[1][0].text, 'Відкрити на Immowelt')
+        self.assertEqual(len(sent_plain['reply_markup'].inline_keyboard), 1)
+
     def test_a_cold_price_is_labelled_cold(self):
         self.assertIn('Kaltmiete', self._text_for(price_basis='kalt'))
 

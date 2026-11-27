@@ -279,10 +279,22 @@ class WebServerTests(_Db):
         self.assertEqual(housing_links.social_numbers('k1')['opened'], 1)
 
     def test_the_other_pages_still_need_a_login(self):
-        response, _ = self._request('GET', '/')
-        self.assertEqual(response.status, 401)
+        with mock.patch.dict('os.environ', {'HOUSING_WEB_CABINET': 'on'}):      # 28.11.2026: кабинет по умолчанию выключен
+            response, _ = self._request('GET', '/')
+            self.assertEqual(response.status, 401)
         response, body = self._request('GET', '/health')
         self.assertEqual((response.status, body), (200, 'ok'))
+
+    def test_the_cabinet_is_off_by_default_but_links_still_redirect(self):
+        with mock.patch.dict('os.environ', {'HOUSING_WEB_CABINET': ''}), \
+                mock.patch('user_handlers.masters_hint._file_cfg', return_value={}):
+            response, body = self._request('GET', '/')
+            self.assertEqual(response.status, 200)
+            self.assertIn('Кабінет переїхав у Telegram', body)
+            response, _ = self._request('GET', '/login?t=x')
+            self.assertEqual(response.status, 200)
+            response, _ = self._request('GET', '/o/nope')
+            self.assertEqual(response.status, 404)      # переход по ссылке квартиры работает (токена нет)
 
 
 class SocialLineTests(_Db):

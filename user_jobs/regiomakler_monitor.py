@@ -26,6 +26,8 @@ from user_jobs import alert_cooldown, delivery_dedup, housing_tier, regiomakler_
 
 logger = logging.getLogger(__name__)
 
+from user_jobs import housing_site_buttons  # noqa: E402  (28.11.2026, H5a: кнопки под уведомлением)
+
 CHECK_ENABLED = os.getenv("REGIOMAKLER_CHECK_ENABLED", "1") == "1"
 TIMEOUT = int(os.getenv("REGIOMAKLER_TIMEOUT", "30") or 30)
 CHECK_INTERVAL_SECONDS = 15 * 60
@@ -93,7 +95,7 @@ def _fetch_gallery(listing: Dict) -> List[str]:
         return []
 
 
-def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
+def _send_listing(bot, chat_id: int, listing: Dict, text: str, reply_markup=None) -> bool:
     """Шлёт квартиру одним постом: галерея фото с текстом объявления подписью снизу.
 
     Возвращает True, если текст ушёл подписью — тогда отдельное текстовое
@@ -110,6 +112,7 @@ def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
             bot.send_photo(
                 chat_id=chat_id, photo=photos[0],
                 caption=caption, parse_mode="HTML" if caption else None,
+                **housing_site_buttons.kw(reply_markup if caption else None),
             )
         else:
             media = []
@@ -121,6 +124,8 @@ def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
                     item_kwargs["parse_mode"] = "HTML"
                 media.append(InputMediaPhoto(**item_kwargs))
             bot.send_media_group(chat_id=chat_id, media=media)
+            if caption:
+                housing_site_buttons.after_album(bot, chat_id, reply_markup)
         return caption is not None
     except Exception:
         logger.exception("Could not send ImmoTeam/alpha post to %s", chat_id)
@@ -204,10 +209,13 @@ def check_job(context) -> Dict[str, int]:
             continue
         text = regiomakler_matching.format_notification(listing, lang=i18n.get_lang(chat_id))
         text = gate.finish(text, chat_id, listing_key)
+        markup = gate.keyboard(chat_id, listing_key, listing.get("detail_url"))
         try:
-            posted_as_caption = _send_listing(bot, chat_id, listing, text)
+            posted_as_caption = _send_listing(bot, chat_id, listing, text, **housing_site_buttons.kw(markup))
             if not posted_as_caption:
-                bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
+                bot.send_message(
+                    chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False, **housing_site_buttons.kw(markup),
+                )
         except Exception as exc:
             # Людина заблокувала бота чи видалила акаунт: пробувати далі марно.
             # Раніше виняток тут обривав увесь обхід, і всі фільтри після неї

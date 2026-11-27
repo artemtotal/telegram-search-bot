@@ -1,0 +1,11 @@
+{
+  "site.btn.open": "🌐 Potsdambot öffnen",
+  "site.btn.better": "📱 Bequemer in der App: öffnen",
+  "site.btn.app": "🏠 In Potsdambot öffnen",
+  "site.btn.source": "🔗 Anzeige auf der Website",
+  "site.btn.album_note": "⬆️ Schaltflächen zu dieser Wohnung",
+  "site.start.text": "👋 <b>Potsdambot</b>\n\nJetzt ist alles in einer App: Handwerker und Dienste, Wohnungsmonitoring, Termine für DP «Dokument» und Botschaft, Projekt unterstützen.\n\nTippen Sie auf die Schaltfläche unten.",
+  "site.cabinet.moved": "Das Konto ist in Telegram umgezogen",
+  "site.cabinet.text": "Jetzt ist alles in der App «Potsdam» in Telegram: Filter, neue Wohnungen, Bezahlung, Brief an den Vermieter.",
+  "site.cabinet.open": "In Telegram öffnen"
+}

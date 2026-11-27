@@ -16,7 +16,7 @@ from telegram.error import NetworkError
 
 import i18n
 from database import DBSession, HousingDelivery, HousingPendingDelivery, ImmoweltListing
-from user_jobs import housing_letter_store, housing_links, housing_pay_store, housing_tier, sublet
+from user_jobs import housing_letter_store, housing_links, housing_pay_store, housing_site_buttons, housing_tier, sublet
 
 
 logger = logging.getLogger(__name__)
@@ -347,9 +347,17 @@ def handle_immowelt_result(bot, payload, release=False):
 
     # Посилання через наш перехід (HOUSING_LINK_REDIRECT); будь-яка проблема - пряме.
     shown_url = housing_links.link_for(user_id, "immowelt", listing_id, url)
-    keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Відкрити на Immowelt", url=shown_url)]]
-    )
+    rows = [[InlineKeyboardButton("Відкрити на Immowelt", url=shown_url)]]
+    site = None
+    try:
+        # 28.11.2026 (H5a): над кнопкой портала — «🏠 Відкрити в Потсдамботі» (карточка этой квартиры на сайте внутри Telegram).
+        site = housing_site_buttons.listing_keyboard(user_id, "immowelt", listing_id, "")
+        if site is not None:
+            rows = [list(row) for row in site.inline_keyboard] + rows
+    except Exception:
+        logger.exception("Could not add the site button to the Immowelt notification")
+    keyboard = InlineKeyboardMarkup(rows)
+    album_buttons = keyboard if site is not None else None
     text = "\n".join(lines)
     if not premium:
         text += housing_tier.free_footer(user_id)
@@ -358,7 +366,7 @@ def handle_immowelt_result(bot, payload, release=False):
     images = [str(u).strip() for u in (listing.get("images") or []) if str(u).strip()][:GALLERY_ALBUM_MAX]
 
     try:
-        _send_immowelt_post(bot, user_id, images, text, keyboard, shown_url)
+        _send_immowelt_post(bot, user_id, images, text, keyboard, shown_url, album_buttons=album_buttons)
     except NetworkError as exc:
         if _request_never_left(exc):
             raise
@@ -385,7 +393,7 @@ def _send_text_with_button(bot, chat_id, text, keyboard):
     )
 
 
-def _send_immowelt_post(bot, chat_id, images, text, keyboard, url):
+def _send_immowelt_post(bot, chat_id, images, text, keyboard, url, album_buttons=None):
     """Шлёт квартиру фото с подписью, если фото есть, и текстом с кнопкой — если нет.
 
     Кнопка "Відкрити на Immowelt" остаётся на одиночном фото и на голом тексте
@@ -411,6 +419,7 @@ def _send_immowelt_post(bot, chat_id, images, text, keyboard, url):
         media = [InputMediaPhoto(media=images[0], caption=album_caption, parse_mode="HTML")]
         media.extend(InputMediaPhoto(media=photo_url) for photo_url in images[1:])
         bot.send_media_group(chat_id=chat_id, media=media)
+        housing_site_buttons.after_album(bot, chat_id, album_buttons)      # у альбома кнопок нет: 28.11.2026, H5a
     else:
         bot.send_media_group(chat_id=chat_id, media=[InputMediaPhoto(media=photo_url) for photo_url in images])
         _send_text_with_button(bot, chat_id, text, keyboard)

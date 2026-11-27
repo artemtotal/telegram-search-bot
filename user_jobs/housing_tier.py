@@ -304,6 +304,21 @@ class DeliveryGate:
             text += housing_letter_store.letter_link(user_id, self.source, str(listing_key), premium)
         return text
 
+    def keyboard(self, user_id: int, listing_key: str, detail_url: Optional[str] = None):
+        """28.11.2026 (H5a): кнопки под уведомлением («Відкрити в Потсдамботі» + «Оголошення на сайті») или None
+        (ссылки Mini App нет, кнопки выключены, любая ошибка): тогда сообщение уходит как раньше."""
+        try:
+            from user_jobs import housing_links, housing_site_buttons
+            from user_handlers import masters_hint
+
+            if not masters_hint.SITE_BUTTONS or not masters_hint.APP_LINK:
+                return None
+            url = str(detail_url or "") or housing_links.stored_url(self._listing_model, str(listing_key))
+            return housing_site_buttons.listing_keyboard(user_id, self.source, str(listing_key), url)
+        except Exception:
+            logger.exception("Could not build the site buttons of %s", listing_key)
+            return None
+
     def finish(self, text: str, user_id: int, listing_key: str) -> str:
         """The ready notification: the portal address in it goes through our
         redirect (HOUSING_LINK_REDIRECT), then the footer. Any problem in the

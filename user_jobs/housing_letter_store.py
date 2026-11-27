@@ -113,6 +113,21 @@ def resolve_ref(ref_id: int) -> Optional[Dict[str, str]]:
         session.close()
 
 
+def letter_href(username: str, ref_id: int) -> str:
+    """Адрес ссылки «✍️ Лист»: раздел письма сайта внутри Telegram (28.11.2026, H5a; t.me/Potsdambot/potsdam?startapp=go_letter_<ref>),
+    а без ссылки Mini App в настройках, как раньше, старт бота ?start=lt<ref>."""
+    try:
+        from user_handlers import masters_hint
+
+        if masters_hint.SITE_BUTTONS:
+            link = masters_hint.app_url(f"go_letter_{int(ref_id)}")
+            if link:
+                return link
+    except Exception:
+        logger.exception("Could not make the site letter link")
+    return f"https://t.me/{username}?start={START_PREFIX}{ref_id}"
+
+
 def letter_link(user_id: int, source: str, listing_key: str, premium: bool) -> str:
     """The line under a flat: a deep link that opens the letter for it.
     Empty when the bot's username isn't known yet (no broken link)."""
@@ -133,4 +148,4 @@ def letter_link(user_id: int, source: str, listing_key: str, premium: bool) -> s
         return ""
     lang = i18n.get_lang(int(user_id))
     label = i18n.t("housing.letter.link_paid" if premium else "housing.letter.link_free", lang)
-    return f'\n\n<a href="https://t.me/{_bot_username}?start={START_PREFIX}{ref_id}">{label}</a>'
+    return f'\n\n<a href="{letter_href(_bot_username, ref_id)}">{label}</a>'

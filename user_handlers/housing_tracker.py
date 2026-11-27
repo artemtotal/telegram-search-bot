@@ -75,7 +75,7 @@ def footer_line(user_id: int, source: str, listing_key: str, premium: bool) -> s
     letter = i18n.t("housing.track.footer_letter_paid" if premium else "housing.track.footer_letter_free", lang)
     apply_label = i18n.t("housing.track.footer_apply", lang)
     return (
-        f'\n\n<a href="https://t.me/{username}?start={store.START_PREFIX}{ref_id}">{letter}</a>'
+        f'\n\n<a href="{store.letter_href(username, ref_id)}">{letter}</a>'
         f' · <a href="https://t.me/{username}?start={START_PREFIX}{ref_id}">{apply_label}</a>'
     )
 

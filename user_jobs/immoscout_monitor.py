@@ -37,6 +37,8 @@ from user_jobs import (
 
 logger = logging.getLogger(__name__)
 
+from user_jobs import housing_site_buttons  # noqa: E402  (28.11.2026, H5a: кнопки под уведомлением)
+
 CHECK_ENABLED = os.getenv("IMMOSCOUT_CHECK_ENABLED", "1") == "1"
 TIMEOUT = int(os.getenv("IMMOSCOUT_TIMEOUT", "30") or 30)
 CHECK_INTERVAL_SECONDS = 15 * 60
@@ -292,7 +294,7 @@ def _backfill_existing_searches() -> int:
     return added
 
 
-def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
+def _send_listing(bot, chat_id: int, listing: Dict, text: str, reply_markup=None) -> bool:
     """Галерея з текстом підписом; False — текст треба надіслати окремо."""
     photos = [url for url in (listing.get("gallery_urls") or []) if str(url).strip()]
     if not photos:
@@ -304,7 +306,10 @@ def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
     caption = text if len(text) <= CAPTION_LIMIT else None
     try:
         if len(photos) == 1:
-            bot.send_photo(chat_id=chat_id, photo=photos[0], caption=caption, parse_mode="HTML" if caption else None)
+            bot.send_photo(
+                chat_id=chat_id, photo=photos[0], caption=caption, parse_mode="HTML" if caption else None,
+                **housing_site_buttons.kw(reply_markup if caption else None),
+            )
         else:
             media = []
             for index, url in enumerate(photos, start=1):
@@ -314,6 +319,8 @@ def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
                     item_kwargs["parse_mode"] = "HTML"
                 media.append(InputMediaPhoto(**item_kwargs))
             bot.send_media_group(chat_id=chat_id, media=media)
+            if caption:
+                housing_site_buttons.after_album(bot, chat_id, reply_markup)
         return caption is not None
     except Exception:
         logger.exception("Could not send ImmoScout24 post to %s", chat_id)
@@ -400,9 +407,12 @@ def check_job(context) -> Dict[str, int]:
             continue
         text = immoscout_matching.format_notification(listing, lang=i18n.get_lang(chat_id))
         text = gate.finish(text, chat_id, listing_key)
+        markup = gate.keyboard(chat_id, listing_key, listing.get("detail_url"))
         try:
-            if not _send_listing(bot, chat_id, listing, text):
-                bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
+            if not _send_listing(bot, chat_id, listing, text, **housing_site_buttons.kw(markup)):
+                bot.send_message(
+                    chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False, **housing_site_buttons.kw(markup),
+                )
         except Exception as exc:
             # Людина заблокувала бота чи видалила акаунт: пробувати далі марно.
             # Раніше виняток тут обривав увесь обхід, і всі фільтри після неї

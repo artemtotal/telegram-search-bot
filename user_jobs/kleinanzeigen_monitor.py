@@ -48,6 +48,8 @@ from user_jobs import (
 
 logger = logging.getLogger(__name__)
 
+from user_jobs import housing_site_buttons  # noqa: E402  (28.11.2026, H5a: кнопки под уведомлением)
+
 CHECK_ENABLED = os.getenv("KLEINANZEIGEN_CHECK_ENABLED", "1") == "1"
 TIMEOUT = int(os.getenv("KLEINANZEIGEN_TIMEOUT", "30") or 30)
 CHECK_INTERVAL_SECONDS = 20 * 60
@@ -119,7 +121,7 @@ def _fetch_listings() -> List[Dict]:
     return []
 
 
-def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
+def _send_listing(bot, chat_id: int, listing: Dict, text: str, reply_markup=None) -> bool:
     """Шле квартиру одним постом: галерея фото з текстом підписом знизу.
 
     Фотографії беруться з бази — їх забрали тим самим запитом, яким читали
@@ -144,11 +146,14 @@ def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> bool:
             bot.send_photo(
                 chat_id=chat_id, photo=photos[0],
                 caption=caption, parse_mode="HTML" if caption else None,
+                **housing_site_buttons.kw(reply_markup if caption else None),
             )
             return caption is not None
         media = [InputMediaPhoto(media=photos[0], caption=caption, parse_mode="HTML" if caption else None)]
         media.extend(InputMediaPhoto(media=url) for url in photos[1:])
         bot.send_media_group(chat_id=chat_id, media=media)
+        if caption:
+            housing_site_buttons.after_album(bot, chat_id, reply_markup)
         return caption is not None
     except Exception:
         logger.exception("Could not send Kleinanzeigen post to %s", chat_id)
@@ -466,10 +471,13 @@ def check_job(context) -> Dict[str, int]:
             continue
         text = kleinanzeigen_matching.format_notification(listing, lang=i18n.get_lang(chat_id))
         text = gate.finish(text, chat_id, listing_key)
+        markup = gate.keyboard(chat_id, listing_key, listing.get("detail_url"))
         try:
-            posted_as_caption = _send_listing(bot, chat_id, listing, text)
+            posted_as_caption = _send_listing(bot, chat_id, listing, text, **housing_site_buttons.kw(markup))
             if not posted_as_caption:
-                bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
+                bot.send_message(
+                    chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False, **housing_site_buttons.kw(markup),
+                )
         except Exception as exc:
             # Людина заблокувала бота чи видалила акаунт: пробувати далі марно.
             # Раніше виняток тут обривав увесь обхід, і всі фільтри після неї
@@ -538,9 +546,12 @@ def _send_near_misses(bot, filters: List[Dict], gate) -> int:
             + "\n\n" + kleinanzeigen_matching.format_notification(listing, lang=lang),
             user_id, listing_key,
         )
+        markup = gate.keyboard(user_id, listing_key, listing.get("detail_url"))
         try:
-            if not _send_listing(bot, user_id, listing, text):
-                bot.send_message(chat_id=user_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
+            if not _send_listing(bot, user_id, listing, text, **housing_site_buttons.kw(markup)):
+                bot.send_message(
+                    chat_id=user_id, text=text, parse_mode="HTML", disable_web_page_preview=False, **housing_site_buttons.kw(markup),
+                )
         except Exception as exc:
             if not housing_tier.recipient_gone(exc):
                 logger.exception("Could not send a Kleinanzeigen near miss %s to %s", listing_key, user_id)

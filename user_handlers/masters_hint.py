@@ -68,6 +68,12 @@ CARDS = _setting("MASTERS_HINT_CARDS", "cards", "on").lower() not in ("0", "fals
 # у групах web_app-кнопок немає, тож там посилання ведуть на нього (з startapp=cat_<розділ> чи id_<картка>), доки порожнє — як раніше.
 WEBAPP = _setting("MASTERS_WEBAPP", "webapp", "off").lower() in ("on", "1", "true", "yes")
 APP_LINK = _setting("MASTERS_APP_LINK", "app_link", "")
+# 28.11.2026 (H5a, «забыть про бота»): стартовое меню личного чата = одна кнопка «Відкрити Потсдамбот» (web_app) + язык (+ анонимные
+# вопросы, пока их нет на сайте). "start": "classic" в masters.json возвращает прежнюю стартовую клавиатуру; "ask_site": true переводит
+# кнопку анонимных вопросов на раздел сайта #/ask; "site_buttons": false убирает кнопки «Відкрити в Потсдамботі» под уведомлениями.
+START_MODE = _setting("MASTERS_START", "start", "site").lower()
+ASK_SITE = _setting("MASTERS_ASK_SITE", "ask_site", "off").lower() in ("on", "1", "true", "yes")
+SITE_BUTTONS = _setting("MASTERS_SITE_BUTTONS", "site_buttons", "on").lower() not in ("0", "false", "off", "no")
 
 CACHE_SEC = 30 * 60                # як часто фоновий потік перечитує каталог
 STALE_SEC = CACHE_SEC + 15 * 60     # старішу копію не показуємо: тоді відповідь одним посиланням
@@ -435,6 +441,69 @@ def private_button(text: str, src: str = "bot", tab: str = ""):
     if info is not None:
         return InlineKeyboardButton(text, web_app=info)
     return InlineKeyboardButton(text, url=link(src) + ("#tab=" + tab if tab else ""))
+
+
+# ── H5a (28.11.2026): сайт «Потсдам» как единственный вход ────────────────────────────────────────────────────
+
+_STARTAPP_RE = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
+
+
+def site_mode() -> bool:
+    """Стартовая клавиатура личного чата в новом виде (одна кнопка сайта). Нужен включённый Mini App; "start": "classic" — выключатель."""
+    return START_MODE != "classic" and webapp_enabled()
+
+
+def go_info(go: str = ""):
+    """WebAppInfo сайта на нужном разделе: `?s=bot&go=<раздел>[_<подраздел>]` (core.js понимает go как startapp=go_…); пустой go — главная.
+    Адрес держим в query, а не во фрагменте: Telegram дописывает к фрагменту свои параметры. None — Mini App выключен."""
+    if not webapp_enabled():
+        return None
+    try:
+        from telegram import WebAppInfo
+    except ImportError:
+        return None
+    url = link("bot")
+    if go:
+        if not _STARTAPP_RE.match(go):
+            return None
+        url += ("&" if "?" in url else "?") + "go=" + go
+    return WebAppInfo(url=url)
+
+
+def start_button(lang: str):
+    """Большая кнопка стартового меню «🌐 Відкрити Потсдамбот»: web_app на главную сайта."""
+    import i18n
+    from telegram import InlineKeyboardButton
+    info = go_info()
+    label = i18n.t("site.btn.open", lang)
+    return InlineKeyboardButton(label, web_app=info) if info is not None else InlineKeyboardButton(label, url=link("bot"))
+
+
+def site_row(lang: str, go: str):
+    """Строка «Зручніше на сайті: відкрити» сверху старых экранов бота (web_app на раздел сайта) или None, если Mini App выключен."""
+    import i18n
+    from telegram import InlineKeyboardButton
+    info = go_info(go)
+    if info is None:
+        return None
+    return [InlineKeyboardButton(i18n.t("site.btn.better", lang), web_app=info)]
+
+
+def with_site_row(markup, lang: str, go: str):
+    """InlineKeyboardMarkup с добавленной сверху строкой сайта (исходный не меняется; нет строки — он же)."""
+    from telegram import InlineKeyboardMarkup
+    row = site_row(lang, go)
+    if row is None or markup is None:
+        return markup
+    return InlineKeyboardMarkup([row] + [list(r) for r in markup.inline_keyboard])
+
+
+def app_url(startapp: str) -> str:
+    """Прямая ссылка Mini App с параметром (https://t.me/Potsdambot/potsdam?startapp=…) для URL-кнопок в сообщениях и группах.
+    "" — ссылки Mini App нет в настройках или параметр не подходит (только [A-Za-z0-9_-], до 64 знаков)."""
+    if not APP_LINK or not _STARTAPP_RE.match(startapp or ""):
+        return ""
+    return APP_LINK + ("&" if "?" in APP_LINK else "?") + "startapp=" + startapp
 
 
 def text_for(cat: str) -> str:

@@ -17,6 +17,8 @@ from user_jobs import delivery_dedup, housing_tier, propotsdam_matching, propots
 
 logger = logging.getLogger(__name__)
 
+from user_jobs import housing_site_buttons  # noqa: E402  (28.11.2026, H5a: кнопки под уведомлением)
+
 PROPOTSDAM_RECEIVER_URL = os.getenv(
     "PROPOTSDAM_RECEIVER_URL",
     "http://host.docker.internal:18766",
@@ -171,7 +173,7 @@ def _photo_filename(body: bytes, index: int) -> str:
     return f"propotsdam-{index}.{suffix}"
 
 
-def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> tuple[int, bool]:
+def _send_listing(bot, chat_id: int, listing: Dict, text: str, reply_markup=None) -> tuple[int, bool]:
     """Шлёт квартиру одним постом: альбом фото с текстом объявления подписью снизу.
 
     Возвращает (сколько фото ушло, ушёл ли текст подписью). Если подпись не
@@ -188,6 +190,7 @@ def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> tuple[int, boo
             bot.send_photo(
                 chat_id=chat_id, photo=photos[0], filename=_photo_filename(photos[0], 1),
                 caption=caption, parse_mode="HTML" if caption else None,
+                **housing_site_buttons.kw(reply_markup if caption else None),
             )
         else:
             media = []
@@ -199,6 +202,8 @@ def _send_listing(bot, chat_id: int, listing: Dict, text: str) -> tuple[int, boo
                     item_kwargs["parse_mode"] = "HTML"
                 media.append(InputMediaPhoto(**item_kwargs))
             bot.send_media_group(chat_id=chat_id, media=media)
+            if caption:
+                housing_site_buttons.after_album(bot, chat_id, reply_markup)
         return len(photos), caption is not None
     except Exception:
         logger.exception("Could not send ProPotsdam post to %s", chat_id)
@@ -334,13 +339,16 @@ def _check_job_locked(context) -> Dict[str, int]:
             continue
         text = propotsdam_matching.format_notification(listing, PROPOTSDAM_PORTAL_URL, lang=i18n.get_lang(chat_id))
         text = gate.finish(text, chat_id, listing_key)
+        markup = gate.keyboard(chat_id, listing_key, listing.get("detail_url"))
         try:
-            photos, posted_as_caption = _send_listing(bot, chat_id, listing, text)
+            photos, posted_as_caption = _send_listing(bot, chat_id, listing, text, **housing_site_buttons.kw(markup))
             photos_sent += photos
             # Фото без подписи (нет фото вообще, или текст не влез в лимит подписи)
             # оставляют текст неотправленным — досылаем его отдельным сообщением.
             if not posted_as_caption:
-                bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False)
+                bot.send_message(
+                    chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=False, **housing_site_buttons.kw(markup),
+                )
         except Exception as exc:
             # Людина заблокувала бота чи видалила акаунт: пробувати далі марно.
             # Раніше виняток тут обривав увесь обхід, і всі фільтри після неї

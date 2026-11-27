@@ -1355,8 +1355,10 @@ def _send_recent_matches(update: Update, context: CallbackContext, hours: int) -
             if not gate.due(owner_id, listing):
                 continue
             text = gate.finish(matching.format_notification(listing), owner_id, str(listing["listing_key"]))
+            from user_jobs import housing_site_buttons
             context.bot.send_message(
                 chat_id=owner_id, text=text, parse_mode="HTML", disable_web_page_preview=False,
+                **housing_site_buttons.kw(gate.keyboard(owner_id, str(listing["listing_key"]), listing.get("detail_url"))),
             )
             store.mark_delivered(int(filter_id), str(listing["listing_key"]))
             gate.sent(owner_id, str(listing["listing_key"]), int(filter_id))
@@ -1792,7 +1794,8 @@ def _menu_keyboard(user_id: Optional[int] = None, lang: str = "uk") -> InlineKey
         rows[-1].append(back)
     else:
         rows.append([back])
-    return InlineKeyboardMarkup(rows)
+    from user_handlers import masters_hint as _mh      # 28.11.2026 (H5a): сверху «Зручніше на сайті»
+    return _mh.with_site_row(InlineKeyboardMarkup(rows), lang, "housing")
 
 
 def _lang_picker_keyboard() -> InlineKeyboardMarkup:
@@ -2280,7 +2283,8 @@ def _locked_keyboard(lang: str = "uk", user_id: Optional[int] = None) -> InlineK
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request")])
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.faq", lang), callback_data="housing:faq")])
     rows.append([InlineKeyboardButton(i18n.t("housing.btn.back_home", lang), callback_data="anon:home")])
-    return InlineKeyboardMarkup(rows)
+    from user_handlers import masters_hint as _mh      # 28.11.2026 (H5a): сверху «Зручніше на сайті»
+    return _mh.with_site_row(InlineKeyboardMarkup(rows), lang, "housing")
 
 
 def show_menu(update: Update, context: CallbackContext, edit: bool = False) -> None:

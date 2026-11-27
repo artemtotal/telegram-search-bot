@@ -359,6 +359,20 @@ def _booked_choice_keyboard(codes: set, lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def _with_site_button(keyboard: InlineKeyboardMarkup, user_id: int, section: str) -> InlineKeyboardMarkup:
+    """28.11.2026 (H5a): внизу уведомления кнопка «🏠 Відкрити в Потсдамботі» (раздел терминов на сайте внутри Telegram).
+    Нет ссылки Mini App или любая ошибка: клавиатура остаётся прежней."""
+    try:
+        from user_jobs import housing_site_buttons
+
+        extra = housing_site_buttons.terms_keyboard(user_id, section)
+        if extra is not None:
+            return InlineKeyboardMarkup([list(row) for row in keyboard.inline_keyboard] + [list(row) for row in extra.inline_keyboard])
+    except Exception:
+        logger.exception("Could not add the site button to the terms notification")
+    return keyboard
+
+
 def _notify_subscribers(bot, fresh: Dict[str, List[dict]], names: Dict[str, str], institution: str) -> int:
     sent = 0
     for user_id, codes in _subscribers_for(fresh).items():
@@ -368,6 +382,7 @@ def _notify_subscribers(bot, fresh: Dict[str, List[dict]], names: Dict[str, str]
             [InlineKeyboardButton(i18n.t("support.btn.booked", lang), callback_data=_booked_callback(codes))],
             [InlineKeyboardButton(i18n.t("econsul.btn.settings", lang), callback_data="econsul:menu")],
         ])
+        keyboard = _with_site_button(keyboard, user_id, "consul")
         try:
             bot.send_message(
                 user_id,
@@ -694,7 +709,8 @@ def _home_keyboard(codes: set, lang: str) -> InlineKeyboardMarkup:
     rows.append([InlineKeyboardButton(i18n.t("econsul.btn.free", lang), callback_data="econsul:free")])
     rows.append([InlineKeyboardButton(i18n.t("econsul.btn.open_site", lang), url=BOOKING_URL)])
     rows.append([InlineKeyboardButton(i18n.t("anon.btn.back_home", lang), callback_data="anon:home")])
-    return InlineKeyboardMarkup(rows)
+    from user_handlers import masters_hint as _mh      # 28.11.2026 (H5a): сверху «Зручніше на сайті»
+    return _mh.with_site_row(InlineKeyboardMarkup(rows), lang, "terms_consul")
 
 
 def render_menu(user_id: int, lang: str, prefix: str = ""):

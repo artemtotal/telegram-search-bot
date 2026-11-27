@@ -58,6 +58,39 @@ PRICE_MIN_OF = {"max_price_eur": "min_price_eur", "max_price_warm_eur": "min_pri
 _secret_cache: Optional[bytes] = None
 
 
+def cabinet_enabled() -> bool:
+    """28.11.2026 (H5a): старый кабинет в браузере выключен (всё переехало на сайт «Потсдам» внутри Telegram). Вернуть его одним файлом:
+    в /app/config/masters.json (том данных бота) добавить "cabinet": "on" (читается на каждый запрос, перезапуск не нужен);
+    переменная HOUSING_WEB_CABINET=on делает то же. Мост /int/* и переход по ссылкам квартир /o/<токен> от этого не зависят."""
+    value = os.getenv("HOUSING_WEB_CABINET")
+    if not value:
+        try:
+            from user_handlers import masters_hint
+            value = masters_hint._file_cfg().get("cabinet", "off")
+        except Exception:
+            value = "off"
+    return str(value).strip().lower() in ("on", "1", "true", "yes")
+
+
+def moved_page() -> str:
+    """Короткая страница вместо кабинета: кабинет переехал в Telegram, кнопка на Mini App (uk, ниже ru и de)."""
+    try:
+        from user_handlers import masters_hint
+        link = masters_hint.APP_LINK
+    except Exception:
+        link = ""
+    link = html.escape(link or "https://t.me/Potsdambot/potsdam", quote=True)
+    blocks = "".join(
+        f'<p><b>{html.escape(i18n.t("site.cabinet.moved", lang))}</b><br>{html.escape(i18n.t("site.cabinet.text", lang))}</p>'
+        for lang in ("uk", "ru", "de")
+    )
+    button = f'<p><a class="btn" href="{link}">{html.escape(i18n.t("site.cabinet.open", "uk"))}</a></p>'
+    body = f'<div class="card">{blocks}{button}</div>'
+    return (f'<!doctype html><html lang="uk"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">'
+            f'<title>Потсдам</title><style>{CSS}</style></head><body><header><b>🏠 Потсдам</b></header><main>{body}</main></body></html>')
+
+
 def _t(key: str, lang: str, **kwargs) -> str:
     return i18n.t(f"web.{key}", lang, **kwargs)
 
@@ -665,6 +698,12 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/o/"):
             self._open_link("GET")
             return
+        if parsed.path == "/health":
+            self._send(200, "ok")
+            return
+        if not cabinet_enabled():      # 28.11.2026 (H5a): страницы кабинета (вход, поиски, статистика, история) выключены
+            self._send(200, moved_page(), {"Cache-Control": "no-store"})
+            return
         if parsed.path == "/login":
             user_id = redeem_token((parse_qs(parsed.query).get("t") or [""])[0])
             if user_id is None or not allowed(user_id):
@@ -704,6 +743,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, "Not found")
 
     def _post(self) -> None:
+        if not cabinet_enabled():      # 28.11.2026 (H5a): формы кабинета выключены
+            self._send(410, moved_page(), {"Cache-Control": "no-store"})
+            return
         user_id = self._user()
         if user_id is None:
             self._anonymous()
@@ -766,6 +808,12 @@ def send_login_link(update, context) -> None:
     query = update.callback_query
     user_id = int(update.effective_user.id)
     lang = i18n.get_lang(user_id)
+    if not cabinet_enabled():
+        # 28.11.2026 (H5a): ссылок на старый кабинет больше не выдаём, вместо неё сайт «Потсдам» внутри Telegram.
+        query.answer()
+        from user_handlers import housing_site
+        housing_site.send_link(context, user_id)
+        return
     if not PUBLIC_URL:
         query.answer(_t("not_configured", lang), show_alert=True)
         return

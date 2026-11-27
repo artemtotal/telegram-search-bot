@@ -56,8 +56,23 @@ def validate_submission(text: str, lang: str = "uk"):
     return validate_submission_text(text, MIN_LENGTH, MAX_LENGTH, lang)
 
 
+def _site_home_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """28.11.2026 (H5a): стартовое меню личного чата: одна большая кнопка сайта «Потсдам» (Mini App), язык и то, чего на сайте ещё нет
+    (анонимные вопросы: когда раздел #/ask на сайте включён флагом ask_site в masters.json, кнопка ведёт туда)."""
+    rows = [[_masters_hint.start_button(lang)]]
+    ask_info = _masters_hint.go_info("ask") if _masters_hint.ASK_SITE else None
+    if ask_info is not None:
+        rows.append([InlineKeyboardButton(i18n.t("anon.btn.menu", lang), web_app=ask_info)])
+    else:
+        rows.append([InlineKeyboardButton(i18n.t("anon.btn.menu", lang), callback_data="anon:menu")])
+    rows.append([InlineKeyboardButton("🌐 Мова / Язык / Sprache", callback_data="anon:lang:menu")])
+    return InlineKeyboardMarkup(rows)
+
+
 def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
     lang = i18n.get_lang(user_id) if user_id else "uk"
+    if MASTERS_URL and _masters_hint.site_mode():
+        return _site_home_keyboard(lang)
     rows = []
     # 27.11.2026, порядок за Артемом: «Наш сайт», каталог майстрів, терміни, житло, далі решта (анонімні запитання вже не першими).
     # У Mini App-режимі (webapp: on) обидві кнопки web_app: сайт відкривається всередині Telegram.
@@ -266,6 +281,14 @@ def show_home(update: Update, context: CallbackContext, edit: bool = False) -> N
     context.user_data.pop("anonymous", None)
     user_id = update.effective_user.id if update.effective_user else None
     lang = i18n.get_lang(user_id) if user_id else "uk"
+    if MASTERS_URL and _masters_hint.site_mode():
+        # 28.11.2026 (H5a): коротко «всё теперь в приложении», одно сообщение и без нижней клавиатуры.
+        text = i18n.t("site.start.text", lang)
+        if edit and update.callback_query:
+            update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_home_keyboard(user_id))
+        else:
+            update.effective_message.reply_text(text, parse_mode="HTML", reply_markup=_home_keyboard(user_id))
+        return
     text = i18n.t("anon.home.text", lang, days=COOLDOWN_DAYS)
     if edit and update.callback_query:
         update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=_home_keyboard(user_id))

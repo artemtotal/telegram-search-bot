@@ -74,7 +74,8 @@ def _amounts_keyboard(lang: str) -> InlineKeyboardMarkup:
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
     rows.append([InlineKeyboardButton(i18n.t("support.btn.custom", lang), callback_data="support:custom")])
     rows.append([InlineKeyboardButton(i18n.t("anon.btn.back_home", lang), callback_data="anon:home")])
-    return InlineKeyboardMarkup(rows)
+    from user_handlers import masters_hint as _mh      # 28.11.2026 (H5a): сверху «Зручніше на сайті»
+    return _mh.with_site_row(InlineKeyboardMarkup(rows), lang, "support")
 
 
 def _amounts_text(lang: str) -> str:

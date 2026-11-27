@@ -32,6 +32,7 @@ class HousingWebTest(card_tests.HousingCardTest):
             mock.patch.object(housing_web, "DBSession", engine_session),
             mock.patch.object(housing_letter_store, "DBSession", engine_session),
             mock.patch.object(housing_access_store, "DBSession", engine_session),
+            mock.patch.dict(os.environ, {"HOUSING_WEB_CABINET": "on"}),      # 28.11.2026: кабинет по умолчанию выключен, здесь проверяем его самого
             mock.patch.object(housing_web, "PUBLIC_URL", "https://example.ts.net"),
             mock.patch.object(housing_web, "SECRET_FILE", tmp.name),
             mock.patch.object(housing_web, "_secret_cache", None),

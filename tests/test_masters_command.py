@@ -27,8 +27,11 @@ class MastersButtonOrderTests(unittest.TestCase):
                 mock.patch.object(mh, "MASTERS_URL", "https://example.test/"), \
                 mock.patch.object(mh, "WEBAPP", True):
             rows = anonymous_posts._home_keyboard(None).inline_keyboard
+        # 28.11.2026 (H5a): в режиме Mini App стартовое меню = одна большая кнопка сайта, анонимные вопросы и язык
         self.assertEqual(rows[0][0].web_app.url, "https://example.test/?s=bot")
-        self.assertEqual(rows[1][0].web_app.url, "https://example.test/?s=bot&tab=masters#tab=masters")
+        self.assertEqual(rows[0][0].text, "🌐 Відкрити Потсдамбот")
+        self.assertEqual([row[0].callback_data for row in rows[1:]], ["anon:menu", "anon:lang:menu"])
+        self.assertEqual(len(rows), 3)
 
     def test_site_name_in_three_languages(self):
         self.assertEqual(i18n.t("anon.btn.site", "de"), "🌐 Unsere Seite")

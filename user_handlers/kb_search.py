@@ -271,12 +271,21 @@ def _proactive_text(body: str, question: str, bot_username: str) -> str:
     if _HOUSING_RE.search(question) and bot_username:
         text += (f"\n\n🏘 Шукаєте житло? Нові квартири в Потсдамі одразу в Telegram — "
                  f"моніторинг у @{bot_username} (кнопка «🏘 Житло»).")
-    if masters_hint.enabled() and masters_hint.MODE == "on":
-        cat = masters_hint.match(question)
-        if cat is not None:
-            text += "\n\n" + masters_hint.text_for(cat)
+    # 28.11.2026 (H5a): голой ссылки на каталог в тексте больше нет, вместо неё кнопка под сообщением (_proactive_markup).
     text += "\n\nПитайте ще: напишіть «потсдамбот» і своє питання."
     return text
+
+
+def _proactive_markup(question: str):
+    """URL-кнопка «🧰 Відкрити каталог» (раздел по теме вопроса) под ответом справочника, если вопрос про мастера и подсказки каталога включены."""
+    try:
+        if masters_hint.enabled() and masters_hint.MODE == "on":
+            cat = masters_hint.match(question)
+            if cat is not None:
+                return masters_hint.markup(masters_hint._buttons(cat, []))
+    except Exception:
+        logger.exception("Could not build the catalog button for a proactive answer")
+    return None
 
 
 def _is_real_reply(message) -> bool:
@@ -336,7 +345,7 @@ def _proactive_answer(message, user, text: str, context: CallbackContext) -> boo
         final = _normalize_source_line(_proactive_text(body, text, context.bot.username or ""), sources[:3])
         if KB_PROACTIVE == "on":
             try:
-                message.reply_text(final, parse_mode=None, disable_web_page_preview=True)
+                message.reply_text(final, parse_mode=None, disable_web_page_preview=True, reply_markup=_proactive_markup(text))
                 status = "sent"
             except Exception:
                 logger.exception("Proactive reply failed")
@@ -389,7 +398,7 @@ def on_admin_button(update: Update, context: CallbackContext) -> None:
                     context.bot.send_message(
                         row["chat_id"], row["answer"], reply_to_message_id=row["msg_id"],
                         parse_mode=None, disable_web_page_preview=True,
-                        allow_sending_without_reply=True,
+                        allow_sending_without_reply=True, reply_markup=_proactive_markup(row["question"] or ""),
                     )
                     status = "sent"
                 except Exception as exc:

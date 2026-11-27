@@ -175,7 +175,7 @@ class BridgeServerTests(unittest.TestCase):
         req = urllib.request.Request("http://127.0.0.1:%d/search/1/delete" % self.port, data=b"x=1", method="POST")
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             urllib.request.urlopen(req, timeout=5)
-        self.assertEqual(ctx.exception.code, 401)         # как раньше: без входа
+        self.assertEqual(ctx.exception.code, 410)         # 28.11.2026: кабинет выключен (H5a), формы отвечают «переехал»; /health и мост на месте
         ctx.exception.close()
 
 

@@ -31,10 +31,11 @@ class StartKeyboardTests(unittest.TestCase):
         self.assertIn("s=bot", button.url)
 
     def test_on_is_web_app_button(self):
-        with _on():
-            button = self._row()
-        self.assertIsNone(button.url)
-        self.assertEqual(button.web_app.url, URL + "?s=bot&tab=masters#tab=masters")
+        # 28.11.2026 (H5a): Mini App включён: первая кнопка стартового меню = главная сайта, отдельной кнопки каталога больше нет
+        with _on(), mock.patch.object(anonymous_posts, "MASTERS_URL", URL):
+            first = anonymous_posts._home_keyboard(None).inline_keyboard[0][0]
+        self.assertIsNone(first.url)
+        self.assertEqual(first.web_app.url, URL + "?s=bot")
 
     def test_http_url_never_web_app(self):
         with mock.patch.multiple(mh, MASTERS_URL="http://example.test/", WEBAPP=True):
@@ -102,7 +103,7 @@ class MenuButtonTests(unittest.TestCase):
             button = self._run()
         self.assertIsInstance(button, telegram.MenuButtonWebApp)
         self.assertEqual(button.web_app.url, URL + "?s=bot")
-        self.assertEqual(button.text, "Каталог")
+        self.assertEqual(button.text, "Потсдам")
 
     def test_menu_text_in_all_languages(self):
         for lang in ("uk", "ru", "de"):
