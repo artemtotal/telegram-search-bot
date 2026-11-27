@@ -1231,6 +1231,20 @@ class UserSettings(Base):
     quiet_night_off = Column(BOOLEAN, nullable=False, default=False)
 
 
+class WebappUser(Base):
+    """Хто дозволив боту писати йому (сервісне повідомлення `write_access_allowed` з Mini App каталогу, 27.11.2026).
+    Окремо від user_settings.news_subscribed: то згода на новини, це — Telegram-дозвіл писати першим. Для майбутньої розсилки."""
+
+    __tablename__ = 'webapp_user'
+
+    user_id = Column(INTEGER, primary_key=True)
+    write_ok = Column(BOOLEAN, nullable=False, default=True)
+    source = Column(TEXT, nullable=True)       # write_access_allowed | web_app_data
+    app_name = Column(TEXT, nullable=True)     # коротке ім'я Mini App, якщо Telegram його передав
+    first_at = Column(DATETIME, nullable=False)
+    updated_at = Column(DATETIME, nullable=False)
+
+
 class KarlmarxListing(Base):
     """Wohnungsgenossenschaft "Karl Marx": без районів, ціна — Warmmiete
     (тепла оренда), а не Kaltmiete, як у решти маклерів."""

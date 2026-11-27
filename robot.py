@@ -38,6 +38,7 @@ from user_handlers import (
 from user_handlers import housing_winback
 from user_handlers import housing_pay_nudge
 from user_handlers import masters_hint
+from user_handlers import webapp_access
 from user_jobs.commands_set import set_bot_commands
 from user_jobs.faq_learn import run_faq_learn
 from user_jobs import propotsdam_monitor
@@ -325,6 +326,8 @@ dispatcher.add_handler(anonymous_posts.forum_observer_handler, group=2)
 dispatcher.add_handler(kb_search.group_handler, group=4)
 # 26.11.2026: тіньовий підрахунок реклами повз оплату, у чат нічого не пише (AD_SHADOW_ENABLED / bot_switches.json).
 dispatcher.add_handler(ad_shadow.group_handler, group=5)
+# 27.11.2026: службові повідомлення Mini App каталогу (write_access_allowed, web_app_data): лише відмітка в базі, без відповіді.
+dispatcher.add_handler(webapp_access.handler, group=6)
 
 def run_telethon_thread():
     loop = asyncio.new_event_loop()

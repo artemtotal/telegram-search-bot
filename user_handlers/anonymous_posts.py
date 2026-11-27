@@ -63,7 +63,8 @@ def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
     ]
     # 27.11.2026: каталог на другому рядку, щоб його було видно одразу (внизу його не знаходили).
     if MASTERS_URL:
-        rows.append([InlineKeyboardButton(i18n.t("anon.btn.masters", lang), url=_masters_hint.link("bot"))])
+        # 27.11.2026: у Mini App-режимі (webapp: on) це web_app-кнопка: сайт відкривається всередині Telegram.
+        rows.append([_masters_hint.private_button(i18n.t("anon.btn.masters", lang))])
     rows.extend(equeue_monitor.private_home_rows(user_id))
     rows.extend(econsul_monitor.private_home_rows(user_id))
     rows.extend(housing_monitor.private_home_rows(user_id))

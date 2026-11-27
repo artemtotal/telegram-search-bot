@@ -62,7 +62,13 @@ STATE_PATH = os.environ.get("MASTERS_HINT_STATE", "/app/config/masters_hint.json
 # Вимикач карток: "cards": false у masters.json повертає відповідь одним посиланням.
 CARDS = _setting("MASTERS_HINT_CARDS", "cards", "on").lower() not in ("0", "false", "off", "no")
 
-CACHE_SEC = 30 * 60                 # як часто фоновий потік перечитує каталог
+# 27.11.2026: сайт каталогу як Mini App. "webapp": "on" у masters.json — кнопка «Меню» і кнопки в особистих чатах відкривають
+# сайт всередині Telegram. "app_link" — пряме посилання Mini App з BotFather (https://t.me/Potsdambot/<коротке_ім'я>):
+# у групах web_app-кнопок немає, тож там посилання ведуть на нього (з startapp=cat_<розділ> чи id_<картка>), доки порожнє — як раніше.
+WEBAPP = _setting("MASTERS_WEBAPP", "webapp", "off").lower() in ("on", "1", "true", "yes")
+APP_LINK = _setting("MASTERS_APP_LINK", "app_link", "")
+
+CACHE_SEC = 30 * 60                # як часто фоновий потік перечитує каталог
 STALE_SEC = CACHE_SEC + 15 * 60     # старішу копію не показуємо: тоді відповідь одним посиланням
 RETRY_SEC = 5 * 60                  # після збою пробуємо частіше
 FETCH_TIMEOUT = 5                   # секунд на запит
@@ -387,7 +393,11 @@ def match(text: str) -> Optional[str]:
 
 def link(src: str, cat: str = "", card: str = "") -> str:
     """Посилання на каталог із позначкою джерела (?s=bot — кнопка в меню, ?s=hint — підказка в чаті): для статистики сайту.
-    card — посилання на одну картку (#id=…), cat — на розділ (#cat=…)."""
+    card — посилання на одну картку (#id=…), cat — на розділ (#cat=…).
+    Для групи (src "hint") і заданого app_link — пряме посилання Mini App з startapp=id_<картка> / cat_<розділ>."""
+    if APP_LINK and src == "hint":
+        param = ("id_" + card) if card else ("cat_" + cat) if cat and cat in CAT_NAMES else ""
+        return APP_LINK + ((("&" if "?" in APP_LINK else "?") + "startapp=" + param) if param else "")
     url = MASTERS_URL
     if src:
         url += ("&" if "?" in url else "?") + "s=" + src
@@ -396,6 +406,30 @@ def link(src: str, cat: str = "", card: str = "") -> str:
     elif cat and cat in CAT_NAMES:
         url += "#cat=" + cat
     return url
+
+
+def webapp_enabled() -> bool:
+    return WEBAPP and MASTERS_URL.lower().startswith("https://")
+
+
+def webapp_info():
+    """WebAppInfo сайту каталогу (джерело ?s=bot) чи None, якщо Mini App вимкнено або бібліотека його не знає."""
+    if not webapp_enabled():
+        return None
+    try:
+        from telegram import WebAppInfo
+    except ImportError:
+        return None
+    return WebAppInfo(url=link("bot"))
+
+
+def private_button(text: str, src: str = "bot"):
+    """Кнопка каталогу для ОСОБИСТОГО чату: web_app (сайт всередині Telegram), а без неї — звичайне посилання."""
+    from telegram import InlineKeyboardButton
+    info = webapp_info()
+    if info is not None:
+        return InlineKeyboardButton(text, web_app=info)
+    return InlineKeyboardButton(text, url=link(src))
 
 
 def text_for(cat: str) -> str:
@@ -768,7 +802,10 @@ def masters_command(update, context) -> None:
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     user = update.effective_user
     lang = i18n.get_lang(user.id) if user else "uk"
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton(i18n.t("masters.cmd.btn", lang), url=link("bot" if private else "hint"))]])
+    label = i18n.t("masters.cmd.btn", lang)
+    # В особистому чаті — web_app (відкриває сайт у Telegram); у групі web_app заборонено: посилання (app_link, якщо задано).
+    button = private_button(label) if private else InlineKeyboardButton(label, url=link("hint"))
+    markup = InlineKeyboardMarkup([[button]])
     try:
         message.reply_text(i18n.t("masters.cmd.text", lang), reply_markup=markup, disable_web_page_preview=True)
     except Exception:

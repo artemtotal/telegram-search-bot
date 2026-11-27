@@ -1,6 +1,8 @@
 import logging
 
 import telegram
+import i18n
+from user_handlers import masters_hint
 from utils import get_text_func
 
 _ = get_text_func()
@@ -39,7 +41,12 @@ def set_bot_commands(context: telegram.ext.CallbackContext):
 
     if hasattr(telegram, "MenuButtonCommands") and hasattr(context.bot, "set_chat_menu_button"):
         try:
-            context.bot.set_chat_menu_button(menu_button=telegram.MenuButtonCommands())
+            menu_button = telegram.MenuButtonCommands()
+            # 27.11.2026: «Меню» = Mini App каталогу (masters.json: "webapp": "on"). Список команд по «/» лишається.
+            info = masters_hint.webapp_info() if hasattr(telegram, "MenuButtonWebApp") else None
+            if info is not None:
+                menu_button = telegram.MenuButtonWebApp(text=i18n.t("masters.menu.btn", "uk"), web_app=info)
+            context.bot.set_chat_menu_button(menu_button=menu_button)
         except Exception:
             logger.exception("Could not set bot menu button")
 

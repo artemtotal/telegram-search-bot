@@ -49,6 +49,19 @@ def start(update, context):
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception('start=sub failed, showing home')
+        # 27.11.2026, сайт каталогу: /start housing - одразу меню моніторингу житла, /start masters - як /masters.
+        if context.args and str(context.args[0]) in ('housing', 'masters'):
+            try:
+                if str(context.args[0]) == 'housing':
+                    from user_handlers import housing_monitor
+                    housing_monitor.show_menu(update, context)
+                else:
+                    from user_handlers import masters_hint
+                    masters_hint.masters_command(update, context)
+                return
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('start=%s failed, showing home', context.args[0])
         # «🎁 Запроси друга»: /start rf<код> - тихо привʼязуємо нову людину до запрошувача
         # (ДО show_home: він уже створює записи про людину, а привʼязка - лише для нових).
         if context.args and str(context.args[0]).startswith('rf'):
