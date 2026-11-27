@@ -58,16 +58,16 @@ def validate_submission(text: str, lang: str = "uk"):
 
 def _home_keyboard(user_id=None) -> InlineKeyboardMarkup:
     lang = i18n.get_lang(user_id) if user_id else "uk"
-    rows = [
-        [InlineKeyboardButton(i18n.t("anon.btn.menu", lang), callback_data="anon:menu")],
-    ]
-    # 27.11.2026: каталог на другому рядку, щоб його було видно одразу (внизу його не знаходили).
+    rows = []
+    # 27.11.2026, порядок за Артемом: «Наш сайт», каталог майстрів, терміни, житло, далі решта (анонімні запитання вже не першими).
+    # У Mini App-режимі (webapp: on) обидві кнопки web_app: сайт відкривається всередині Telegram.
     if MASTERS_URL:
-        # 27.11.2026: у Mini App-режимі (webapp: on) це web_app-кнопка: сайт відкривається всередині Telegram.
-        rows.append([_masters_hint.private_button(i18n.t("anon.btn.masters", lang))])
+        rows.append([_masters_hint.private_button(i18n.t("anon.btn.site", lang))])
+        rows.append([_masters_hint.private_button(i18n.t("anon.btn.masters", lang), tab="masters")])
     rows.extend(equeue_monitor.private_home_rows(user_id))
     rows.extend(econsul_monitor.private_home_rows(user_id))
     rows.extend(housing_monitor.private_home_rows(user_id))
+    rows.append([InlineKeyboardButton(i18n.t("anon.btn.menu", lang), callback_data="anon:menu")])
     rows.extend(support.home_rows(user_id))
     rows.append([InlineKeyboardButton(i18n.t("anon.btn.feedback", lang), callback_data="anon:feedback")])
     # 31.10.2026: advertising in the group is sold by the separate ad bot.

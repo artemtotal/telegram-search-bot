@@ -7,13 +7,32 @@ from user_handlers import anonymous_posts, masters_hint as mh
 
 
 class MastersButtonOrderTests(unittest.TestCase):
-    def test_button_is_on_second_row_with_new_names(self):
+    def test_site_button_first_then_masters_then_anon_questions_lower(self):
         with mock.patch.object(anonymous_posts, "MASTERS_URL", "https://example.test/"), \
-                mock.patch.object(mh, "MASTERS_URL", "https://example.test/"):
+                mock.patch.object(mh, "MASTERS_URL", "https://example.test/"), \
+                mock.patch.object(mh, "WEBAPP", False):
             rows = anonymous_posts._home_keyboard(None).inline_keyboard
-        self.assertEqual(rows[0][0].callback_data, "anon:menu")
+        self.assertEqual(rows[0][0].text, "🌐 Наш сайт")
+        self.assertIn("s=bot", rows[0][0].url)
         self.assertEqual(rows[1][0].text, "🧰 Контакти майстрів і послуг")
         self.assertIn("s=bot", rows[1][0].url)
+        self.assertTrue(rows[1][0].url.endswith("#tab=masters"))
+        callbacks = [row[0].callback_data for row in rows]
+        self.assertGreater(callbacks.index("anon:menu"), 1)
+        self.assertLess(callbacks.index("anon:menu"), callbacks.index("anon:feedback"))
+        self.assertEqual(rows[-1][0].callback_data, "anon:lang:menu")
+
+    def test_site_and_masters_are_web_app_when_on(self):
+        with mock.patch.object(anonymous_posts, "MASTERS_URL", "https://example.test/"), \
+                mock.patch.object(mh, "MASTERS_URL", "https://example.test/"), \
+                mock.patch.object(mh, "WEBAPP", True):
+            rows = anonymous_posts._home_keyboard(None).inline_keyboard
+        self.assertEqual(rows[0][0].web_app.url, "https://example.test/?s=bot")
+        self.assertEqual(rows[1][0].web_app.url, "https://example.test/?s=bot#tab=masters")
+
+    def test_site_name_in_three_languages(self):
+        self.assertEqual(i18n.t("anon.btn.site", "de"), "🌐 Unsere Seite")
+        self.assertEqual(i18n.t("anon.btn.site", "ru"), "🌐 Наш сайт")
 
     def test_names_in_three_languages(self):
         self.assertEqual(i18n.t("anon.btn.masters", "ru"), "🧰 Контакты мастеров и услуг")

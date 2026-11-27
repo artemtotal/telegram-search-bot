@@ -412,24 +412,24 @@ def webapp_enabled() -> bool:
     return WEBAPP and MASTERS_URL.lower().startswith("https://")
 
 
-def webapp_info():
-    """WebAppInfo сайту каталогу (джерело ?s=bot) чи None, якщо Mini App вимкнено або бібліотека його не знає."""
+def webapp_info(tab: str = ""):
+    """WebAppInfo сайту (джерело ?s=bot, tab — вкладка: #tab=masters) чи None, якщо Mini App вимкнено або бібліотека його не знає."""
     if not webapp_enabled():
         return None
     try:
         from telegram import WebAppInfo
     except ImportError:
         return None
-    return WebAppInfo(url=link("bot"))
+    return WebAppInfo(url=link("bot") + ("#tab=" + tab if tab else ""))
 
 
-def private_button(text: str, src: str = "bot"):
-    """Кнопка каталогу для ОСОБИСТОГО чату: web_app (сайт всередині Telegram), а без неї — звичайне посилання."""
+def private_button(text: str, src: str = "bot", tab: str = ""):
+    """Кнопка сайту для ОСОБИСТОГО чату: web_app (сайт всередині Telegram), а без неї — звичайне посилання."""
     from telegram import InlineKeyboardButton
-    info = webapp_info()
+    info = webapp_info(tab)
     if info is not None:
         return InlineKeyboardButton(text, web_app=info)
-    return InlineKeyboardButton(text, url=link(src))
+    return InlineKeyboardButton(text, url=link(src) + ("#tab=" + tab if tab else ""))
 
 
 def text_for(cat: str) -> str:
