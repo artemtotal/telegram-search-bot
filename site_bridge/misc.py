@@ -184,7 +184,7 @@ def _topics(sync: bool = False):
         rows = (session.query(AnonymousTopic)
                 .filter(AnonymousTopic.chat_id == chat_id, AnonymousTopic.is_active == 1)
                 .order_by(AnonymousTopic.name).all())
-        return [{"id": int(t.id), "name": t.name} for t in rows]
+        return [{"id": int(t.id), "name": t.name} for t in rows if ap.is_named_topic(t)]
     finally:
         session.close()
 

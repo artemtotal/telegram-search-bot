@@ -52,6 +52,15 @@ def utc_now() -> datetime:
     return datetime.utcnow()
 
 
+def is_named_topic(topic_or_name) -> bool:
+    """Тема з відомою назвою. «Тема #123» бот ставить, коли не бачив службового повідомлення про створення теми
+    (_upsert_topic / observe_forum): людині такий пункт нічого не каже, тож у список для запитань він не потрапляє
+    (адмін дає назву командою /anon_topic Назва всередині теми)."""
+    name = getattr(topic_or_name, "name", topic_or_name)
+    name = (name or "").strip()
+    return bool(name) and not name.startswith("Тема #")
+
+
 def validate_submission(text: str, lang: str = "uk"):
     return validate_submission_text(text, MIN_LENGTH, MAX_LENGTH, lang)
 
@@ -329,12 +338,14 @@ def _show_captcha(query, context: CallbackContext, prefix: str = "", lang: str =
 
 def _topics_keyboard(session, page: int = 0, lang: str = "uk") -> InlineKeyboardMarkup:
     chat_id = _target_chat_id(session)
-    topics = (
-        session.query(AnonymousTopic)
-        .filter(AnonymousTopic.chat_id == chat_id, AnonymousTopic.is_active == 1)
-        .order_by(AnonymousTopic.name)
-        .all()
-    )
+    topics = [
+        topic for topic in (
+            session.query(AnonymousTopic)
+            .filter(AnonymousTopic.chat_id == chat_id, AnonymousTopic.is_active == 1)
+            .order_by(AnonymousTopic.name)
+            .all()
+        ) if is_named_topic(topic)
+    ]
     page_count = max(1, (len(topics) + TOPICS_PER_PAGE - 1) // TOPICS_PER_PAGE)
     page = max(0, min(page, page_count - 1))
     visible = topics[page * TOPICS_PER_PAGE:(page + 1) * TOPICS_PER_PAGE]
@@ -355,10 +366,10 @@ def _show_topics(query, context: CallbackContext, page: int = 0) -> None:
     session = DBSession()
     try:
         chat_id = _target_chat_id(session)
-        count = session.query(AnonymousTopic).filter(
+        count = len([topic for topic in session.query(AnonymousTopic).filter(
             AnonymousTopic.chat_id == chat_id,
             AnonymousTopic.is_active == 1,
-        ).count()
+        ).all() if is_named_topic(topic)])
         lang = i18n.get_lang(query.from_user.id)
         if not chat_id or not count:
             query.edit_message_text(
@@ -440,7 +451,7 @@ def _select_topic(query, context: CallbackContext, topic_id: int) -> None:
     try:
         topic = session.query(AnonymousTopic).get(topic_id)
         lang = i18n.get_lang(query.from_user.id)
-        if not topic or not topic.is_active or topic.chat_id != _target_chat_id(session):
+        if not topic or not topic.is_active or not is_named_topic(topic) or topic.chat_id != _target_chat_id(session):
             query.answer(i18n.t("anon.topic.gone", lang), show_alert=True)
             return
         state = context.user_data.setdefault("anonymous", {})
@@ -566,7 +577,7 @@ def _reserve_post(query, state, lang: str = "uk"):
             session.rollback()
             return None, cooldown
         topic = session.query(AnonymousTopic).get(int(state["topic_id"]))
-        if not topic or not topic.is_active:
+        if not topic or not topic.is_active or not is_named_topic(topic):
             session.rollback()
             return None, i18n.t("anon.reserve.topic_gone", lang)
         now = utc_now()

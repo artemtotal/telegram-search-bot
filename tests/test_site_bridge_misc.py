@@ -318,6 +318,36 @@ class MiscBridgeTests(unittest.TestCase):
         self.assertEqual(self.ok("anon_info", A)["posts"], [])
         self.assertEqual(self.ok("anon_info", A)["state"], "ok")
 
+    # ---------- безымянные темы ----------
+    def test_unnamed_topics_are_hidden_and_refused(self):
+        ap._upsert_topic(CHAT, 77, "Тема #77")
+        session = DBSession()
+        try:
+            ghost = session.query(AnonymousTopic).filter(AnonymousTopic.chat_id == CHAT, AnonymousTopic.message_thread_id == 77).first().id
+            session.add(AnonymousTopic(chat_id=CHAT, message_thread_id=78, name="  ", is_active=True, created_at=datetime.utcnow(), updated_at=datetime.utcnow()))
+            session.commit()
+        finally:
+            session.close()
+        self.assertEqual(self.ok("anon_info", A)["topics"], 2)
+        ticket = self.start_and_pass()
+        self.refused("topic_gone", "anon_check", A, {"ticket": ticket, "topic_id": ghost, "text": GOOD})
+        res = self.ok("anon_start", B)["captcha"]
+        names = [t["name"] for t in self.ok("anon_captcha", B, {"token": res["token"], "answer": self.solve(res)})["topics"]]
+        self.assertEqual(sorted(names), ["Здоров’я", "Побут"])
+        self.assertEqual(self.chat_posts(), [])
+        # то же в боте: клавиатура тем и резерв лимита
+        session = DBSession()
+        try:
+            kb = ap._topics_keyboard(session, 0, "uk").to_dict()["inline_keyboard"]
+        finally:
+            session.close()
+        labels = [row[0]["text"] for row in kb[:-1]]
+        self.assertEqual(sorted(labels), ["Здоров’я", "Побут"])
+        q = SimpleNamespace(from_user=SimpleNamespace(id=C, username="c", full_name="C"))
+        post_id, err = ap._reserve_post(q, {"topic_id": ghost, "text": GOOD, "submit_token": "tok-ghost"}, "uk")
+        self.assertIsNone(post_id)
+        self.assertTrue(err)
+
     # ---------- удаление ----------
     def publish(self, user=A, text=GOOD):
         ticket = self.start_and_pass(user)
