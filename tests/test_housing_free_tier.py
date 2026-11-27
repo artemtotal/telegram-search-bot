@@ -504,7 +504,9 @@ class FilterReportTests(_InMemoryDb):
 
     def test_a_quiet_day_sends_no_summary(self):
         bot = mock.Mock()
-        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534):
+        # 28.11.2026: «хто вимкнув моніторинг», відмови Kleinanzeigen і тіньовий підрахунок читають config/*.db окремими сесіями
+        # (їх це тест не підміняє), тож після інших тестів у тій самій теці рядки там лишаються й «тихий день» не тихий.
+        with mock.patch.object(housing_monitor, 'ADMIN_ID', 312029534),                 mock.patch.object(housing_monitor.housing_leave, 'summary_lines', return_value=[]),                 mock.patch.object(housing_monitor.kleinanzeigen_block, 'summary_lines', return_value=[]),                 mock.patch('user_handlers.ad_shadow.summary_text', return_value=''):
             housing_monitor.daily_filter_summary_job(SimpleNamespace(bot=bot))
 
         bot.send_message.assert_not_called()
