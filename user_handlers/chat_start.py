@@ -71,6 +71,27 @@ def start(update, context):
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception('start=%s failed, showing home', context.args[0])
+        # 27.11.2026, плитки сайту «Потсдам», яких там ще немає: /start equeue (ДП «Документ»), econsul (посольство), support
+        # («Підтримати проєкт»), anon («Анонімні запитання») відкривають ті самі екрани бота, що й кнопки стартового меню.
+        if context.args and str(context.args[0]) in ('equeue', 'econsul', 'support', 'anon'):
+            try:
+                param = str(context.args[0])
+                if param == 'equeue':
+                    from user_handlers import equeue_monitor
+                    equeue_monitor.show_menu(update, context)
+                elif param == 'econsul':
+                    from user_handlers import econsul_monitor
+                    econsul_monitor.show_menu(update, context)
+                elif param == 'support':
+                    from user_handlers import support
+                    support.show_amounts(update, context)
+                else:
+                    from user_handlers import anonymous_posts
+                    anonymous_posts.show_anon_submenu(update, context)
+                return
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('start=%s failed, showing home', context.args[0])
         # «🎁 Запроси друга»: /start rf<код> - тихо привʼязуємо нову людину до запрошувача
         # (ДО show_home: він уже створює записи про людину, а привʼязка - лише для нових).
         if context.args and str(context.args[0]).startswith('rf'):

@@ -610,6 +610,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         try:
+            if urlparse(self.path).path.startswith("/int/"):  # мост принимает только POST; чужой GET не отличим от несуществующей страницы
+                self._send(404, "Not found")
+                return
             self._get()
         except Exception:
             logger.exception("Web GET %s failed", self.path)
@@ -617,6 +620,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         try:
+            # 27.11.2026: мост сайта «Потсдам» (/int/<область>/<операция>): только с секретом и не через прокси, см. site_bridge.
+            try:
+                from site_bridge import handle as bridge_handle
+            except ImportError:
+                bridge_handle = None
+            if bridge_handle is not None and bridge_handle(self):
+                return
             self._post()
         except Exception:
             logger.exception("Web POST %s failed", self.path)
