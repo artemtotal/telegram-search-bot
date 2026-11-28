@@ -141,6 +141,9 @@ def handle(handler) -> bool:
         return False
     try:
         _dispatch(handler, path)
+    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+        # Сайт не дождался ответа (у него таймаут 8 с) и закрыл соединение. Операция уже выполнена; отвечать некому.
+        logger.warning("site_bridge: the site closed the connection before the reply on %s (it did not wait)", path)
     except Exception:
         logger.exception("site_bridge: unexpected failure on %s", path)
         try:
