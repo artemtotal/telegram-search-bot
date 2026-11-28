@@ -245,6 +245,11 @@ class DeliveryGate:
         """`remember=False` - for flats that don't really match the filter
         (Kleinanzeigen near-misses): no "it was taken down while you waited"
         notice for those."""
+        try:        # след фото прошлой квартиры не должен попасть в строку журнала следующей
+            from user_jobs import housing_photo_fallback
+            housing_photo_fallback.reset_trace()
+        except Exception:  # noqa: BLE001
+            pass
         # Суборенда — лише тим, хто шукає кімнату (див. user_jobs/sublet.py).
         # Не позначається доставленою: якщо людина потім обере кімнати, вона
         # отримає й це оголошення.
@@ -332,6 +337,11 @@ class DeliveryGate:
         return text + self.footer(user_id, listing_key)
 
     def sent(self, user_id: int, listing_key: str, filter_id: Optional[int] = None) -> None:
+        try:
+            from user_jobs import housing_photo_fallback
+            housing_photo_fallback.log_send(self.source)
+        except Exception:  # noqa: BLE001  журнал не должен мешать доставке
+            pass
         log_sent(
             user_id, self.source, listing_key, filter_id, delayed=not self.is_premium(user_id),
             snapshot=self._snapshot(listing_key),

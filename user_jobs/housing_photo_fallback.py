@@ -16,6 +16,7 @@ import io
 import ipaddress
 import logging
 import re
+import threading
 from typing import List, Optional
 from urllib.parse import urlparse
 
@@ -36,6 +37,35 @@ _RETRIABLE = (
 _INDEX_RE = re.compile(r"message #(\d+)")
 # Рекламные баннеры порталов (Vonovia: «зелёный ток»), а не фото квартиры.
 _PLACEHOLDER_RE = re.compile(r"/CAMP-", re.I)
+
+
+# 28.11.2026: след последней отправки фото в этом потоке; DeliveryGate.sent() превращает его в одну строку журнала.
+_local = threading.local()
+
+
+def reset_trace() -> None:
+    _local.trace = None
+
+
+def _note(kind: str, count: int, fallback: bool) -> None:
+    _local.trace = (kind, int(count), bool(fallback))
+
+
+def log_send(source: str) -> None:
+    """Одна строка INFO на отправленную квартиру: с фото или без. Ни чатов, ни адресов, ни имён."""
+    kind, count, fallback = getattr(_local, "trace", None) or ("none", 0, False)
+    _local.trace = None
+    logger.info("housing send: source=%s photo=%s n=%d fallback=%s", source, kind, count, "yes" if fallback else "no")
+
+
+def _media_count(args, kwargs) -> int:
+    media = kwargs.get("media")
+    if media is None and len(args) > 1:
+        media = args[1]
+    try:
+        return len(media)
+    except TypeError:
+        return 0
 
 
 def is_placeholder(url) -> bool:
@@ -199,19 +229,38 @@ def install() -> bool:
 
     def send_photo(self, *args, **kwargs):
         try:
-            return orig_photo(self, *args, **kwargs)
+            result = orig_photo(self, *args, **kwargs)
         except Exception as exc:
             if not retriable(exc):
+                _note("none", 0, True)       # вызывающий код пошлёт текст
                 raise
-            return _send_photo_retry(orig_photo, self, args, kwargs, exc)
+            try:
+                result = _send_photo_retry(orig_photo, self, args, kwargs, exc)
+            except Exception:
+                _note("none", 0, True)
+                raise
+            _note("file", 1, True)
+            return result
+        _note("photo", 1, False)
+        return result
 
     def send_media_group(self, *args, **kwargs):
         try:
-            return orig_group(self, *args, **kwargs)
+            result = orig_group(self, *args, **kwargs)
         except Exception as exc:
             if not retriable(exc):
+                _note("none", 0, True)
                 raise
-            return _send_group_retry(orig_group, self, args, kwargs, exc)
+            try:
+                result = _send_group_retry(orig_group, self, args, kwargs, exc)
+            except Exception:
+                _note("none", 0, True)
+                raise
+            count = len(result) if isinstance(result, (list, tuple)) else _media_count(args, kwargs)
+            _note("album" if count > 1 else "file", count, True)
+            return result
+        _note("album", _media_count(args, kwargs), False)
+        return result
 
     for wrapper, original in ((send_photo, orig_photo), (send_media_group, orig_group)):
         wrapper.__name__ = original.__name__
