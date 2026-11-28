@@ -70,9 +70,8 @@ def delivered_and_gone(user_id: int, now: Optional[datetime] = None) -> Optional
     """(квартир, к которым бесплатный тариф опоздал за LOSS_DAYS дней; из них уже снятых) или None, если считать нечем.
 
     Опоздал = пришла с задержкой (housing_send_log.delayed, различные квартиры) + бот написал «вже зняли», потому что она пропала раньше отправки
-    (housing_missed_log). Снятые = эти «вже зняли» + пришедшие, но уже снятые (housing_pay_report.vanished_early, только опрашиваемые площадки).
-    Это нижняя граница: Immowelt в «пришла и уже снята» не считается, а «вже зняли» пишутся в журнал с 25.11.2026."""
-    from user_handlers import housing_pay_report
+    (housing_missed_log). Снятые = ТОЛЬКО эти точные «вже зняли» (решение 28.11: людям показываем лишь то, в чём уверены; пришла-и-уже-снята не считается).
+    Нижняя граница: журнал «вже зняли» ведётся с 25.11.2026 (полные 7 дней с 02.12); пуст за окно: gone = 0."""
     from user_jobs import housing_pay_store
 
     now = now or utc_now()
@@ -87,8 +86,7 @@ def delivered_and_gone(user_id: int, now: Optional[datetime] = None) -> Optional
         session.close()
     pairs = [(str(s), str(k)) for s, k in rows]
     told_gone = int(housing_pay_store.missed_count(int(user_id), start, now + timedelta(minutes=1)))
-    vanished = int(housing_pay_report.vanished_early(pairs)) if pairs else 0
-    return len(pairs) + told_gone, told_gone + vanished
+    return len(pairs) + told_gone, told_gone
 
 
 def loss(user_id: int) -> Optional[dict]:

@@ -87,7 +87,7 @@ class MeTests(PaywallBase):
         loss = call("me", OTHER)["paywall"]["loss"]
         self.assertEqual(loss, {"days": 7, "delayed": 5, "gone": 2})
 
-    def test_loss_gone_includes_delivered_but_already_gone_lower_bound(self):
+    def test_loss_gone_ignores_delivered_but_already_gone_guess(self):       # решение 28.11: считаем только точные «вже зняли»
         now = datetime.utcnow()
         self.add_flat("v1", user=OTHER, delayed=True, when=now - timedelta(hours=3))
         session = bh.hm.DBSession()
@@ -100,7 +100,7 @@ class MeTests(PaywallBase):
             session.close()
         self.add_flat("alive", user=STRANGER, delayed=False)       # обход площадки шёл дальше
         loss = call("me", OTHER)["paywall"]["loss"]
-        self.assertEqual(loss, {"days": 7, "delayed": 1, "gone": 1})
+        self.assertEqual(loss, {"days": 7, "delayed": 1, "gone": 0})
 
     def test_loss_failure_is_null_not_an_error(self):
         with mock.patch.object(housing_paywall, "delivered_and_gone", side_effect=RuntimeError("x")):
