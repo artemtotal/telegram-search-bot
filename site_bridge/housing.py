@@ -27,10 +27,12 @@ housing_monitor, хранилища). Чужого видеть и менять 
 from __future__ import annotations
 
 import html
+import json
 import logging
 import math
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -747,6 +749,28 @@ def _apply(user_id: int, search_id: int, p: dict, lang: str) -> None:
         raise Refuse("save_failed", _t("web.save_failed", lang, sources=", ".join(sorted({_source_label(s) for s in failed}))))
 
 
+DUPLICATE_WINDOW_SECONDS = 60
+_recent_created: dict = {}      # user_id -> (monotonic, отпечаток параметров, search_id)
+
+
+def _create_fingerprint(params) -> str:
+    return json.dumps({k: v for k, v in params.items() if k != "id"}, sort_keys=True, ensure_ascii=False, default=str)
+
+
+def _recent_twin(uid: int, fingerprint: str):
+    item = _recent_created.get(uid)
+    if item and time.monotonic() - item[0] <= DUPLICATE_WINDOW_SECONDS and item[1] == fingerprint:
+        return item[2]
+    return None
+
+
+def _remember_created(uid: int, fingerprint: str, search_id) -> None:
+    now = time.monotonic()
+    for key in [k for k, v in _recent_created.items() if now - v[0] > DUPLICATE_WINDOW_SECONDS]:
+        _recent_created.pop(key, None)
+    _recent_created[uid] = (now, fingerprint, int(search_id))
+
+
 @op("housing", "search_save")
 def search_save(user_id, lang, params):
     """Создать (нет `id`) или изменить поиск. Лимиты бесплатного (один поиск, один включённый) решают функции бота."""
@@ -761,7 +785,19 @@ def search_save(user_id, lang, params):
             raise _bad(lang)
     with _lock(uid):
         created = params.get("id") in (None, 0, "")
+        fingerprint = None
         if created:
+            # 28.11.2026: двойной клик/повтор запроса сайта - тот же новый поиск с теми же параметрами за 60 с не плодим, отдаём уже созданный.
+            fingerprint = _create_fingerprint(params)
+            twin = _recent_twin(uid, fingerprint)
+            if twin is not None:
+                try:
+                    number, fresh = _find(uid, twin, lang)
+                except Refuse:
+                    pass            # тот поиск уже удалили - создаём заново
+                else:
+                    return {"id": int(twin), "created": False, "duplicate": True, "activated": not _hm()._search_paused(fresh),
+                            "message": "", "search": _ser(number, fresh, lang)}
             if not housing_card.can_add_search(uid):
                 raise Paywall("more_searches", _t("web.second_paid", lang))
             search_id = housing_web.new_search(uid)
@@ -793,6 +829,8 @@ def search_save(user_id, lang, params):
         else:
             housing_web._record_web_edit(uid, search_id)
         number, fresh = _find(uid, search_id, lang)
+        if created:
+            _remember_created(uid, fingerprint, search_id)
         message = _t("web.only_one_active", lang) if created and not activated else ""
         return {"id": int(search_id), "created": created, "activated": activated, "message": message, "search": _ser(number, fresh, lang)}
 

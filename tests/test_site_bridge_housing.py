@@ -35,6 +35,8 @@ def call(op, user_id, params=None, lang="uk"):
 class Base(card_tests.HousingCardTest):
     def setUp(self):
         super().setUp()
+        housing._recent_created.clear()
+        self.addCleanup(housing._recent_created.clear)
         session = hm.DBSession
         patches = [mock.patch.object(database, "DBSession", session)]
         for module in (housing_tracker, housing_letter, housing_web, housing_letter_store, housing_access_store, housing_links, housing_pay_store, housing_stats_store):
@@ -209,14 +211,14 @@ class SearchTests(Base):
         first = self.new_search()
         self.assertTrue(first["activated"])
         with self.assertRaises(Refuse) as ctx:
-            self.new_search()
+            self.new_search(c={"max_price_eur": 901, "min_rooms": 2})
         self.assertEqual((ctx.exception.code, ctx.exception.extra), ("paywall", {"feature": "more_searches"}))
         self.assertFalse(call("searches", USER)["can_add"])
         self.assertEqual(call("searches", USER)["paid_note"], housing_web._t("second_paid", "uk"))
         self.assertEqual(len(self._all()), 1)
         # два поиска, оставшиеся с подписки: включить второй при включённом первом нельзя
         PREMIUM.add(USER)
-        second = self.new_search()["search"]["id"]
+        second = self.new_search(c={"max_price_eur": 901, "min_rooms": 2})["search"]["id"]
         PREMIUM.discard(USER)
         with self.assertRaises(Refuse) as ctx:
             call("search_pause", USER, {"id": second, "paused": False})
@@ -230,11 +232,11 @@ class SearchTests(Base):
         PREMIUM.discard(USER)
         # у бесплатного уже есть поиск: второй создать нельзя, а из подписки включённые лишние на паузу не уходят сами
         with self.assertRaises(Refuse):
-            self.new_search()
+            self.new_search(c={"max_price_eur": 901, "min_rooms": 2})
 
     def test_monitoring_off_and_on_respects_the_free_limit(self):
         a = self.new_search()["search"]["id"]
-        b = self.new_search()["search"]["id"]
+        b = self.new_search(c={"max_price_eur": 901, "min_rooms": 2})["search"]["id"]
         self.assertTrue(call("status", USER)["monitoring"])
         self.assertFalse(call("monitoring_set", USER, {"on": False})["monitoring"])
         self.assertTrue(all(not s["on"] for s in call("searches", USER)["items"]))
