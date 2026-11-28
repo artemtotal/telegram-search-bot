@@ -234,6 +234,10 @@ class FlowTests(_Db):
         self.assertIn('SCHUFA', checklist)
         self.assertNotIn('Gehaltsabrechnung', checklist)
         self.assertEqual(self._session().query(HousingMappeLog).filter_by(user_id=777).count(), 1)
+        result = housing_mappe.last_result(777)       # the site takes the PDF from here
+        self.assertTrue(result['ok'])
+        self.assertEqual((result['pdf'], result['occupation']), (b'%PDF-1.4 x', 'jobcenter'))
+        self.assertIsNone(housing_mappe.last_result(778))
 
     def test_a_second_run_asks_nothing_and_a_flat_makes_the_letter_specific(self):
         self._subscribe()
@@ -291,6 +295,10 @@ class FlowTests(_Db):
         bot.edit_message_text.assert_called_once()
         self.assertEqual(self._session().query(HousingMappeLog).count(), 0)
         self.assertFalse(housing_mappe._busy)
+        failed = housing_mappe.last_result(777)
+        self.assertFalse(failed['ok'])
+        self.assertTrue(failed['error'])
+        self.assertNotIn('pdf', failed)
 
     def test_delete_my_data_erases_both_questionnaires(self):
         self._subscribe()

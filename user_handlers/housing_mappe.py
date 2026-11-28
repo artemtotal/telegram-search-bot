@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import threading
+import time
 from datetime import date
 from typing import Dict, List, Optional
 
@@ -54,6 +55,21 @@ LETTER_FIELDS = ("full_name", "move_in", "contact")
 TRANSLATE_FIELDS = ("employer", "pet_kind", "move_in")
 
 _busy: set = set()
+# Result of the last build per person, kept in memory for the site (bridge ops mappe_status / mappe_pdf): the site shows the document
+# list and hands over the PDF itself, so nobody has to go back to the chat. {user_id: {"ok", "pdf", "occupation", "error", "ts"}}
+RESULT_TTL = 20 * 60
+_results: Dict[int, dict] = {}
+
+
+def _forget_old_results() -> None:
+    limit = time.time() - RESULT_TTL
+    for key in [k for k, v in list(_results.items()) if v.get("ts", 0) < limit]:
+        _results.pop(key, None)
+
+
+def last_result(user_id: int) -> Optional[dict]:
+    _forget_old_results()
+    return _results.get(int(user_id))
 
 
 def _lang(user_id: int) -> str:
@@ -379,14 +395,18 @@ def handle_text(update: Update, context: CallbackContext) -> bool:
 
 # ---------- generation ----------
 
-def _checklist_text(occupation: str, lang: str) -> str:
+def checklist_keys(occupation: str) -> tuple:
     keys = {
         "works": ("works",),
         "jobcenter": ("jobcenter", "jobcenter2"),
         "other": ("other",),
     }.get(occupation, ("unknown",))
+    return keys + ("id", "schufa", "debts")
+
+
+def _checklist_text(occupation: str, lang: str) -> str:
     parts = [_t("docs_header", lang)]
-    for key in keys + ("id", "schufa", "debts"):
+    for key in checklist_keys(occupation):
         parts.append(_t(f"doc.{key}", lang))
     parts.append(_t("docs_footer", lang))
     return "\n\n".join(parts)
@@ -412,6 +432,8 @@ def generate(bot, user_id: int, ref_id: Optional[int] = None) -> None:
     values = merged(answers, letter)
     progress = bot.send_message(chat_id=user_id, text=_t("generating", lang))
     _busy.add(user_id)
+    _results.pop(user_id, None)
+    _forget_old_results()
 
     def work():
         try:
@@ -420,15 +442,24 @@ def generate(bot, user_id: int, ref_id: Optional[int] = None) -> None:
                 pdf = housing_mappe_pdf.build_pdf(data)
             except Exception:
                 logger.exception("Mappe PDF failed for %s", user_id)
+                _results[user_id] = {"ok": False, "error": _t("failed", lang), "ts": time.time()}
                 bot.edit_message_text(chat_id=user_id, message_id=progress.message_id, text=_t("failed", lang))
                 return
             if not data.get("letter"):
+                _results[user_id] = {"ok": False, "error": _t("failed", lang), "ts": time.time()}
                 bot.edit_message_text(chat_id=user_id, message_id=progress.message_id, text=_t("failed", lang))
                 return
             try:
                 bot.delete_message(chat_id=user_id, message_id=progress.message_id)
             except Exception:
                 pass
+            try:
+                store.log_generation(user_id, ref["source"] if ref and listing else None,
+                                     ref["listing_key"] if ref and listing else None)
+            except Exception:
+                logger.exception("Could not log the mappe for %s", user_id)
+            # The site takes the result from here; the chat copy below is an archive and may fail (blocked bot) without losing the PDF.
+            _results[user_id] = {"ok": True, "pdf": pdf, "occupation": values.get("occupation", ""), "ts": time.time()}
             bot.send_document(
                 chat_id=user_id, document=io.BytesIO(pdf), filename="Bewerbungsmappe.pdf",
                 caption=_t("pdf_caption", lang),
@@ -440,11 +471,6 @@ def generate(bot, user_id: int, ref_id: Optional[int] = None) -> None:
                 chat_id=user_id, text=_checklist_text(values.get("occupation", ""), lang), parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-            try:
-                store.log_generation(user_id, ref["source"] if ref and listing else None,
-                                     ref["listing_key"] if ref and listing else None)
-            except Exception:
-                logger.exception("Could not log the mappe for %s", user_id)
             logger.info("Mappe sent to %s", user_id)
         except Exception:
             logger.exception("Could not deliver the mappe to %s", user_id)

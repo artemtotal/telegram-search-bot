@@ -248,9 +248,45 @@ def mappe_status(user_id, lang, params):
     before = params.get("before", 0)
     if isinstance(before, bool) or not isinstance(before, int) or before < 0:
         raise _bad(lang)
-    busy = int(user_id) in _mappe()._busy
+    m = _mappe()
+    busy = int(user_id) in m._busy
     today = store.count_today(int(user_id))
-    return {"busy": busy, "done": (not busy) and today > before, "today": today}
+    out = {"busy": busy, "done": (not busy) and today > before, "today": today}
+    res = None if busy else m.last_result(user_id)
+    if res and res.get("ok"):
+        out.update({"done": True, "pdf": True, "docs": _docs(res.get("occupation", ""), lang)})
+    elif res:                                  # сборка не удалась: причина (текст бота) показывается на сайте
+        out.update({"done": False, "failed": True, "error": _plain(res.get("error") or _mt("failed", lang))})
+    return out
+
+
+_DOC = re.compile(r"^([^<\n]{0,4})<b>(.*?)</b>\s*(.*)$", re.S)
+
+
+def _docs(occupation: str, lang: str) -> dict:
+    """Список документов, который бот шлёт в чат после папки (housing_mappe._checklist_text), только как данные для страницы: заголовок, пункты, подпись."""
+    m = _mappe()
+    items = []
+    for key in m.checklist_keys(occupation):
+        raw = i18n.t("housing.mappe.doc." + key, lang)
+        found = _DOC.match(raw.strip())
+        if found:
+            items.append({"h": (found.group(1).strip() + " " + _plain(found.group(2))).strip(), "p": _plain(found.group(3))})
+        else:
+            items.append({"h": "", "p": _plain(raw)})
+    return {"title": _mt("docs_header", lang), "items": items, "footer": _mt("docs_footer", lang)}
+
+
+@op("housing", "mappe_pdf")
+def mappe_pdf(user_id, lang, params):
+    """Готовый PDF последней сборки для сайта (base64). Сайт кладёт его во временный файл и отдаёт человеку по короткой ссылке; в журнал содержимое не пишется."""
+    import base64
+
+    _require_mappe(user_id, lang)
+    res = _mappe().last_result(user_id)
+    if not res or not res.get("ok") or not res.get("pdf"):
+        raise Refuse("not_found", _mt("failed", lang))
+    return {"name": "Bewerbungsmappe.pdf", "pdf_b64": base64.b64encode(res["pdf"]).decode("ascii")}
 
 
 @op("housing", "mappe_delete")
@@ -306,13 +342,28 @@ def _sections(text: str) -> list:
     return out
 
 
+# В тексте справки бота названы кнопки меню бота («⚙️ Мои фильтры», «⚡ Получать сразу»); на сайте им соответствуют разделы «Мої пошуки» и «Оформити підписку».
+_SITE_BTN = {
+    "housing.btn.self_manage": {"uk": "Мої пошуки", "ru": "Мои поиски", "de": "Meine Suchen"},
+    "housing.btn.request_access": {"uk": "⚡ Оформити підписку", "ru": "⚡ Оформить подписку", "de": "⚡ Abo abschließen"},
+}
+
+
+def _site_faq(text: str, lang: str) -> str:
+    for key, names in _SITE_BTN.items():
+        label = i18n.t(key, lang)
+        if label and label in text:
+            text = text.replace(label, names.get(lang) or names["uk"])
+    return text
+
+
 @op("housing", "help")
 def help_(user_id, lang, params):
     from site_bridge import housing
 
     _need_access(user_id, lang)
     hm = _hm()
-    sections = _sections(hm._faq_text(lang))
+    sections = _sections(_site_faq(hm._faq_text(lang), lang))
     status = []
     try:
         status = [_plain(line) for line in housing._deadline(lambda: hm._status_lines(lang), lang)]

@@ -3,10 +3,12 @@
 Проверяется: чужой user_id, права (папка только подписчику), плохие параметры, что info/status/invite/help ничего не пишут, что сборка папки зовёт ту же
 функцию бота и не запускается без анкеты/в лимит/повторно, что сообщение админу уходит той же функцией бота и не чаще лимита."""
 
+import base64
 import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -125,7 +127,7 @@ class H6Tests(unittest.TestCase):
     # ---------- каркас ----------
     def test_registered_and_auth(self):
         names = site_bridge.registered()
-        for op in ("mappe_info", "mappe_save", "mappe_make", "mappe_status", "mappe_delete", "invite", "help"):
+        for op in ("mappe_info", "mappe_save", "mappe_make", "mappe_status", "mappe_pdf", "mappe_delete", "invite", "help"):
             self.assertIn("housing." + op, names)
         for op in ("lang_set", "feedback"):
             self.assertIn("misc." + op, names)
@@ -272,6 +274,33 @@ class H6Tests(unittest.TestCase):
         self.assertFalse(self.ok("housing", "mappe_status", B, {"before": 0})["done"])        # чужую папку не видно
         for bad in ({"before": "1"}, {"before": -1}, {"before": True}):
             self.assertEqual(self.call("housing", "mappe_status", A, bad)[1].get("error"), "bad_request")
+
+    def test_mappe_result_for_the_site(self):
+        # результат сборки: список документов на экран и PDF только владельцу; ошибка бота показывается на сайте
+        self.assertNotIn("pdf", self.ok("housing", "mappe_status", A, {"before": 0}))
+        self.refused("not_found", "housing", "mappe_pdf", A)
+        housing_mappe._results[A] = {"ok": True, "pdf": b"%PDF-1.4 secret", "occupation": "jobcenter", "ts": time.time()}
+        self.addCleanup(housing_mappe._results.clear)
+        s = self.ok("housing", "mappe_status", A, {"before": 0}, lang="ru")
+        self.assertTrue(s["done"] and s["pdf"])
+        titles = [x["h"] for x in s["docs"]["items"]]
+        self.assertTrue(any("Mietübernahmebescheinigung" in x for x in titles) and any("SCHUFA" in x for x in titles), titles)
+        self.assertFalse(any("Gehaltsabrechnung" in x for x in titles))
+        self.assertTrue(s["docs"]["title"] and s["docs"]["footer"] and all(x["p"] for x in s["docs"]["items"]))
+        self.assertNotIn("<", json.dumps(s["docs"]))
+        s_de = self.ok("housing", "mappe_status", A, {"before": 0}, lang="de")
+        self.assertNotEqual(s_de["docs"]["title"], s["docs"]["title"])
+        pdf = self.ok("housing", "mappe_pdf", A)
+        self.assertEqual((base64.b64decode(pdf["pdf_b64"]), pdf["name"]), (b"%PDF-1.4 secret", "Bewerbungsmappe.pdf"))
+        self.assertNotIn("pdf", self.ok("housing", "mappe_status", B, {"before": 0}))          # чужая папка не видна
+        self.refused("not_found", "housing", "mappe_pdf", B)
+        self.refused("locked", "housing", "mappe_pdf", C)
+        housing_mappe._results[A] = {"ok": False, "error": "Не вдалося зібрати папку", "ts": time.time()}
+        s = self.ok("housing", "mappe_status", A, {"before": 0})
+        self.assertEqual((s["failed"], s["done"], s["error"]), (True, False, "Не вдалося зібрати папку"))
+        self.refused("not_found", "housing", "mappe_pdf", A)
+        housing_mappe._results[A] = {"ok": True, "pdf": b"x", "occupation": "", "ts": time.time() - housing_mappe.RESULT_TTL - 5}
+        self.refused("not_found", "housing", "mappe_pdf", A)                                   # просрочено
 
     def test_mappe_delete_only_own(self):
         for user in (A, B):
