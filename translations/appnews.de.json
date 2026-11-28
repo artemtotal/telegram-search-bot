@@ -1,0 +1,6 @@
+{
+  "appnews.btn.open": "🌐 Öffnen",
+  "appnews.btn.off": "🔕 Keine Neuigkeiten senden",
+  "appnews.off.done": "Erledigt, Neuigkeiten sind ausgeschaltet. Wieder einschalten: Wohnung → 🔔 Benachrichtigungen.",
+  "appnews.off.failed": "Neuigkeiten konnten nicht ausgeschaltet werden. Bitte später erneut versuchen."
+}
