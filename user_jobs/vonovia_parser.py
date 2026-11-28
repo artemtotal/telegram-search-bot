@@ -161,7 +161,10 @@ def parse_listings(payload: Any) -> list[dict[str, Any]]:
             continue
         slug = clean_text(item.get("slug"))
         gallery = _photos(item.get("imageUrls"))
-        cover = full_size_image(item.get("preview_img_url")) or (gallery[0] if gallery else "")
+        preview = full_size_image(item.get("preview_img_url"))
+        if _MARKETING_IMAGE_RE.search(preview):
+            preview = ""  # рекламный баннер (28.11.2026): не фото квартиры
+        cover = preview or (gallery[0] if gallery else "")
         listings.append({
             "listing_key": key,
             "title": clean_text(item.get("titel")) or "Vonovia Wohnung",

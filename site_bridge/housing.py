@@ -321,9 +321,21 @@ def _first(*values):
     return None
 
 
-def _image(row: dict) -> str:
-    gallery = str((row or {}).get("gallery_urls") or "").split("\n")[0].strip()
-    return _https((row or {}).get("cover_image_url") or (row or {}).get("image_url") or gallery)
+def _image(row: dict, snap: Optional[dict] = None) -> str:
+    """Адрес фото для ленты и карточки. Рекламный баннер портала (/CAMP-) фото не считается; у Immowelt своей таблицы
+    с фото нет, его первое фото лежит в снимке отправки (поле img)."""
+    from user_jobs import housing_photo_fallback as hpf
+    row = row or {}
+    candidates = [row.get("cover_image_url"), row.get("image_url")]
+    for field in ("gallery_urls", "images"):
+        value = row.get(field)
+        candidates += list(value) if isinstance(value, (list, tuple)) else str(value or "").split("\n")
+    candidates.append((snap or {}).get("img"))
+    for candidate in candidates:
+        url = _https(candidate)
+        if url and not hpf.is_placeholder(url):
+            return url
+    return ""
 
 
 def _direct_url(source: str, key: str, row: dict) -> str:
@@ -393,7 +405,7 @@ def feed(user_id, lang, params):
             "t": str(row.get("title") or label)[:160], "a": str(row.get("address") or "")[:160],
             "d": str(_first(snap.get("district"), row.get("district")) or "")[:60],
             "r": _num(_first(snap.get("rooms"), row.get("rooms"))), "m2": _num(_first(snap.get("area_m2"), row.get("area_m2"))),
-            "p": cold, "pw": warm, "img": _image(row), "url": tokens.get(pair) or _direct_url(s["source"], s["key"], row),
+            "p": cold, "pw": warm, "img": _image(row, snap), "url": tokens.get(pair) or _direct_url(s["source"], s["key"], row),
             "ts": _iso(s["sent_at"]), "dl": s["delayed"], "ap": (app["status"] if app and not app["hidden"] else None),
         })
     return {"items": items, "next": sends[-1]["id"] if (more and sends) else None}
@@ -442,8 +454,9 @@ def listing(user_id, lang, params):
     snap = _snapshot((sent or {}).get("snapshot"))
     tokens, refs, apps = _tokens_and_refs(user_id, [(source, key)])
     app = apps.get((source, key))
-    gallery = [u for u in (_https(x) for x in str(row.get("gallery_urls") or "").split("\n")) if u][:6]
-    cover = _image(row)
+    from user_jobs import housing_photo_fallback as hpf
+    gallery = [u for u in (_https(x) for x in str(row.get("gallery_urls") or "").split("\n")) if u and not hpf.is_placeholder(u)][:6]
+    cover = _image(row, snap)
     if cover and cover not in gallery:
         gallery.insert(0, cover)
     return {
@@ -873,7 +886,7 @@ def matches(user_id, lang, params):
         ref = housing_letter_store.ref_for(source, str(entry["listing_key"])) if entry.get("listing_key") else None
         items.append({"src": source, "srcl": _source_label(source), "t": str(entry.get("title") or "Wohnung")[:160],
                       "d": str(entry.get("district") or "")[:60], "r": _num(entry.get("rooms")), "m2": _num(entry.get("area_m2")),
-                      "p": _num(price), "url": _https(url), "ref": ref})
+                      "p": _num(price), "img": _image(entry), "url": _https(url), "ref": ref})
     return {"filters": data["filters"], "total": len(found), "items": items, "more": max(0, len(found) - MATCHES_SHOWN), "full": True}
 
 

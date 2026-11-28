@@ -412,3 +412,12 @@ def missed_notice(user_id: int, source_label: str, summary: str, listing_key: st
         i18n.t("housing.btn.request_access", lang), callback_data="housing:access_request",
     )]])
     return text, keyboard
+
+
+# 28.11.2026: если Telegram не смог сам скачать фото, бот скачивает его и шлёт файлом (см. housing_photo_fallback).
+try:
+    from user_jobs import housing_photo_fallback as _housing_photo_fallback
+
+    _housing_photo_fallback.install()
+except Exception:  # noqa: BLE001  фото-запас не должен мешать запуску бота
+    logger.exception("Could not install the photo fallback")

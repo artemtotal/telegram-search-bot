@@ -30,6 +30,7 @@ from user_jobs import alert_cooldown, delivery_dedup, housing_tier, vonovia_matc
 logger = logging.getLogger(__name__)
 
 from user_jobs import housing_site_buttons  # noqa: E402  (28.11.2026, H5a: кнопки под уведомлением)
+from user_jobs import housing_photo_fallback  # noqa: E402  (28.11.2026: рекламный баннер не фото)
 
 CHECK_ENABLED = os.getenv("VONOVIA_CHECK_ENABLED", "1") == "1"
 TIMEOUT = int(os.getenv("VONOVIA_TIMEOUT", "30") or 30)
@@ -192,10 +193,11 @@ def _send_listing(bot, chat_id: int, listing: Dict, text: str, reply_markup=None
     підпис не вліз у ліміт, і викликач має надіслати текст окремо — інакше
     оголошення лишилось би зовсім без тексту.
     """
-    photos = [url for url in (listing.get("gallery_urls") or []) if str(url).strip()]
+    # 28.11.2026: рекламный баннер портала («зелёный ток», /CAMP-) не фото квартиры: без настоящих фото честнее текст.
+    photos = housing_photo_fallback.real_photos(listing.get("gallery_urls"))
     if not photos:
         cover = str(listing.get("cover_image_url") or "").strip()
-        photos = [cover] if cover else []
+        photos = housing_photo_fallback.real_photos([cover])
     photos = photos[:GALLERY_ALBUM_MAX]
     if not photos:
         return False

@@ -112,7 +112,17 @@ def _numbers(listing):
 
 def _snapshot(listing):
     """Числа саме цієї відправки — для вечірньої самоперевірки."""
-    return housing_tier.listing_snapshot(_numbers(listing))
+    snapshot = housing_tier.listing_snapshot(_numbers(listing))
+    # 28.11.2026: у Immowelt нет своей таблицы фото; первое фото кладём в снимок, чтобы лента и карточка сайта его показали.
+    first = next((str(u).strip() for u in (listing.get("images") or []) if str(u).strip().lower().startswith("http")), "")
+    if not first:
+        return snapshot
+    try:
+        data = json.loads(snapshot) if snapshot else {}
+        data["img"] = first[:1000]
+        return json.dumps(data, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return snapshot
 
 
 def _record_listing_for_stats(listing_id, listing):
