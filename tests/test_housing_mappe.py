@@ -353,7 +353,7 @@ class FlowTests(_Db):
 
     def test_the_letter_result_offers_the_folder_for_that_flat(self):
         self._subscribe()
-        housing_letter_store.save_profile(777, {'full_name': 'X'})
+        housing_letter_store.save_profile(777, {'full_name': 'X', 'household': '2', 'income': '1', 'move_in': 'zeit'})
         session = self._session()
         session.add(KleinanzeigenListing(
             listing_key='k1', title='Helle 3-Zimmer-Wohnung', address='Babelsberg', rooms=3, area_m2=75, price_eur=850,

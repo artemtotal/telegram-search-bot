@@ -38,6 +38,13 @@ def _bad(lang):
     return Refuse("bad_request", i18n.t("h6.bad", lang))
 
 
+def _view(merged_answers: dict, letter: dict) -> dict:
+    """Ответы папки + состав семьи из «Про мене» (adults/children), если в папке ещё пусто."""
+    from user_jobs import housing_profile_sync
+
+    return housing_profile_sync.mappe_view(0, merged_answers, letter)
+
+
 def _hm():
     from user_handlers import housing_monitor
 
@@ -139,7 +146,7 @@ def mappe_info(user_id, lang, params):
     out.update({
         "intro": _mt("menu", lang), "note": _mt("intro", lang),
         "fields": _fields(lang), "rules": _rules(),
-        "answers": m.merged(answers or {}, letter), "saved": answers is not None,
+        "answers": _view(m.merged(answers or {}, letter), letter), "saved": answers is not None,
         "ready": m.next_field(answers or {}, letter) is None,
         "busy": int(user_id) in m._busy, "delete_ask": _mt("delete_ask", lang),
     })
@@ -194,7 +201,8 @@ def mappe_save(user_id, lang, params):
     store.save_answers(int(user_id), final)
     m = _mappe()
     answers = store.get_answers(int(user_id)) or {}
-    return {"saved": True, "message": _mt("saved", lang), "answers": m.merged(answers, letter),
+    letter = housing_letter_store.get_profile(int(user_id)) or {}       # после сохранения «Про мене» могла дополниться
+    return {"saved": True, "message": _mt("saved", lang), "answers": _view(m.merged(answers, letter), letter),
             "ready": m.next_field(answers, letter) is None}
 
 

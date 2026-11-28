@@ -293,7 +293,7 @@ def handle_start(update: Update, context: CallbackContext, payload: str) -> None
     if not store.resolve_ref(ref_id):
         context.bot.send_message(chat_id=user_id, text=i18n.t("housing.letter.unknown", lang))
         return
-    if not store.get_profile(user_id):
+    if not store.profile_complete(store.get_profile(user_id)):
         _start_profile(context.bot, context, user_id, ref_id)
         return
     _generate_and_send(context.bot, user_id, ref_id, variant=False)

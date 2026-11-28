@@ -70,7 +70,13 @@ def get_profile(user_id: int) -> Optional[Dict[str, str]]:
         session.close()
 
 
-def save_profile(user_id: int, answers: Dict[str, str]) -> None:
+def profile_complete(profile: Optional[Dict[str, str]]) -> bool:
+    """Анкета листів готова до листа: усі обов'язкові поля заповнені (частково заповнена з папки заявника не рахується)."""
+    return bool(profile) and all(profile.get(f) for f in PROFILE_FIELDS if f not in OPTIONAL_FIELDS)
+
+
+def save_profile(user_id: int, answers: Dict[str, str], sync: bool = True) -> None:
+    old = get_profile(user_id) if sync else None
     session = DBSession()
     try:
         row = session.query(HousingLetterProfile).get(int(user_id))
@@ -83,6 +89,13 @@ def save_profile(user_id: int, answers: Dict[str, str]) -> None:
         session.commit()
     finally:
         session.close()
+    if sync:        # спільні поля -> анкета папки заявника (одне правило для чату, сайту й мосту)
+        try:
+            from user_jobs import housing_profile_sync
+
+            housing_profile_sync.after_letter_save(int(user_id), old, get_profile(user_id) or {})
+        except Exception:
+            logger.exception("Could not sync the letter profile of %s to the mappe", user_id)
 
 
 def ref_for(source: str, listing_key: str) -> Optional[int]:

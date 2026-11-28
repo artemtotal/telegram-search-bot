@@ -173,6 +173,13 @@ def _profile_out(user_id: int):
     return _store().get_profile(int(user_id))
 
 
+def _profile_view(user_id: int):
+    """Анкета для формы: пустые поля дополнены из анкеты «Папки заявника» (ничего не записывается)."""
+    from user_jobs import housing_profile_sync
+
+    return housing_profile_sync.letter_view(int(user_id))
+
+
 # ---------------------------------------------------------------- операции
 
 @op("letter", "overview")
@@ -184,7 +191,7 @@ def overview(user_id, lang, params):
 
         out["locked"] = _plain(i18n.t("housing.letter.locked", lang, price=housing_tier.PREMIUM_PRICE_EUR))
         return out
-    out["profile"] = _profile_out(user_id)
+    out["profile"] = _profile_view(user_id)
     out.update(_limit_block(user_id))
     out["count"] = len(_store().list_letters(user_id, HISTORY_SHOWN))
     return out
@@ -217,7 +224,7 @@ def listing(user_id, lang, params):
     ref = _ref(params)
     found, row = _resolve(ref, lang)
     return {
-        "ref": ref, "flat": _flat(row), "profile": _profile_out(user_id), "fields": _fields(),
+        "ref": ref, "flat": _flat(row), "profile": _profile_view(user_id), "fields": _fields(),
         "last": _last_for(user_id, found["source"], found["listing_key"]), **_limit_block(user_id),
         "mappe": _mappe_on(),
     }
@@ -258,6 +265,11 @@ def start(user_id, lang, params):
         raise _bad(lang)
     found, row = _resolve(ref, lang)
     profile = _profile_out(user_id)
+    if not _store().profile_complete(profile):          # «Про мене» дополнена из папки заявника на экране: сохраняем, чтобы чат и сайт видели одно и то же
+        shown = _profile_view(user_id)
+        if _store().profile_complete(shown):
+            _store().save_profile(user_id, shown, sync=False)
+            profile = _profile_out(user_id)
     if not profile or any(not profile.get(k) for k in _store().PROFILE_FIELDS if k not in _store().OPTIONAL_FIELDS):
         raise Refuse("no_profile", _t("err.noprofile", lang))
     now = time.time()

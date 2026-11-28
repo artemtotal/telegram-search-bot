@@ -150,7 +150,7 @@ class LetterFlowTests(_Db):
     def test_a_failed_generation_says_so(self):
         self._subscribe()
         self._listing()
-        housing_letter_store.save_profile(777, {'full_name': 'X'})
+        housing_letter_store.save_profile(777, {'full_name': 'X', 'household': '2', 'income': '1', 'move_in': 'zeit'})
         ref = housing_letter_store.ref_for('kleinanzeigen', 'k1')
         with mock.patch.object(housing_letter.threading, 'Thread', _SyncThread), \
                 mock.patch.object(housing_letter, '_call_ai', return_value=''):

@@ -37,8 +37,9 @@ def get_answers(user_id: int) -> Optional[Dict[str, str]]:
         session.close()
 
 
-def save_answers(user_id: int, answers: Dict[str, str]) -> None:
+def save_answers(user_id: int, answers: Dict[str, str], sync: bool = True) -> None:
     clean = {str(k): str(v or "").strip()[:MAX_VALUE_LEN] for k, v in answers.items()}
+    old = get_answers(user_id) if sync else None
     session = DBSession()
     try:
         row = session.query(HousingMappeProfile).get(int(user_id))
@@ -50,6 +51,13 @@ def save_answers(user_id: int, answers: Dict[str, str]) -> None:
         session.commit()
     finally:
         session.close()
+    if sync:        # спільні поля -> «Про мене» (одне правило для чату, сайту й мосту)
+        try:
+            from user_jobs import housing_profile_sync
+
+            housing_profile_sync.after_mappe_save(int(user_id), old, clean)
+        except Exception:
+            logger.exception("Could not sync the mappe answers of %s to the letter profile", user_id)
 
 
 def delete_all(user_id: int) -> None:
