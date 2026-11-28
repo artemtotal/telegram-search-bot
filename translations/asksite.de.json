@@ -5,5 +5,6 @@
   "ask.tip2": "Keine Namen, Adressen oder Nummern angeben: Die Frage sieht der ganze Chat.",
   "ask.tip3": "Antworten auf deine Frage schickt dir der Bot in Telegram.",
   "ask.preview_note": "Nach der Bestätigung erscheint die Frage sofort im Chat. Du kannst sie innerhalb von {minutes} Min. löschen.",
-  "ask.no_topics": "Die Themen für Fragen sind noch nicht geladen. Bitte etwas später versuchen."
+  "ask.no_topics": "Die Themen für Fragen sind noch nicht geladen. Bitte etwas später versuchen.",
+  "ask.published": "✅ Die Frage wurde anonym im Chat veröffentlicht. Antworten darauf schickt Ihnen der Bot in Telegram.\n\nDer nächste anonyme Beitrag ist in {days} Tagen möglich."
 }

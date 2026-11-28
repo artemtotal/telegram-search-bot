@@ -420,7 +420,7 @@ def anon_send(user_id, lang, params):
         session.close()
     if item:
         _flow_drop(user_id)
-        return {"post": item, "message": i18n.t("anon.publish.success", lang, days=ap.COOLDOWN_DAYS)}
+        return {"post": item, "message": i18n.t("ask.published", lang, days=ap.COOLDOWN_DAYS)}
     if status == "failed":
         _flow_drop(user_id)
         raise Refuse("failed", i18n.t("anon.publish.failed", lang))
