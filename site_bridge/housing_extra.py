@@ -21,7 +21,7 @@ import re
 from urllib.parse import quote
 
 import i18n
-from site_bridge import Refuse, op
+from site_bridge import Paywall, Refuse, op
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ def _require_mappe(user_id: int, lang: str) -> None:
     if not _premium(user_id):
         from user_jobs import housing_tier
 
-        raise Refuse("locked", _mt("locked", lang, price=housing_tier.PREMIUM_PRICE_EUR))
+        raise Paywall("mappe", _mt("locked", lang, price=housing_tier.PREMIUM_PRICE_EUR))
 
 
 # ---------------------------------------------------------------- Mappe

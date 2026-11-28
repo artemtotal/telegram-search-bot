@@ -55,10 +55,19 @@ _loaded = False
 class Refuse(Exception):
     """Операция отказала по делу (не ошибка бота): код и текст для человека уходят на сайт, HTTP 422."""
 
-    def __init__(self, code: str, message: str = ""):
+    def __init__(self, code: str, message: str = "", **extra):
         super().__init__(code)
         self.code = code
         self.message = message
+        self.extra = extra          # дополнительные поля ответа (например feature у замка)
+
+
+class Paywall(Refuse):
+    """Функция закрыта подпиской (28.11.2026): ответ единый для всех операций моста, `{ok:false, error:"paywall", feature:"<ключ>"}`.
+    Ключ из `paywall.features` (docs/paywall-contract.md); сайт на такую ошибку показывает лист замка."""
+
+    def __init__(self, feature: str, message: str = ""):
+        super().__init__("paywall", message, feature=feature)
 
 
 def op(domain: str, name: str, need_user: bool = True, max_body: int = DEFAULT_MAX_BODY) -> Callable:
@@ -191,7 +200,9 @@ def _dispatch(handler, path: str) -> None:
     try:
         data = entry["fn"](user_id, lang, params)
     except Refuse as refusal:
-        return _reply(handler, 422, {"ok": False, "error": refusal.code, "message": refusal.message})
+        body = {"ok": False, "error": refusal.code, "message": refusal.message}
+        body.update(getattr(refusal, "extra", None) or {})
+        return _reply(handler, 422, body)
     except Exception:
         logger.exception("site_bridge: %s/%s failed", parts[0], parts[1])
         return _reply(handler, 500, {"ok": False, "error": "internal"})

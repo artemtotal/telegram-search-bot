@@ -209,7 +209,7 @@ class FooterIntegrationTests(_Db):
         footer = self._gate().footer(777, 'k1')
         self.assertIn('~2 год', footer)
         self.assertIn('start=sub', footer)
-        self.assertIn('✍️ Лист ⚡</a>', footer)
+        self.assertIn('✍️ Лист · 1 безкоштовно</a>', footer)
         self.assertNotIn('Безкоштовна версія', footer)
 
     def test_a_paid_person_gets_nothing(self):
@@ -224,7 +224,7 @@ class FooterIntegrationTests(_Db):
         with mock.patch.object(housing_free_hints, 'build', side_effect=RuntimeError('boom')):
             footer = self._gate().footer(777, 'k1')
         self.assertIn('Безкоштовна версія: квартира прийшла із затримкою ~2 год', footer)
-        self.assertIn('✍️ Лист ⚡</a>', footer)
+        self.assertIn('✍️ Лист · 1 безкоштовно</a>', footer)
 
     def test_a_broken_counter_table_gives_the_old_line(self):
         with mock.patch.object(housing_free_hints, 'DBSession', mock.Mock(side_effect=RuntimeError('db'))):

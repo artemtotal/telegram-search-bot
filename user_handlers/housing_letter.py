@@ -76,6 +76,14 @@ def _upgrade_keyboard(lang: str) -> InlineKeyboardMarkup:
     ])
 
 
+def _locked_text(user_id: int, lang: str) -> str:
+    """Текст замка письма; если одно бесплатное письмо уже потрачено, первой строкой об этом (28.11.2026)."""
+    text = i18n.t("housing.letter.locked", lang, price=housing_tier.PREMIUM_PRICE_EUR)
+    if not housing_tier.is_premium(user_id) and not store.trial_unused(user_id):
+        text = i18n.t("housing.letter.trial_used", lang) + "\n\n" + text
+    return text
+
+
 def _listing(source: str, listing_key: str) -> Optional[Dict[str, object]]:
     model = LISTING_MODELS.get(source)
     if model is None:
@@ -179,7 +187,19 @@ def _generate_and_send(bot, user_id: int, ref_id: int, variant: bool) -> None:
     if _over_limit(user_id):
         bot.send_message(chat_id=user_id, text=i18n.t("housing.letter.limit", lang, n=DAILY_LIMIT))
         return
-    progress = bot.send_message(chat_id=user_id, text=i18n.t("housing.letter.generating", lang))
+    # Подписчик пишет как раньше; бесплатному положено одно письмо на пробу (общая логика с мостом сайта: housing_letter_store.begin_letter).
+    mode = store.begin_letter(user_id)
+    if mode is None:
+        bot.send_message(chat_id=user_id, parse_mode="HTML", reply_markup=_upgrade_keyboard(lang), text=_locked_text(user_id, lang))
+        return
+    if mode == "busy":
+        bot.send_message(chat_id=user_id, text=i18n.t("housing.letter.trial_busy", lang))
+        return
+    try:
+        progress = bot.send_message(chat_id=user_id, text=i18n.t("housing.letter.generating", lang))
+    except Exception:
+        store.finish_letter(user_id, mode, False)
+        raise
 
     def work():
         try:
@@ -187,6 +207,7 @@ def _generate_and_send(bot, user_id: int, ref_id: int, variant: bool) -> None:
         except Exception:
             logger.exception("Letter generation failed for %s", user_id)
             letter = ""
+        store.finish_letter(user_id, mode, bool(letter) and letter != "RATE_LIMIT")     # проба тратится только при успешной генерации
         try:
             if not letter or letter == "RATE_LIMIT":
                 bot.edit_message_text(
@@ -284,10 +305,9 @@ def handle_start(update: Update, context: CallbackContext, payload: str) -> None
         ref_id = int(payload[len(store.START_PREFIX):])
     except ValueError:
         ref_id = 0
-    if not housing_tier.is_premium(user_id):
+    if not store.can_write(user_id):
         context.bot.send_message(
-            chat_id=user_id, parse_mode="HTML", reply_markup=_upgrade_keyboard(lang),
-            text=i18n.t("housing.letter.locked", lang, price=housing_tier.PREMIUM_PRICE_EUR),
+            chat_id=user_id, parse_mode="HTML", reply_markup=_upgrade_keyboard(lang), text=_locked_text(user_id, lang),
         )
         return
     if not store.resolve_ref(ref_id):
@@ -303,10 +323,9 @@ def show_menu(update: Update, context: CallbackContext) -> None:
     """«✍️ Листи орендодавцям» in the housing menu: what it is, the profile."""
     user_id = int(update.effective_user.id)
     lang = _lang(user_id)
-    if not housing_tier.is_premium(user_id):
+    if not store.can_write(user_id):
         context.bot.send_message(
-            chat_id=user_id, parse_mode="HTML", reply_markup=_upgrade_keyboard(lang),
-            text=i18n.t("housing.letter.locked", lang, price=housing_tier.PREMIUM_PRICE_EUR),
+            chat_id=user_id, parse_mode="HTML", reply_markup=_upgrade_keyboard(lang), text=_locked_text(user_id, lang),
         )
         return
     profile = store.get_profile(user_id)
@@ -339,7 +358,7 @@ def handle_callback(update: Update, context: CallbackContext) -> None:
         query.answer()
         show_menu(update, context)
         return
-    if not housing_tier.is_premium(user_id):
+    if not store.can_write(user_id):
         query.answer(i18n.t("housing.letter.locked_short", lang), show_alert=True)
         return
     if action == "profile":

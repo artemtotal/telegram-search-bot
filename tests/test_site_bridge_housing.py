@@ -210,7 +210,7 @@ class SearchTests(Base):
         self.assertTrue(first["activated"])
         with self.assertRaises(Refuse) as ctx:
             self.new_search()
-        self.assertEqual(ctx.exception.code, "second_paid")
+        self.assertEqual((ctx.exception.code, ctx.exception.extra), ("paywall", {"feature": "more_searches"}))
         self.assertFalse(call("searches", USER)["can_add"])
         self.assertEqual(call("searches", USER)["paid_note"], housing_web._t("second_paid", "uk"))
         self.assertEqual(len(self._all()), 1)
@@ -220,7 +220,7 @@ class SearchTests(Base):
         PREMIUM.discard(USER)
         with self.assertRaises(Refuse) as ctx:
             call("search_pause", USER, {"id": second, "paused": False})
-        self.assertEqual(ctx.exception.code, "only_one_active")
+        self.assertEqual((ctx.exception.code, ctx.exception.extra), ("paywall", {"feature": "more_searches"}))
         call("search_pause", USER, {"id": first["id"], "paused": True})
         self.assertTrue(call("search_pause", USER, {"id": second, "paused": False})["search"]["on"])
 
@@ -412,7 +412,10 @@ class StatsAndNotifyTests(Base):
         self.assertEqual(full["sources"][0], {"src": "immoscout", "label": "ImmoScout24", "n": 3})
         self.assertEqual(sum(d["n"] for d in full["series"]), 4)
         PREMIUM.discard(USER)
-        free = call("stats", USER, {"days": 30})
+        with self.assertRaises(Refuse) as ctx:      # 30 дней: единый замок вместо тихой подмены на 7
+            call("stats", USER, {"days": 30})
+        self.assertEqual((ctx.exception.code, ctx.exception.extra), ("paywall", {"feature": "stats_full"}))
+        free = call("stats", USER, {"days": 7})
         self.assertEqual((free["days"], free["total"], free["full"]), (7, 3, False))
         with self.assertRaises(Refuse):
             call("stats", USER, {"days": 3})
@@ -445,7 +448,7 @@ class StatsAndNotifyTests(Base):
             self.assertFalse(free["premium"] or free["quiet"])
             with self.assertRaises(Refuse) as ctx:
                 call("notify_set", OTHER, {"quiet": True})
-            self.assertEqual(ctx.exception.code, "quiet_locked")
+            self.assertEqual((ctx.exception.code, ctx.exception.extra), ("paywall", {"feature": "quiet_night"}))
             # настройки чужого не меняются
             self.assertTrue(user_settings_store.get_news_subscribed(OTHER))
             self.assertFalse(user_settings_store.get_news_subscribed(USER))
@@ -473,7 +476,7 @@ class MatchesTests(Base):
         self.assertEqual((paid["total"], paid["items"][0]["t"], paid["items"][0]["url"].startswith("https://")), (1, "Passende", True))
         PREMIUM.discard(USER)
         free = call("matches", USER)
-        self.assertEqual((free["full"], free["items"]), (False, []))
+        self.assertEqual((free["full"], free["locked"], [i["t"] for i in free["items"]], free["teasers"]), (False, True, ["Passende"], []))
         self.assertIn("1", free["message"])
         self.assertEqual(free["total"], paid["total"])
         self.assertEqual(call("matches", OTHER)["filters"], 0)

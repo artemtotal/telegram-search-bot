@@ -70,7 +70,7 @@ class LetterLinkTests(_Db):
         gate = housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing)
         free = gate.footer(777, 'k1')
         self.assertIn('https://t.me/PotsdamTestBot?start=lt1', free)
-        self.assertIn('✍️ Лист ⚡</a>', free)  # compact «✍️ Лист · ✅ Подався» line (tracker on by default)
+        self.assertIn('✍️ Лист · 1 безкоштовно</a>', free)  # compact «✍️ Лист · ✅ Подався» line (tracker on by default)
         self._subscribe(888)
         paid = housing_tier.DeliveryGate('kleinanzeigen', KleinanzeigenListing).footer(888, 'k1')
         self.assertIn('?start=lt1', paid)  # the same flat keeps the same reference
@@ -105,9 +105,14 @@ class LetterFlowTests(_Db):
     def test_a_free_person_gets_what_it_is_and_the_subscription_button(self):
         self._listing()
         ref = housing_letter_store.ref_for('kleinanzeigen', 'k1')
+        session = self._session()      # одно пробное письмо уже потрачено: дальше только замок и кнопка подписки
+        session.add(housing_letter_store.HousingLetterTrial(user_id=777, state='used', updated_at=datetime.utcnow()))
+        session.commit()
+        session.close()
         bot, _ = self._start(f'lt{ref}')
         [call] = bot.send_message.call_args_list
         self.assertIn('функція підписки', call.kwargs['text'])
+        self.assertIn('безкоштовний лист уже використано', call.kwargs['text'])
         callbacks = [b.callback_data for row in call.kwargs['reply_markup'].inline_keyboard for b in row]
         self.assertIn('housing:access_request', callbacks)
 

@@ -39,13 +39,14 @@ from typing import Dict, List, Optional, Tuple
 import pytz
 
 import i18n
-from site_bridge import Refuse, bot, op
+from site_bridge import Paywall, Refuse, bot, op
 
 logger = logging.getLogger(__name__)
 
 BERLIN_TZ = pytz.timezone("Europe/Berlin")
 FEED_MAX = 40
 MATCHES_SHOWN = 50
+TEASERS_SHOWN = 5                     # картинок-подсказок бесплатному в «Підходящі зараз» (только img)
 DEADLINE_S = 6.5                       # мост отвечает человеку за 8 с: тяжёлые вызовы режем раньше
 _TAGS = re.compile(r"<[^>]+>")
 _URL = re.compile(r"https://[^\s\"'<>]+$")
@@ -177,7 +178,14 @@ def me(user_id, lang, params):
             trial = bool(row.get("is_trial"))
             break
     filters = [{"id": s["search_id"], "on": not hm._search_paused(s), "sources": hm._search_sources(s)} for s in searches]
+    try:        # замки и подсказки (docs/paywall-contract.md): сбой подсчёта не должен ломать проверку контракта
+        from user_jobs import housing_paywall
+        paywall = housing_paywall.block(user_id, lang)
+    except Exception:
+        logger.exception("paywall block failed for %s", user_id)
+        paywall = None
     return {
+        "paywall": paywall,
         "allowed": bool(hm.is_allowed(user_id)),
         "tier": "premium" if premium else "free",
         "until": until,
@@ -371,6 +379,17 @@ def _source_label(source: str) -> str:
     return _hm().SOURCE_LABEL.get(source, source)
 
 
+def _early(user_id: int, sends) -> dict:
+    """{(источник, ключ): часов} «подписчики получили раньше» для квартир, пришедших человеку с задержкой; нет честной отметки: нет ключа/None."""
+    try:
+        from user_jobs import housing_paywall
+        rows = [{"source": s["source"], "key": s["key"], "sent_at": s["sent_at"], "delayed": s["delayed"]} for s in sends]
+        return housing_paywall.early_hours(int(user_id), rows)
+    except Exception:
+        logger.exception("early_h failed for %s", user_id)
+        return {}
+
+
 @op("housing", "feed")
 def feed(user_id, lang, params):
     from database import DBSession, HousingSendLog
@@ -391,6 +410,7 @@ def feed(user_id, lang, params):
     pairs = [(s["source"], s["key"]) for s in sends]
     listings = _load_listings(pairs)
     tokens, refs, apps = _tokens_and_refs(user_id, pairs)
+    early = _early(user_id, sends)
     items = []
     for s in sends:
         pair = (s["source"], s["key"])
@@ -406,7 +426,7 @@ def feed(user_id, lang, params):
             "d": str(_first(snap.get("district"), row.get("district")) or "")[:60],
             "r": _num(_first(snap.get("rooms"), row.get("rooms"))), "m2": _num(_first(snap.get("area_m2"), row.get("area_m2"))),
             "p": cold, "pw": warm, "img": _image(row, snap), "url": tokens.get(pair) or _direct_url(s["source"], s["key"], row),
-            "ts": _iso(s["sent_at"]), "dl": s["delayed"], "ap": (app["status"] if app and not app["hidden"] else None),
+            "ts": _iso(s["sent_at"]), "dl": s["delayed"], "early_h": early.get(pair), "ap": (app["status"] if app and not app["hidden"] else None),
         })
     return {"items": items, "next": sends[-1]["id"] if (more and sends) else None}
 
@@ -455,7 +475,8 @@ def listing(user_id, lang, params):
     tokens, refs, apps = _tokens_and_refs(user_id, [(source, key)])
     app = apps.get((source, key))
     from user_jobs import housing_photo_fallback as hpf
-    gallery = [u for u in (_https(x) for x in str(row.get("gallery_urls") or "").split("\n")) if u and not hpf.is_placeholder(u)][:6]
+    early = _early(user_id, [{"source": source, "key": key, "sent_at": sent["sent_at"], "delayed": sent["delayed"]}] if sent else []).get((source, key))
+    gallery =[u for u in (_https(x) for x in str(row.get("gallery_urls") or "").split("\n")) if u and not hpf.is_placeholder(u)][:6]
     cover = _image(row, snap)
     if cover and cover not in gallery:
         gallery.insert(0, cover)
@@ -468,7 +489,7 @@ def listing(user_id, lang, params):
         "pw": _num(_first(snap.get("price_warm_eur"), row.get("price_warm_eur"), snap.get("total_rent_eur"), row.get("total_rent_eur"))),
         "from": str(row.get("available_from") or "")[:40], "imgs": gallery[:6],
         "url": tokens.get((source, key)) or _direct_url(source, key, row),
-        "ts": _iso((sent or {}).get("sent_at")), "dl": bool((sent or {}).get("delayed")),
+        "ts": _iso((sent or {}).get("sent_at")), "dl": bool((sent or {}).get("delayed")), "early_h": early,
         "ap": ({"id": app["id"], "status": app["status"]} if app and not app["hidden"] else None),
         "full": _full(user_id), "tracker": _tracker_on(), "mappe": _extra_flags()["mappe"],
     }
@@ -742,7 +763,7 @@ def search_save(user_id, lang, params):
         created = params.get("id") in (None, 0, "")
         if created:
             if not housing_card.can_add_search(uid):
-                raise Refuse("second_paid", _t("web.second_paid", lang))
+                raise Paywall("more_searches", _t("web.second_paid", lang))
             search_id = housing_web.new_search(uid)
             if search_id is None:
                 raise Refuse("save_failed", i18n.t("housing.finalize.nothing_saved", lang))
@@ -785,7 +806,7 @@ def search_pause(user_id, lang, params):
     with _lock(uid):
         _find(uid, sid, lang)
         if not housing_web.set_paused(uid, sid, paused):
-            raise Refuse("only_one_active", _t("web.only_one_active", lang))
+            raise Paywall("more_searches", _t("web.only_one_active", lang))
         number, fresh = _find(uid, sid, lang)
         return {"search": _ser(number, fresh, lang)}
 
@@ -856,7 +877,10 @@ def matches(user_id, lang, params):
     def work():
         filters = hm.user_filters(uid)
         if not filters:
-            return {"filters": 0, "total": 0, "items": [], "more": 0, "full": _full(uid)}
+            empty = {"filters": 0, "total": 0, "items": [], "more": 0, "full": _full(uid), "locked": not _full(uid)}
+            if empty["locked"]:
+                empty["teasers"] = []
+            return empty
         seen, found = set(), []
         for item in filters:
             source = item.get("source") or "immowelt"
@@ -874,20 +898,34 @@ def matches(user_id, lang, params):
         return data
     found = data["found"]
     if not full and not housing_tier.is_premium(uid):
+        # Бесплатному (решение 28.11.2026): число, ОДНА полная самая свежая квартира и до TEASERS_SHOWN картинок остальных (только img).
         text = (_t("housing.matches.free_count", lang, n=len(found), price=housing_tier.PREMIUM_PRICE_EUR, hours=housing_tier.free_delay_hours())
                 if found else _t("housing.matches.free_none", lang))
-        return {"filters": data["filters"], "total": len(found), "items": [], "more": 0, "full": False, "message": text}
-    items = []
-    for source, key, entry in found[:MATCHES_SHOWN]:
-        url = entry.get("url") or entry.get("detail_url")
-        if url and entry.get("listing_key"):
-            url = housing_links.link_for(uid, source, str(entry["listing_key"]), str(url))
-        price = _first(entry.get("price_eur"), entry.get("total_rent_eur"))
-        ref = housing_letter_store.ref_for(source, str(entry["listing_key"])) if entry.get("listing_key") else None
-        items.append({"src": source, "srcl": _source_label(source), "t": str(entry.get("title") or "Wohnung")[:160],
-                      "d": str(entry.get("district") or "")[:60], "r": _num(entry.get("rooms")), "m2": _num(entry.get("area_m2")),
-                      "p": _num(price), "img": _image(entry), "url": _https(url), "ref": ref})
-    return {"filters": data["filters"], "total": len(found), "items": items, "more": max(0, len(found) - MATCHES_SHOWN), "full": True}
+        ordered = sorted(found, key=lambda f: f[2].get("first_seen_at") if isinstance(f[2].get("first_seen_at"), datetime) else datetime.min, reverse=True)
+        teasers = []
+        for _source, _key, entry in ordered[1:]:
+            image = _image(entry)
+            if image:
+                teasers.append({"img": image})
+            if len(teasers) >= TEASERS_SHOWN:
+                break
+        items = [_match_item(uid, *ordered[0])] if ordered else []
+        return {"filters": data["filters"], "total": len(found), "items": items, "more": max(0, len(found) - len(items)), "full": False,
+                "locked": True, "teasers": teasers, "message": text}
+    items = [_match_item(uid, source, key, entry) for source, key, entry in found[:MATCHES_SHOWN]]
+    return {"filters": data["filters"], "total": len(found), "items": items, "more": max(0, len(found) - MATCHES_SHOWN), "full": True, "locked": False}
+
+
+def _match_item(uid: int, source: str, key: str, entry: dict) -> dict:
+    from user_jobs import housing_letter_store, housing_links
+    url = entry.get("url") or entry.get("detail_url")
+    if url and entry.get("listing_key"):
+        url = housing_links.link_for(uid, source, str(entry["listing_key"]), str(url))
+    price = _first(entry.get("price_eur"), entry.get("total_rent_eur"))
+    ref = housing_letter_store.ref_for(source, str(entry["listing_key"])) if entry.get("listing_key") else None
+    return {"src": source, "srcl": _source_label(source), "t": str(entry.get("title") or "Wohnung")[:160],
+            "d": str(entry.get("district") or "")[:60], "r": _num(entry.get("rooms")), "m2": _num(entry.get("area_m2")),
+            "p": _num(price), "img": _image(entry), "url": _https(url), "ref": ref}
 
 
 # --------------------------------------------------------------------------------------------------------- «Подався», заявки
@@ -1030,6 +1068,8 @@ def stats(user_id, lang, params):
     if isinstance(days, bool) or days not in (7, 30):
         raise _bad(lang)
     if not full:
+        if days > housing_web.FREE_STATS_DAYS:      # 30 дней только подписчику: единый замок вместо тихой подмены на 7
+            raise Paywall("stats_full")
         days = housing_web.FREE_STATS_DAYS
     rows = housing_web._sends(int(user_id), days=days)
     by_day, by_source = {}, {}
@@ -1113,7 +1153,7 @@ def notify_set(user_id, lang, params):
     if "quiet" in params:
         enabled = _bool_param(params, "quiet", lang)
         if not housing_tier.is_premium(uid):
-            raise Refuse("quiet_locked", _t("housing.toast.quiet_locked", lang, price=housing_tier.PREMIUM_PRICE_EUR))
+            raise Paywall("quiet_night", _t("housing.toast.quiet_locked", lang, price=housing_tier.PREMIUM_PRICE_EUR))
         user_settings_store.set_quiet_night_off(uid, not enabled)
     if "digest" in params:
         mode = params["digest"]
@@ -1134,14 +1174,13 @@ def letters(user_id, lang, params):
     """Мои письма арендодателям (только чтение, подписчику): архив, как «История» старого кабинета. Составление письма: пакет H4."""
     from user_jobs import housing_letter_store
     _need_access(user_id, lang)
-    if not _full(user_id):
-        return {"items": [], "full": False}
+    full = _full(user_id)       # свои письма видны и бесплатному (там максимум одно пробное, 28.11.2026)
     items = []
     for item in housing_letter_store.list_letters(int(user_id)):
         ref = housing_letter_store.ref_for(item["source"], item["listing_key"]) if item.get("source") and item.get("listing_key") else None
         items.append({"ref": ref, "t": str(item.get("title") or item.get("listing_key") or "")[:200], "url": _https(item.get("url")),
                       "ts": _iso(item.get("created_at")), "text": str(item.get("letter") or "")[:6000]})
-    return {"items": items, "full": True}
+    return {"items": items, "full": full}
 
 
 from site_bridge import housing_extra  # noqa: E402,F401  (пакет H6: папка заявника, «запроси друга», справка; операции той же области)

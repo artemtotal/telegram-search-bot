@@ -23,6 +23,7 @@ from database import (
     HousingLetterLog,
     HousingLetterProfile,
     HousingLetterRef,
+    HousingSendLog,
     ImmoscoutListing,
 )
 from site_bridge import letter as bridge_letter
@@ -44,6 +45,8 @@ def _clean():
         session.query(HousingAccessUser).filter(HousingAccessUser.user_id.in_(ids)).delete(synchronize_session=False)
         session.query(HousingLetterProfile).filter(HousingLetterProfile.user_id.in_(ids)).delete(synchronize_session=False)
         session.query(HousingLetterLog).filter(HousingLetterLog.user_id.in_(ids)).delete(synchronize_session=False)
+        session.query(store.HousingLetterTrial).filter(store.HousingLetterTrial.user_id.in_(ids + (900400004,))).delete(synchronize_session=False)
+        session.query(HousingSendLog).filter(HousingSendLog.user_id.in_(ids)).delete(synchronize_session=False)
         session.query(HousingLetterRef).filter(HousingLetterRef.listing_key.like("h4test-%")).delete(synchronize_session=False)
         session.query(ImmoscoutListing).filter(ImmoscoutListing.listing_key.like("h4test-%")).delete(synchronize_session=False)
         session.commit()
@@ -64,6 +67,16 @@ def _flat():
     finally:
         session.close()
     return store.ref_for("immoscout", LK)
+
+
+def _spend(user_id):
+    """Пробное письмо человека уже потрачено."""
+    session = DBSession()
+    try:
+        session.merge(store.HousingLetterTrial(user_id=user_id, state="used", updated_at=datetime.utcnow()))
+        session.commit()
+    finally:
+        session.close()
 
 
 def _grant(user_id):
@@ -158,13 +171,17 @@ class LetterBridgeTests(unittest.TestCase):
 
     # ---------- не подписчик ----------
     def test_free_user_is_locked_everywhere_and_nothing_written(self):
+        _spend(FREE)        # пробное письмо потрачено: дальше замок (до траты проба есть, см. test_site_bridge_paywall)
         data = self.ok("overview", user=FREE)
         self.assertFalse(data["premium"])
-        self.assertIn("Лист", data["locked"])
-        self.assertNotIn("<b>", data["locked"])
+        self.assertTrue(data["locked"])
+        self.assertEqual(data["free_left"], 0)
+        self.assertIn("Лист", data["locked_text"])
+        self.assertNotIn("<b>", data["locked_text"])
         self.assertNotIn("profile", data)
-        for name, params in (("profile_save", FULL), ("listing", {"ref": self.ref}), ("start", {"ref": self.ref}), ("history", {})):
-            body = self.refused("locked", name, user=FREE, params=params)
+        for name, params in (("profile_save", FULL), ("listing", {"ref": self.ref}), ("start", {"ref": self.ref})):
+            body = self.refused("paywall", name, user=FREE, params=params)
+            self.assertEqual(body["feature"], "letter")
             self.assertTrue(body["message"])
         self.assertIsNone(store.get_profile(FREE))
         self.assertEqual(self.calls, [])
@@ -350,13 +367,102 @@ class LetterBridgeTests(unittest.TestCase):
         self.assertIsNone(items[0]["ref"])           # ссылки на ту квартиру нет: новых не создаём
         self.assertEqual(self.ok("history", user=SUB2)["items"][0]["ref"], self.ref)
 
+    # ---------- одно пробное письмо бесплатному (28.11.2026) ----------
+    def _got(self, user):
+        """Человек получил эту квартиру (запись журнала отправок): бесплатному по номеру видна только полученная или уже созревшая."""
+        session = DBSession()
+        try:
+            session.add(HousingSendLog(user_id=user, source="immoscout", listing_key=LK, delayed=True, sent_at=datetime.utcnow()))
+            session.commit()
+        finally:
+            session.close()
+
+    def test_trial_overview_and_one_letter_then_paywall(self):
+        _got = self._got
+        ov = self.ok("overview", user=FREE)
+        self.assertEqual((ov["premium"], ov["locked"], ov["free_left"]), (False, True, 1))
+        self.assertIn("profile", ov)                      # форма анкеты работает, пока проба не потрачена
+        self.assertEqual(self.ok("overview", user=SUB)["free_left"], 0)
+        self.assertFalse(self.ok("overview", user=SUB)["locked"])
+        self.ok("profile_save", user=FREE, params=dict(FULL))
+        self.refused("not_found", "start", user=FREE, params={"ref": self.ref})     # квартира, которую он не получал и которая не созрела
+        _got(FREE)
+        self.assertEqual(self.ok("listing", user=FREE, params={"ref": self.ref})["free_left"], 1)
+        data = self.finish(self.ok("start", user=FREE, params={"ref": self.ref})["job"], user=FREE)
+        self.assertEqual(data["state"], "done")
+        self.assertEqual(self.ok("overview", user=FREE)["free_left"], 0)
+        self.assertEqual(len(self.ok("history", user=FREE)["items"]), 1)             # своё письмо видно
+        body = self.refused("paywall", "start", user=FREE, params={"ref": self.ref})
+        self.assertEqual(body["feature"], "letter")
+        self.refused("paywall", "profile_save", user=FREE, params=dict(FULL))
+        self.assertEqual(len(self.calls), 1)
+
+    def test_trial_is_not_spent_on_failure(self):
+        self._got(FREE)
+        self.ok("profile_save", user=FREE, params=dict(FULL))
+        self.reply = ""                                    # модель ничего не дала
+        self.assertEqual(self.finish(self.ok("start", user=FREE, params={"ref": self.ref})["job"], user=FREE)["state"], "failed")
+        self.assertEqual(self.ok("overview", user=FREE)["free_left"], 1)
+        self.reply = RuntimeError("boom")
+        self.assertEqual(self.finish(self.ok("start", user=FREE, params={"ref": self.ref})["job"], user=FREE)["state"], "failed")
+        self.assertEqual(self.ok("overview", user=FREE)["free_left"], 1)
+        self.reply = "Sehr geehrte Damen und Herren, ok"
+        self.assertEqual(self.finish(self.ok("start", user=FREE, params={"ref": self.ref})["job"], user=FREE)["state"], "done")
+        self.assertEqual(self.ok("overview", user=FREE)["free_left"], 0)
+
+    def test_trial_is_one_and_shared_with_the_chat(self):
+        """Проба одна на человека: потраченная в чате бота видна на мосте (одна функция store.begin_letter/finish_letter), и наоборот."""
+        from types import SimpleNamespace
+        self._got(FREE)
+        self.ok("profile_save", user=FREE, params=dict(FULL))
+        bot = mock.Mock()
+        bot.send_message.return_value = SimpleNamespace(message_id=5)
+        context = SimpleNamespace(bot=bot, user_data={}, args=["lt%d" % self.ref])
+        update = SimpleNamespace(effective_user=SimpleNamespace(id=FREE), effective_chat=SimpleNamespace(type="private"))
+
+        class SyncThread:
+            def __init__(self, target, **_):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        with mock.patch.object(housing_letter.threading, "Thread", SyncThread):
+            housing_letter.handle_start(update, context, "lt%d" % self.ref)
+        texts = [c.kwargs.get("text", "") for c in bot.send_message.call_args_list]
+        self.assertTrue(any("<pre>" in t for t in texts), texts)                        # письмо ушло
+        self.assertEqual(self.ok("overview", user=FREE)["free_left"], 0)               # мост видит: потрачено
+        self.refused("paywall", "start", user=FREE, params={"ref": self.ref})
+        bot.send_message.reset_mock()
+        housing_letter.handle_start(update, context, "lt%d" % self.ref)                # чат: теперь замок и кнопка подписки
+        [call] = bot.send_message.call_args_list
+        self.assertIn("безкоштовний лист уже використано", call.kwargs["text"])
+        self.assertEqual(len(self.calls), 1)
+
+    def test_trial_belongs_to_one_person(self):
+        self._got(FREE)
+        _spend(900400004)
+        self.assertEqual(self.ok("overview", user=FREE)["free_left"], 1)
+        self.assertEqual(self.ok("overview", user=900400004)["free_left"], 0)
+        session = DBSession()
+        try:
+            session.query(store.HousingLetterTrial).filter_by(user_id=900400004).delete()
+            session.commit()
+        finally:
+            session.close()
+
+    def test_former_subscriber_with_letters_still_gets_the_trial(self):
+        store.log_letter(FREE, "immoscout", LK, "t", "https://x.example", "Sehr geehrte")      # письма были, подписки сейчас нет
+        self.assertEqual(self.ok("overview", user=FREE)["free_left"], 1)
+
     # ---------- языки ----------
     def test_three_languages(self):
+        _spend(FREE)
         for lang in ("uk", "ru", "de"):
             body = self.refused("required", "profile_save", params=dict(FULL, income=""), lang=lang)
             self.assertTrue(body["message"])
             self.assertEqual(len({self.refused("required", "profile_save", params=dict(FULL, income=""), lang=l)["message"] for l in ("uk", "ru", "de")}), 3)
-            self.assertTrue(self.refused("locked", "history", user=FREE, lang=lang)["message"])
+            self.assertTrue(self.refused("paywall", "start", user=FREE, params={"ref": self.ref}, lang=lang)["message"])
         self.assertTrue(self.refused("no_profile", "start", params={"ref": self.ref}, lang="de")["message"].startswith("Bitte"))
 
 

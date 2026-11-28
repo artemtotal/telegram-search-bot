@@ -72,7 +72,11 @@ def footer_line(user_id: int, source: str, listing_key: str, premium: bool) -> s
     if ref_id is None:
         return ""
     lang = _lang(user_id)
-    letter = i18n.t("housing.track.footer_letter_paid" if premium else "housing.track.footer_letter_free", lang)
+    if premium:
+        letter_key = "housing.track.footer_letter_paid"
+    else:       # одно письмо бесплатно, пока проба не потрачена
+        letter_key = "housing.track.footer_letter_trial" if store.trial_unused(user_id) else "housing.track.footer_letter_free"
+    letter = i18n.t(letter_key, lang)
     apply_label = i18n.t("housing.track.footer_apply", lang)
     return (
         f'\n\n<a href="{store.letter_href(username, ref_id)}">{letter}</a>'

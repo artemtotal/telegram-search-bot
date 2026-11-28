@@ -392,12 +392,12 @@ class FooterTests(_Db):
         self.assertIn('start=lt1">✍️ Лист</a> · <a href="https://t.me/PotsdamTestBot?start=ap1">✅ Подався</a>', line[0])
 
     def test_free_people_see_the_letter_marked_with_a_lightning(self):
-        self.assertIn('✍️ Лист ⚡</a>', self._gate().footer(777, 'k1'))
+        self.assertIn('✍️ Лист · 1 безкоштовно</a>', self._gate().footer(777, 'k1'))
 
     def test_tracker_switch_off_brings_back_the_old_letter_line(self):
         with mock.patch.dict(os.environ, {'HOUSING_APPLY_TRACKER': '0'}):
             footer = self._gate().footer(777, 'k1')
-        self.assertIn('⚡ підписка', footer)
+        self.assertIn('(1 безкоштовно)', footer)
         self.assertNotIn('start=ap', footer)
 
     def test_no_bot_name_no_links(self):

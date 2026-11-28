@@ -10,11 +10,13 @@ listing keys can be longer, hence a numeric reference per (source, key).
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Optional
 
 import i18n
-from database import DBSession, HousingLetterProfile, HousingLetterRef, HousingLetterLog
+from sqlalchemy import DATETIME, INTEGER, TEXT, Column
+
+from database import Base, DBSession, HousingLetterProfile, HousingLetterRef, HousingLetterLog, engine
 
 logger = logging.getLogger(__name__)
 
@@ -160,5 +162,116 @@ def letter_link(user_id: int, source: str, listing_key: str, premium: bool) -> s
     if ref_id is None:
         return ""
     lang = i18n.get_lang(int(user_id))
-    label = i18n.t("housing.letter.link_paid" if premium else "housing.letter.link_free", lang)
+    if premium:
+        key = "housing.letter.link_paid"
+    else:       # одно письмо бесплатно, пока проба не потрачена
+        key = "housing.letter.link_trial" if trial_unused(user_id) else "housing.letter.link_free"
+    label = i18n.t(key, lang)
     return f'\n\n<a href="{letter_href(_bot_username, ref_id)}">{label}</a>'
+
+
+# ---------- одно бесплатное письмо на пробу (28.11.2026) ----------
+# Бесплатному человеку положено ОДНО письмо арендодателю навсегда. Одна общая логика для чата бота и для моста сайта (letter.*):
+#   begin_letter(user_id) -> "sub" | "trial" | "busy" | None   (до генерации: подписчик, проба занята под этот запуск, проба уже идёт, или замок)
+#   finish_letter(user_id, mode, ok)                           (после генерации: проба тратится только при ok, сбой её освобождает)
+# Проба хранится в таблице housing_letter_trial (user_id PK): state "pending" (идёт генерация, живёт PENDING_TTL) или "used".
+# Подписка и старые письма из housing_letter_log пробу не расходуют: тот, кто был подписчиком, а сейчас без подписки, получает её тоже.
+
+class HousingLetterTrial(Base):
+    __tablename__ = 'housing_letter_trial'
+
+    user_id = Column(INTEGER, primary_key=True)
+    state = Column(TEXT, nullable=False)
+    updated_at = Column(DATETIME, nullable=False)
+
+
+Base.metadata.create_all(engine, tables=[HousingLetterTrial.__table__])
+
+PENDING_TTL = timedelta(minutes=10)
+
+
+def _is_premium(user_id: int) -> bool:
+    from user_jobs import housing_tier
+
+    return bool(housing_tier.is_premium(int(user_id)))
+
+
+def free_left(user_id: int) -> int:
+    """Сколько пробных писем осталось: 1 или 0. У подписчика 0 (ему проба не нужна). Идущая генерация пробу ещё не тратит."""
+    if _is_premium(user_id):
+        return 0
+    session = DBSession()
+    try:
+        row = session.query(HousingLetterTrial).get(int(user_id))
+        return 0 if (row is not None and row.state == "used") else 1
+    finally:
+        session.close()
+
+
+def can_write(user_id: int) -> bool:
+    """Можно ли человеку писать письма сейчас: подписка или нетронутая проба."""
+    return _is_premium(user_id) or free_left(user_id) > 0
+
+
+def begin_letter(user_id: int) -> Optional[str]:
+    """Перед генерацией. "sub": подписчик, ничего не резервируется. "trial": проба занята под этот запуск (после генерации вызвать
+    finish_letter). "busy": пробная генерация уже идёт. None: пробы нет, функция закрыта подпиской."""
+    uid = int(user_id)
+    if _is_premium(uid):
+        return "sub"
+    now = utc_now()
+    session = DBSession()
+    try:
+        row = session.query(HousingLetterTrial).get(uid)
+        if row is None:
+            session.add(HousingLetterTrial(user_id=uid, state="pending", updated_at=now))
+            session.commit()
+            return "trial"
+        if row.state == "used":
+            return None
+        if now - row.updated_at < PENDING_TTL:
+            return "busy"
+        row.state, row.updated_at = "pending", now        # прежний запуск завис (перезапуск бота): занимаем заново
+        session.commit()
+        return "trial"
+    except Exception:
+        session.rollback()
+        logger.exception("Could not reserve the trial letter of %s", uid)
+        return "busy"       # две одновременные записи: вторая видит занято; сбой базы пробу не раздаёт
+    finally:
+        session.close()
+
+
+def finish_letter(user_id: int, mode: Optional[str], ok: bool) -> None:
+    """После генерации. Проба тратится только при ok; сбой освобождает её, и человек может попробовать ещё раз."""
+    if mode != "trial":
+        return
+    session = DBSession()
+    try:
+        row = session.query(HousingLetterTrial).get(int(user_id))
+        if row is None:
+            if ok:
+                session.add(HousingLetterTrial(user_id=int(user_id), state="used", updated_at=utc_now()))
+        elif ok:
+            row.state, row.updated_at = "used", utc_now()
+        elif row.state == "pending":
+            session.delete(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Could not settle the trial letter of %s", user_id)
+    finally:
+        session.close()
+
+
+def trial_unused(user_id: int) -> bool:
+    """Проба не потрачена (без проверки подписки: для подписи ссылки, где подписка уже известна)."""
+    session = DBSession()
+    try:
+        row = session.query(HousingLetterTrial).get(int(user_id))
+        return not (row is not None and row.state == "used")
+    except Exception:
+        logger.exception("Could not read the trial letter of %s", user_id)
+        return False
+    finally:
+        session.close()

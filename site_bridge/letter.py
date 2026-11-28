@@ -20,10 +20,10 @@ import re
 import threading
 import time
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 import i18n
-from site_bridge import op, Refuse
+from site_bridge import Paywall, op, Refuse
 
 logger = logging.getLogger(__name__)
 
@@ -63,11 +63,21 @@ def _premium(user_id: int) -> bool:
     return bool(housing_tier.is_premium(int(user_id)))
 
 
-def _require_premium(user_id: int, lang: str) -> None:
-    if not _premium(user_id):
-        from user_jobs import housing_tier
+def _locked_text(lang: str) -> str:
+    from user_jobs import housing_tier
 
-        raise Refuse("locked", _plain(i18n.t("housing.letter.locked", lang, price=housing_tier.PREMIUM_PRICE_EUR)))
+    return _plain(i18n.t("housing.letter.locked", lang, price=housing_tier.PREMIUM_PRICE_EUR))
+
+
+def _require_premium(user_id: int, lang: str) -> None:
+    """Письма: подписчик или бесплатный с нетронутой пробой (одно письмо навсегда). Иначе единый замок {error:"paywall", feature:"letter"}."""
+    if not _store().can_write(int(user_id)):
+        raise Paywall("letter", _locked_text(lang))
+
+
+def _trial_fields(user_id: int) -> dict:
+    """free_left (0/1) и locked (письма закрыты подпиской; при free_left=1 бесплатному можно написать одно) для overview и listing."""
+    return {"free_left": int(_store().free_left(int(user_id))), "locked": not _premium(user_id)}
 
 
 def _ref(params) -> int:
@@ -126,11 +136,31 @@ def _flat(listing: dict) -> dict:
     }
 
 
-def _resolve(ref: int, lang: str):
+def _free_may_see(user_id: int, found: dict) -> bool:
+    """Бесплатному (пробное письмо) доступна квартира, которую он получил, или уже созревшая для бесплатного тарифа (старше задержки):
+    раньше подписчиков по номеру ничего не открываем."""
+    from database import DBSession, HousingSendLog
+    from user_jobs import housing_tier
+
+    session = DBSession()
+    try:
+        if session.query(HousingSendLog.id).filter(HousingSendLog.user_id == int(user_id), HousingSendLog.source == found["source"],
+                                                   HousingSendLog.listing_key == found["listing_key"]).first():
+            return True
+    finally:
+        session.close()
+    from site_bridge import housing
+
+    row = housing._load_listings([(found["source"], found["listing_key"])]).get((found["source"], found["listing_key"])) or {}
+    seen = row.get("first_seen_at")
+    return isinstance(seen, datetime) and datetime.utcnow() - seen >= housing_tier.FREE_DELAY
+
+
+def _resolve(ref: int, lang: str, user_id: int = 0):
     s = _store()
     found = s.resolve_ref(ref)
     listing = _hl()._listing(found["source"], found["listing_key"]) if found else None
-    if listing is None:
+    if listing is None or (user_id and not _premium(user_id) and not _free_may_see(user_id, found)):
         raise Refuse("not_found", i18n.t("housing.letter.unknown", lang))
     return found, listing
 
@@ -185,12 +215,11 @@ def _profile_view(user_id: int):
 @op("letter", "overview")
 def overview(user_id, lang, params):
     premium = _premium(user_id)
-    out = {"premium": premium, "fields": _fields(), "mappe": _mappe_on()}
+    out = {"premium": premium, "fields": _fields(), "mappe": _mappe_on(), **_trial_fields(user_id)}
     if not premium:
-        from user_jobs import housing_tier
-
-        out["locked"] = _plain(i18n.t("housing.letter.locked", lang, price=housing_tier.PREMIUM_PRICE_EUR))
-        return out
+        out["locked_text"] = _locked_text(lang)
+        if not out["free_left"]:
+            return out
     out["profile"] = _profile_view(user_id)
     out.update(_limit_block(user_id))
     out["count"] = len(_store().list_letters(user_id, HISTORY_SHOWN))
@@ -222,11 +251,11 @@ def profile_save(user_id, lang, params):
 def listing(user_id, lang, params):
     _require_premium(user_id, lang)
     ref = _ref(params)
-    found, row = _resolve(ref, lang)
+    found, row = _resolve(ref, lang, user_id)
     return {
         "ref": ref, "flat": _flat(row), "profile": _profile_view(user_id), "fields": _fields(),
         "last": _last_for(user_id, found["source"], found["listing_key"]), **_limit_block(user_id),
-        "mappe": _mappe_on(),
+        "mappe": _mappe_on(), **_trial_fields(user_id),
     }
 
 
@@ -235,7 +264,7 @@ def _purge(now: float) -> None:
         _jobs.pop(jid, None)
 
 
-def _work(jid: str, user_id: int, found: dict, row: dict, profile: dict, variant: bool) -> None:
+def _work(jid: str, user_id: int, found: dict, row: dict, profile: dict, variant: bool, mode: str = "sub") -> None:
     hl, s = _hl(), _store()
     letter = ""
     try:
@@ -244,6 +273,7 @@ def _work(jid: str, user_id: int, found: dict, row: dict, profile: dict, variant
         logger.exception("site letter generation failed for %s", user_id)
         letter = ""
     ok = bool(letter) and letter != "RATE_LIMIT"
+    s.finish_letter(user_id, mode, ok)        # пробное письмо тратится только при успешной генерации (общая логика с чатом бота)
     if ok:
         try:
             s.log_letter(user_id, found["source"], found["listing_key"], hl._listing_label(row), str(row.get("detail_url") or ""), letter)
@@ -263,7 +293,7 @@ def start(user_id, lang, params):
     variant = params.get("variant", False)
     if not isinstance(variant, bool):
         raise _bad(lang)
-    found, row = _resolve(ref, lang)
+    found, row = _resolve(ref, lang, user_id)
     profile = _profile_out(user_id)
     if not _store().profile_complete(profile):          # «Про мене» дополнена из папки заявника на экране: сохраняем, чтобы чат и сайт видели одно и то же
         shown = _profile_view(user_id)
@@ -280,9 +310,14 @@ def start(user_id, lang, params):
                 return {"job": jid, "state": "running", "again": True}
         if _hl()._over_limit(user_id):
             raise Refuse("limit", i18n.t("housing.letter.limit", lang, n=_hl().DAILY_LIMIT))
+        mode = _store().begin_letter(user_id)      # "sub" | "trial" (проба занята под этот запуск) | "busy" | None (замок)
+        if mode is None:
+            raise Paywall("letter", _locked_text(lang))
+        if mode == "busy":
+            raise Refuse("busy", i18n.t("housing.letter.trial_busy", lang))
         jid = uuid.uuid4().hex[:20]
         _jobs[jid] = {"user": user_id, "ref": ref, "state": "running", "letter": "", "started": now, "variant": variant}
-    threading.Thread(target=_work, args=(jid, user_id, found, row, profile, variant), name="site-letter-%s" % user_id, daemon=True).start()
+    threading.Thread(target=_work, args=(jid, user_id, found, row, profile, variant, mode), name="site-letter-%s" % user_id, daemon=True).start()
     return {"job": jid, "state": "running", "again": False}
 
 
@@ -314,7 +349,7 @@ def status(user_id, lang, params):
 
 @op("letter", "history")
 def history(user_id, lang, params):
-    _require_premium(user_id, lang)
+    # свои письма видны и бесплатному (там максимум пробное): замка нет, чужих писем не бывает (список по user_id)
     items = _store().list_letters(user_id, HISTORY_SHOWN)
     refs = _refs_for(items)
     out = []

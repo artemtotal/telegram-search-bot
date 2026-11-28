@@ -141,9 +141,9 @@ class H6Tests(unittest.TestCase):
         self.assertTrue(info["enabled"] and not info["premium"])
         self.assertIn("message", info)
         self.assertNotIn("fields", info)
-        self.refused("locked", "housing", "mappe_save", C, {"answers": self.full_answers()})
-        self.refused("locked", "housing", "mappe_make", C)
-        self.refused("locked", "housing", "mappe_delete", C)
+        self.refused("paywall", "housing", "mappe_save", C, {"answers": self.full_answers()})
+        self.refused("paywall", "housing", "mappe_make", C)
+        self.refused("paywall", "housing", "mappe_delete", C)
         self.assertEqual(_count(HousingMappeProfile, C), 0)
         self.assertEqual(self.generated, [])
 
@@ -294,7 +294,7 @@ class H6Tests(unittest.TestCase):
         self.assertEqual((base64.b64decode(pdf["pdf_b64"]), pdf["name"]), (b"%PDF-1.4 secret", "Bewerbungsmappe.pdf"))
         self.assertNotIn("pdf", self.ok("housing", "mappe_status", B, {"before": 0}))          # чужая папка не видна
         self.refused("not_found", "housing", "mappe_pdf", B)
-        self.refused("locked", "housing", "mappe_pdf", C)
+        self.refused("paywall", "housing", "mappe_pdf", C)
         housing_mappe._results[A] = {"ok": False, "error": "Не вдалося зібрати папку", "ts": time.time()}
         s = self.ok("housing", "mappe_status", A, {"before": 0})
         self.assertEqual((s["failed"], s["done"], s["error"]), (True, False, "Не вдалося зібрати папку"))

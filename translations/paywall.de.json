@@ -1,0 +1,7 @@
+{
+  "paywall.price_from": "ab {price} €",
+  "housing.letter.link_trial": "✍️ Anschreiben an den Vermieter (1 kostenlos)",
+  "housing.track.footer_letter_trial": "✍️ Anschreiben · 1 kostenlos",
+  "housing.letter.trial_used": "Ihr eines kostenloses Anschreiben ist bereits verbraucht.",
+  "housing.letter.trial_busy": "✍️ Das Anschreiben wird schon geschrieben, bitte einen Moment warten."
+}
