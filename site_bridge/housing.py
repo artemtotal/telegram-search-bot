@@ -1145,3 +1145,5 @@ def letters(user_id, lang, params):
 
 
 from site_bridge import housing_extra  # noqa: E402,F401  (пакет H6: папка заявника, «запроси друга», справка; операции той же области)
+
+from site_bridge import housing_widen  # noqa: E402,F401  (fix8: «Розширити фільтр» на сайте, операции search_report/search_relax той же области)
